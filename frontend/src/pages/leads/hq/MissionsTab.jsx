@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { CheckCircle2, Circle, Zap, Clock, RotateCcw, ChevronDown, ChevronUp,
-         Flame, Star, Trophy, X, Plus, Pencil, Trash2, Settings, Eye, EyeOff } from 'lucide-react'
+         Flame, Star, Trophy, X, Plus, Pencil, Trash2, Settings, Eye, EyeOff, GripVertical } from 'lucide-react'
 import { STANDING_MISSIONS, GROWTH_PLAYS, WEEKLY_CHALLENGE, AI_RECOMMENDATIONS, getRank, RANKS } from '../data/mockData'
 import { useAuth } from '@/contexts/AuthContext'
 
@@ -21,6 +21,9 @@ function loadHiddenMissions()   { try { return JSON.parse(localStorage.getItem(H
 function saveHiddenMissions(a)  { try { localStorage.setItem(HIDDEN_MISSIONS_KEY, JSON.stringify(a)) } catch {} }
 function loadOverrides()        { try { return JSON.parse(localStorage.getItem(OVERRIDES_KEY) || '{}') } catch { return {} } }
 function saveOverrides(o)       { try { localStorage.setItem(OVERRIDES_KEY, JSON.stringify(o)) } catch {} }
+const ORDER_KEY = 'leadgenhq_mission_order'
+function loadOrder()            { try { return JSON.parse(localStorage.getItem(ORDER_KEY) || '[]') } catch { return [] } }
+function saveOrder(o)           { try { localStorage.setItem(ORDER_KEY, JSON.stringify(o)) } catch {} }
 function loadChallenge()       { try { return JSON.parse(localStorage.getItem(CHALLENGE_KEY)) || WEEKLY_CHALLENGE } catch { return WEEKLY_CHALLENGE } }
 function saveChallenge(c)      { try { localStorage.setItem(CHALLENGE_KEY, JSON.stringify(c)) } catch {} }
 function loadAiRecs()          { try { const s = JSON.parse(localStorage.getItem(AI_RECS_KEY)); return s ?? AI_RECOMMENDATIONS } catch { return AI_RECOMMENDATIONS } }
@@ -527,7 +530,8 @@ function ManageMissionsModal({ customMissions, hiddenMissions, overrides, onClos
 }
 
 // ─── Mission Card ─────────────────────────────────────────────────────────────
-function MissionCard({ mission, completions, onComplete, isPlayMission }) {
+function MissionCard({ mission, completions, onComplete, isPlayMission, canDrag,
+                       onDragStart, onDragOver, onDrop, onDragEnd, isDragOver }) {
   const [expanded,  setExpanded]  = useState(false)
   const [showProof, setShowProof] = useState(false)
 
@@ -542,13 +546,28 @@ function MissionCard({ mission, completions, onComplete, isPlayMission }) {
   return (
     <>
       {showProof && <ProofModal mission={mission} onConfirm={handleConfirm} onCancel={() => setShowProof(false)} />}
-      <div className={`border rounded-xl overflow-hidden transition-all ${
-        completedToday ? 'border-green-200 bg-green-50'
-        : isExpired    ? 'border-gray-100 bg-gray-50 opacity-60'
-        : 'border-gray-200 bg-white hover:border-orange-200'
-      }`}>
+      <div
+        draggable={canDrag}
+        onDragStart={canDrag ? () => onDragStart(mission.id) : undefined}
+        onDragOver={canDrag ? (e) => { e.preventDefault(); onDragOver(mission.id) } : undefined}
+        onDrop={canDrag ? (e) => { e.preventDefault(); onDrop(mission.id) } : undefined}
+        onDragEnd={canDrag ? onDragEnd : undefined}
+        className={`border rounded-xl overflow-hidden transition-all ${
+          isDragOver      ? 'border-[#E8611A] border-2 scale-[1.01] shadow-md'
+          : completedToday ? 'border-green-200 bg-green-50'
+          : isExpired    ? 'border-gray-100 bg-gray-50 opacity-60'
+          : 'border-gray-200 bg-white hover:border-orange-200'
+        } ${canDrag ? 'cursor-default' : ''}`}
+      >
         <div className="p-3.5">
-          <div className="flex items-start gap-3">
+          <div className="flex items-start gap-2">
+            {/* Drag handle — manager/owner only */}
+            {canDrag && (
+              <div className="mt-1 flex-shrink-0 cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 transition-colors">
+                <GripVertical size={16} />
+              </div>
+            )}
+
             <button
               onClick={() => !completedToday && !isExpired && setShowProof(true)}
               disabled={completedToday || isExpired}
@@ -667,6 +686,7 @@ export default function MissionsTab({ employee, onPointsEarned, onStreakUpdate }
   const [customMissions, setCustomMissions] = useState(() => loadCustomMissions())
   const [hiddenMissions, setHiddenMissions] = useState(() => loadHiddenMissions())
   const [overrides,      setOverrides]      = useState(() => loadOverrides())
+  const [missionOrder,   setMissionOrder]   = useState(() => loadOrder())
   const [challenge,      setChallenge]      = useState(() => loadChallenge())
   const [aiRecs,         setAiRecs]         = useState(() => loadAiRecs())
   const [plays,          setPlays]          = useState(() => loadStoredPlays())
@@ -674,12 +694,15 @@ export default function MissionsTab({ employee, onPointsEarned, onStreakUpdate }
   const [flashPts,       setFlashPts]       = useState(null)
   const [showManage,     setShowManage]     = useState(false)
   const [showTopEdit,    setShowTopEdit]    = useState(false)
+  const [dragOverId,     setDragOverId]     = useState(null)
+  const dragIdRef = useRef(null)
 
   // Persist to localStorage
   useEffect(() => { saveMissionsState(missionsState) }, [missionsState])
   useEffect(() => { saveCustomMissions(customMissions) }, [customMissions])
   useEffect(() => { saveHiddenMissions(hiddenMissions) }, [hiddenMissions])
   useEffect(() => { saveOverrides(overrides) }, [overrides])
+  useEffect(() => { saveOrder(missionOrder) }, [missionOrder])
   useEffect(() => { saveChallenge(challenge) }, [challenge])
   useEffect(() => { saveAiRecs(aiRecs) }, [aiRecs])
 
@@ -691,8 +714,38 @@ export default function MissionsTab({ employee, onPointsEarned, onStreakUpdate }
   const visibleBuiltIn = STANDING_MISSIONS
     .filter(m => !hiddenMissions.includes(m.id))
     .map(m => overrides[m.id] ? { ...m, ...overrides[m.id] } : m)
-  const allMissions    = [...playMissions, ...visibleBuiltIn, ...customMissions]
+  const unorderedAll   = [...playMissions, ...visibleBuiltIn, ...customMissions]
+  // Apply saved order; missions not yet in the order list go at the end
+  const allMissions = missionOrder.length > 0
+    ? [...unorderedAll].sort((a, b) => {
+        const ai = missionOrder.indexOf(a.id)
+        const bi = missionOrder.indexOf(b.id)
+        if (ai === -1 && bi === -1) return 0
+        if (ai === -1) return 1
+        if (bi === -1) return -1
+        return ai - bi
+      })
+    : unorderedAll
   const filtered       = category === 'All' ? allMissions : allMissions.filter(m => m.category === category)
+
+  // ─── Drag handlers ──────────────────────────────────────────────────────────
+  function handleDragStart(id) { dragIdRef.current = id }
+  function handleDragOver(id)  { if (id !== dragIdRef.current) setDragOverId(id) }
+  function handleDrop(targetId) {
+    const fromId = dragIdRef.current
+    if (!fromId || fromId === targetId) { dragIdRef.current = null; setDragOverId(null); return }
+    const ids     = allMissions.map(m => m.id)
+    const fromIdx = ids.indexOf(fromId)
+    const toIdx   = ids.indexOf(targetId)
+    if (fromIdx === -1 || toIdx === -1) { dragIdRef.current = null; setDragOverId(null); return }
+    const next = [...ids]
+    next.splice(fromIdx, 1)
+    next.splice(toIdx, 0, fromId)
+    setMissionOrder(next)
+    dragIdRef.current = null
+    setDragOverId(null)
+  }
+  function handleDragEnd() { dragIdRef.current = null; setDragOverId(null) }
 
   const todayStr      = new Date().toLocaleDateString('en-CA')
   const doneToday     = filtered.filter(m => empCompletions[m.id]?.some(c => c.date === todayStr))
@@ -829,10 +882,20 @@ export default function MissionsTab({ employee, onPointsEarned, onStreakUpdate }
       <div className="px-4 space-y-2">
         {remaining.length > 0 && (
           <>
-            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{remaining.length} available</p>
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+              {remaining.length} available
+              {canManage && <span className="ml-1.5 normal-case font-normal text-gray-300">· drag to reorder</span>}
+            </p>
             {remaining.map(m => (
               <MissionCard key={m.id} mission={m} completions={empCompletions[m.id] || []}
-                onComplete={handleComplete} isPlayMission={m.type === 'play-generated'} />
+                onComplete={handleComplete} isPlayMission={m.type === 'play-generated'}
+                canDrag={canManage}
+                onDragStart={handleDragStart}
+                onDragOver={handleDragOver}
+                onDrop={handleDrop}
+                onDragEnd={handleDragEnd}
+                isDragOver={dragOverId === m.id}
+              />
             ))}
           </>
         )}
@@ -841,7 +904,14 @@ export default function MissionsTab({ employee, onPointsEarned, onStreakUpdate }
             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mt-4">Completed today ({doneToday.length})</p>
             {doneToday.map(m => (
               <MissionCard key={m.id} mission={m} completions={empCompletions[m.id] || []}
-                onComplete={handleComplete} isPlayMission={m.type === 'play-generated'} />
+                onComplete={handleComplete} isPlayMission={m.type === 'play-generated'}
+                canDrag={canManage}
+                onDragStart={handleDragStart}
+                onDragOver={handleDragOver}
+                onDrop={handleDrop}
+                onDragEnd={handleDragEnd}
+                isDragOver={dragOverId === m.id}
+              />
             ))}
           </>
         )}
