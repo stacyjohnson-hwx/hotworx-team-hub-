@@ -51,7 +51,7 @@ router.get('/', authenticate, requireRole('owner', 'manager'), async (req, res) 
 
 // ─── POST /api/coaching ───────────────────────────────────────────────────────
 router.post('/', authenticate, requireRole('owner', 'manager'), async (req, res) => {
-  const { session_date, staff_name, session_type, notes, action_items } = req.body
+  const { session_date, session_time, staff_name, session_type, notes, action_items } = req.body
   if (!staff_name) return res.status(400).json({ error: 'staff_name is required' })
 
   const db = supabase()
@@ -60,6 +60,7 @@ router.post('/', authenticate, requireRole('owner', 'manager'), async (req, res)
     .from('coaching_sessions')
     .insert({
       session_date: session_date || new Date().toISOString().split('T')[0],
+      session_time: session_time || null,
       staff_name,
       session_type: session_type || 'one-on-one',
       notes: notes || null,
@@ -89,13 +90,13 @@ router.post('/', authenticate, requireRole('owner', 'manager'), async (req, res)
 
 // ─── PUT /api/coaching/:id ────────────────────────────────────────────────────
 router.put('/:id', authenticate, requireRole('owner', 'manager'), async (req, res) => {
-  const { session_date, staff_name, session_type, notes } = req.body
+  const { session_date, session_time, staff_name, session_type, notes } = req.body
   const db = supabase()
 
   const { data, error } = await db
     .from('coaching_sessions')
     .update({
-      session_date, staff_name, session_type, notes,
+      session_date, session_time: session_time || null, staff_name, session_type, notes,
       updated_at: new Date().toISOString(),
     })
     .eq('id', req.params.id)
@@ -153,7 +154,7 @@ router.delete('/actions/:id', authenticate, requireRole('owner', 'manager'), asy
 })
 
 // ─── POST /api/coaching/actions/:id/push-to-todo ─────────────────────────────
-// Push an action item to the Manager To-Do list
+// Push an action item to the Manager or Owner To-Do list
 router.post('/actions/:id/push-to-todo', authenticate, requireRole('owner', 'manager'), async (req, res) => {
   const db = supabase()
 
@@ -168,7 +169,8 @@ router.post('/actions/:id/push-to-todo', authenticate, requireRole('owner', 'man
   if (action.pushed_to_todo) return res.status(400).json({ error: 'Already pushed to To-Do' })
 
   const session = action.coaching_sessions
-  const { due_date } = req.body
+  const { due_date, list_target } = req.body
+  const target = ['manager', 'owner'].includes(list_target) ? list_target : 'manager'
 
   // Create the todo item
   const { data: todo, error: todoErr } = await db
@@ -180,6 +182,7 @@ router.post('/actions/:id/push-to-todo', authenticate, requireRole('owner', 'man
       priority: 'medium',
       status: 'open',
       source: 'coaching',
+      list_target: target,
       coaching_session_id: session?.id || null,
       created_by: req.user.id,
     })

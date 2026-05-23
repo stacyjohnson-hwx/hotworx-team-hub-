@@ -134,6 +134,13 @@ function fmtDateTime(iso) {
     month: 'short', day: 'numeric', year: 'numeric',
   })
 }
+function fmtTime(timeStr) {
+  if (!timeStr) return ''
+  const [h, m] = timeStr.split(':').map(Number)
+  const ampm = h >= 12 ? 'PM' : 'AM'
+  const h12  = h % 12 || 12
+  return `${h12}:${String(m).padStart(2, '0')} ${ampm}`
+}
 function daysFromToday(dateStr) {
   if (!dateStr) return null
   const diff = Math.round((new Date(dateStr + 'T00:00:00') - new Date(todayStr() + 'T00:00:00')) / 86400000)
@@ -162,6 +169,7 @@ function AgendaModal({ agenda, onSave, onClose }) {
 
   const [meetingType,  setMeetingType]  = useState(agenda?.meetingType || 'manager_meeting')
   const [meetingDate,  setMeetingDate]  = useState(agenda?.meetingDate || todayStr())
+  const [meetingTime,  setMeetingTime]  = useState(agenda?.meetingTime || '')
   const [title,        setTitle]        = useState(agenda?.title || '')
   const [attendees,    setAttendees]    = useState(agenda?.attendees || '')
   const [items,        setItems]        = useState(() => {
@@ -242,6 +250,7 @@ function AgendaModal({ agenda, onSave, onClose }) {
         id:          agenda?.id || uid(),
         meetingType,
         meetingDate,
+        meetingTime: meetingTime.trim() || null,
         title:       title.trim(),
         attendees:   attendees.trim(),
         items:       items.filter(i => i.text.trim()),
@@ -293,8 +302,8 @@ function AgendaModal({ agenda, onSave, onClose }) {
             </div>
           </div>
 
-          {/* Title + Date row */}
-          <div className="grid grid-cols-5 gap-3">
+          {/* Title + Date + Time row */}
+          <div className="grid grid-cols-6 gap-3">
             <div className="col-span-3">
               <label className="block text-xs font-medium text-gray-600 mb-1">
                 Meeting Title <span className="text-red-400">*</span>
@@ -313,6 +322,15 @@ function AgendaModal({ agenda, onSave, onClose }) {
                 type="date"
                 value={meetingDate}
                 onChange={e => setMeetingDate(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-500"
+              />
+            </div>
+            <div className="col-span-1">
+              <label className="block text-xs font-medium text-gray-600 mb-1">Time</label>
+              <input
+                type="time"
+                value={meetingTime}
+                onChange={e => setMeetingTime(e.target.value)}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-500"
               />
             </div>
@@ -504,6 +522,7 @@ function AgendaCard({ agenda, onEdit, onDelete, onToggleItem, onRemoveDoc, onCon
               <span className="text-xs text-gray-600 flex items-center gap-1">
                 <Calendar size={11} className="text-gray-400" />
                 {fmtDate(agenda.meetingDate)}
+                {agenda.meetingTime && <span className="text-gray-400">· {fmtTime(agenda.meetingTime)}</span>}
               </span>
             ) : (
               <span className="text-xs text-gray-400">{fmtDateTime(agenda.createdAt)}</span>
@@ -646,6 +665,7 @@ function ConvertModal({ agenda, onSave, onClose }) {
   const mt = getMeetingType(agenda.meetingType)
 
   const [attendees,    setAttendees]    = useState(agenda.attendees || '')
+  const [sessionTime,  setSessionTime]  = useState(agenda.meetingTime || '')
   const [notes,        setNotes]        = useState('')
   const [actionInputs, setActionInputs] = useState([''])
   const [saving,       setSaving]       = useState(false)
@@ -661,6 +681,7 @@ function ConvertModal({ agenda, onSave, onClose }) {
     try {
       const payload = {
         session_date: agenda.meetingDate || new Date().toISOString().split('T')[0],
+        session_time: sessionTime.trim() || null,
         staff_name:   attendees.trim(),
         session_type: agenda.meetingType,
         notes:        notes.trim(),
@@ -715,22 +736,32 @@ function ConvertModal({ agenda, onSave, onClose }) {
               <span className="text-sm text-gray-600 flex items-center gap-1.5">
                 <Calendar size={13} className="text-gray-400" />
                 {fmtDate(agenda.meetingDate)}
+                {sessionTime && <span className="text-gray-400">· {fmtTime(sessionTime)}</span>}
               </span>
             )}
           </div>
 
-          {/* Attendees */}
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">
-              Attendees
-            </label>
-            <input
-              autoFocus
-              className={inputCls}
-              value={attendees}
-              onChange={e => setAttendees(e.target.value)}
-              placeholder="e.g. Chrissy, Synneva"
-            />
+          {/* Attendees + Time row */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-gray-600 mb-1">Attendees</label>
+              <input
+                autoFocus
+                className={inputCls}
+                value={attendees}
+                onChange={e => setAttendees(e.target.value)}
+                placeholder="e.g. Chrissy, Synneva"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Time</label>
+              <input
+                type="time"
+                className={inputCls}
+                value={sessionTime}
+                onChange={e => setSessionTime(e.target.value)}
+              />
+            </div>
           </div>
 
           {/* Agenda reference — collapsed checklist */}
@@ -1029,6 +1060,7 @@ function AgendaTab({ onConvert }) {
 function SessionModal({ session, onSave, onClose }) {
   const [form, setForm] = useState({
     session_date: session?.session_date || new Date().toISOString().split('T')[0],
+    session_time: session?.session_time || '',
     staff_name:   session?.staff_name || '',
     session_type: session?.session_type || 'manager_meeting',
     notes:        session?.notes || '',
@@ -1115,10 +1147,17 @@ function SessionModal({ session, onSave, onClose }) {
             </div>
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
-            <input type="date" className={inputCls} value={form.session_date}
-              onChange={e => set('session_date', e.target.value)} />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
+              <input type="date" className={inputCls} value={form.session_date}
+                onChange={e => set('session_date', e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Time</label>
+              <input type="time" className={inputCls} value={form.session_time}
+                onChange={e => set('session_time', e.target.value)} />
+            </div>
           </div>
 
           <div>
@@ -1180,12 +1219,14 @@ function SessionModal({ session, onSave, onClose }) {
 
 // ─── Action Item Row ──────────────────────────────────────────────────────────
 function ActionItemRow({ action, onPushToTodo, onDelete }) {
-  const [pushing, setPushing] = useState(false)
-  const [pushed, setPushed]   = useState(action.pushed_to_todo)
+  const [pushing,     setPushing]     = useState(false)
+  const [pushed,      setPushed]      = useState(action.pushed_to_todo)
+  const [showPicker,  setShowPicker]  = useState(false)
 
-  const handlePush = async () => {
+  const handlePush = async (listTarget) => {
     setPushing(true)
-    try { await onPushToTodo(action.id); setPushed(true) }
+    setShowPicker(false)
+    try { await onPushToTodo(action.id, listTarget); setPushed(true) }
     catch {} finally { setPushing(false) }
   }
 
@@ -1203,8 +1244,24 @@ function ActionItemRow({ action, onPushToTodo, onDelete }) {
           <span className="text-xs text-green-600 font-medium flex items-center gap-1">
             <CheckSquare size={12} /> In To-Do
           </span>
+        ) : showPicker ? (
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-gray-500 mr-0.5">To:</span>
+            <button onClick={() => handlePush('manager')} disabled={pushing}
+              className="text-xs font-semibold px-2 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50">
+              Manager
+            </button>
+            <button onClick={() => handlePush('owner')} disabled={pushing}
+              className="text-xs font-semibold px-2 py-1 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50">
+              Owner
+            </button>
+            <button onClick={() => setShowPicker(false)}
+              className="p-1 text-gray-400 hover:text-gray-600">
+              <X size={12} />
+            </button>
+          </div>
         ) : (
-          <button onClick={handlePush} disabled={pushing}
+          <button onClick={() => setShowPicker(true)} disabled={pushing}
             className="flex items-center gap-1 text-xs font-medium text-red-600 hover:text-red-700 hover:bg-red-50 px-2 py-1 rounded-lg transition-colors disabled:opacity-50">
             {pushing ? <Loader size={11} className="animate-spin" /> : <ArrowRight size={11} />}
             Push to To-Do
@@ -1249,6 +1306,7 @@ function SessionCard({ session, onEdit, onDelete, onPushToTodo, onAddAction, onD
           <p className="text-gray-900 text-sm font-semibold">{session.staff_name}</p>
           <p className="text-gray-500 text-xs mt-0.5">
             {typeLabel} · {fmtDate(session.session_date)}
+            {session.session_time && <span> · {fmtTime(session.session_time)}</span>}
             {totalActions > 0 && (
               <> · <span className={pushedCount === totalActions ? 'text-green-600' : 'text-gray-500'}>
                 {pushedCount}/{totalActions} actions pushed
@@ -1390,8 +1448,8 @@ function SessionsTab({ newSession }) {
     setSessions(prev => prev.filter(s => s.id !== id))
   }
 
-  const handlePushToTodo = async (actionId) => {
-    const res = await apiPost(`/api/coaching/actions/${actionId}/push-to-todo`, {})
+  const handlePushToTodo = async (actionId, listTarget) => {
+    const res = await apiPost(`/api/coaching/actions/${actionId}/push-to-todo`, { list_target: listTarget })
     setSessions(prev => prev.map(s => ({
       ...s,
       action_items: (s.action_items || []).map(a =>

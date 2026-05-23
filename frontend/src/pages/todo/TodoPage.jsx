@@ -441,7 +441,7 @@ export default function TodoPage() {
   )
 
   return (
-    <div className="p-6 max-w-3xl mx-auto">
+    <div className="p-6 max-w-6xl mx-auto">
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
@@ -458,8 +458,8 @@ export default function TodoPage() {
         </div>
       )}
 
-      {/* Two list sections stacked */}
-      <div className="space-y-5">
+      {/* Two list sections side by side */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <ListSection
           listKey="manager"
           items={managerItems}
