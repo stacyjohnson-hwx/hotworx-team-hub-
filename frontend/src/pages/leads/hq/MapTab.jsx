@@ -3,10 +3,10 @@ import L from 'leaflet'
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { MapContainer, TileLayer, Marker, Popup, Circle, useMap, useMapEvents } from 'react-leaflet'
-import { Plus, MapPin, X, Search, Loader2, Trash2, Building2, Home, ChevronRight, ExternalLink } from 'lucide-react'
+import { Plus, MapPin, X, Search, Loader2, Trash2, Building2, Home, ChevronRight, ExternalLink, Clock, FileText, Pencil, Navigation } from 'lucide-react'
 import { MAP_ACTIVITIES, EMPLOYEES } from '../data/mockData'
-import { apiGet } from '@/hooks/useApi'
-import useRole from '@/hooks/useRole'
+import { apiGet, apiPut } from '@/hooks/useApi'
+import { useRole } from '@/hooks/useRole'
 
 // ─── Studio ───────────────────────────────────────────────────────────────────
 const STUDIO = { lat: 43.0831, lng: -88.2490, name: 'HOTWORX Pewaukee', address: '1279 Capitol Drive' }
@@ -318,13 +318,17 @@ function AddLocationModal({ type, coords, onClose, onSave }) {
 }
 
 // ─── Log Activity Modal ───────────────────────────────────────────────────────
-function LogActivityModal({ coords, onClose, onSave }) {
+function LogActivityModal({ coords, onClose, onSave, prefill = {} }) {
   const today = new Date().toLocaleDateString('en-CA')
+  const initType = prefill.activityType ?? 'Business Visit'
   const [form, setForm] = useState({
-    locationName:'', addressSearch:'', activityType:'Business Visit',
+    locationName: prefill.locationName ?? '',
+    addressSearch:'',
+    activityType: initType,
     employeeId:EMPLOYEES[0].id, employeeName:EMPLOYEES[0].name,
-    date:today, notes:'', points:DEFAULT_POINTS['Business Visit'],
-    lat: coords?.lat ?? null, lng: coords?.lng ?? null,
+    date:today, notes:'', points: DEFAULT_POINTS[initType] ?? 10,
+    lat: prefill.lat ?? coords?.lat ?? null,
+    lng: prefill.lng ?? coords?.lng ?? null,
   })
   const [searching, setSearching] = useState(false)
   const [err, setErr]             = useState('')
@@ -437,8 +441,248 @@ function LogActivityModal({ coords, onClose, onSave }) {
   )
 }
 
+// ─── Neighborhood History Modal ───────────────────────────────────────────────
+function NeighborhoodHistoryModal({ neighborhood, activities, onClose, onLog }) {
+  const nearby = activities
+    .filter(a => a.latitude && a.longitude)
+    .map(a => ({ ...a, dist: distanceKm(neighborhood.lat, neighborhood.lng, a.latitude, a.longitude) }))
+    .filter(a => a.dist < 0.8)
+    .sort((a, b) => new Date(b.dateCompleted) - new Date(a.dateCompleted))
+
+  const nearest   = nearby[0] || null
+  const covered   = nearest && getIntensity(nearest.dateCompleted) !== 'stale'
+  const intensity = nearest ? getIntensity(nearest.dateCompleted) : null
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center bg-black/50 px-4 pb-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm max-h-[85vh] flex flex-col overflow-hidden">
+        {/* Header */}
+        <div className="bg-[#1A1A1A] px-5 py-4 flex items-center justify-between flex-shrink-0">
+          <div>
+            <p className="text-[#E8611A] text-xs font-bold uppercase tracking-wider mb-0.5">Neighborhood</p>
+            <p className="text-white font-bold text-base leading-tight">{neighborhood.name}</p>
+            {covered && nearest
+              ? <p className="text-xs font-semibold mt-0.5" style={{ color: INTENSITY[intensity].color }}>
+                  ● {INTENSITY[intensity].label} coverage · {nearest.employeeName} · {fmt(nearest.dateCompleted)}
+                </p>
+              : <p className="text-xs text-gray-400 mt-0.5">Not recently covered</p>
+            }
+          </div>
+          <button onClick={onClose} className="text-white/40 hover:text-white/70 ml-3 flex-shrink-0"><X size={20} /></button>
+        </div>
+
+        {/* Log button */}
+        <div className="px-5 pt-4 pb-3 border-b border-gray-100 flex-shrink-0">
+          <button
+            onClick={onLog}
+            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-[#E8611A] text-white text-sm font-bold hover:bg-orange-600 transition-colors">
+            <Plus size={14} /> Log Neighborhood Outreach
+          </button>
+        </div>
+
+        {/* History */}
+        <div className="flex-1 overflow-y-auto px-5 py-3">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+            Outreach History — within ½ mile ({nearby.length} {nearby.length === 1 ? 'entry' : 'entries'})
+          </p>
+          {nearby.length === 0 ? (
+            <div className="text-center py-8">
+              <p className="text-sm text-gray-400">No outreach logged yet for this area.</p>
+              <p className="text-xs text-gray-400 mt-1">Hit the button above to log the first one!</p>
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {nearby.map(a => {
+                const itn = getIntensity(a.dateCompleted)
+                return (
+                  <div key={a.id} className="flex gap-3 items-start border-b border-gray-50 pb-2.5 last:border-0">
+                    <div className="w-2.5 h-2.5 rounded-full mt-1.5 flex-shrink-0" style={{ background: INTENSITY[itn].color }} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-gray-800 truncate">{a.locationName}</p>
+                      <p className="text-xs text-gray-500">{a.activityType} · {a.employeeName}</p>
+                      <p className="text-xs" style={{ color: INTENSITY[itn].color }}>{INTENSITY[itn].label} · {fmt(a.dateCompleted)}</p>
+                      {a.notes && <p className="text-xs text-gray-400 italic mt-0.5 truncate">{a.notes}</p>}
+                    </div>
+                    <span className="text-xs font-bold text-[#E8611A] flex-shrink-0 mt-0.5">+{a.points}pts</span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── B2B Status helpers ───────────────────────────────────────────────────────
+const B2B_STATUSES = [
+  { value:'new_lead',          label:'New Lead' },
+  { value:'contacted',         label:'Contacted' },
+  { value:'meeting_scheduled', label:'Meeting Scheduled' },
+  { value:'follow_up',         label:'Follow Up' },
+  { value:'active_partner',    label:'Active Partner' },
+  { value:'not_interested',    label:'Not Interested' },
+]
+
+// ─── Business Detail Modal ────────────────────────────────────────────────────
+function BusinessDetailModal({ contact, onClose, onUpdated, canEdit }) {
+  const [editing, setEditing] = useState(false)
+  const [saving,  setSaving]  = useState(false)
+  const [err,     setErr]     = useState(null)
+  const [form,    setForm]    = useState({
+    business_name:    contact.business_name    || '',
+    contact_name:     contact.contact_name     || '',
+    phone:            contact.phone            || '',
+    email:            contact.email            || '',
+    industry:         contact.industry         || '',
+    address:          contact.address          || '',
+    website:          contact.website          || '',
+    status:           contact.status           || 'new_lead',
+    next_action:      contact.next_action      || '',
+    next_action_date: contact.next_action_date ? contact.next_action_date.slice(0,10) : '',
+    notes:            contact.notes            || '',
+  })
+  const set = (k,v) => setForm(f => ({...f,[k]:v}))
+  const pinColor = B2B_STATUS_COLOR[form.status] || '#9CA3AF'
+
+  async function handleSave() {
+    setSaving(true); setErr(null)
+    try {
+      const updated = await apiPut(`/api/b2b/contacts/${contact.id}`, form)
+      onUpdated(updated)
+      setEditing(false)
+    } catch(e) { setErr(e.message) }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center bg-black/50 px-4 pb-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm max-h-[90vh] flex flex-col overflow-hidden">
+        {/* Header */}
+        <div className="bg-[#1A1A1A] px-5 py-4 flex items-center justify-between flex-shrink-0">
+          <div className="flex-1 min-w-0">
+            <p className="text-[#E8611A] text-xs font-bold uppercase tracking-wider mb-0.5">B2B Contact</p>
+            {editing
+              ? <input value={form.business_name} onChange={e => set('business_name',e.target.value)}
+                  className="w-full bg-white/10 border border-white/20 rounded-lg px-2 py-1 text-white font-bold text-sm focus:outline-none focus:border-[#E8611A]" />
+              : <p className="text-white font-bold text-base leading-tight truncate">{form.business_name}</p>
+            }
+          </div>
+          <button onClick={onClose} className="text-white/40 hover:text-white/70 ml-3 flex-shrink-0"><X size={20} /></button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          {err && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{err}</p>}
+
+          {/* Status */}
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Status</p>
+            {editing ? (
+              <select value={form.status} onChange={e => set('status',e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-[#E8611A]">
+                {B2B_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+              </select>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: pinColor+'20', color: pinColor }}>
+                ● {B2B_STATUS_LABEL[form.status] || form.status}
+              </span>
+            )}
+          </div>
+
+          {/* Contact info */}
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Contact Info</p>
+            {editing ? (
+              <div className="space-y-2">
+                <input value={form.contact_name} onChange={e => set('contact_name',e.target.value)} placeholder="Contact name"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-[#E8611A]" />
+                <input value={form.phone} onChange={e => set('phone',e.target.value)} placeholder="Phone"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-[#E8611A]" />
+                <input value={form.email} onChange={e => set('email',e.target.value)} placeholder="Email"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-[#E8611A]" />
+                <input value={form.industry} onChange={e => set('industry',e.target.value)} placeholder="Industry"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-[#E8611A]" />
+                <input value={form.address} onChange={e => set('address',e.target.value)} placeholder="Address"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-[#E8611A]" />
+                <input value={form.website} onChange={e => set('website',e.target.value)} placeholder="Website"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-[#E8611A]" />
+              </div>
+            ) : (
+              <div className="space-y-1.5 text-sm text-gray-700">
+                {form.contact_name && <p><span className="text-gray-400 text-xs">Contact:</span> {form.contact_name}</p>}
+                {form.phone && <p><span className="text-gray-400 text-xs">Phone:</span> <a href={`tel:${form.phone}`} className="text-[#E8611A] font-medium">{form.phone}</a></p>}
+                {form.email && <p><span className="text-gray-400 text-xs">Email:</span> <a href={`mailto:${form.email}`} className="text-[#E8611A] font-medium">{form.email}</a></p>}
+                {form.industry && <p><span className="text-gray-400 text-xs">Industry:</span> {form.industry}</p>}
+                {form.address && <p><span className="text-gray-400 text-xs">Address:</span> {form.address}</p>}
+                {form.website && <p><span className="text-gray-400 text-xs">Website:</span> <a href={form.website} target="_blank" rel="noreferrer" className="text-[#E8611A] font-medium truncate block">{form.website}</a></p>}
+                {!form.contact_name && !form.phone && !form.email && <p className="text-gray-400 text-xs italic">No contact info yet</p>}
+              </div>
+            )}
+          </div>
+
+          {/* Next action */}
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Next Action</p>
+            {editing ? (
+              <div className="space-y-2">
+                <input value={form.next_action} onChange={e => set('next_action',e.target.value)} placeholder="e.g. Follow up call"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-[#E8611A]" />
+                <input type="date" value={form.next_action_date} onChange={e => set('next_action_date',e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-[#E8611A]" />
+              </div>
+            ) : (form.next_action || form.next_action_date) ? (
+              <p className="text-sm text-gray-700">
+                {form.next_action || '—'}
+                {form.next_action_date && <span className="text-xs text-gray-400 ml-1">· {fmt(form.next_action_date + 'T12:00:00')}</span>}
+              </p>
+            ) : <p className="text-xs text-gray-400 italic">No next action set</p>}
+          </div>
+
+          {/* Notes */}
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Notes</p>
+            {editing ? (
+              <textarea rows={3} value={form.notes} onChange={e => set('notes',e.target.value)} placeholder="Notes…"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-[#E8611A]" />
+            ) : form.notes ? (
+              <p className="text-sm text-gray-700 whitespace-pre-wrap">{form.notes}</p>
+            ) : <p className="text-xs text-gray-400 italic">No notes yet</p>}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 py-3 border-t border-gray-100 flex gap-2 flex-shrink-0">
+          {editing ? (
+            <>
+              <button onClick={() => { setEditing(false); setErr(null) }}
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50">Cancel</button>
+              <button onClick={handleSave} disabled={saving || !form.business_name.trim()}
+                className="flex-1 py-2.5 rounded-xl bg-[#E8611A] text-white text-sm font-bold disabled:opacity-40 hover:bg-orange-600">
+                {saving ? 'Saving…' : 'Save Changes'}
+              </button>
+            </>
+          ) : (
+            <>
+              <button onClick={onClose}
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50">Close</button>
+              {canEdit && (
+                <button onClick={() => setEditing(true)}
+                  className="flex-1 py-2.5 rounded-xl bg-gray-900 text-white text-sm font-bold hover:bg-gray-700 flex items-center justify-center gap-1.5">
+                  <Pencil size={13} /> Edit
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Location list row ────────────────────────────────────────────────────────
-function LocationRow({ item, type, activities, onFly, onDelete }) {
+function LocationRow({ item, type, activities, onFly, onDelete, onShowHistory, onLogActivity, onViewBiz }) {
   const hasCoords = !!(item.lat && item.lng)
 
   // For neighborhoods: coverage-based dot; for businesses: B2B status color
@@ -457,8 +701,12 @@ function LocationRow({ item, type, activities, onFly, onDelete }) {
   const intensity = nearest ? getIntensity(nearest.dateCompleted) : null
 
   function handleClick() {
-    if (type === 'business' && !hasCoords) return // no pin to fly to
-    onFly(item)
+    if (type === 'neighborhood') {
+      onShowHistory?.(item)   // open history panel (also flies via parent)
+    } else {
+      if (!hasCoords) return
+      onFly(item)             // fly to map
+    }
   }
 
   return (
@@ -496,15 +744,49 @@ function LocationRow({ item, type, activities, onFly, onDelete }) {
           <p className="text-[11px] text-gray-400 mt-0.5 truncate">{item.address}</p>
         )}
       </div>
-      <div className="flex items-center gap-1 flex-shrink-0">
-        {onDelete && (
+      <div className="flex items-center gap-1 flex-shrink-0" onClick={e => e.stopPropagation()}>
+        {/* Neighborhood-specific actions */}
+        {type === 'neighborhood' && onLogActivity && (
+          <button onClick={() => onLogActivity(item)}
+            className="p-1.5 text-gray-300 hover:text-[#E8611A] opacity-0 group-hover:opacity-100 transition-all rounded"
+            title="Log outreach for this neighborhood">
+            <Plus size={13} />
+          </button>
+        )}
+        {type === 'neighborhood' && (
+          <button onClick={() => onShowHistory?.(item)}
+            className="p-1.5 text-gray-300 hover:text-[#E8611A] opacity-0 group-hover:opacity-100 transition-all rounded"
+            title="View outreach history">
+            <Clock size={13} />
+          </button>
+        )}
+        {/* Business-specific actions */}
+        {type === 'business' && hasCoords && (
+          <button onClick={() => onFly(item)}
+            className="p-1.5 text-gray-300 hover:text-[#E8611A] opacity-0 group-hover:opacity-100 transition-all rounded"
+            title="Show on map">
+            <Navigation size={13} />
+          </button>
+        )}
+        {type === 'business' && onViewBiz && (
+          <button onClick={() => onViewBiz(item)}
+            className="p-1.5 text-gray-300 hover:text-[#E8611A] opacity-0 group-hover:opacity-100 transition-all rounded"
+            title="View / edit B2B card">
+            <FileText size={13} />
+          </button>
+        )}
+        {/* Delete (neighborhoods, manager/owner) */}
+        {onDelete && type === 'neighborhood' && (
           <button onClick={e => { e.stopPropagation(); onDelete(item.id) }}
-            className="p-1 text-gray-200 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
+            className="p-1.5 text-gray-200 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all rounded"
             title="Remove neighborhood">
             <Trash2 size={12} />
           </button>
         )}
-        {hasCoords && (
+        {type === 'business' && hasCoords && (
+          <ChevronRight size={14} className="text-gray-300 group-hover:text-[#E8611A] transition-colors" />
+        )}
+        {type === 'neighborhood' && (
           <ChevronRight size={14} className="text-gray-300 group-hover:text-[#E8611A] transition-colors" />
         )}
       </div>
@@ -515,16 +797,20 @@ function LocationRow({ item, type, activities, onFly, onDelete }) {
 // ─── Main MapTab ──────────────────────────────────────────────────────────────
 export default function MapTab() {
   const { isOwnerOrManager } = useRole()
-  const [activities,     setActivities]     = useState(() => loadActivities())
-  const [neighborhoods,  setNeighborhoods]  = useState(() => loadNeighborhoods())
-  const [b2bContacts,    setB2bContacts]    = useState([])
-  const [b2bLoading,     setB2bLoading]     = useState(true)
-  const [flyTarget,      setFlyTarget]      = useState(null)
-  const [listTab,        setListTab]        = useState('neighborhoods')
-  const [search,         setSearch]         = useState('')
-  const [placingPin,     setPlacingPin]     = useState(false)
-  const [modal,          setModal]          = useState(null) // null | 'activity' | 'neighborhood'
-  const [pendingCoords,  setPendingCoords]  = useState(null)
+  const [activities,       setActivities]       = useState(() => loadActivities())
+  const [neighborhoods,    setNeighborhoods]    = useState(() => loadNeighborhoods())
+  const [b2bContacts,      setB2bContacts]      = useState([])
+  const [b2bLoading,       setB2bLoading]       = useState(true)
+  const [flyTarget,        setFlyTarget]        = useState(null)
+  const [listTab,          setListTab]          = useState('neighborhoods')
+  const [search,           setSearch]           = useState('')
+  const [placingPin,       setPlacingPin]       = useState(false)
+  const [modal,            setModal]            = useState(null) // null | 'activity' | 'neighborhood'
+  const [pendingCoords,    setPendingCoords]    = useState(null)
+  const [nbhDetail,        setNbhDetail]        = useState(null) // neighborhood for history panel
+  const [logPrefill,       setLogPrefill]       = useState(null) // pre-fill data for log modal
+  const [bizDetail,        setBizDetail]        = useState(null) // full b2b contact for detail modal
+  const mapContainerRef = { current: null }
 
   useEffect(() => { saveActivities(activities) },       [activities])
   useEffect(() => { saveNeighborhoods(neighborhoods) }, [neighborhoods])
@@ -540,6 +826,37 @@ export default function MapTab() {
 
   function handleMapClick(latlng) { setPendingCoords(latlng); setPlacingPin(false); setModal('activity') }
   function closeModal()           { setModal(null); setPendingCoords(null); setPlacingPin(false) }
+
+  function flyToItem(item) {
+    setFlyTarget({ lat: item.lat, lng: item.lng, _t: Date.now() })
+    // Scroll map into view
+    document.getElementById('map-container')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  function handleShowNbhHistory(nbh) {
+    setNbhDetail(nbh)
+    flyToItem(nbh)
+  }
+
+  function handleLogForNbh(nbh) {
+    setNbhDetail(null)
+    setLogPrefill({
+      locationName: nbh.name,
+      activityType: 'Flyer Drop',
+      lat: nbh.lat,
+      lng: nbh.lng,
+    })
+  }
+
+  function handleViewBiz(bizItem) {
+    const full = b2bContacts.find(c => c.id === bizItem.id)
+    if (full) setBizDetail(full)
+  }
+
+  function handleBizUpdated(updated) {
+    setB2bContacts(prev => prev.map(c => c.id === updated.id ? updated : c))
+    setBizDetail(updated)
+  }
 
   function saveActivity(a)    { setActivities(prev => [a, ...prev]) }
   function saveNeighborhood(n){ setNeighborhoods(prev => [...prev, n]) }
@@ -596,11 +913,32 @@ export default function MapTab() {
   return (
     <div className="flex flex-col">
       {/* ── Modals ─────────────────────────────────────────────────────────── */}
-      {modal === 'activity' && (
-        <LogActivityModal coords={pendingCoords} onClose={closeModal} onSave={saveActivity} />
+      {(modal === 'activity' || logPrefill) && (
+        <LogActivityModal
+          coords={pendingCoords}
+          prefill={logPrefill ?? {}}
+          onClose={() => { closeModal(); setLogPrefill(null) }}
+          onSave={a => { saveActivity(a); setLogPrefill(null) }}
+        />
       )}
       {modal === 'neighborhood' && (
         <AddLocationModal type="neighborhood" coords={null} onClose={closeModal} onSave={saveNeighborhood} />
+      )}
+      {nbhDetail && (
+        <NeighborhoodHistoryModal
+          neighborhood={nbhDetail}
+          activities={activities}
+          onClose={() => setNbhDetail(null)}
+          onLog={() => handleLogForNbh(nbhDetail)}
+        />
+      )}
+      {bizDetail && (
+        <BusinessDetailModal
+          contact={bizDetail}
+          canEdit={isOwnerOrManager}
+          onClose={() => setBizDetail(null)}
+          onUpdated={handleBizUpdated}
+        />
       )}
 
       {/* ── Top controls ───────────────────────────────────────────────────── */}
@@ -628,7 +966,7 @@ export default function MapTab() {
       </div>
 
       {/* ── Map ────────────────────────────────────────────────────────────── */}
-      <div style={{ height: 360, zIndex: 0 }}>
+      <div id="map-container" style={{ height: 360, zIndex: 0 }}>
         <MapContainer center={MAP_CENTER} zoom={MAP_ZOOM} style={{ height:'100%', width:'100%' }} scrollWheelZoom>
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
@@ -801,8 +1139,11 @@ export default function MapTab() {
                 item={item}
                 type={listTab === 'neighborhoods' ? 'neighborhood' : 'business'}
                 activities={activities}
-                onFly={item => setFlyTarget({ lat: item.lat, lng: item.lng, _t: Date.now() })}
+                onFly={flyToItem}
                 onDelete={listTab === 'neighborhoods' && isOwnerOrManager ? delNeighborhood : undefined}
+                onShowHistory={listTab === 'neighborhoods' ? handleShowNbhHistory : undefined}
+                onLogActivity={listTab === 'neighborhoods' ? handleLogForNbh : undefined}
+                onViewBiz={listTab === 'businesses' ? handleViewBiz : undefined}
               />
             ))
           )}
