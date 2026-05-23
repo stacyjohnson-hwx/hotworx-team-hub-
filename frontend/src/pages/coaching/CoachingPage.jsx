@@ -4,7 +4,7 @@ import {
   MessageSquare, Plus, X, Edit2, Trash2, ChevronDown, ChevronUp,
   CheckSquare, User, Calendar, ArrowRight, Check, AlertCircle, Loader,
   ClipboardList, GripVertical, Paperclip, Download, FileText, Image,
-  FileSpreadsheet, File as FileIcon, UploadCloud,
+  FileSpreadsheet, File as FileIcon, UploadCloud, Play,
 } from 'lucide-react'
 
 // ─── IndexedDB document store ────────────────────────────────────────────────
@@ -80,11 +80,13 @@ const SESSION_TYPES = [
 
 // ─── Agenda constants ─────────────────────────────────────────────────────────
 const MEETING_TYPES = [
-  { value: 'manager_meeting', label: 'Manager Meeting', color: 'bg-red-100 text-red-700 border-red-200'    },
-  { value: 'coaching_call',   label: 'Coaching Call',   color: 'bg-blue-100 text-blue-700 border-blue-200'  },
-  { value: 'team_training',   label: 'Team Training',   color: 'bg-purple-100 text-purple-700 border-purple-200' },
-  { value: 'one_off',         label: 'One Off',         color: 'bg-gray-100 text-gray-600 border-gray-200'  },
-  { value: 'vendor_meeting',  label: 'Vendor Meeting',  color: 'bg-amber-100 text-amber-700 border-amber-200' },
+  { value: 'manager_meeting',    label: 'Manager Meeting',    color: 'bg-red-100 text-red-700 border-red-200'       },
+  { value: 'coaching_call',      label: 'Coaching Call',      color: 'bg-blue-100 text-blue-700 border-blue-200'    },
+  { value: 'team_training',      label: 'Team Training',      color: 'bg-purple-100 text-purple-700 border-purple-200' },
+  { value: '1_on_1',             label: '1:1',                color: 'bg-pink-100 text-pink-700 border-pink-200'    },
+  { value: 'performance_review', label: 'Performance Review', color: 'bg-indigo-100 text-indigo-700 border-indigo-200' },
+  { value: 'one_off',            label: 'One Off',            color: 'bg-gray-100 text-gray-600 border-gray-200'   },
+  { value: 'vendor_meeting',     label: 'Vendor Meeting',     color: 'bg-amber-100 text-amber-700 border-amber-200' },
 ]
 
 const MANAGER_DEFAULTS = [
@@ -97,7 +99,12 @@ const MANAGER_DEFAULTS = [
 ]
 
 function getMeetingType(value) {
-  return MEETING_TYPES.find(t => t.value === value) || MEETING_TYPES[0]
+  const mt = MEETING_TYPES.find(t => t.value === value)
+  if (mt) return mt
+  // Fallback for old session_type values stored in DB
+  const st = SESSION_TYPES.find(t => t.value === value)
+  if (st) return { value: st.value, label: st.label, color: 'bg-gray-100 text-gray-600 border-gray-200' }
+  return MEETING_TYPES[0]
 }
 
 // ─── Agenda localStorage ──────────────────────────────────────────────────────
@@ -156,6 +163,7 @@ function AgendaModal({ agenda, onSave, onClose }) {
   const [meetingType,  setMeetingType]  = useState(agenda?.meetingType || 'manager_meeting')
   const [meetingDate,  setMeetingDate]  = useState(agenda?.meetingDate || todayStr())
   const [title,        setTitle]        = useState(agenda?.title || '')
+  const [attendees,    setAttendees]    = useState(agenda?.attendees || '')
   const [items,        setItems]        = useState(() => {
     if (agenda) return agenda.items.map(i => ({ ...i }))
     return MANAGER_DEFAULTS.map(t => makeItem(t, true))
@@ -235,6 +243,7 @@ function AgendaModal({ agenda, onSave, onClose }) {
         meetingType,
         meetingDate,
         title:       title.trim(),
+        attendees:   attendees.trim(),
         items:       items.filter(i => i.text.trim()),
         documents:   allDocs,
         createdAt:   agenda?.createdAt || new Date().toISOString(),
@@ -307,6 +316,17 @@ function AgendaModal({ agenda, onSave, onClose }) {
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-500"
               />
             </div>
+          </div>
+
+          {/* Attendees */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Attendees</label>
+            <input
+              value={attendees}
+              onChange={e => setAttendees(e.target.value)}
+              placeholder="e.g. Chrissy, Synneva"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-500"
+            />
           </div>
 
           {/* Agenda items */}
@@ -443,7 +463,7 @@ function AgendaModal({ agenda, onSave, onClose }) {
 }
 
 // ─── Agenda Card ──────────────────────────────────────────────────────────────
-function AgendaCard({ agenda, onEdit, onDelete, onToggleItem, onRemoveDoc }) {
+function AgendaCard({ agenda, onEdit, onDelete, onToggleItem, onRemoveDoc, onConvert }) {
   const [expanded,      setExpanded]      = useState(true)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [downloading,   setDownloading]   = useState(null)
@@ -490,6 +510,11 @@ function AgendaCard({ agenda, onEdit, onDelete, onToggleItem, onRemoveDoc }) {
             )}
             {/* Relative label (Today / Tomorrow / In N days) */}
             {(() => { const rel = relativeMeetingLabel(agenda.meetingDate); return rel ? <span className={`text-xs ${rel.cls}`}>{rel.text}</span> : null })()}
+            {agenda.attendees && (
+              <span className="text-xs text-gray-500 flex items-center gap-1">
+                · <User size={10} className="text-gray-400 inline" /> {agenda.attendees}
+              </span>
+            )}
             {total > 0 && (
               <span className={`text-xs ${allDone ? 'text-green-600 font-medium' : 'text-gray-400'}`}>
                 · {checkedCount}/{total} {allDone ? '✓ complete' : 'covered'}
@@ -587,6 +612,10 @@ function AgendaCard({ agenda, onEdit, onDelete, onToggleItem, onRemoveDoc }) {
               className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors">
               <Edit2 size={12} /> Edit
             </button>
+            <button onClick={() => onConvert(agenda)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors">
+              <Play size={11} fill="currentColor" /> Start Notes
+            </button>
             <div className="ml-auto">
               {confirmDelete ? (
                 <div className="flex items-center gap-2">
@@ -612,15 +641,193 @@ function AgendaCard({ agenda, onEdit, onDelete, onToggleItem, onRemoveDoc }) {
   )
 }
 
+// ─── Convert Agenda → Session Notes Modal ────────────────────────────────────
+function ConvertModal({ agenda, onSave, onClose }) {
+  const mt = getMeetingType(agenda.meetingType)
+
+  const [attendees,    setAttendees]    = useState(agenda.attendees || '')
+  const [notes,        setNotes]        = useState('')
+  const [actionInputs, setActionInputs] = useState([''])
+  const [saving,       setSaving]       = useState(false)
+  const [error,        setError]        = useState('')
+
+  const addActionRow    = () => setActionInputs(a => [...a, ''])
+  const setAction       = (i, v) => setActionInputs(a => { const n = [...a]; n[i] = v; return n })
+  const removeAction    = (i) => setActionInputs(a => a.filter((_, idx) => idx !== i))
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    setSaving(true); setError('')
+    try {
+      const payload = {
+        session_date: agenda.meetingDate || new Date().toISOString().split('T')[0],
+        staff_name:   attendees.trim(),
+        session_type: agenda.meetingType,
+        notes:        notes.trim(),
+        action_items: actionInputs
+          .filter(a => a.trim())
+          .map(a => ({ title: a.trim() })),
+      }
+      const saved = await apiPost('/api/coaching', payload)
+      onSave(saved)
+    } catch (err) {
+      setError(err.message || 'Save failed')
+      setSaving(false)
+    }
+  }
+
+  const inputCls = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-500'
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <form
+        className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[92vh] flex flex-col"
+        onClick={e => e.stopPropagation()}
+        onSubmit={handleSubmit}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 flex-shrink-0">
+          <div>
+            <h2 className="text-gray-900 font-semibold flex items-center gap-2">
+              <MessageSquare size={16} className="text-red-500" />
+              Start Session Notes
+            </h2>
+            <p className="text-xs text-gray-400 mt-0.5">{agenda.title}</p>
+          </div>
+          <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="px-5 py-4 space-y-4 overflow-y-auto flex-1">
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">
+              {error}
+            </div>
+          )}
+
+          {/* Meeting type + date — read-only summary */}
+          <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-200">
+            <span className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border flex-shrink-0 ${mt.color}`}>
+              {mt.label}
+            </span>
+            {agenda.meetingDate && (
+              <span className="text-sm text-gray-600 flex items-center gap-1.5">
+                <Calendar size={13} className="text-gray-400" />
+                {fmtDate(agenda.meetingDate)}
+              </span>
+            )}
+          </div>
+
+          {/* Attendees */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Attendees
+            </label>
+            <input
+              autoFocus
+              className={inputCls}
+              value={attendees}
+              onChange={e => setAttendees(e.target.value)}
+              placeholder="e.g. Chrissy, Synneva"
+            />
+          </div>
+
+          {/* Agenda reference — collapsed checklist */}
+          {agenda.items.length > 0 && (
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-2 uppercase tracking-wider">
+                Agenda Reference
+              </label>
+              <div className="space-y-1 bg-gray-50 rounded-xl border border-gray-200 px-3 py-2.5">
+                {agenda.items.map(item => (
+                  <div key={item.id} className="flex items-center gap-2 py-1">
+                    <div className={`w-4 h-4 rounded border-2 flex-shrink-0 flex items-center justify-center ${
+                      item.checked ? 'bg-green-500 border-green-500' : 'border-gray-300'
+                    }`}>
+                      {item.checked && <Check size={9} className="text-white" strokeWidth={3} />}
+                    </div>
+                    <span className={`text-xs ${item.checked ? 'text-gray-400 line-through' : 'text-gray-700'}`}>
+                      {item.text}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Session notes */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Session Notes</label>
+            <textarea
+              rows={5}
+              className={`${inputCls} resize-y`}
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              placeholder="What was discussed? Key observations, feedback given, decisions made…"
+            />
+          </div>
+
+          {/* Action items */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-2">
+              Action Items <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <div className="space-y-2">
+              {actionInputs.map((val, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input
+                    className={inputCls}
+                    value={val}
+                    onChange={e => setAction(i, e.target.value)}
+                    placeholder={`Action item ${i + 1}…`}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addActionRow() } }}
+                  />
+                  {actionInputs.length > 1 && (
+                    <button type="button" onClick={() => removeAction(i)}
+                      className="text-gray-400 hover:text-red-500 flex-shrink-0">
+                      <X size={15} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <button type="button" onClick={addActionRow}
+              className="mt-2 text-xs text-red-600 hover:text-red-700 font-medium flex items-center gap-1">
+              <Plus size={12} /> Add action item
+            </button>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex justify-between items-center gap-3 px-5 py-4 border-t border-gray-200 bg-gray-50 rounded-b-xl flex-shrink-0">
+          <p className="text-xs text-gray-400">This agenda will be converted to session notes.</p>
+          <div className="flex gap-2">
+            <button type="button" onClick={onClose}
+              className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 font-medium">
+              Cancel
+            </button>
+            <button type="submit" disabled={saving}
+              className="px-5 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg disabled:opacity-40 transition-colors flex items-center gap-2">
+              {saving && <Loader size={13} className="animate-spin" />}
+              Create Session Notes
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  )
+}
+
 // ─── Agenda Tab ───────────────────────────────────────────────────────────────
-function AgendaTab() {
-  const [agendas,    setAgendas]    = useState(() => loadAgendas())
-  const [modal,      setModal]      = useState(null)
-  const [view,       setView]       = useState('upcoming') // 'upcoming' | 'past'
-  const [typeFilter, setTypeFilter] = useState('')
-  const [dateFrom,   setDateFrom]   = useState('')
-  const [dateTo,     setDateTo]     = useState('')
-  const [showFilter, setShowFilter] = useState(false)
+function AgendaTab({ onConvert }) {
+  const [agendas,      setAgendas]      = useState(() => loadAgendas())
+  const [modal,        setModal]        = useState(null)   // null | 'new' | agendaObj
+  const [convertAgenda,setConvertAgenda]= useState(null)   // agendaObj to convert
+  const [typeFilter,   setTypeFilter]   = useState('')
+  const [dateFrom,     setDateFrom]     = useState('')
+  const [dateTo,       setDateTo]       = useState('')
+  const [showFilter,   setShowFilter]   = useState(false)
 
   useEffect(() => { saveAgendas(agendas) }, [agendas])
 
@@ -655,31 +862,29 @@ function AgendaTab() {
     ))
   }
 
+  function handleConvertSave(savedSession) {
+    // Remove the agenda (it's now session notes)
+    handleDelete(convertAgenda.id)
+    setConvertAgenda(null)
+    // Bubble up so CoachingPage can switch to Session Notes tab
+    onConvert(savedSession)
+  }
+
   function clearFilters() { setTypeFilter(''); setDateFrom(''); setDateTo('') }
   const hasFilters = typeFilter || dateFrom || dateTo
 
-  const today = todayStr()
+  // All agendas sorted ascending (soonest first)
+  const sorted = [...agendas].sort((a, b) => {
+    const da = a.meetingDate || a.createdAt.slice(0, 10)
+    const db = b.meetingDate || b.createdAt.slice(0, 10)
+    return da.localeCompare(db)
+  })
 
-  // Split into upcoming (meetingDate >= today or no date) and past (meetingDate < today)
-  const upcoming = agendas
-    .filter(a => !a.meetingDate || a.meetingDate >= today)
-    .sort((a, b) => {
-      const da = a.meetingDate || a.createdAt.slice(0, 10)
-      const db = b.meetingDate || b.createdAt.slice(0, 10)
-      return da.localeCompare(db) // ascending: soonest first
-    })
-
-  const past = agendas
-    .filter(a => a.meetingDate && a.meetingDate < today)
-    .sort((a, b) => b.meetingDate.localeCompare(a.meetingDate)) // descending: most recent first
-
-  const pool = view === 'upcoming' ? upcoming : past
-
-  // Type options used within current pool
-  const typesUsed = [...new Set(pool.map(a => a.meetingType))]
+  // Type options used
+  const typesUsed = [...new Set(sorted.map(a => a.meetingType))]
 
   // Apply filters
-  const visible = pool.filter(a => {
+  const visible = sorted.filter(a => {
     if (typeFilter && a.meetingType !== typeFilter) return false
     const d = a.meetingDate || a.createdAt.slice(0, 10)
     if (dateFrom && d < dateFrom) return false
@@ -696,23 +901,16 @@ function AgendaTab() {
           onClose={() => setModal(null)}
         />
       )}
+      {convertAgenda && (
+        <ConvertModal
+          agenda={convertAgenda}
+          onSave={handleConvertSave}
+          onClose={() => setConvertAgenda(null)}
+        />
+      )}
 
-      {/* ── Upcoming / Past tabs ── */}
-      <div className="flex items-center gap-3 mb-4">
-        <div className="flex gap-1 bg-gray-100 p-1 rounded-xl">
-          {[
-            { key: 'upcoming', label: `Upcoming${upcoming.length ? ` (${upcoming.length})` : ''}` },
-            { key: 'past',     label: `Past${past.length ? ` (${past.length})` : ''}` },
-          ].map(({ key, label }) => (
-            <button key={key} onClick={() => { setView(key); clearFilters() }}
-              className={`px-4 py-1.5 text-sm font-semibold rounded-lg transition-all ${
-                view === key ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'
-              }`}>
-              {label}
-            </button>
-          ))}
-        </div>
-
+      {/* ── Toolbar ── */}
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
         {/* Filter toggle */}
         <button
           onClick={() => setShowFilter(f => !f)}
@@ -736,7 +934,6 @@ function AgendaTab() {
       {/* ── Filter panel ── */}
       {showFilter && (
         <div className="mb-4 p-4 bg-gray-50 border border-gray-200 rounded-xl space-y-3">
-          {/* Date range */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1">From date</label>
@@ -750,7 +947,6 @@ function AgendaTab() {
             </div>
           </div>
 
-          {/* Meeting type pills */}
           {typesUsed.length > 1 && (
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1.5">Meeting type</label>
@@ -785,22 +981,16 @@ function AgendaTab() {
       {visible.length === 0 ? (
         <div className="text-center py-20 text-gray-400">
           <ClipboardList size={40} className="mx-auto mb-3 opacity-30" />
-          {pool.length === 0 ? (
+          {sorted.length === 0 ? (
             <>
-              <p className="text-sm font-medium text-gray-500">
-                {view === 'upcoming' ? 'No upcoming meetings' : 'No past meetings'}
-              </p>
+              <p className="text-sm font-medium text-gray-500">No agendas yet</p>
               <p className="text-xs mt-1 text-gray-400">
-                {view === 'upcoming'
-                  ? 'Create an agenda — Manager Meetings auto-load the standard items.'
-                  : 'Past meetings will appear here once their date has passed.'}
+                Create an agenda — Manager Meetings auto-load the standard items.
               </p>
-              {view === 'upcoming' && (
-                <button onClick={() => setModal('new')}
-                  className="mt-4 px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700">
-                  Create First Agenda
-                </button>
-              )}
+              <button onClick={() => setModal('new')}
+                className="mt-4 px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700">
+                Create First Agenda
+              </button>
             </>
           ) : (
             <>
@@ -821,6 +1011,7 @@ function AgendaTab() {
               onDelete={handleDelete}
               onToggleItem={handleToggleItem}
               onRemoveDoc={handleRemoveDoc}
+              onConvert={setConvertAgenda}
             />
           ))}
         </div>
@@ -839,7 +1030,7 @@ function SessionModal({ session, onSave, onClose }) {
   const [form, setForm] = useState({
     session_date: session?.session_date || new Date().toISOString().split('T')[0],
     staff_name:   session?.staff_name || '',
-    session_type: session?.session_type || 'one-on-one',
+    session_type: session?.session_type || 'manager_meeting',
     notes:        session?.notes || '',
   })
   const [actionInputs, setActionInputs] = useState([''])
@@ -854,7 +1045,7 @@ function SessionModal({ session, onSave, onClose }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!form.staff_name.trim()) { setError('Staff name is required'); return }
+    if (!form.staff_name.trim()) { setError('Attendees is required'); return }
     setSaving(true); setError('')
     try {
       const payload = { ...form }
@@ -899,21 +1090,28 @@ function SessionModal({ session, onSave, onClose }) {
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Staff Member *</label>
-              <input
-                className={inputCls} value={form.staff_name}
-                onChange={e => set('staff_name', e.target.value)}
-                placeholder="Chrissy, Synneva…"
-                autoFocus
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Session Type</label>
-              <select className={inputCls} value={form.session_type} onChange={e => set('session_type', e.target.value)}>
-                {SESSION_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-              </select>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Attendees *</label>
+            <input
+              className={inputCls} value={form.staff_name}
+              onChange={e => set('staff_name', e.target.value)}
+              placeholder="Chrissy, Synneva…"
+              autoFocus
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-2">Meeting Type</label>
+            <div className="flex flex-wrap gap-2">
+              {MEETING_TYPES.map(t => (
+                <button key={t.value} type="button" onClick={() => set('session_type', t.value)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                    form.session_type === t.value
+                      ? t.color + ' ring-2 ring-offset-1 ring-red-400'
+                      : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
+                  }`}>
+                  {t.label}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -1029,7 +1227,7 @@ function SessionCard({ session, onEdit, onDelete, onPushToTodo, onAddAction, onD
   const [addingAction, setAdding]   = useState(false)
   const [showAddField, setShowAdd]  = useState(false)
 
-  const typeLabel    = SESSION_TYPES.find(t => t.value === session.session_type)?.label || session.session_type
+  const typeLabel    = getMeetingType(session.session_type)?.label || session.session_type
   const pushedCount  = (session.action_items || []).filter(a => a.pushed_to_todo).length
   const totalActions = (session.action_items || []).length
 
@@ -1323,7 +1521,7 @@ export default function CoachingPage() {
       </div>
 
       {/* Tab content */}
-      {tab === 'agenda'   && <AgendaTab />}
+      {tab === 'agenda'   && <AgendaTab onConvert={() => setTab('sessions')} />}
       {tab === 'sessions' && <SessionsTab />}
     </div>
   )

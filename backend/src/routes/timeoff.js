@@ -80,14 +80,22 @@ router.patch('/:id', authenticate, requireRole('owner', 'manager'), async (req, 
   res.json(withName)
 })
 
-// DELETE /api/timeoff/:id — TSA can cancel a pending request
+// DELETE /api/timeoff/:id — submitter (own pending), manager, or owner can delete
 router.delete('/:id', authenticate, async (req, res) => {
-  const { error } = await db()
+  const role = req.user.app_metadata?.role || req.role
+
+  let query = db()
     .from('time_off_requests')
     .delete()
     .eq('id', req.params.id)
-    .eq('requested_by', req.user.id)
-    .eq('status', 'pending')
+
+  // TSA: can only delete their own pending requests
+  if (role === 'tsa') {
+    query = query.eq('requested_by', req.user.id).eq('status', 'pending')
+  }
+  // owner/manager: can delete any request (no additional filters)
+
+  const { error } = await query
 
   if (error) return res.status(500).json({ error: error.message })
   res.status(204).end()

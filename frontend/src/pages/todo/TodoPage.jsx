@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
+import { useRole } from '@/hooks/useRole'
 import {
   CheckSquare, Plus, X, Edit2, Trash2, Check, Calendar,
   AlertCircle, ChevronDown, ChevronUp, MessageSquare, Flag,
+  Shield, Users,
 } from 'lucide-react'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -12,9 +14,13 @@ const PRIORITIES = [
   { value: 'low',    label: 'Low',    color: 'bg-gray-100 text-gray-600 border-gray-200' },
 ]
 
-function priorityMeta(val) {
-  return PRIORITIES.find(p => p.value === val) || PRIORITIES[1]
-}
+const LISTS = [
+  { value: 'manager', label: 'Manager To-Do', icon: Users,  color: 'text-blue-600',  bg: 'bg-blue-600', light: 'bg-blue-50 text-blue-700 border-blue-200' },
+  { value: 'owner',   label: 'Owner To-Do',   icon: Shield, color: 'text-red-600',   bg: 'bg-red-600',  light: 'bg-red-50 text-red-700 border-red-200'   },
+]
+
+function listMeta(val) { return LISTS.find(l => l.value === val) || LISTS[0] }
+function priorityMeta(val) { return PRIORITIES.find(p => p.value === val) || PRIORITIES[1] }
 
 function fmtDate(str) {
   if (!str) return null
@@ -22,16 +28,13 @@ function fmtDate(str) {
     month: 'short', day: 'numeric', year: 'numeric',
   })
 }
-
 function isOverdue(due_date, status) {
   if (!due_date || status === 'done') return false
   return new Date(due_date + 'T00:00:00') < new Date(new Date().toDateString())
 }
-
 function isDueToday(due_date, status) {
   if (!due_date || status === 'done') return false
-  const today = new Date().toISOString().split('T')[0]
-  return due_date === today
+  return due_date === new Date().toISOString().split('T')[0]
 }
 
 // ─── Add / Edit Modal ─────────────────────────────────────────────────────────
@@ -44,16 +47,18 @@ const AREAS = [
   { value: 'admin',  label: 'Admin'    },
 ]
 
-const blankForm = { title: '', notes: '', due_date: '', priority: 'medium', area: '' }
-
-function TodoModal({ item, onSave, onClose }) {
+function TodoModal({ item, defaultList, onSave, onClose }) {
   const [form, setForm] = useState(item ? {
-    title:    item.title || '',
-    notes:    item.notes || '',
-    due_date: item.due_date || '',
-    priority: item.priority || 'medium',
-    area:     item.area || '',
-  } : { ...blankForm })
+    title:       item.title || '',
+    notes:       item.notes || '',
+    due_date:    item.due_date || '',
+    priority:    item.priority || 'medium',
+    area:        item.area || '',
+    list_target: item.list_target || defaultList || 'manager',
+  } : {
+    title: '', notes: '', due_date: '', priority: 'medium', area: '',
+    list_target: defaultList || 'manager',
+  })
   const [saving, setSaving] = useState(false)
   const [error, setError]   = useState('')
 
@@ -98,6 +103,31 @@ function TodoModal({ item, onSave, onClose }) {
             </div>
           )}
 
+          {/* List selector */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-2">Add to List</label>
+            <div className="flex gap-2">
+              {LISTS.map(l => {
+                const Icon = l.icon
+                return (
+                  <button
+                    key={l.value}
+                    type="button"
+                    onClick={() => set('list_target', l.value)}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg border text-sm font-semibold transition-all ${
+                      form.list_target === l.value
+                        ? `${l.light} ring-2 ring-offset-1 ring-current`
+                        : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <Icon size={14} />
+                    {l.value === 'manager' ? 'Manager' : 'Owner'}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Task *</label>
             <input
@@ -133,7 +163,9 @@ function TodoModal({ item, onSave, onClose }) {
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Notes <span className="text-gray-400 font-normal">(optional)</span></label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Notes <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
             <textarea
               rows={3} className={`${inputCls} resize-none`}
               value={form.notes}
@@ -162,10 +194,10 @@ function TodoModal({ item, onSave, onClose }) {
 function TodoItem({ item, onToggle, onEdit, onDelete }) {
   const [toggling, setToggling]     = useState(false)
   const [confirmDelete, setConfirm] = useState(false)
-  const isDone     = item.status === 'done'
-  const overdue    = isOverdue(item.due_date, item.status)
-  const today      = isDueToday(item.due_date, item.status)
-  const priMeta    = priorityMeta(item.priority)
+  const isDone  = item.status === 'done'
+  const overdue = isOverdue(item.due_date, item.status)
+  const today   = isDueToday(item.due_date, item.status)
+  const priMeta = priorityMeta(item.priority)
 
   const handleToggle = async () => {
     setToggling(true)
@@ -183,9 +215,7 @@ function TodoItem({ item, onToggle, onEdit, onDelete }) {
           onClick={handleToggle}
           disabled={toggling}
           className={`mt-0.5 flex-shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${
-            isDone
-              ? 'bg-green-500 border-green-500'
-              : 'border-gray-300 hover:border-green-400'
+            isDone ? 'bg-green-500 border-green-500' : 'border-gray-300 hover:border-green-400'
           }`}
         >
           {toggling
@@ -203,17 +233,14 @@ function TodoItem({ item, onToggle, onEdit, onDelete }) {
             <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">{item.notes}</p>
           )}
           <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-            {/* Priority */}
             <span className={`inline-flex items-center gap-1 text-xs font-medium px-1.5 py-0.5 rounded border ${priMeta.color}`}>
               <Flag size={9} /> {priMeta.label}
             </span>
-            {/* Area */}
             {item.area && (
               <span className="inline-flex items-center text-xs font-medium px-1.5 py-0.5 rounded border bg-blue-50 text-blue-700 border-blue-200 capitalize">
                 {item.area}
               </span>
             )}
-            {/* Due date */}
             {item.due_date && (
               <span className={`inline-flex items-center gap-1 text-xs font-medium ${
                 overdue ? 'text-red-600' : today ? 'text-orange-600' : 'text-gray-500'
@@ -222,46 +249,128 @@ function TodoItem({ item, onToggle, onEdit, onDelete }) {
                 {overdue ? 'Overdue · ' : today ? 'Due today · ' : ''}{fmtDate(item.due_date)}
               </span>
             )}
-            {/* Source badge for coaching-generated tasks */}
             {item.source === 'coaching' && (
               <span className="inline-flex items-center gap-1 text-xs text-purple-600 bg-purple-50 border border-purple-200 px-1.5 py-0.5 rounded">
                 <MessageSquare size={9} /> From coaching
               </span>
             )}
-            {/* Completed info */}
             {isDone && item.completed_by_name && (
-              <span className="text-xs text-gray-400">
-                Completed by {item.completed_by_name}
-              </span>
+              <span className="text-xs text-gray-400">Completed by {item.completed_by_name}</span>
             )}
           </div>
         </div>
 
         {/* Actions */}
-        {!isDone && (
-          <div className="flex items-center gap-1 flex-shrink-0">
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {!isDone && (
             <button
               onClick={() => onEdit(item)}
               className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
             >
               <Edit2 size={13} />
             </button>
-            {confirmDelete ? (
-              <div className="flex items-center gap-1">
-                <button onClick={() => onDelete(item.id)}
-                  className="px-2 py-1 bg-red-600 text-white text-xs rounded-lg hover:bg-red-700">Del</button>
-                <button onClick={() => setConfirm(false)}
-                  className="px-1 py-1 text-xs text-gray-400 hover:text-gray-700">✕</button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setConfirm(true)}
-                className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-              >
-                <Trash2 size={13} />
-              </button>
-            )}
+          )}
+          {confirmDelete ? (
+            <div className="flex items-center gap-1">
+              <button onClick={() => onDelete(item.id)}
+                className="px-2 py-1 bg-red-600 text-white text-xs rounded-lg hover:bg-red-700">Del</button>
+              <button onClick={() => setConfirm(false)}
+                className="px-1 py-1 text-xs text-gray-400 hover:text-gray-700">✕</button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirm(true)}
+              className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+            >
+              <Trash2 size={13} />
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── List Section ─────────────────────────────────────────────────────────────
+function ListSection({ listKey, items, onAdd, onToggle, onEdit, onDelete }) {
+  const [showDone, setShowDone] = useState(false)
+  const meta    = listMeta(listKey)
+  const Icon    = meta.icon
+  const open    = items.filter(i => i.status === 'open')
+  const done    = items.filter(i => i.status === 'done')
+  const overdue = open.filter(i => isOverdue(i.due_date, i.status))
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+      {/* Section header */}
+      <div className={`flex items-center justify-between px-5 py-4 border-b border-gray-100`}>
+        <div className="flex items-center gap-2.5">
+          <div className={`w-8 h-8 rounded-lg ${meta.bg} flex items-center justify-center`}>
+            <Icon size={15} className="text-white" />
           </div>
+          <div>
+            <h2 className="text-sm font-bold text-gray-900">{meta.label}</h2>
+            <p className="text-xs text-gray-400">
+              {open.length} open
+              {overdue.length > 0 && <span className="text-red-500 font-medium"> · {overdue.length} overdue</span>}
+              {done.length > 0 && <span className="text-gray-300"> · {done.length} done</span>}
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={() => onAdd(listKey)}
+          className={`flex items-center gap-1.5 px-3 py-1.5 ${meta.bg} hover:opacity-90 text-white text-xs font-semibold rounded-lg transition-all shadow-sm`}
+        >
+          <Plus size={13} /> Add Task
+        </button>
+      </div>
+
+      <div className="px-4 py-3 space-y-2.5">
+        {/* Open tasks */}
+        {open.length === 0 && done.length === 0 ? (
+          <div className="text-center py-8 text-gray-400">
+            <CheckSquare size={28} className="mx-auto mb-2 opacity-25" />
+            <p className="text-xs font-medium text-gray-400">All caught up</p>
+            <p className="text-xs text-gray-300 mt-0.5">Click "Add Task" to get started.</p>
+          </div>
+        ) : (
+          <>
+            {open.map(item => (
+              <TodoItem
+                key={item.id}
+                item={item}
+                onToggle={onToggle}
+                onEdit={onEdit}
+                onDelete={onDelete}
+              />
+            ))}
+
+            {/* Completed (collapsible) */}
+            {done.length > 0 && (
+              <div className="pt-1">
+                <button
+                  onClick={() => setShowDone(s => !s)}
+                  className="flex items-center gap-2 text-xs text-gray-400 hover:text-gray-600 transition-colors py-1"
+                >
+                  {showDone ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                  {done.length} completed
+                </button>
+                {showDone && (
+                  <div className="mt-2 space-y-2">
+                    {done.map(item => (
+                      <TodoItem
+                        key={item.id}
+                        item={item}
+                        onToggle={onToggle}
+                        onEdit={onEdit}
+                        onDelete={onDelete}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
@@ -270,11 +379,12 @@ function TodoItem({ item, onToggle, onEdit, onDelete }) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function TodoPage() {
-  const [items, setItems]       = useState([])
-  const [loading, setLoading]   = useState(true)
-  const [error, setError]       = useState('')
-  const [modal, setModal]       = useState(null)
-  const [showDone, setShowDone] = useState(false)
+  const { isOwnerOrManager } = useRole()
+  const [items, setItems]     = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError]     = useState('')
+  // modal: null = closed, { defaultList } = new, item obj = edit
+  const [modal, setModal]     = useState(null)
 
   const load = useCallback(async () => {
     try {
@@ -289,9 +399,21 @@ export default function TodoPage() {
 
   useEffect(() => { load() }, [load])
 
-  const open = items.filter(i => i.status === 'open')
-  const done = items.filter(i => i.status === 'done')
-  const overdue = open.filter(i => isOverdue(i.due_date, i.status))
+  // TSA guard — backend also enforces this, but show a friendly message
+  if (!isOwnerOrManager) {
+    return (
+      <div className="flex items-center justify-center h-64 text-gray-400">
+        <div className="text-center">
+          <CheckSquare size={36} className="mx-auto mb-3 opacity-30" />
+          <p className="text-sm font-medium text-gray-500">Access restricted</p>
+          <p className="text-xs mt-1">Manager To-Do is only visible to managers and the owner.</p>
+        </div>
+      </div>
+    )
+  }
+
+  const managerItems = items.filter(i => i.list_target === 'owner' ? false : true)  // 'manager' or null/legacy
+  const ownerItems   = items.filter(i => i.list_target === 'owner')
 
   const handleSave = (saved) => {
     setItems(prev => {
@@ -320,27 +442,14 @@ export default function TodoPage() {
 
   return (
     <div className="p-6 max-w-3xl mx-auto">
-
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <CheckSquare size={22} className="text-red-600" /> Manager To-Do
-          </h1>
-          <p className="text-gray-500 text-sm mt-0.5">
-            {open.length} open
-            {overdue.length > 0 && (
-              <span className="text-red-600 font-medium"> · {overdue.length} overdue</span>
-            )}
-            {done.length > 0 && <span className="text-gray-400"> · {done.length} done</span>}
-          </p>
-        </div>
-        <button
-          onClick={() => setModal(false)}
-          className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors shadow-sm"
-        >
-          <Plus size={16} /> Add Task
-        </button>
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+          <CheckSquare size={22} className="text-red-600" /> To-Do Lists
+        </h1>
+        <p className="text-gray-500 text-sm mt-0.5">
+          Manager and Owner task lists — visible to both roles, add to either.
+        </p>
       </div>
 
       {error && (
@@ -349,57 +458,31 @@ export default function TodoPage() {
         </div>
       )}
 
-      {/* Open tasks */}
-      {open.length === 0 ? (
-        <div className="text-center py-16 text-gray-400">
-          <CheckSquare size={40} className="mx-auto mb-3 opacity-30" />
-          <p className="text-sm font-medium text-gray-500">All caught up!</p>
-          <p className="text-xs mt-1">Add a task or push action items from coaching sessions.</p>
-        </div>
-      ) : (
-        <div className="space-y-2.5 mb-6">
-          {open.map(item => (
-            <TodoItem
-              key={item.id}
-              item={item}
-              onToggle={handleToggle}
-              onEdit={setModal}
-              onDelete={handleDelete}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* Completed tasks (collapsible) */}
-      {done.length > 0 && (
-        <div>
-          <button
-            onClick={() => setShowDone(s => !s)}
-            className="flex items-center gap-2 text-sm text-gray-400 hover:text-gray-600 mb-3 transition-colors"
-          >
-            {showDone ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-            {done.length} completed task{done.length !== 1 ? 's' : ''}
-          </button>
-          {showDone && (
-            <div className="space-y-2">
-              {done.map(item => (
-                <TodoItem
-                  key={item.id}
-                  item={item}
-                  onToggle={handleToggle}
-                  onEdit={setModal}
-                  onDelete={handleDelete}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      {/* Two list sections stacked */}
+      <div className="space-y-5">
+        <ListSection
+          listKey="manager"
+          items={managerItems}
+          onAdd={(list) => setModal({ defaultList: list })}
+          onToggle={handleToggle}
+          onEdit={(item) => setModal({ item })}
+          onDelete={handleDelete}
+        />
+        <ListSection
+          listKey="owner"
+          items={ownerItems}
+          onAdd={(list) => setModal({ defaultList: list })}
+          onToggle={handleToggle}
+          onEdit={(item) => setModal({ item })}
+          onDelete={handleDelete}
+        />
+      </div>
 
       {/* Modal */}
       {modal !== null && (
         <TodoModal
-          item={modal || null}
+          item={modal?.item || null}
+          defaultList={modal?.defaultList || modal?.item?.list_target || 'manager'}
           onSave={handleSave}
           onClose={() => setModal(null)}
         />

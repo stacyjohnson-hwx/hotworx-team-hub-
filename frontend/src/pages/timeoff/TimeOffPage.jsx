@@ -203,15 +203,14 @@ function RequestCard({ req, isOwn, showActions, showName, onReview, onDelete }) 
 
         <div className="flex items-center gap-1 flex-shrink-0">
           {showActions && req.status === 'pending' && (
-            <>
-              <button onClick={() => setExpanded(p => !p)}
-                className="text-xs font-medium px-2 py-1 rounded border border-gray-300 hover:bg-gray-50 transition-colors flex items-center gap-1">
-                Review <ChevronDown className={`w-3 h-3 transition-transform ${expanded ? 'rotate-180' : ''}`} />
-              </button>
-            </>
+            <button onClick={() => setExpanded(p => !p)}
+              className="text-xs font-medium px-2 py-1 rounded border border-gray-300 hover:bg-gray-50 transition-colors flex items-center gap-1">
+              Review <ChevronDown className={`w-3 h-3 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+            </button>
           )}
-          {isOwn && req.status === 'pending' && (
-            <button onClick={() => onDelete(req.id)} className="p-1.5 text-gray-400 hover:text-red-600 rounded">
+          {/* Delete: manager/owner can delete any; TSA can delete own pending only */}
+          {(showActions || (isOwn && req.status === 'pending')) && (
+            <button onClick={() => onDelete(req.id)} className="p-1.5 text-gray-400 hover:text-red-600 rounded" title="Delete request">
               <Trash2 className="w-4 h-4" />
             </button>
           )}

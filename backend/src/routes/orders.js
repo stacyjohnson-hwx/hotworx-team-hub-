@@ -3,6 +3,41 @@ const router = express.Router()
 const { createClient } = require('@supabase/supabase-js')
 const { requireRole } = require('../middleware/roleGuard')
 const authenticate = require('../middleware/authMiddleware')
+const { Resend } = require('resend')
+
+async function sendOrderEmail(order, requesterName) {
+  if (!process.env.RESEND_API_KEY) return
+  const resend = new Resend(process.env.RESEND_API_KEY)
+  const catLabel = { supplies: 'Supplies', retail: 'Retail', equipment: 'Equipment', marketing: 'Marketing', other: 'Other' }[order.category] || order.category
+  const costLine = order.est_cost ? `<tr><td style="color:#6b7280;font-size:13px;padding:4px 0">Est. Cost</td><td style="font-size:13px;text-align:right">$${Number(order.est_cost).toFixed(2)}</td></tr>` : ''
+  const vendorLine = order.vendor ? `<tr><td style="color:#6b7280;font-size:13px;padding:4px 0">Vendor</td><td style="font-size:13px;text-align:right">${order.vendor}</td></tr>` : ''
+  const notesLine = order.notes ? `<p style="margin:12px 0 0;font-size:13px;color:#374151"><strong>Notes:</strong> ${order.notes}</p>` : ''
+  const html = `
+    <div style="font-family:sans-serif;max-width:520px;margin:0 auto">
+      <div style="background:#C8102E;padding:16px 20px;border-radius:8px 8px 0 0">
+        <h2 style="color:#fff;margin:0;font-size:16px">New Order Request — HOTWORX Pewaukee</h2>
+      </div>
+      <div style="background:#fff;border:1px solid #e5e7eb;border-top:none;padding:20px;border-radius:0 0 8px 8px">
+        <p style="margin:0 0 12px;font-size:14px;color:#111827">
+          <strong>${requesterName}</strong> submitted a new order request.
+        </p>
+        <table style="width:100%;border-collapse:collapse">
+          <tr><td style="color:#6b7280;font-size:13px;padding:4px 0">Item</td><td style="font-size:13px;text-align:right;font-weight:600">${order.item_name}</td></tr>
+          <tr><td style="color:#6b7280;font-size:13px;padding:4px 0">Quantity</td><td style="font-size:13px;text-align:right">${order.quantity}</td></tr>
+          <tr><td style="color:#6b7280;font-size:13px;padding:4px 0">Category</td><td style="font-size:13px;text-align:right">${catLabel}</td></tr>
+          ${vendorLine}
+          ${costLine}
+        </table>
+        ${notesLine}
+      </div>
+    </div>`
+  await resend.emails.send({
+    from: 'HOTWORX Pewaukee <noreply@hotworx.net>',
+    to: [process.env.OWNER_EMAIL, process.env.MANAGER_EMAIL].filter(Boolean),
+    subject: `Order Request: ${order.item_name} — HOTWORX Pewaukee`,
+    html,
+  }).catch(err => console.error('Order email failed:', err.message))
+}
 
 const supabase = () =>
   createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
@@ -71,6 +106,14 @@ router.post('/', authenticate, async (req, res) => {
     .single()
 
   if (error) return res.status(500).json({ error: error.message })
+
+  // Send notification email to owner and manager (fire-and-forget)
+  const db2 = supabase()
+  buildUserMap(db2).then(userMap => {
+    const requesterName = userMap[data.requested_by] || 'Team Member'
+    sendOrderEmail(data, requesterName)
+  }).catch(() => {})
+
   res.status(201).json(data)
 })
 

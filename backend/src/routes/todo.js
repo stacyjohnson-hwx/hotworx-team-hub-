@@ -43,7 +43,7 @@ router.get('/', authenticate, requireRole('owner', 'manager'), async (req, res) 
 
 // ─── POST /api/todo ───────────────────────────────────────────────────────────
 router.post('/', authenticate, requireRole('owner', 'manager'), async (req, res) => {
-  const { title, notes, due_date, priority, area, source, coaching_session_id } = req.body
+  const { title, notes, due_date, priority, area, source, coaching_session_id, list_target } = req.body
   if (!title) return res.status(400).json({ error: 'title is required' })
 
   const { data, error } = await supabase()
@@ -57,6 +57,7 @@ router.post('/', authenticate, requireRole('owner', 'manager'), async (req, res)
       status: 'open',
       source: source || 'manual',
       coaching_session_id: coaching_session_id || null,
+      list_target: ['manager', 'owner'].includes(list_target) ? list_target : 'manager',
       created_by: req.user.id,
     })
     .select()
@@ -68,7 +69,7 @@ router.post('/', authenticate, requireRole('owner', 'manager'), async (req, res)
 
 // ─── PUT /api/todo/:id ────────────────────────────────────────────────────────
 router.put('/:id', authenticate, requireRole('owner', 'manager'), async (req, res) => {
-  const { title, notes, due_date, priority, area, status } = req.body
+  const { title, notes, due_date, priority, area, status, list_target } = req.body
   const db = supabase()
 
   const updates = {
@@ -76,6 +77,7 @@ router.put('/:id', authenticate, requireRole('owner', 'manager'), async (req, re
     area: area || null,
     updated_at: new Date().toISOString(),
   }
+  if (['manager', 'owner'].includes(list_target)) updates.list_target = list_target
 
   if (status === 'done') {
     updates.status = 'done'

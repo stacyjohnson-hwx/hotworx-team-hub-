@@ -68,7 +68,7 @@ const blankForm = {
   item_name: '', quantity: '1', category: 'supplies', notes: '', vendor: '', est_cost: '',
 }
 
-function OrderModal({ order, onSave, onClose }) {
+function OrderModal({ order, onSave, onClose, isOwnerOrManager }) {
   const [form, setForm] = useState(order ? {
     item_name: order.item_name || '',
     quantity: String(order.quantity || 1),
@@ -161,30 +161,32 @@ function OrderModal({ order, onSave, onClose }) {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Vendor / Source</label>
-              <input
-                className={inputCls}
-                value={form.vendor}
-                onChange={e => set('vendor', e.target.value)}
-                placeholder="Amazon, Costco…"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Est. Cost</label>
-              <div className="relative">
-                <DollarSign size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+          {isOwnerOrManager && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Vendor / Source</label>
                 <input
-                  type="number" min="0" step="0.01"
-                  className={`${inputCls} pl-7`}
-                  value={form.est_cost}
-                  onChange={e => set('est_cost', e.target.value)}
-                  placeholder="0.00"
+                  className={inputCls}
+                  value={form.vendor}
+                  onChange={e => set('vendor', e.target.value)}
+                  placeholder="Amazon, Costco…"
                 />
               </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Est. Cost</label>
+                <div className="relative">
+                  <DollarSign size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="number" min="0" step="0.01"
+                    className={`${inputCls} pl-7`}
+                    value={form.est_cost}
+                    onChange={e => set('est_cost', e.target.value)}
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
             </div>
-          </div>
+          )}
 
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
@@ -214,7 +216,7 @@ function OrderModal({ order, onSave, onClose }) {
 }
 
 // ─── Order Row ────────────────────────────────────────────────────────────────
-function OrderRow({ order, isOwnerOrManager, onStatusChange, onEdit, onDelete }) {
+function OrderRow({ order, isOwnerOrManager, showSensitive, onStatusChange, onEdit, onDelete }) {
   const [expanded, setExpanded] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [updatingStatus, setUpdatingStatus] = useState('')
@@ -265,7 +267,7 @@ function OrderRow({ order, isOwnerOrManager, onStatusChange, onEdit, onDelete })
         </div>
 
         <div className="flex items-center gap-3 flex-shrink-0">
-          {order.est_cost && (
+          {showSensitive && order.est_cost && (
             <span className="text-gray-700 text-sm font-medium">{fmtCurrency(order.est_cost)}</span>
           )}
           <StatusBadge status={order.status} />
@@ -278,15 +280,15 @@ function OrderRow({ order, isOwnerOrManager, onStatusChange, onEdit, onDelete })
           <div className="pt-3 space-y-3">
 
             {/* Detail grid */}
-            {(order.vendor || order.est_cost || order.approved_by_name || order.ordered_at || order.received_at) && (
+            {(showSensitive && (order.vendor || order.est_cost) || order.approved_by_name || order.ordered_at || order.received_at) && (
               <div className="grid grid-cols-2 gap-x-8 gap-y-1.5 text-sm">
-                {order.vendor && (
+                {showSensitive && order.vendor && (
                   <>
                     <span className="text-gray-500 text-xs">Vendor</span>
                     <span className="text-gray-800 text-xs font-medium">{order.vendor}</span>
                   </>
                 )}
-                {order.est_cost && (
+                {showSensitive && order.est_cost && (
                   <>
                     <span className="text-gray-500 text-xs">Est. Cost</span>
                     <span className="text-gray-800 text-xs font-medium">{fmtCurrency(order.est_cost)}</span>
@@ -383,24 +385,37 @@ function OrderRow({ order, isOwnerOrManager, onStatusChange, onEdit, onDelete })
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-function currentMonthKey() {
-  const now = new Date()
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-}
+const now = new Date()
+const CURRENT_YEAR  = now.getFullYear()
+const CURRENT_MONTH = now.getMonth() + 1  // 1-indexed
 
-function buildMonthOptions() {
-  const options = []
-  const now = new Date()
-  for (let i = 0; i < 24; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-    const label = d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-    options.push({ key, label })
-  }
-  return options
-}
+const MONTH_NAMES = [
+  { value: '1',  label: 'January' },  { value: '2',  label: 'February' },
+  { value: '3',  label: 'March' },    { value: '4',  label: 'April' },
+  { value: '5',  label: 'May' },      { value: '6',  label: 'June' },
+  { value: '7',  label: 'July' },     { value: '8',  label: 'August' },
+  { value: '9',  label: 'September' },{ value: '10', label: 'October' },
+  { value: '11', label: 'November' }, { value: '12', label: 'December' },
+]
 
-const MONTH_OPTIONS = buildMonthOptions()
+function buildYearOptions() {
+  const years = []
+  for (let y = CURRENT_YEAR; y >= CURRENT_YEAR - 3; y--) years.push(y)
+  return years
+}
+const YEAR_OPTIONS = buildYearOptions()
+
+// Sort orders: pending first, then by ordered_at desc (if status=ordered), then created_at desc
+function sortOrders(list) {
+  return [...list].sort((a, b) => {
+    if (a.status === 'pending' && b.status !== 'pending') return -1
+    if (b.status === 'pending' && a.status !== 'pending') return 1
+    // Both pending or both non-pending: sort by ordered_at if available, else created_at
+    const aDate = a.ordered_at || a.created_at
+    const bDate = b.ordered_at || b.created_at
+    return new Date(bDate) - new Date(aDate)
+  })
+}
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function OrdersPage() {
@@ -413,7 +428,8 @@ export default function OrdersPage() {
   const [modal, setModal] = useState(null)   // null=closed, false=new, object=edit
   const [statusFilter, setStatusFilter] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
-  const [monthFilter, setMonthFilter] = useState(currentMonthKey())
+  const [monthFilter, setMonthFilter] = useState(String(CURRENT_MONTH))
+  const [yearFilter, setYearFilter] = useState(String(CURRENT_YEAR))
 
   const load = useCallback(async () => {
     try {
@@ -422,9 +438,7 @@ export default function OrdersPage() {
       if (categoryFilter) params.set('category', categoryFilter)
       const qs = params.toString()
       const data = await apiGet(`/api/orders${qs ? '?' + qs : ''}`)
-      // Sort by ordered_at newest first; fall back to created_at for items not yet ordered
-      data.sort((a, b) => new Date(b.ordered_at || b.created_at) - new Date(a.ordered_at || a.created_at))
-      setOrders(data)
+      setOrders(sortOrders(data))
     } catch (err) {
       setError(err.message)
     } finally {
@@ -436,14 +450,9 @@ export default function OrdersPage() {
 
   const handleSave = (saved) => {
     setOrders(prev => {
-      let next
       const idx = prev.findIndex(o => o.id === saved.id)
-      if (idx >= 0) {
-        next = [...prev]; next[idx] = saved
-      } else {
-        next = [saved, ...prev]
-      }
-      return next.sort((a, b) => new Date(b.ordered_at || b.created_at) - new Date(a.ordered_at || a.created_at))
+      const next = idx >= 0 ? prev.map((o, i) => i === idx ? saved : o) : [saved, ...prev]
+      return sortOrders(next)
     })
     setModal(null)
   }
@@ -460,12 +469,11 @@ export default function OrdersPage() {
 
   const visibleOrders = orders.filter(o => {
     if (!statusFilter && o.status === 'received') return false
-    if (monthFilter) {
-      const dateStr = o.created_at
-      if (!dateStr) return false
-      const d = new Date(dateStr)
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-      return key === monthFilter
+    // Month/year filter applied to created_at
+    if (monthFilter || yearFilter) {
+      const d = new Date(o.created_at || o.updated_at)
+      if (yearFilter && String(d.getFullYear()) !== yearFilter) return false
+      if (monthFilter && String(d.getMonth() + 1) !== monthFilter) return false
     }
     return true
   })
@@ -514,16 +522,27 @@ export default function OrdersPage() {
       )}
 
       {/* Filters */}
-      <div className="flex items-center gap-3 mb-5 flex-wrap">
+      <div className="flex items-center gap-2 mb-5 flex-wrap">
         <Filter size={14} className="text-gray-400 flex-shrink-0" />
+        {/* Month */}
         <select
           className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-700 bg-white focus:outline-none focus:border-red-500"
           value={monthFilter}
           onChange={e => setMonthFilter(e.target.value)}
         >
           <option value="">All months</option>
-          {MONTH_OPTIONS.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
+          {MONTH_NAMES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
         </select>
+        {/* Year */}
+        <select
+          className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-700 bg-white focus:outline-none focus:border-red-500"
+          value={yearFilter}
+          onChange={e => setYearFilter(e.target.value)}
+        >
+          <option value="">All years</option>
+          {YEAR_OPTIONS.map(y => <option key={y} value={String(y)}>{y}</option>)}
+        </select>
+        {/* Status */}
         <select
           className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-700 bg-white focus:outline-none focus:border-red-500"
           value={statusFilter}
@@ -532,6 +551,7 @@ export default function OrdersPage() {
           <option value="">All statuses</option>
           {STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
         </select>
+        {/* Category */}
         <select
           className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-700 bg-white focus:outline-none focus:border-red-500"
           value={categoryFilter}
@@ -540,6 +560,14 @@ export default function OrdersPage() {
           <option value="">All categories</option>
           {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
         </select>
+        {(monthFilter !== String(CURRENT_MONTH) || yearFilter !== String(CURRENT_YEAR) || statusFilter || categoryFilter) && (
+          <button
+            onClick={() => { setMonthFilter(String(CURRENT_MONTH)); setYearFilter(String(CURRENT_YEAR)); setStatusFilter(''); setCategoryFilter('') }}
+            className="text-xs text-red-600 hover:text-red-700 font-medium px-2 py-1.5 rounded hover:bg-red-50 transition-colors"
+          >
+            Reset
+          </button>
+        )}
       </div>
 
       {/* Orders list */}
@@ -558,6 +586,7 @@ export default function OrdersPage() {
               key={order.id}
               order={order}
               isOwnerOrManager={isOwnerOrManager}
+              showSensitive={isOwnerOrManager}
               onStatusChange={handleStatusChange}
               onEdit={setModal}
               onDelete={handleDelete}
@@ -570,6 +599,7 @@ export default function OrdersPage() {
       {modal !== null && (
         <OrderModal
           order={modal || null}
+          isOwnerOrManager={isOwnerOrManager}
           onSave={handleSave}
           onClose={() => setModal(null)}
         />
