@@ -1343,7 +1343,7 @@ function SessionCard({ session, onEdit, onDelete, onPushToTodo, onAddAction, onD
 }
 
 // ─── Sessions Tab ─────────────────────────────────────────────────────────────
-function SessionsTab() {
+function SessionsTab({ newSession }) {
   const [sessions, setSessions]   = useState([])
   const [loading, setLoading]     = useState(true)
   const [error, setError]         = useState('')
@@ -1362,6 +1362,16 @@ function SessionsTab() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  // Immediately prepend the just-converted session so it's visible before the
+  // API fetch returns (handles any timing gap between POST and GET).
+  useEffect(() => {
+    if (!newSession) return
+    setSessions(prev => {
+      if (prev.some(s => s.id === newSession.id)) return prev
+      return [{ ...newSession, action_items: newSession.action_items || [] }, ...prev]
+    })
+  }, [newSession])
 
   const staffNames = [...new Set(sessions.map(s => s.staff_name))].sort()
   const visible    = staffFilter ? sessions.filter(s => s.staff_name === staffFilter) : sessions
@@ -1485,6 +1495,12 @@ function SessionsTab() {
 // ═════════════════════════════════════════════════════════════════════════════
 export default function CoachingPage() {
   const [tab, setTab] = useState('agenda') // 'agenda' | 'sessions'
+  const [convertedSession, setConvertedSession] = useState(null)
+
+  function handleConvert(session) {
+    setConvertedSession(session)
+    setTab('sessions')
+  }
 
   return (
     <div className="p-6 max-w-3xl mx-auto">
@@ -1521,8 +1537,8 @@ export default function CoachingPage() {
       </div>
 
       {/* Tab content */}
-      {tab === 'agenda'   && <AgendaTab onConvert={() => setTab('sessions')} />}
-      {tab === 'sessions' && <SessionsTab />}
+      {tab === 'agenda'   && <AgendaTab onConvert={handleConvert} />}
+      {tab === 'sessions' && <SessionsTab newSession={convertedSession} />}
     </div>
   )
 }
