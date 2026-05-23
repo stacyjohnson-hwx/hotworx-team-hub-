@@ -695,16 +695,10 @@ function TeamPerformance({ month, year, currentUserId }) {
   // Max outreach in the current group (for relative bar fill)
   const maxOutreach = Math.max(1, ...curr.map(m => (m.calls_made || 0) + (m.texts_made || 0)))
 
-  // Top 3 podium slots: unique rank positions 1/2/3 with non-zero score
-  // Multiple people can share rank 1 or 2 — take first representative per rank
-  const podiumRank1 = sorted.filter(m => score(m) > 0 && rankMap[m.tsa_id] === 1)
-  const podiumRank2 = sorted.filter(m => score(m) > 0 && rankMap[m.tsa_id] === 2)
-  const podiumRank3 = sorted.filter(m => score(m) > 0 && rankMap[m.tsa_id] === 3)
-  // For the 3-slot podium display pick one per slot (first alphabetically if tied)
-  const podium1 = podiumRank1[0]
-  const podium2 = podiumRank2[0]
-  const podium3 = podiumRank3[0]
-  const top3    = [podium1, podium2, podium3].filter(Boolean)
+  // All members in top 3 rank positions with a non-zero score — every tied member gets their own slot
+  const podiumMembers  = sorted.filter(m => score(m) > 0 && rankMap[m.tsa_id] <= 3)
+  const uniquePodiumRanks = [...new Set(podiumMembers.map(m => rankMap[m.tsa_id]))]
+  const PODIUM_HEIGHT  = { 1: 'h-28', 2: 'h-20', 3: 'h-14' }
 
   return (
     <div>
@@ -737,18 +731,20 @@ function TeamPerformance({ month, year, currentUserId }) {
         ))}
       </div>
 
-      {/* Podium — show when at least 2 unique rank positions have activity */}
-      {top3.length >= 2 && (
-        <div className="mb-6 flex items-end justify-center gap-3">
-          {/* 2nd place (left, shorter) */}
-          {podium2 && <PodiumSlot member={podium2} rank={2} metric={metric} colors={colorMap[podium2.tsa_id]} isMe={podium2.tsa_id === currentUserId} height="h-20"
-            tiedCount={podiumRank2.length} />}
-          {/* 1st place (center, tallest) */}
-          {podium1 && <PodiumSlot member={podium1} rank={1} metric={metric} colors={colorMap[podium1.tsa_id]} isMe={podium1.tsa_id === currentUserId} height="h-28"
-            tiedCount={podiumRank1.length} />}
-          {/* 3rd place (right, shortest) */}
-          {podium3 && <PodiumSlot member={podium3} rank={3} metric={metric} colors={colorMap[podium3.tsa_id]} isMe={podium3.tsa_id === currentUserId} height="h-14"
-            tiedCount={podiumRank3.length} />}
+      {/* Podium — every tied member gets their own equal-height slot */}
+      {uniquePodiumRanks.length >= 2 && (
+        <div className="mb-6 flex items-end justify-center gap-2 flex-wrap">
+          {podiumMembers.map(m => (
+            <PodiumSlot
+              key={m.tsa_id}
+              member={m}
+              rank={rankMap[m.tsa_id]}
+              metric={metric}
+              colors={colorMap[m.tsa_id]}
+              isMe={m.tsa_id === currentUserId}
+              height={PODIUM_HEIGHT[rankMap[m.tsa_id]]}
+            />
+          ))}
         </div>
       )}
 
@@ -977,7 +973,7 @@ function TeamPerformance({ month, year, currentUserId }) {
   )
 }
 
-function PodiumSlot({ member, rank, metric, colors, isMe, height, tiedCount = 1 }) {
+function PodiumSlot({ member, rank, metric, colors, isMe, height }) {
   const val = metric === 'members'
     ? `${member.total_memberships} mbrs`
     : metric === 'retail'
@@ -985,16 +981,9 @@ function PodiumSlot({ member, rank, metric, colors, isMe, height, tiedCount = 1 
     : `${(member.calls_made || 0) + (member.texts_made || 0)} contacts`
 
   return (
-    <div className="flex flex-col items-center gap-2 w-28">
-      {/* Medal + tie badge */}
-      <div className="flex flex-col items-center gap-0.5">
-        <span className="text-2xl">{MEDALS[rank - 1]}</span>
-        {tiedCount > 1 && (
-          <span className="text-[10px] font-bold text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded-full">
-            {tiedCount}-way tie
-          </span>
-        )}
-      </div>
+    <div className="flex flex-col items-center gap-2 w-24">
+      {/* Medal */}
+      <span className="text-2xl">{MEDALS[rank - 1]}</span>
       {/* Avatar */}
       <div className={`w-14 h-14 rounded-full flex items-center justify-center ${colors?.avatar || 'bg-gray-400'} ${isMe ? 'ring-3 ring-yellow-400' : ''} overflow-hidden flex-shrink-0`}>
         {member.avatar_url
