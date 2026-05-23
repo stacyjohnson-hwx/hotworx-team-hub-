@@ -85,7 +85,7 @@ export default function LeadGenHQ() {
   }
 
   return (
-    <div className="rounded-2xl border border-orange-200 overflow-hidden bg-white shadow-sm">
+    <div className="rounded-2xl border border-orange-200 overflow-hidden bg-white shadow-sm flex flex-col flex-1">
 
       {/* ── HQ Header ─────────────────────────────────────────────────────── */}
       <div className="bg-[#1A1A1A] px-4 pt-4 pb-0">
@@ -194,7 +194,7 @@ export default function LeadGenHQ() {
       </div>
 
       {/* ── Tab Content ───────────────────────────────────────────────────── */}
-      <div className="min-h-64" onClick={() => setShowEmployeePicker(false)}>
+      <div className="flex-1 overflow-y-auto" onClick={() => setShowEmployeePicker(false)}>
         {activeTab === 'missions'    && <MissionsTab    employee={employee} onPointsEarned={handlePointsEarned} onStreakUpdate={handleStreakUpdate} />}
         {activeTab === 'plays'       && <PlaysTab       employee={employee} />}
         {activeTab === 'map'         && <MapTab         employee={employee} />}
