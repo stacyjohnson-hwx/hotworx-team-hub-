@@ -43,25 +43,47 @@ function getIntensity(dateStr) {
 
 // ─── Pre-populated neighborhoods ──────────────────────────────────────────────
 const DEFAULT_NEIGHBORHOODS = [
-  { id:'nh-1',  name:'Pewaukee — Capitol Drive Corridor',  lat:43.0831, lng:-88.2490 },
-  { id:'nh-2',  name:'Pewaukee Lake North Shore',           lat:43.0960, lng:-88.2640 },
-  { id:'nh-3',  name:'Pewaukee Village',                   lat:43.0792, lng:-88.2773 },
-  { id:'nh-4',  name:'Five Fields — Pewaukee',             lat:43.0910, lng:-88.2620 },
-  { id:'nh-5',  name:'Hartland',                           lat:43.1041, lng:-88.3399 },
-  { id:'nh-6',  name:'Waukesha — Downtown',                lat:43.0117, lng:-88.2315 },
-  { id:'nh-7',  name:'Waukesha — Sunset Drive Area',       lat:43.0287, lng:-88.2490 },
-  { id:'nh-8',  name:'Brookfield — Bluemound Road',        lat:43.0500, lng:-88.1066 },
-  { id:'nh-9',  name:'Elm Grove',                          lat:43.0430, lng:-88.0928 },
-  { id:'nh-10', name:'Menomonee Falls',                    lat:43.1789, lng:-88.1206 },
-  { id:'nh-11', name:'Sussex',                             lat:43.1341, lng:-88.2257 },
-  { id:'nh-12', name:'Oconomowoc',                         lat:43.1003, lng:-88.4985 },
-  { id:'nh-13', name:'Delafield',                          lat:43.0628, lng:-88.3976 },
-  { id:'nh-14', name:'Mukwonago',                          lat:42.8664, lng:-88.3379 },
-  { id:'nh-15', name:'Muskego',                            lat:42.9066, lng:-88.1334 },
-  { id:'nh-16', name:'New Berlin',                         lat:42.9764, lng:-88.1082 },
-  { id:'nh-17', name:'Waukesha — North End',               lat:43.0450, lng:-88.2315 },
-  { id:'nh-18', name:'Pewaukee — West Side',               lat:43.0831, lng:-88.3100 },
-  { id:'nh-19', name:'Wales',                              lat:43.0003, lng:-88.3773 },
+  // ── Pewaukee subdivisions (closest to studio) ─────────────────────────────
+  { id:'nh-1',  name:'Five Fields',                         lat:43.0813, lng:-88.2201 },
+  { id:'nh-2',  name:'Broken Hill',                         lat:43.0870, lng:-88.2178 },
+  { id:'nh-3',  name:'Hawks Meadow',                        lat:43.0634, lng:-88.2236 },
+  { id:'nh-4',  name:'Stillwater (55+)',                    lat:43.0636, lng:-88.2273 },
+  { id:'nh-5',  name:'Avondale',                            lat:43.0604, lng:-88.2268 },
+  { id:'nh-6',  name:'Brandon Oaks',                        lat:43.0641, lng:-88.2269 },
+  { id:'nh-7',  name:'Lake Country Village',                lat:43.0759, lng:-88.2414 },
+  { id:'nh-8',  name:'Springdale Estates',                  lat:43.0680, lng:-88.2440 },
+  { id:'nh-9',  name:'Sunset Meadows',                      lat:43.0880, lng:-88.2630 },
+  { id:'nh-10', name:'Pewaukee Lake North Shore',           lat:43.0960, lng:-88.2640 },
+  { id:'nh-11', name:'Pewaukee Village',                    lat:43.0792, lng:-88.2773 },
+  { id:'nh-12', name:'Pewaukee — Capitol Drive Corridor',   lat:43.0831, lng:-88.2490 },
+  { id:'nh-13', name:'Pewaukee — West Side',                lat:43.0831, lng:-88.3100 },
+  { id:'nh-14', name:'Pewaukee — Silvernail Road Area',     lat:43.0497, lng:-88.2930 },
+  // ── Hartland ──────────────────────────────────────────────────────────────
+  { id:'nh-15', name:'Hartland',                            lat:43.1041, lng:-88.3399 },
+  { id:'nh-16', name:'Bristlecone Pines (Hartland)',        lat:43.1141, lng:-88.3224 },
+  // ── Waukesha City ─────────────────────────────────────────────────────────
+  { id:'nh-17', name:'Waukesha — Downtown',                 lat:43.0117, lng:-88.2315 },
+  { id:'nh-18', name:'Waukesha — North End',                lat:43.0450, lng:-88.2315 },
+  { id:'nh-19', name:'Waukesha — Sunset Drive Area',        lat:43.0287, lng:-88.2490 },
+  { id:'nh-20', name:'Waukesha — Les Paul Pkwy Area',       lat:43.0182, lng:-88.2008 },
+  // ── Menomonee Falls ───────────────────────────────────────────────────────
+  { id:'nh-21', name:'Menomonee Falls — Downtown',          lat:43.1789, lng:-88.1206 },
+  { id:'nh-22', name:'Taylors Woods (Menomonee Falls)',     lat:43.1146, lng:-88.1836 },
+  { id:'nh-23', name:'Menomonee Falls — Pilgrim Road Area', lat:43.1718, lng:-88.1037 },
+  // ── Sussex & surrounding ──────────────────────────────────────────────────
+  { id:'nh-24', name:'Sussex',                              lat:43.1337, lng:-88.2136 },
+  // ── Brookfield & Elm Grove ────────────────────────────────────────────────
+  { id:'nh-25', name:'Brookfield — Bluemound Road',         lat:43.0500, lng:-88.1066 },
+  { id:'nh-26', name:'Brookfield Road Corridor',            lat:43.0697, lng:-88.1459 },
+  { id:'nh-27', name:'Elm Grove',                           lat:43.0430, lng:-88.0928 },
+  // ── Lake Country ──────────────────────────────────────────────────────────
+  { id:'nh-28', name:'Oconomowoc — Okauchee Area',          lat:43.1236, lng:-88.4409 },
+  { id:'nh-29', name:'Delafield — Nagawaukee Area',         lat:43.0550, lng:-88.3730 },
+  { id:'nh-30', name:'Wales',                               lat:43.0003, lng:-88.3773 },
+  // ── South County ──────────────────────────────────────────────────────────
+  { id:'nh-31', name:'Mukwonago — Phantom Lake Area',       lat:42.8496, lng:-88.3498 },
+  { id:'nh-32', name:'Muskego — Muskego Lake Area',         lat:42.8745, lng:-88.1128 },
+  { id:'nh-33', name:'New Berlin',                          lat:42.9764, lng:-88.1082 },
 ]
 
 // ─── localStorage ─────────────────────────────────────────────────────────────
