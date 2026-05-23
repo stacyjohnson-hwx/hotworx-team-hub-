@@ -5,6 +5,7 @@ export function useRole() {
 
   return {
     role,
+    user,                          // full auth user object
     userId: user?.id ?? null,
     isOwner: role === 'owner',
     isManager: role === 'manager',

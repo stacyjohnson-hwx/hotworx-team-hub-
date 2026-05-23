@@ -492,102 +492,413 @@ function ContactCard({ contact, users, isOwnerOrManager, onEdit, onDelete, onLog
   )
 }
 
-// ─── Pipeline Tab ─────────────────────────────────────────────────────────────
-function PipelineTab({ contacts, users, isOwnerOrManager, onEdit, onDelete }) {
-  const [logTarget, setLogTarget] = useState(null)
-  const handleLogOpen = (contact, callback) => setLogTarget({ contact, callback })
-  const handleInteractionSaved = (i) => { if (logTarget?.callback) logTarget.callback(i); setLogTarget(null) }
+// ─── Pipeline constants ───────────────────────────────────────────────────────
+const PIPELINE_STATUSES = ['new_lead', 'contacted', 'meeting_scheduled', 'follow_up', 'not_interested']
 
-  const groups = STATUSES.map(s => ({ ...s, items: contacts.filter(c => c.status === s.value) })).filter(g => g.items.length > 0)
+const NEXT_STAGE = {
+  new_lead:          { value: 'contacted',         label: 'Mark Contacted' },
+  contacted:         { value: 'meeting_scheduled', label: 'Book Meeting' },
+  meeting_scheduled: { value: 'active_partner',    label: 'Make Partner' },
+  follow_up:         { value: 'contacted',         label: 'Re-Contacted' },
+}
+
+// ─── Pipeline row (compact, action-focused) ────────────────────────────────────
+function PipelineRow({ contact, users, isOwnerOrManager, onEdit, onDelete, onLog, onStatusChange }) {
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [interactions,  setInteractions]  = useState(null)
+  const [loadingHist,   setLoadingHist]   = useState(false)
+  const [expanded,      setExpanded]      = useState(false)
+
+  const m     = statusMeta(contact.status)
+  const today = new Date(); today.setHours(0,0,0,0)
+  const due   = contact.next_action_date ? new Date(contact.next_action_date + 'T00:00:00') : null
+  const overdue  = due && due < today
+  const next  = NEXT_STAGE[contact.status]
+
+  async function handleExpand() {
+    const show = !expanded; setExpanded(show)
+    if (show && interactions === null) {
+      setLoadingHist(true)
+      try { setInteractions(await apiGet(`/api/b2b/contacts/${contact.id}/interactions`)) }
+      finally { setLoadingHist(false) }
+    }
+  }
 
   return (
-    <>
-      <div className="space-y-8">
-        {groups.length === 0 ? (
-          <div className="text-center py-24">
-            <Building2 size={48} className="mx-auto mb-4 text-gray-300" />
-            <p className="text-gray-700 font-semibold">No contacts yet.</p>
-            <p className="text-gray-400 text-sm mt-1">Add your first B2B lead to get started.</p>
+    <div className={overdue ? 'bg-red-50/40' : ''}>
+      <div className="flex items-center gap-3 px-4 py-3">
+        {/* Logo / initial */}
+        <div className="flex-shrink-0">
+          {contact.logo_url
+            ? <img src={contact.logo_url} alt="" className="w-9 h-9 rounded-lg object-contain bg-gray-50 border border-gray-200" />
+            : <div className={`w-9 h-9 rounded-lg ${m.bg} border ${m.border} flex items-center justify-center flex-shrink-0`}>
+                <span className={`text-sm font-bold ${m.text}`}>{(contact.business_name[0] || '?').toUpperCase()}</span>
+              </div>
+          }
+        </div>
+
+        {/* Name + sub-info + next action */}
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-gray-900 truncate">{contact.business_name}</p>
+          <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+            {contact.contact_name && <span className="text-xs text-gray-500">{contact.contact_name}</span>}
+            {contact.industry && <span className="text-xs text-gray-400">· {contact.industry}</span>}
           </div>
-        ) : (
-          groups.map(group => (
-            <div key={group.value}>
-              <div className="flex items-center gap-2.5 mb-3">
-                <StatusBadge status={group.value} />
-                <span className="text-gray-500 text-sm">{group.items.length} contact{group.items.length !== 1 ? 's' : ''}</span>
-              </div>
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {group.items.map(c => (
-                  <ContactCard key={c.id} contact={c} users={users} isOwnerOrManager={isOwnerOrManager}
-                    onEdit={onEdit} onDelete={onDelete} onLogInteraction={handleLogOpen} />
-                ))}
-              </div>
-            </div>
-          ))
+          {contact.next_action && (
+            <p className={`text-xs mt-1 flex items-center gap-1 ${overdue ? 'text-red-600 font-semibold' : 'text-gray-500'}`}>
+              {overdue
+                ? <AlertCircle size={11} className="flex-shrink-0 text-red-500" />
+                : <Clock size={11} className="flex-shrink-0 text-orange-400" />}
+              {contact.next_action}
+              {contact.next_action_date && (
+                <span className={`ml-1 ${overdue ? 'text-red-400' : 'text-gray-400'}`}>· {fmtDate(contact.next_action_date)}</span>
+              )}
+            </p>
+          )}
+        </div>
+
+        {/* Quick action buttons */}
+        {isOwnerOrManager && (
+          <div className="flex items-center gap-0.5 flex-shrink-0">
+            {contact.phone && (
+              <a href={`tel:${contact.phone}`} title={`Call ${contact.phone}`}
+                className="p-1.5 text-gray-300 hover:text-orange-500 rounded transition-colors">
+                <Phone size={14} />
+              </a>
+            )}
+            {contact.email && (
+              <a href={`mailto:${contact.email}`} title={contact.email}
+                className="p-1.5 text-gray-300 hover:text-orange-500 rounded transition-colors">
+                <Mail size={14} />
+              </a>
+            )}
+            <button onClick={() => onLog(i => setInteractions(prev => prev ? [i, ...prev] : [i]))}
+              title="Log interaction"
+              className="p-1.5 text-gray-300 hover:text-orange-500 rounded transition-colors">
+              <MessageSquare size={14} />
+            </button>
+            {next && (
+              <button onClick={() => onStatusChange(contact.id, next.value)}
+                title={next.label}
+                className="hidden sm:inline-flex items-center gap-1 px-2 py-1 ml-0.5 text-xs font-semibold bg-orange-50 border border-orange-200 text-orange-700 hover:bg-orange-100 rounded-lg transition-colors whitespace-nowrap">
+                {next.label} →
+              </button>
+            )}
+            <button onClick={() => onEdit(contact)} title="Edit"
+              className="p-1.5 text-gray-300 hover:text-gray-700 rounded transition-colors">
+              <Edit2 size={14} />
+            </button>
+            {confirmDelete ? (
+              <span className="flex items-center gap-1">
+                <button onClick={() => onDelete(contact.id)} className="px-1.5 py-1 bg-red-600 text-white text-xs rounded font-semibold">Del</button>
+                <button onClick={() => setConfirmDelete(false)} className="text-gray-400 text-xs px-1">✕</button>
+              </span>
+            ) : (
+              <button onClick={() => setConfirmDelete(true)} title="Delete"
+                className="p-1.5 text-gray-300 hover:text-red-500 rounded transition-colors">
+                <Trash2 size={14} />
+              </button>
+            )}
+            <button onClick={handleExpand} title="History"
+              className="p-1.5 text-gray-200 hover:text-gray-500 rounded transition-colors">
+              {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+            </button>
+          </div>
         )}
       </div>
-      {logTarget && <LogInteractionModal contact={logTarget.contact} onSave={handleInteractionSaved} onClose={() => setLogTarget(null)} />}
-    </>
+
+      {/* Inline interaction history */}
+      {expanded && (
+        <div className="px-4 pb-3 bg-gray-50 border-t border-gray-100">
+          {loadingHist ? (
+            <p className="text-xs text-gray-400 py-2">Loading…</p>
+          ) : interactions?.length ? (
+            <div className="space-y-0">
+              {interactions.map(i => {
+                const meta = INTERACTION_TYPES.find(t => t.value === i.type) || INTERACTION_TYPES[4]
+                const Icon = meta.icon
+                return (
+                  <div key={i.id} className="flex items-start gap-2.5 py-2.5 border-b border-gray-100 last:border-0">
+                    <div className="w-6 h-6 rounded-full bg-orange-100 border border-orange-200 flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <Icon size={11} className="text-orange-500" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-gray-800">
+                        <span className="capitalize">{i.type}</span>
+                        <span className="text-gray-400 font-normal ml-1">by {i.logged_by_name} · {fmtDateTime(i.logged_at)}</span>
+                      </p>
+                      {i.notes && <p className="text-xs text-gray-500 mt-0.5">{i.notes}</p>}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <p className="text-xs text-gray-400 py-2 italic">No interactions logged yet.</p>
+          )}
+        </div>
+      )}
+    </div>
   )
 }
 
-// ─── Discounts Tab ────────────────────────────────────────────────────────────
-function DiscountsTab({ contacts, isOwnerOrManager, onEdit }) {
-  const partners = contacts.filter(c => c.discount_desc || c.discount_ongoing)
+// ─── Pipeline Tab ─────────────────────────────────────────────────────────────
+function PipelineTab({ contacts, users, isOwnerOrManager, onEdit, onDelete, onStatusChange }) {
+  const [logTarget, setLogTarget] = useState(null)
+  const handleInteractionSaved = i => { logTarget?.callback?.(i); setLogTarget(null) }
+
+  const pipelineContacts = contacts.filter(c => c.status !== 'active_partner')
+  const today  = new Date(); today.setHours(0,0,0,0)
+  const overdue = pipelineContacts.filter(c => c.next_action_date && new Date(c.next_action_date + 'T00:00:00') < today)
+
+  const groups = PIPELINE_STATUSES
+    .map(s => ({
+      ...statusMeta(s),
+      items: pipelineContacts
+        .filter(c => c.status === s)
+        .sort((a, b) => {
+          const aD = a.next_action_date ? new Date(a.next_action_date) : null
+          const bD = b.next_action_date ? new Date(b.next_action_date) : null
+          if (aD && bD) return aD - bD
+          return aD ? -1 : bD ? 1 : 0
+        })
+    }))
+    .filter(g => g.items.length > 0)
 
   return (
-    <div>
-      <p className="text-gray-600 text-sm mb-5">
-        Partners who offer discounts to HOTWORX members — check "Auto-carry" on a contact to include it here each month.
-      </p>
-      {partners.length === 0 ? (
-        <div className="text-center py-20">
-          <Gift size={44} className="mx-auto mb-4 text-gray-300" />
-          <p className="text-gray-700 font-semibold">No discount partners yet.</p>
-          <p className="text-gray-400 text-sm mt-1">Mark contacts as Active Partners and add a discount description.</p>
+    <>
+      {/* Overdue urgency banner */}
+      {overdue.length > 0 && (
+        <div className="mb-5 bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-start gap-3">
+          <AlertCircle size={18} className="text-red-500 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-red-700 font-semibold text-sm">
+              {overdue.length} contact{overdue.length > 1 ? 's' : ''} need{overdue.length === 1 ? 's' : ''} immediate follow-up
+            </p>
+            <p className="text-red-500 text-xs mt-0.5 leading-relaxed">
+              {overdue.map(c => c.business_name).join(' · ')}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {pipelineContacts.length === 0 ? (
+        <div className="text-center py-24">
+          <Building2 size={48} className="mx-auto mb-4 text-gray-300" />
+          <p className="text-gray-700 font-semibold">No contacts in the pipeline yet.</p>
+          <p className="text-gray-400 text-sm mt-1">Add your first B2B lead to get started.</p>
         </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {partners.map(c => (
-            <div key={c.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
-              <div className="h-1 bg-orange-500" />
-              <div className="p-4">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-start gap-3">
-                    {c.logo_url
-                      ? <img src={c.logo_url} alt={c.business_name} className="w-10 h-10 rounded-lg object-contain bg-gray-50 p-0.5 border border-gray-200 flex-shrink-0" />
-                      : <div className="w-10 h-10 rounded-lg bg-orange-50 border border-orange-200 flex items-center justify-center flex-shrink-0"><Building2 size={16} className="text-orange-500" /></div>
-                    }
-                    <div>
-                      <p className="text-gray-900 font-bold text-sm">{c.business_name}</p>
-                      {c.contact_name && <p className="text-gray-600 text-xs">{c.contact_name}</p>}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    {c.discount_ongoing && (
-                      <span className="text-xs font-bold text-orange-500 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-full">Auto</span>
-                    )}
-                    {isOwnerOrManager && (
-                      <button onClick={() => onEdit(c)} className="p-1 text-gray-400 hover:text-gray-700 rounded transition-colors"><Edit2 size={13} /></button>
-                    )}
-                  </div>
-                </div>
-                {c.discount_desc && (
-                  <div className="mt-3 flex items-start gap-1.5 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2">
-                    <Gift size={12} className="text-orange-500 mt-0.5 flex-shrink-0" />
-                    <p className="text-orange-900 text-xs font-medium">{c.discount_desc}</p>
-                  </div>
-                )}
-                <div className="flex flex-wrap gap-3 mt-3">
-                  {c.phone && <a href={`tel:${c.phone}`} className="flex items-center gap-1 text-xs text-gray-600 hover:text-orange-500 transition-colors font-medium"><Phone size={11} /> {c.phone}</a>}
-                  {c.email && <a href={`mailto:${c.email}`} className="flex items-center gap-1 text-xs text-gray-600 hover:text-orange-500 transition-colors"><Mail size={11} /> {c.email}</a>}
-                </div>
+        <div className="space-y-6">
+          {groups.map(group => (
+            <div key={group.value}>
+              <div className="flex items-center gap-2.5 mb-2">
+                <StatusBadge status={group.value} />
+                <span className="text-gray-400 text-sm font-medium">{group.items.length}</span>
+              </div>
+              <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm divide-y divide-gray-100">
+                {group.items.map(c => (
+                  <PipelineRow
+                    key={c.id}
+                    contact={c}
+                    users={users}
+                    isOwnerOrManager={isOwnerOrManager}
+                    onEdit={onEdit}
+                    onDelete={onDelete}
+                    onLog={cb => setLogTarget({ contact: c, callback: cb })}
+                    onStatusChange={onStatusChange}
+                  />
+                ))}
               </div>
             </div>
           ))}
         </div>
       )}
+
+      {logTarget && (
+        <LogInteractionModal
+          contact={logTarget.contact}
+          onSave={handleInteractionSaved}
+          onClose={() => setLogTarget(null)}
+        />
+      )}
+    </>
+  )
+}
+
+// ─── Active Partner card ───────────────────────────────────────────────────────
+function ActivePartnerCard({ contact, users, isOwnerOrManager, onEdit, onLog }) {
+  const [interactions,  setInteractions]  = useState(null)
+  const [loadingHist,   setLoadingHist]   = useState(false)
+  const [expanded,      setExpanded]      = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+
+  async function handleExpand() {
+    const show = !expanded; setExpanded(show)
+    if (show && interactions === null) {
+      setLoadingHist(true)
+      try { setInteractions(await apiGet(`/api/b2b/contacts/${contact.id}/interactions`)) }
+      finally { setLoadingHist(false) }
+    }
+  }
+
+  const lastInteraction  = interactions?.[0] || null
+  const daysSince        = lastInteraction ? Math.floor((Date.now() - new Date(lastInteraction.logged_at)) / 86400000) : null
+  const needsCheckin     = daysSince !== null && daysSince > 30
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow flex flex-col">
+      <div className="h-1 bg-orange-500" />
+      <div className="p-4 flex-1">
+        {/* Header */}
+        <div className="flex items-start gap-3">
+          {contact.logo_url
+            ? <img src={contact.logo_url} alt="" className="w-11 h-11 rounded-lg object-contain bg-gray-50 border border-gray-200 flex-shrink-0" />
+            : <div className="w-11 h-11 rounded-lg bg-orange-50 border border-orange-200 flex items-center justify-center flex-shrink-0">
+                <Building2 size={18} className="text-orange-500" />
+              </div>
+          }
+          <div className="flex-1 min-w-0">
+            <p className="font-bold text-gray-900 text-sm leading-tight truncate">{contact.business_name}</p>
+            {contact.contact_name && <p className="text-xs text-gray-600 mt-0.5">{contact.contact_name}</p>}
+            {contact.industry && <p className="text-xs text-gray-400">{contact.industry}</p>}
+          </div>
+          {isOwnerOrManager && (
+            <button onClick={() => onEdit(contact)} title="Edit"
+              className="p-1.5 text-gray-300 hover:text-gray-600 rounded transition-colors flex-shrink-0">
+              <Edit2 size={13} />
+            </button>
+          )}
+        </div>
+
+        {/* Discount */}
+        {contact.discount_desc && (
+          <div className="mt-3 flex items-start gap-1.5 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2">
+            <Gift size={12} className="text-orange-500 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="text-orange-800 text-xs font-semibold">{contact.discount_desc}</p>
+              {contact.discount_ongoing && <p className="text-orange-400 text-[10px] mt-0.5">↻ Auto-renews monthly</p>}
+            </div>
+          </div>
+        )}
+
+        {/* Check-in warning */}
+        {needsCheckin && (
+          <div className="mt-2 flex items-center gap-1.5 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+            <Clock size={11} className="text-amber-500 flex-shrink-0" />
+            <p className="text-amber-700 text-xs font-medium">
+              Check-in overdue — last contact {daysSince}d ago
+            </p>
+          </div>
+        )}
+
+        {/* Action row */}
+        <div className="flex items-center gap-2 mt-3 flex-wrap">
+          {contact.phone && (
+            <a href={`tel:${contact.phone}`}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-50 border border-gray-200 hover:border-orange-300 hover:bg-orange-50 text-gray-600 hover:text-orange-600 text-xs font-medium rounded-lg transition-colors">
+              <Phone size={11} /> Call
+            </a>
+          )}
+          {contact.email && (
+            <a href={`mailto:${contact.email}`}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-50 border border-gray-200 hover:border-orange-300 hover:bg-orange-50 text-gray-600 hover:text-orange-600 text-xs font-medium rounded-lg transition-colors">
+              <Mail size={11} /> Email
+            </a>
+          )}
+          {isOwnerOrManager && (
+            <button
+              onClick={() => onLog(i => setInteractions(prev => prev ? [i, ...prev] : [i]))}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-orange-50 border border-orange-200 hover:bg-orange-100 text-orange-700 text-xs font-medium rounded-lg transition-colors">
+              <MessageSquare size={11} /> Log
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* History toggle */}
+      <button onClick={handleExpand}
+        className="w-full flex items-center justify-between px-4 py-2.5 border-t border-gray-100 text-xs font-medium text-gray-400 hover:text-gray-700 hover:bg-gray-50 transition-colors">
+        <span>
+          {expanded ? 'Hide history' : 'Show history'}
+          {lastInteraction && !expanded && (
+            <span className="ml-1.5 text-gray-300">· Last: {fmtDateTime(lastInteraction.logged_at)}</span>
+          )}
+        </span>
+        {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+      </button>
+
+      {expanded && (
+        <div className="px-4 pb-4 border-t border-gray-100 bg-gray-50">
+          {loadingHist ? (
+            <p className="text-xs text-gray-400 py-3">Loading…</p>
+          ) : interactions?.length ? (
+            interactions.map(i => {
+              const meta = INTERACTION_TYPES.find(t => t.value === i.type) || INTERACTION_TYPES[4]
+              const Icon = meta.icon
+              return (
+                <div key={i.id} className="flex items-start gap-2.5 pt-3">
+                  <div className="w-7 h-7 rounded-full bg-orange-100 border border-orange-200 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <Icon size={12} className="text-orange-500" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-gray-800">
+                      <span className="capitalize">{i.type}</span>
+                      <span className="text-gray-400 font-normal ml-1">by {i.logged_by_name} · {fmtDateTime(i.logged_at)}</span>
+                    </p>
+                    {i.notes && <p className="text-xs text-gray-600 mt-0.5">{i.notes}</p>}
+                  </div>
+                </div>
+              )
+            })
+          ) : (
+            <p className="text-xs text-gray-400 pt-3 italic">No interactions logged yet.</p>
+          )}
+        </div>
+      )}
     </div>
+  )
+}
+
+// ─── Active Partners Tab ──────────────────────────────────────────────────────
+function ActivePartnersTab({ contacts, users, isOwnerOrManager, onEdit }) {
+  const [logTarget, setLogTarget] = useState(null)
+  const handleInteractionSaved = i => { logTarget?.callback?.(i); setLogTarget(null) }
+
+  const partners = contacts.filter(c => c.status === 'active_partner')
+
+  return (
+    <>
+      {partners.length === 0 ? (
+        <div className="text-center py-24">
+          <Handshake size={48} className="mx-auto mb-4 text-gray-300" />
+          <p className="text-gray-700 font-semibold">No active partners yet.</p>
+          <p className="text-gray-400 text-sm mt-1">
+            Use the Pipeline tab and click "Make Partner →" on a meeting-scheduled contact to move them here.
+          </p>
+        </div>
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {partners.map(c => (
+            <ActivePartnerCard
+              key={c.id}
+              contact={c}
+              users={users}
+              isOwnerOrManager={isOwnerOrManager}
+              onEdit={onEdit}
+              onLog={cb => setLogTarget({ contact: c, callback: cb })}
+            />
+          ))}
+        </div>
+      )}
+      {logTarget && (
+        <LogInteractionModal
+          contact={logTarget.contact}
+          onSave={handleInteractionSaved}
+          onClose={() => setLogTarget(null)}
+        />
+      )}
+    </>
   )
 }
 
@@ -631,6 +942,15 @@ export default function B2bPage() {
     setContacts(prev => prev.filter(c => c.id !== id))
   }
 
+  const handleStatusChange = async (id, newStatus) => {
+    const contact = contacts.find(c => c.id === id)
+    if (!contact) return
+    try {
+      const updated = await apiPut(`/api/b2b/contacts/${id}`, { ...contact, status: newStatus })
+      setContacts(prev => prev.map(c => c.id === id ? updated : c))
+    } catch (err) { setError(err.message) }
+  }
+
   const filtered = contacts.filter(c => {
     const q = searchQuery.toLowerCase()
     const matchSearch = !q || [c.business_name, c.contact_name, c.email, c.industry].some(f => f?.toLowerCase().includes(q))
@@ -671,7 +991,7 @@ export default function B2bPage() {
 
       {/* Tabs */}
       <div className="flex gap-1 mb-5 border-b border-gray-200">
-        {[{ key: 'pipeline', label: 'Pipeline' }, { key: 'discounts', label: 'Discount Partners' }].map(t => (
+        {[{ key: 'pipeline', label: 'Pipeline' }, { key: 'partners', label: 'Active Partners' }].map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className={`px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${
               tab === t.key ? 'border-orange-500 text-orange-500' : 'border-transparent text-gray-500 hover:text-gray-800'
@@ -699,14 +1019,14 @@ export default function B2bPage() {
             className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-orange-500"
             value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
             <option value="">All statuses</option>
-            {STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+            {STATUSES.filter(s => s.value !== 'active_partner').map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
           </select>
         </div>
       )}
 
       {tab === 'pipeline'
-        ? <PipelineTab contacts={filtered} users={users} isOwnerOrManager={isOwnerOrManager} onEdit={setModalContact} onDelete={handleDelete} />
-        : <DiscountsTab contacts={contacts} isOwnerOrManager={isOwnerOrManager} onEdit={setModalContact} />
+        ? <PipelineTab contacts={filtered} users={users} isOwnerOrManager={isOwnerOrManager} onEdit={setModalContact} onDelete={handleDelete} onStatusChange={handleStatusChange} />
+        : <ActivePartnersTab contacts={contacts} users={users} isOwnerOrManager={isOwnerOrManager} onEdit={setModalContact} />
       }
 
       {modalContact !== null && (

@@ -205,6 +205,7 @@ Work one milestone at a time. Test in browser before moving to the next.
 | M8 | SOPs + Training Library | File upload, versioning, completion tracking | ✅ |
 | M9 | Coaching Section + Manager To-Do | Private modules, push-to-todo | ✅ |
 | M10 | Historical Navigation | Wire month switching across all modules | ⬜ |
+| M11 | User Management + Profiles + Onboarding | In-app team CRUD, motivation quiz, profile photos | ✅ |
 
 Update the Status column (⬜ = pending, 🔄 = in progress, ✅ = complete) as each milestone ships.
 

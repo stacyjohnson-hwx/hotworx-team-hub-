@@ -3,7 +3,7 @@ import L from 'leaflet'
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { MapContainer, TileLayer, Marker, Popup, Circle, useMap, useMapEvents } from 'react-leaflet'
-import { Plus, MapPin, X, Search, Loader2, Trash2, Building2, Home, ChevronRight, ExternalLink, Clock, FileText, Pencil, Navigation } from 'lucide-react'
+import { Plus, MapPin, X, Search, Loader2, Trash2, Building2, Home, ChevronRight, ExternalLink, Clock, FileText, Pencil, Navigation, Edit2, Check } from 'lucide-react'
 import { MAP_ACTIVITIES, EMPLOYEES } from '../data/mockData'
 import { apiGet, apiPut } from '@/hooks/useApi'
 import { useRole } from '@/hooks/useRole'
@@ -88,33 +88,51 @@ const DEFAULT_NEIGHBORHOODS = [
 ]
 
 // ─── localStorage ─────────────────────────────────────────────────────────────
-const ACT_KEY         = 'leadgenhq_map_activities'
-const NBH_KEY         = 'leadgenhq_neighborhoods'
-const NBH_DELETED_KEY = 'leadgenhq_neighborhoods_deleted'
+const ACT_KEY          = 'leadgenhq_map_activities'
+const NBH_KEY          = 'leadgenhq_neighborhoods'
+const NBH_DELETED_KEY  = 'leadgenhq_neighborhoods_deleted'
+const NBH_OVERRIDE_KEY = 'leadgenhq_neighborhoods_overrides'  // edits to default neighborhoods
 
+// Activities: save the full list (not just custom-*) so edits/deletes to mock data persist
 function loadActivities() {
   try {
-    const custom = JSON.parse(localStorage.getItem(ACT_KEY) || '[]')
-    const customIds = new Set(custom.map(a => a.id))
-    return [...MAP_ACTIVITIES.filter(a => !customIds.has(a.id)), ...custom]
+    const saved = localStorage.getItem(ACT_KEY)
+    if (saved) return JSON.parse(saved)
+    return MAP_ACTIVITIES   // first-ever load: seed with mock data
   } catch { return MAP_ACTIVITIES }
 }
 function saveActivities(list) {
-  try { localStorage.setItem(ACT_KEY, JSON.stringify(list.filter(a => a.id.startsWith('custom-')))) } catch {}
+  try { localStorage.setItem(ACT_KEY, JSON.stringify(list)) } catch {}
 }
+
+// Neighborhood delete persistence
 function loadDeletedDefaultIds() {
   try { return new Set(JSON.parse(localStorage.getItem(NBH_DELETED_KEY) || '[]')) } catch { return new Set() }
 }
 function saveDeletedDefaultIds(ids) {
   try { localStorage.setItem(NBH_DELETED_KEY, JSON.stringify([...ids])) } catch {}
 }
+
+// Neighborhood edit overrides (for default neighborhoods whose name/notes/coords were changed)
+function loadNbhOverrides() {
+  try { return JSON.parse(localStorage.getItem(NBH_OVERRIDE_KEY) || '{}') } catch { return {} }
+}
+function saveNbhOverride(id, data) {
+  const overrides = loadNbhOverrides()
+  overrides[id] = data
+  try { localStorage.setItem(NBH_OVERRIDE_KEY, JSON.stringify(overrides)) } catch {}
+}
+
 function loadNeighborhoods() {
   try {
     const deleted   = loadDeletedDefaultIds()
+    const overrides = loadNbhOverrides()
     const custom    = JSON.parse(localStorage.getItem(NBH_KEY) || '[]')
     const customIds = new Set(custom.map(n => n.id))
     return [
-      ...DEFAULT_NEIGHBORHOODS.filter(n => !customIds.has(n.id) && !deleted.has(n.id)),
+      ...DEFAULT_NEIGHBORHOODS
+        .filter(n => !customIds.has(n.id) && !deleted.has(n.id))
+        .map(n => overrides[n.id] ? { ...n, ...overrides[n.id] } : n),
       ...custom,
     ]
   } catch { return DEFAULT_NEIGHBORHOODS }
@@ -317,18 +335,101 @@ function AddLocationModal({ type, coords, onClose, onSave }) {
   )
 }
 
+// ─── Edit Neighborhood Modal ──────────────────────────────────────────────────
+function EditNeighborhoodModal({ neighborhood, onClose, onSave }) {
+  const [name, setName]           = useState(neighborhood.name)
+  const [notes, setNotes]         = useState(neighborhood.notes || '')
+  const [lat, setLat]             = useState(neighborhood.lat)
+  const [lng, setLng]             = useState(neighborhood.lng)
+  const [address, setAddress]     = useState('')
+  const [searching, setSearching] = useState(false)
+  const [err, setErr]             = useState('')
+
+  async function handleSearch() {
+    if (!address.trim()) return
+    setSearching(true); setErr('')
+    const res = await geocode(address)
+    setSearching(false)
+    if (res) { setLat(res.lat); setLng(res.lng) }
+    else setErr('Address not found — try a more specific search.')
+  }
+
+  function handleSave() {
+    if (!name.trim()) return
+    onSave(neighborhood.id, { name: name.trim(), notes, lat, lng })
+    onClose()
+  }
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center bg-black/50 px-4 pb-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+        <div className="bg-[#1A1A1A] px-5 py-4 flex items-center justify-between">
+          <div>
+            <p className="text-[#E8611A] text-xs font-bold uppercase tracking-wider mb-0.5">Neighborhood</p>
+            <p className="text-white font-bold text-base">Edit Neighborhood</p>
+          </div>
+          <button onClick={onClose} className="text-white/40 hover:text-white/70"><X size={20} /></button>
+        </div>
+        <div className="p-5 space-y-3">
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">Name *</label>
+            <input value={name} onChange={e => setName(e.target.value)}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-[#E8611A]" />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">Notes</label>
+            <textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)}
+              placeholder="Any details about this neighborhood…"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-[#E8611A]" />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">Re-locate (optional)</label>
+            <div className="flex gap-1.5">
+              <input value={address} onChange={e => setAddress(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleSearch()}
+                placeholder="Search a new address…"
+                className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-[#E8611A]" />
+              <button onClick={handleSearch} disabled={searching || !address.trim()}
+                className="px-3 py-2 bg-gray-900 text-white rounded-lg text-xs font-semibold disabled:opacity-40 flex items-center gap-1">
+                {searching ? <Loader2 size={12} className="animate-spin" /> : <Search size={12} />}
+              </button>
+            </div>
+            {err && <p className="text-xs text-red-500 mt-1">{err}</p>}
+            <p className="text-xs text-gray-400 mt-1">
+              Current: {lat.toFixed(4)}, {lng.toFixed(4)}
+            </p>
+          </div>
+          <div className="flex gap-2 pt-1">
+            <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50">Cancel</button>
+            <button onClick={handleSave} disabled={!name.trim()}
+              className="flex-1 py-2.5 rounded-xl bg-[#E8611A] text-white text-sm font-bold disabled:opacity-40 hover:bg-orange-600">
+              Save Changes
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Log Activity Modal ───────────────────────────────────────────────────────
-function LogActivityModal({ coords, onClose, onSave, prefill = {} }) {
+// Pass `editActivity` to pre-populate the form for editing an existing activity.
+// On save: calls onUpdate(updated) when editActivity is set, otherwise onSave(new).
+function LogActivityModal({ coords, onClose, onSave, onUpdate, prefill = {}, editActivity = null }) {
   const today = new Date().toLocaleDateString('en-CA')
-  const initType = prefill.activityType ?? 'Business Visit'
+  const src   = editActivity || null
+  const initType = src?.activityType ?? prefill.activityType ?? 'Business Visit'
   const [form, setForm] = useState({
-    locationName: prefill.locationName ?? '',
+    locationName: src?.locationName ?? prefill.locationName ?? '',
     addressSearch:'',
     activityType: initType,
-    employeeId:EMPLOYEES[0].id, employeeName:EMPLOYEES[0].name,
-    date:today, notes:'', points: DEFAULT_POINTS[initType] ?? 10,
-    lat: prefill.lat ?? coords?.lat ?? null,
-    lng: prefill.lng ?? coords?.lng ?? null,
+    employeeId:   src?.employee      ?? EMPLOYEES[0].id,
+    employeeName: src?.employeeName  ?? EMPLOYEES[0].name,
+    date:         src ? new Date(src.dateCompleted).toLocaleDateString('en-CA') : today,
+    notes:        src?.notes         ?? '',
+    points:       src?.points        ?? DEFAULT_POINTS[initType] ?? 10,
+    lat:          src?.latitude      ?? prefill.lat ?? coords?.lat ?? null,
+    lng:          src?.longitude     ?? prefill.lng ?? coords?.lng ?? null,
   })
   const [searching, setSearching] = useState(false)
   const [err, setErr]             = useState('')
@@ -349,14 +450,18 @@ function LogActivityModal({ coords, onClose, onSave, prefill = {} }) {
   }
   function handleSave() {
     if (!form.locationName.trim() || !form.lat || !form.lng) return
-    onSave({
-      id: newId('act'),
+    const payload = {
       locationName: form.locationName, latitude: form.lat, longitude: form.lng,
       activityType: form.activityType,
       dateCompleted: new Date(form.date+'T12:00:00').toISOString(),
       employee: form.employeeId, employeeName: form.employeeName,
       missionId: null, playId: null, points: Number(form.points), notes: form.notes,
-    })
+    }
+    if (editActivity) {
+      onUpdate?.({ ...editActivity, ...payload })
+    } else {
+      onSave({ id: newId('act'), ...payload })
+    }
     onClose()
   }
   const canSave = form.locationName.trim() && form.lat && form.lng
@@ -367,7 +472,7 @@ function LogActivityModal({ coords, onClose, onSave, prefill = {} }) {
         <div className="bg-[#1A1A1A] px-5 py-4 flex items-center justify-between flex-shrink-0">
           <div>
             <p className="text-[#E8611A] text-xs font-bold uppercase tracking-wider mb-0.5">Paint the Town Orange</p>
-            <p className="text-white font-bold text-base">Log Outreach Activity</p>
+            <p className="text-white font-bold text-base">{editActivity ? 'Edit Activity' : 'Log Outreach Activity'}</p>
           </div>
           <button onClick={onClose} className="text-white/40 hover:text-white/70"><X size={20} /></button>
         </div>
@@ -433,7 +538,7 @@ function LogActivityModal({ coords, onClose, onSave, prefill = {} }) {
           <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50">Cancel</button>
           <button onClick={handleSave} disabled={!canSave}
             className="flex-1 py-2.5 rounded-xl bg-[#E8611A] text-white text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-orange-600">
-            Log Activity
+            {editActivity ? 'Save Changes' : 'Log Activity'}
           </button>
         </div>
       </div>
@@ -442,7 +547,12 @@ function LogActivityModal({ coords, onClose, onSave, prefill = {} }) {
 }
 
 // ─── Neighborhood History Modal ───────────────────────────────────────────────
-function NeighborhoodHistoryModal({ neighborhood, activities, onClose, onLog }) {
+function NeighborhoodHistoryModal({
+  neighborhood, activities, onClose, onLog,
+  onEditNbh, onEditActivity, onDeleteActivity, isOwnerOrManager,
+}) {
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null)
+
   const nearby = activities
     .filter(a => a.latitude && a.longitude)
     .map(a => ({ ...a, dist: distanceKm(neighborhood.lat, neighborhood.lng, a.latitude, a.longitude) }))
@@ -453,12 +563,21 @@ function NeighborhoodHistoryModal({ neighborhood, activities, onClose, onLog }) 
   const covered   = nearest && getIntensity(nearest.dateCompleted) !== 'stale'
   const intensity = nearest ? getIntensity(nearest.dateCompleted) : null
 
+  function handleDelete(id) {
+    if (confirmDeleteId === id) {
+      onDeleteActivity(id)
+      setConfirmDeleteId(null)
+    } else {
+      setConfirmDeleteId(id)
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center bg-black/50 px-4 pb-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm max-h-[85vh] flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="bg-[#1A1A1A] px-5 py-4 flex items-center justify-between flex-shrink-0">
-          <div>
+        <div className="bg-[#1A1A1A] px-5 py-4 flex items-start justify-between flex-shrink-0">
+          <div className="flex-1 min-w-0">
             <p className="text-[#E8611A] text-xs font-bold uppercase tracking-wider mb-0.5">Neighborhood</p>
             <p className="text-white font-bold text-base leading-tight">{neighborhood.name}</p>
             {covered && nearest
@@ -468,11 +587,29 @@ function NeighborhoodHistoryModal({ neighborhood, activities, onClose, onLog }) 
               : <p className="text-xs text-gray-400 mt-0.5">Not recently covered</p>
             }
           </div>
-          <button onClick={onClose} className="text-white/40 hover:text-white/70 ml-3 flex-shrink-0"><X size={20} /></button>
+          <div className="flex items-center gap-1.5 ml-3 flex-shrink-0">
+            {isOwnerOrManager && onEditNbh && (
+              <button onClick={() => onEditNbh(neighborhood)}
+                title="Edit neighborhood info"
+                className="p-1.5 text-white/40 hover:text-white/90 rounded-lg transition-colors">
+                <Pencil size={15} />
+              </button>
+            )}
+            <button onClick={onClose} className="p-1.5 text-white/40 hover:text-white/70 rounded-lg transition-colors">
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
+        {/* Notes (if any) */}
+        {neighborhood.notes && (
+          <div className="px-5 pt-3 pb-0 flex-shrink-0">
+            <p className="text-xs text-gray-500 italic">{neighborhood.notes}</p>
+          </div>
+        )}
+
         {/* Log button */}
-        <div className="px-5 pt-4 pb-3 border-b border-gray-100 flex-shrink-0">
+        <div className="px-5 pt-3 pb-3 border-b border-gray-100 flex-shrink-0">
           <button
             onClick={onLog}
             className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-[#E8611A] text-white text-sm font-bold hover:bg-orange-600 transition-colors">
@@ -491,19 +628,49 @@ function NeighborhoodHistoryModal({ neighborhood, activities, onClose, onLog }) 
               <p className="text-xs text-gray-400 mt-1">Hit the button above to log the first one!</p>
             </div>
           ) : (
-            <div className="space-y-2.5">
+            <div className="space-y-0">
               {nearby.map(a => {
-                const itn = getIntensity(a.dateCompleted)
+                const itn      = getIntensity(a.dateCompleted)
+                const delPend  = confirmDeleteId === a.id
                 return (
-                  <div key={a.id} className="flex gap-3 items-start border-b border-gray-50 pb-2.5 last:border-0">
+                  <div key={a.id} className="flex gap-3 items-start border-b border-gray-50 py-2.5 last:border-0 group">
                     <div className="w-2.5 h-2.5 rounded-full mt-1.5 flex-shrink-0" style={{ background: INTENSITY[itn].color }} />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-gray-800 truncate">{a.locationName}</p>
                       <p className="text-xs text-gray-500">{a.activityType} · {a.employeeName}</p>
                       <p className="text-xs" style={{ color: INTENSITY[itn].color }}>{INTENSITY[itn].label} · {fmt(a.dateCompleted)}</p>
-                      {a.notes && <p className="text-xs text-gray-400 italic mt-0.5 truncate">{a.notes}</p>}
+                      {a.notes && <p className="text-xs text-gray-400 italic mt-0.5">{a.notes}</p>}
                     </div>
-                    <span className="text-xs font-bold text-[#E8611A] flex-shrink-0 mt-0.5">+{a.points}pts</span>
+                    <div className="flex items-start gap-1 flex-shrink-0">
+                      <span className="text-xs font-bold text-[#E8611A] mt-0.5">+{a.points}pts</span>
+                      {isOwnerOrManager && (
+                        <div className="flex items-center gap-0.5 ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button onClick={() => { onEditActivity(a); setConfirmDeleteId(null) }}
+                            title="Edit activity"
+                            className="p-1 text-gray-300 hover:text-[#E8611A] rounded transition-colors">
+                            <Edit2 size={11} />
+                          </button>
+                          {delPend ? (
+                            <>
+                              <button onClick={() => handleDelete(a.id)}
+                                className="px-1.5 py-0.5 bg-red-500 text-white text-[10px] font-bold rounded">
+                                Del?
+                              </button>
+                              <button onClick={() => setConfirmDeleteId(null)}
+                                className="p-1 text-gray-300 hover:text-gray-600 rounded">
+                                <X size={10} />
+                              </button>
+                            </>
+                          ) : (
+                            <button onClick={() => handleDelete(a.id)}
+                              title="Delete activity"
+                              className="p-1 text-gray-300 hover:text-red-400 rounded transition-colors">
+                              <Trash2 size={11} />
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )
               })}
@@ -808,7 +975,9 @@ export default function MapTab() {
   const [modal,            setModal]            = useState(null) // null | 'activity' | 'neighborhood'
   const [pendingCoords,    setPendingCoords]    = useState(null)
   const [nbhDetail,        setNbhDetail]        = useState(null) // neighborhood for history panel
+  const [editNbh,          setEditNbh]          = useState(null) // neighborhood being edited
   const [logPrefill,       setLogPrefill]       = useState(null) // pre-fill data for log modal
+  const [editActivity,     setEditActivity]     = useState(null) // activity being edited
   const [bizDetail,        setBizDetail]        = useState(null) // full b2b contact for detail modal
   const mapContainerRef = { current: null }
 
@@ -860,15 +1029,35 @@ export default function MapTab() {
 
   function saveActivity(a)    { setActivities(prev => [a, ...prev]) }
   function saveNeighborhood(n){ setNeighborhoods(prev => [...prev, n]) }
+
   function delNeighborhood(id) {
     if (!window.confirm('Remove this neighborhood from the map?')) return
     setNeighborhoods(prev => prev.filter(n => n.id !== id))
-    // Persist deletion for default (non-custom) neighborhoods so they don't reappear on reload
     if (!id.startsWith('custom-')) {
       const deleted = loadDeletedDefaultIds()
       deleted.add(id)
       saveDeletedDefaultIds(deleted)
     }
+  }
+
+  // Edit neighborhood — update in state; persist override for defaults
+  function handleSaveNbhEdit(id, data) {
+    setNeighborhoods(prev => prev.map(n => n.id === id ? { ...n, ...data } : n))
+    if (!id.startsWith('custom-')) {
+      saveNbhOverride(id, data)
+    }
+    setEditNbh(null)
+  }
+
+  // Edit activity — update in place
+  function handleUpdateActivity(updated) {
+    setActivities(prev => prev.map(a => a.id === updated.id ? updated : a))
+    setEditActivity(null)
+  }
+
+  // Delete activity — remove from state (saveActivities useEffect persists it)
+  function handleDeleteActivity(id) {
+    setActivities(prev => prev.filter(a => a.id !== id))
   }
 
   // ALL B2B contacts normalized → shown in the list (single source of truth)
@@ -921,15 +1110,34 @@ export default function MapTab() {
           onSave={a => { saveActivity(a); setLogPrefill(null) }}
         />
       )}
+      {editActivity && (
+        <LogActivityModal
+          editActivity={editActivity}
+          onClose={() => setEditActivity(null)}
+          onUpdate={handleUpdateActivity}
+          onSave={() => {}}
+        />
+      )}
       {modal === 'neighborhood' && (
         <AddLocationModal type="neighborhood" coords={null} onClose={closeModal} onSave={saveNeighborhood} />
+      )}
+      {editNbh && (
+        <EditNeighborhoodModal
+          neighborhood={editNbh}
+          onClose={() => setEditNbh(null)}
+          onSave={handleSaveNbhEdit}
+        />
       )}
       {nbhDetail && (
         <NeighborhoodHistoryModal
           neighborhood={nbhDetail}
           activities={activities}
+          isOwnerOrManager={isOwnerOrManager}
           onClose={() => setNbhDetail(null)}
           onLog={() => handleLogForNbh(nbhDetail)}
+          onEditNbh={nbh => { setNbhDetail(null); setEditNbh(nbh) }}
+          onEditActivity={act => { setNbhDetail(null); setEditActivity(act) }}
+          onDeleteActivity={handleDeleteActivity}
         />
       )}
       {bizDetail && (

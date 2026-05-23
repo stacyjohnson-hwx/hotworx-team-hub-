@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from '@/contexts/AuthContext'
 import { MonthProvider } from '@/contexts/MonthContext'
 import { Layout } from '@/components/Layout'
@@ -19,11 +19,20 @@ import SopsPage from '@/pages/sops/SopsPage'
 import TrainingPage from '@/pages/training/TrainingPage'
 import TodoPage from '@/pages/todo/TodoPage'
 import CoachingPage from '@/pages/coaching/CoachingPage'
+import UsersPage from '@/pages/users/UsersPage'
+import ProfilePage from '@/pages/profile/ProfilePage'
+import OnboardingPage from '@/pages/onboarding/OnboardingPage'
 
 function ProtectedRoute({ children }) {
-  const { session, loading } = useAuth()
+  const { session, loading, profile } = useAuth()
+  const location = useLocation()
   if (loading) return <LoadingScreen />
   if (!session) return <Navigate to="/login" replace />
+  // Redirect to onboarding if not yet completed (skip for /onboarding and /profile)
+  const skipOnboarding = ['/onboarding', '/profile'].includes(location.pathname)
+  if (!skipOnboarding && profile && !profile.onboarding_completed_at) {
+    return <Navigate to="/onboarding" replace />
+  }
   return children
 }
 
@@ -100,7 +109,29 @@ function AppRoutes() {
             </RoleGuard>
           }
         />
+
+        {/* Owner + Manager only */}
+        <Route
+          path="/team"
+          element={
+            <RoleGuard allowedRoles={['owner', 'manager']}>
+              <UsersPage />
+            </RoleGuard>
+          }
+        />
+        {/* All authenticated users */}
+        <Route path="/profile" element={<ProfilePage />} />
       </Route>
+
+      {/* Onboarding — outside Layout so it's full-page */}
+      <Route
+        path="/onboarding"
+        element={
+          <ProtectedRoute>
+            <OnboardingPage />
+          </ProtectedRoute>
+        }
+      />
 
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>

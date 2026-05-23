@@ -389,12 +389,19 @@ function EventForm({ event, month, year, onSave, onClose }) {
   )
 }
 
+const MONTHS = [
+  'January','February','March','April','May','June',
+  'July','August','September','October','November','December',
+]
+
 function EventsTab({ month, year, canEdit }) {
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState(null)
   const [filter, setFilter] = useState('upcoming')
+  const [filterMonth, setFilterMonth] = useState('all')
+  const [filterYear, setFilterYear] = useState('all')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -425,13 +432,26 @@ function EventsTab({ month, year, canEdit }) {
     setEvents(prev => prev.filter(e => e.id !== id))
   }
 
-  const now = new Date()
-  const upcoming = events.filter(e => !isExpired(e.end_date || e.start_date))
-  const past = events.filter(e => isExpired(e.end_date || e.start_date))
+  // Sort newest to oldest by start_date
+  const sorted = [...events].sort((a, b) => new Date(b.start_date) - new Date(a.start_date))
+  const upcoming = sorted.filter(e => !isExpired(e.end_date || e.start_date))
+  const past = sorted.filter(e => isExpired(e.end_date || e.start_date))
 
-  const filtered = filter === 'upcoming' ? upcoming
-    : filter === 'past' ? past
-    : events
+  // Unique years from all events for the year dropdown
+  const availableYears = [...new Set(events.map(e => new Date(e.start_date + 'T00:00:00').getFullYear()))].sort((a, b) => b - a)
+
+  function applyDateFilters(list) {
+    return list.filter(e => {
+      const d = new Date(e.start_date + 'T00:00:00')
+      if (filterMonth !== 'all' && d.getMonth() + 1 !== Number(filterMonth)) return false
+      if (filterYear !== 'all' && d.getFullYear() !== Number(filterYear)) return false
+      return true
+    })
+  }
+
+  const showDateFilters = filter === 'past' || filter === 'all'
+  const base = filter === 'upcoming' ? upcoming : filter === 'past' ? past : sorted
+  const filtered = showDateFilters ? applyDateFilters(base) : base
 
   return (
     <div>
@@ -452,12 +472,41 @@ function EventsTab({ month, year, canEdit }) {
         )}
       </div>
 
+      {showDateFilters && (
+        <div className="flex items-center gap-2 mb-4 flex-wrap">
+          <select
+            value={filterMonth}
+            onChange={e => setFilterMonth(e.target.value)}
+            className="rounded-lg border border-gray-300 bg-white text-gray-700 px-3 py-1.5 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-orange-500/40 focus:border-orange-500"
+          >
+            <option value="all">All Months</option>
+            {MONTHS.map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
+          </select>
+          <select
+            value={filterYear}
+            onChange={e => setFilterYear(e.target.value)}
+            className="rounded-lg border border-gray-300 bg-white text-gray-700 px-3 py-1.5 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-orange-500/40 focus:border-orange-500"
+          >
+            <option value="all">All Years</option>
+            {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+          {(filterMonth !== 'all' || filterYear !== 'all') && (
+            <button
+              onClick={() => { setFilterMonth('all'); setFilterYear('all') }}
+              className="text-xs text-gray-400 hover:text-gray-600 underline"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      )}
+
       {loading ? (
         <div className="flex justify-center py-12">
           <Loader2 className="w-6 h-6 animate-spin text-orange-500" />
         </div>
       ) : filtered.length === 0 ? (
-        <EmptyState icon={Calendar} message={filter === 'past' ? 'No past events this month.' : 'No events yet — add the first one!'} />
+        <EmptyState icon={Calendar} message={filter === 'past' ? 'No past events found.' : 'No events yet — add the first one!'} />
       ) : (
         <div className="space-y-3">
           {filtered.map(e => (
@@ -708,12 +757,18 @@ function PromosTab({ month, year, canEdit }) {
     setPromos(prev => prev.filter(p => p.id !== id))
   }
 
-  const activePromos = promos.filter(p => p.active && !isExpired(p.end_date))
-  const inactivePromos = promos.filter(p => !p.active || isExpired(p.end_date))
+  // Sort newest to oldest by start_date (fall back to created_at)
+  const sorted = [...promos].sort((a, b) => {
+    const da = a.start_date || a.created_at || ''
+    const db = b.start_date || b.created_at || ''
+    return new Date(db) - new Date(da)
+  })
+  const activePromos = sorted.filter(p => p.active && !isExpired(p.end_date))
+  const inactivePromos = sorted.filter(p => !p.active || isExpired(p.end_date))
 
   const filtered = filter === 'active' ? activePromos
     : filter === 'inactive' ? inactivePromos
-    : promos
+    : sorted
 
   const ongoingCount = promos.filter(p => p.ongoing && p.active).length
 
