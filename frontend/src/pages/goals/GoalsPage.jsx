@@ -361,13 +361,15 @@ function StudioGoals({ month, year }) {
               sub={g.new_members_actual != null ? `${g.new_members_actual} new − ${g.cancellations_actual ?? 0} cancelled` : null}
             />
             <StatCard label="EFT Decrease"     value={g.eft_decrease_actual}  prefix="$" />
-            <StatCard label="Total EFT"        value={g.net_eft}              prefix="$" />
+            <StatCard label="Monthly EFT"      value={g.net_eft}              prefix="$" />
             <StatCard
-              label="Net EFT"
-              value={g.net_eft != null ? g.net_eft + (g.eft_actual || 0) - (g.eft_decrease_actual || 0) : null}
+              label="EFT Change"
+              value={(g.eft_actual != null || g.eft_decrease_actual != null)
+                ? (g.eft_actual || 0) - (g.eft_decrease_actual || 0)
+                : null}
               prefix="$"
-              highlight={(g.net_eft + (g.eft_actual || 0) - (g.eft_decrease_actual || 0)) > (g.net_eft || 0)}
-              sub="Total EFT + Increase − Decrease"
+              highlight={((g.eft_actual || 0) - (g.eft_decrease_actual || 0)) > 0}
+              sub="EFT Increase − Decrease"
             />
             <StatCard label="Membership Cash"  value={g.membership_cash}      prefix="$" />
           </div>
@@ -611,7 +613,7 @@ function PersonalGoalModal({ member, month, year, onSaved, onClose }) {
               <div className="grid grid-cols-3 gap-2 mt-2">
                 <div><span className="text-purple-500">Retail + Mbr Cash</span><br /><strong>{fmt$(Number(studioData.retail || 0) + Number(studioData.membership_cash || 0))}</strong></div>
                 <div><span className="text-purple-500">In The Bank</span><br /><strong>{fmt$(studioData.in_the_bank)}</strong></div>
-                <div><span className="text-purple-500">Net EFT</span><br /><strong>{fmt$(studioData.net_eft)}</strong></div>
+                <div><span className="text-purple-500">Monthly EFT</span><br /><strong>{fmt$(studioData.net_eft)}</strong></div>
               </div>
             </div>
           )}

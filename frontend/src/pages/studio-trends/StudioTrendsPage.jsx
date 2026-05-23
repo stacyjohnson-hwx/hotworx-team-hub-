@@ -166,7 +166,7 @@ function DataEntryTab({ month: initialMonth, year: initialYear }) {
     try {
       const result = await apiPut('/api/studio-trends', {
         ...data,
-        net_eft: (Number(data.eft_increase) || 0) - (Number(data.eft_decrease) || 0),
+        net_eft_increase: (Number(data.eft_increase) || 0) - (Number(data.eft_decrease) || 0),
         month: entryMonth,
         year: entryYear,
       })
@@ -208,14 +208,14 @@ function DataEntryTab({ month: initialMonth, year: initialYear }) {
           <NumInput label="Membership Cash"  value={data.membership_cash}  onChange={v => set('membership_cash', v)}  isCurrency />
           <NumInput label="EFT Increase"     value={data.eft_increase}     onChange={v => set('eft_increase', v)}     isCurrency />
           <NumInput label="EFT Decrease"     value={data.eft_decrease}     onChange={v => set('eft_decrease', v)}     isCurrency />
+          <NumInput label="Monthly EFT" value={data.net_eft} onChange={v => set('net_eft', v)} isCurrency />
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Net EFT Change</label>
-            <div className="w-full bg-gray-50 border border-gray-200 rounded-lg py-2 px-3 text-sm text-gray-700 font-medium">
+            <label className="block text-xs text-gray-500 mb-1">EFT Change</label>
+            <div className="w-full bg-gray-50 border border-gray-200 rounded-lg py-2 px-3 text-sm font-medium" style={{ color: netEftChange >= 0 ? '#15803d' : '#dc2626' }}>
               {netEftChange >= 0 ? '+' : ''}{fmt$(netEftChange)}
               <span className="text-xs text-gray-400 font-normal ml-1">auto-calculated</span>
             </div>
           </div>
-          <NumInput label="Net EFT Increase" value={data.net_eft_increase} onChange={v => set('net_eft_increase', v)} isCurrency />
           <NumInput label="In The Bank"      value={data.in_the_bank}      onChange={v => set('in_the_bank', v)}      isCurrency />
           <NumInput label="ITB Goal"         value={data.itb_goal}         onChange={v => set('itb_goal', v)}         isCurrency />
           <NumInput label="Expenses"         value={data.expenses}         onChange={v => set('expenses', v)}         isCurrency />
@@ -364,7 +364,7 @@ function TableTab() {
               </tr>
               <tr className="bg-gray-50 border-b border-gray-200">
                 <th className="sticky left-0 bg-gray-50 text-left px-3 py-2.5 text-gray-700 font-semibold whitespace-nowrap">Month</th>
-                {['Vending','Retail','Rewards','Refunds','Memb. Cash','EFT Inc.','EFT Dec.','Net EFT Chg','Net EFT Inc.','In The Bank','Net Income'].map((h,i) => (
+                {['Vending','Retail','Rewards','Refunds','Memb. Cash','EFT Inc.','EFT Dec.','Monthly EFT','EFT Change','In The Bank','Net Income'].map((h,i) => (
                   <th key={h} className={`text-right px-3 py-2.5 text-gray-600 font-semibold whitespace-nowrap ${i===0?'border-l border-gray-200':''}`}>{h}</th>
                 ))}
                 {['Leads','Red Bkd','Red Held','New Mbrs','Cancels','Total Mbrs','Net Mbr Chg'].map((h,i) => (
@@ -407,8 +407,8 @@ function TableTab() {
                     <td className={td}>{fmt$(r.membership_cash)}</td>
                     <td className={td}>{fmt$(r.eft_increase)}</td>
                     <td className={td}>{fmt$(r.eft_decrease)}</td>
-                    <td className={`text-right px-3 py-2.5 whitespace-nowrap font-medium ${(r.net_eft||0) >= 0 ? 'text-green-700' : 'text-red-600'}`}>{(r.net_eft||0) >= 0 ? '+' : ''}{fmt$(r.net_eft)}</td>
-                    <td className={td}>{fmt$(r.net_eft_increase)}</td>
+                    <td className={td}>{fmt$(r.net_eft)}</td>
+                    <td className={`text-right px-3 py-2.5 whitespace-nowrap font-medium ${(r.net_eft_increase||0) >= 0 ? 'text-green-700' : 'text-red-600'}`}>{(r.net_eft_increase||0) >= 0 ? '+' : ''}{fmt$(r.net_eft_increase)}</td>
                     <td className={td}>{fmt$(r.in_the_bank)}</td>
                     <td className={`text-right px-3 py-2.5 whitespace-nowrap font-medium ${(r.net_income||0) >= 0 ? 'text-green-700' : 'text-red-600'}`}>{fmt$(r.net_income)}</td>
                     <td className={tdL}>{fmtN(r.leads)}</td>
@@ -511,10 +511,10 @@ function DashboardTab() {
       {/* KPI cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatCard
-          label="Net EFT Change (latest)"
-          value={`${(latest.net_eft||0) >= 0 ? '+' : ''}${fmt$(latest.net_eft)}`}
+          label="Monthly EFT (latest)"
+          value={fmt$(latest.net_eft)}
           sub={prev.net_eft != null ? `${latest.net_eft >= prev.net_eft ? '↑' : '↓'} vs prior month` : undefined}
-          color={(latest.net_eft||0) >= 0 ? 'text-green-600' : 'text-red-600'}
+          color="text-blue-600"
         />
         <StatCard
           label="In The Bank"
@@ -546,7 +546,7 @@ function DashboardTab() {
             <YAxis tick={chartProps.axis} tickLine={false} tickFormatter={v => `$${(v/1000).toFixed(0)}k`} />
             <Tooltip content={<CustomTooltip currency />} />
             <Legend wrapperStyle={{ fontSize: 11, color: '#6b7280' }} />
-            <Line type="monotone" dataKey="net_eft"     name="Net EFT"     stroke={CHART_COLORS.red}   strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+            <Line type="monotone" dataKey="net_eft"     name="Monthly EFT" stroke={CHART_COLORS.red}   strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
             <Line type="monotone" dataKey="in_the_bank" name="In The Bank" stroke={CHART_COLORS.blue}  strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
             <Line type="monotone" dataKey="net_income"  name="Net Income"  stroke={CHART_COLORS.green} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
           </LineChart>
