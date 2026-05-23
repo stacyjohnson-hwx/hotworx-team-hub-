@@ -21,7 +21,6 @@ const FREQ_COLORS = {
 
 const TYPE_COLORS = {
   Cleaning: 'bg-green-100 text-green-700',
-  Marketing: 'bg-yellow-100 text-yellow-700',
   Operations: 'bg-indigo-100 text-indigo-700',
 }
 
@@ -217,6 +216,17 @@ export default function TaskList() {
     return acc
   }, {})
 
+  // Sort groups: Open, Close, Saunas, FX Zone, General (and any legacy areas last)
+  const CATEGORY_ORDER = ['Open', 'Close', 'Saunas', 'FX Zone', 'General']
+  const sortedGroups = Object.entries(grouped).sort(([a], [b]) => {
+    const ai = CATEGORY_ORDER.indexOf(a)
+    const bi = CATEGORY_ORDER.indexOf(b)
+    if (ai === -1 && bi === -1) return a.localeCompare(b)
+    if (ai === -1) return 1
+    if (bi === -1) return -1
+    return ai - bi
+  })
+
   const dateLabel = new Date(today + 'T00:00:00').toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric',
   })
@@ -307,7 +317,7 @@ export default function TaskList() {
       )}
 
       {/* Task groups */}
-      {Object.entries(grouped).map(([area, areaTasks]) => (
+      {sortedGroups.map(([area, areaTasks]) => (
         <div key={area} className="mb-5">
           <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 px-1">
             {area}

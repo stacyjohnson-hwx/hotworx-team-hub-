@@ -21,7 +21,6 @@ const FREQ_COLORS = {
 
 const TYPE_COLORS = {
   Cleaning: 'bg-green-100 text-green-700',
-  Marketing: 'bg-yellow-100 text-yellow-700',
   Operations: 'bg-indigo-100 text-indigo-700',
 }
 
@@ -206,7 +205,7 @@ function LibraryRow({ task, onToggleActive, onEdit, onDelete }) {
               </span>
             )}
             {task.area && (
-              <span className="text-xs text-gray-400">{task.area}</span>
+              <span className="text-xs text-gray-400">Category: {task.area}</span>
             )}
             <span className="text-xs text-gray-400">
               <FrequencyDetail task={task} />

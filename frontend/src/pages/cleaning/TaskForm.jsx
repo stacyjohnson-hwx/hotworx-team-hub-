@@ -4,9 +4,9 @@ import { apiPost, apiPut } from '@/hooks/useApi'
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
-const AREAS = ['General', 'Lobby', 'Sauna 1', 'Sauna 2', 'Sauna 3', 'Sauna 4', 'Sauna 5', 'Sauna 6', 'Sauna 7', 'Sauna 8', 'Restrooms', 'Office', 'Laundry']
+const CATEGORIES = ['Open', 'Close', 'Saunas', 'FX Zone']
 
-const TASK_TYPES = ['Cleaning', 'Marketing', 'Operations']
+const TASK_TYPES = ['Cleaning', 'Operations']
 
 export default function TaskForm({ task, onSaved, onClose }) {
   const isEdit = !!task
@@ -17,7 +17,7 @@ export default function TaskForm({ task, onSaved, onClose }) {
     title: task?.title || '',
     description: task?.description || '',
     area: task?.area || '',
-    task_type: task?.task_type || 'Cleaning',
+    task_type: task?.task_type === 'Marketing' ? 'Cleaning' : (task?.task_type || 'Cleaning'),
     frequency: task?.frequency || 'daily',
     day_of_week: task?.day_of_week ?? 1,
     day_of_month: task?.day_of_month ?? 1,
@@ -132,17 +132,17 @@ export default function TaskForm({ task, onSaved, onClose }) {
             </div>
           </div>
 
-          {/* Area */}
+          {/* Category */}
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Area</label>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Category</label>
             <select
               value={form.area}
               onChange={e => set('area', e.target.value)}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-600/40 focus:border-red-600 bg-white"
             >
-              <option value="">General (no specific area)</option>
-              {AREAS.filter(a => a !== 'General').map(a => (
-                <option key={a} value={a}>{a}</option>
+              <option value="">General (no specific category)</option>
+              {CATEGORIES.map(c => (
+                <option key={c} value={c}>{c}</option>
               ))}
             </select>
           </div>

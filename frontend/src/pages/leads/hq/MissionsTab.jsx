@@ -8,6 +8,9 @@ import { useAuth } from '@/contexts/AuthContext'
 const MISSIONS_KEY        = 'leadgenhq_missions'
 const CUSTOM_MISSIONS_KEY = 'leadgenhq_custom_missions'
 const HIDDEN_MISSIONS_KEY = 'leadgenhq_hidden_missions'
+const CHALLENGE_KEY       = 'leadgenhq_weekly_challenge'
+const AI_RECS_KEY         = 'leadgenhq_ai_recs'
+const PLAYS_KEY           = 'leadgenhq_plays'
 
 function loadMissionsState()   { try { return JSON.parse(localStorage.getItem(MISSIONS_KEY) || '{}') } catch { return {} } }
 function saveMissionsState(s)  { try { localStorage.setItem(MISSIONS_KEY, JSON.stringify(s)) } catch {} }
@@ -15,12 +18,24 @@ function loadCustomMissions()  { try { return JSON.parse(localStorage.getItem(CU
 function saveCustomMissions(a) { try { localStorage.setItem(CUSTOM_MISSIONS_KEY, JSON.stringify(a)) } catch {} }
 function loadHiddenMissions()  { try { return JSON.parse(localStorage.getItem(HIDDEN_MISSIONS_KEY) || '[]') } catch { return [] } }
 function saveHiddenMissions(a) { try { localStorage.setItem(HIDDEN_MISSIONS_KEY, JSON.stringify(a)) } catch {} }
+function loadChallenge()       { try { return JSON.parse(localStorage.getItem(CHALLENGE_KEY)) || WEEKLY_CHALLENGE } catch { return WEEKLY_CHALLENGE } }
+function saveChallenge(c)      { try { localStorage.setItem(CHALLENGE_KEY, JSON.stringify(c)) } catch {} }
+function loadAiRecs()          { try { const s = JSON.parse(localStorage.getItem(AI_RECS_KEY)); return s ?? AI_RECOMMENDATIONS } catch { return AI_RECOMMENDATIONS } }
+function saveAiRecs(r)         { try { localStorage.setItem(AI_RECS_KEY, JSON.stringify(r)) } catch {} }
+function loadStoredPlays()     { try { const s = JSON.parse(localStorage.getItem(PLAYS_KEY)); return (s && s.length) ? s : GROWTH_PLAYS } catch { return GROWTH_PLAYS } }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const CATEGORIES   = ['All', 'Social', 'Referrals', 'B2B', 'Community']
 const CAT_OPTIONS  = ['Social', 'Referrals', 'B2B', 'Community']
 const DIFF_OPTIONS = ['Quick Win', 'Medium', 'Big Lift']
-const PROOF_OPTIONS = ['none', 'note']
+const PROOF_OPTIONS  = ['none', 'note']
+const REC_TYPE_OPTIONS = [
+  { value: 'bg-purple-100 text-purple-700', label: 'Social Media' },
+  { value: 'bg-blue-100 text-blue-700',     label: 'Referral' },
+  { value: 'bg-teal-100 text-teal-700',     label: 'B2B' },
+  { value: 'bg-orange-100 text-orange-700', label: 'Community' },
+  { value: 'bg-green-100 text-green-700',   label: 'Quick Win' },
+]
 
 const DIFFICULTY_COLORS = {
   'Quick Win': 'bg-green-100 text-green-700',
@@ -43,6 +58,172 @@ function newId() { return 'custom-' + Date.now() + '-' + Math.random().toString(
 const BLANK_FORM = {
   title: '', category: 'Social', difficulty: 'Quick Win', points: 15,
   estimatedTime: '20 min', description: '', proofRequired: 'note', repeatable: true,
+}
+
+// ─── Edit Top Items Modal (Weekly Challenge + AI Recs) ───────────────────────
+function EditTopItemsModal({ challenge, aiRecs, onSaveChallenge, onSaveAiRecs, onClose }) {
+  const [tab, setTab]   = useState('challenge')  // 'challenge' | 'recs'
+  const [ch, setCh]     = useState({ ...challenge })
+  const [recs, setRecs] = useState(aiRecs.map(r => ({ ...r })))
+  const [newRec, setNewRec] = useState({ headline: '', reason: '', type: 'Quick Win', typeColor: 'bg-green-100 text-green-700' })
+
+  function setChField(k, v) { setCh(f => ({ ...f, [k]: v })) }
+  function updateRec(id, k, v) { setRecs(prev => prev.map(r => r.id === id ? { ...r, [k]: v } : r)) }
+  function removeRec(id) { setRecs(prev => prev.filter(r => r.id !== id)) }
+  function addRec() {
+    if (!newRec.headline.trim()) return
+    const selected = REC_TYPE_OPTIONS.find(o => o.label === newRec.type) || REC_TYPE_OPTIONS[4]
+    setRecs(prev => [...prev, {
+      id: 'rec-' + Date.now(),
+      headline: newRec.headline.trim(),
+      reason: newRec.reason.trim(),
+      type: newRec.type,
+      typeColor: selected.value,
+    }])
+    setNewRec({ headline: '', reason: '', type: 'Quick Win', typeColor: 'bg-green-100 text-green-700' })
+  }
+
+  function handleSave() {
+    onSaveChallenge(ch)
+    onSaveAiRecs(recs)
+    onClose()
+  }
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center bg-black/50 px-4 pb-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden">
+
+        {/* Header */}
+        <div className="bg-[#1A1A1A] px-5 py-4 flex items-center justify-between flex-shrink-0">
+          <div>
+            <p className="text-[#E8611A] text-xs font-bold uppercase tracking-wider mb-0.5">Lead Gen HQ</p>
+            <p className="text-white font-bold text-base">Edit Top Items</p>
+          </div>
+          <button onClick={onClose} className="text-white/40 hover:text-white/70 transition-colors"><X size={20} /></button>
+        </div>
+
+        {/* Sub-tabs */}
+        <div className="flex border-b border-gray-200 flex-shrink-0">
+          {[['challenge', '🏆 Weekly Challenge'], ['recs', '⭐ AI Recommendations']].map(([key, label]) => (
+            <button key={key} onClick={() => setTab(key)}
+              className={`flex-1 py-2.5 text-xs font-semibold transition-colors ${
+                tab === key ? 'border-b-2 border-[#E8611A] text-[#E8611A]' : 'text-gray-500 hover:text-gray-700'
+              }`}>{label}</button>
+          ))}
+        </div>
+
+        <div className="overflow-y-auto flex-1 p-5">
+
+          {/* ── Weekly Challenge editor ── */}
+          {tab === 'challenge' && (
+            <div className="space-y-3">
+              <p className="text-xs text-gray-500">This banner appears at the top of the Missions tab for all TSAs.</p>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Challenge title *</label>
+                <input value={ch.title} onChange={e => setChField('title', e.target.value)}
+                  placeholder="e.g. Neighborhood Blitz Week"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-[#E8611A]" />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Description</label>
+                <textarea rows={2} value={ch.description} onChange={e => setChField('description', e.target.value)}
+                  placeholder="Short description of the challenge goal"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-[#E8611A]" />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Target count</label>
+                  <input type="number" min={1} value={ch.targetCount} onChange={e => setChField('targetCount', parseInt(e.target.value) || 1)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-[#E8611A]" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Bonus points</label>
+                  <input type="number" min={0} value={ch.bonusPoints} onChange={e => setChField('bonusPoints', parseInt(e.target.value) || 0)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-[#E8611A]" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Current count</label>
+                  <input type="number" min={0} value={ch.currentCount} onChange={e => setChField('currentCount', parseInt(e.target.value) || 0)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-[#E8611A]" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">End date</label>
+                  <input type="date" value={ch.endsAt?.slice(0, 10) || ''} onChange={e => setChField('endsAt', e.target.value + 'T23:59:59Z')}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-[#E8611A]" />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── AI Recs editor ── */}
+          {tab === 'recs' && (
+            <div className="space-y-3">
+              <p className="text-xs text-gray-500">These tip cards appear below the Weekly Challenge. TSAs can dismiss them.</p>
+
+              {/* Existing recs */}
+              {recs.length === 0 && (
+                <p className="text-xs text-gray-400 italic py-2 text-center">No recommendations yet.</p>
+              )}
+              {recs.map(rec => (
+                <div key={rec.id} className="border border-blue-200 bg-blue-50 rounded-xl p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <select value={rec.type} onChange={e => {
+                        const opt = REC_TYPE_OPTIONS.find(o => o.label === e.target.value) || REC_TYPE_OPTIONS[4]
+                        updateRec(rec.id, 'type', opt.label)
+                        updateRec(rec.id, 'typeColor', opt.value)
+                      }}
+                      className="text-xs border border-blue-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400">
+                      {REC_TYPE_OPTIONS.map(o => <option key={o.label} value={o.label}>{o.label}</option>)}
+                    </select>
+                    <button onClick={() => removeRec(rec.id)} className="text-gray-400 hover:text-red-500 transition-colors flex-shrink-0"><Trash2 size={14} /></button>
+                  </div>
+                  <input value={rec.headline} onChange={e => updateRec(rec.id, 'headline', e.target.value)}
+                    placeholder="Headline (e.g. Post a member spotlight)"
+                    className="w-full border border-blue-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white" />
+                  <input value={rec.reason} onChange={e => updateRec(rec.id, 'reason', e.target.value)}
+                    placeholder="Reason (e.g. engagement is down this week)"
+                    className="w-full border border-blue-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white" />
+                </div>
+              ))}
+
+              {/* Add new rec */}
+              <div className="border-2 border-dashed border-gray-200 rounded-xl p-3 space-y-2">
+                <p className="text-xs font-semibold text-gray-500">Add new recommendation</p>
+                <select value={newRec.type} onChange={e => setNewRec(r => ({ ...r, type: e.target.value }))}
+                  className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-orange-400">
+                  {REC_TYPE_OPTIONS.map(o => <option key={o.label} value={o.label}>{o.label}</option>)}
+                </select>
+                <input value={newRec.headline} onChange={e => setNewRec(r => ({ ...r, headline: e.target.value }))}
+                  placeholder="Headline *"
+                  className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-orange-400" />
+                <input value={newRec.reason} onChange={e => setNewRec(r => ({ ...r, reason: e.target.value }))}
+                  placeholder="Reason (why now?)"
+                  className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-orange-400" />
+                <button onClick={addRec} disabled={!newRec.headline.trim()}
+                  className="flex items-center gap-1 text-xs font-semibold text-[#E8611A] hover:text-orange-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                  <Plus size={13} /> Add Recommendation
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 py-3 border-t border-gray-100 flex-shrink-0 flex gap-2">
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors">Cancel</button>
+          <button onClick={handleSave} className="flex-1 py-2.5 rounded-xl bg-[#E8611A] text-white text-sm font-bold hover:bg-orange-600 transition-colors">
+            Save Changes
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 // ─── Points Flash ─────────────────────────────────────────────────────────────
@@ -452,20 +633,26 @@ export default function MissionsTab({ employee, onPointsEarned, onStreakUpdate }
   const [missionsState,  setMissionsState]  = useState(() => loadMissionsState())
   const [customMissions, setCustomMissions] = useState(() => loadCustomMissions())
   const [hiddenMissions, setHiddenMissions] = useState(() => loadHiddenMissions())
+  const [challenge,      setChallenge]      = useState(() => loadChallenge())
+  const [aiRecs,         setAiRecs]         = useState(() => loadAiRecs())
+  const [plays,          setPlays]          = useState(() => loadStoredPlays())
   const [category,       setCategory]       = useState('All')
   const [flashPts,       setFlashPts]       = useState(null)
   const [showManage,     setShowManage]     = useState(false)
+  const [showTopEdit,    setShowTopEdit]    = useState(false)
 
   // Persist to localStorage
   useEffect(() => { saveMissionsState(missionsState) }, [missionsState])
   useEffect(() => { saveCustomMissions(customMissions) }, [customMissions])
   useEffect(() => { saveHiddenMissions(hiddenMissions) }, [hiddenMissions])
+  useEffect(() => { saveChallenge(challenge) }, [challenge])
+  useEffect(() => { saveAiRecs(aiRecs) }, [aiRecs])
 
   // Completions for this employee
   const empCompletions = missionsState[employee.id] || {}
 
-  // Build full mission list: play missions + visible built-ins + custom
-  const playMissions   = GROWTH_PLAYS.filter(p => p.status === 'Active').flatMap(p => p.generatedMissions)
+  // Build full mission list: play missions (from localStorage plays) + visible built-ins + custom
+  const playMissions   = plays.filter(p => p.status === 'Active').flatMap(p => p.generatedMissions || [])
   const visibleBuiltIn = STANDING_MISSIONS.filter(m => !hiddenMissions.includes(m.id))
   const allMissions    = [...playMissions, ...visibleBuiltIn, ...customMissions]
   const filtered       = category === 'All' ? allMissions : allMissions.filter(m => m.category === category)
@@ -522,6 +709,15 @@ export default function MissionsTab({ employee, onPointsEarned, onStreakUpdate }
           onToggleHide={handleToggleHide}
         />
       )}
+      {showTopEdit && (
+        <EditTopItemsModal
+          challenge={challenge}
+          aiRecs={aiRecs}
+          onSaveChallenge={setChallenge}
+          onSaveAiRecs={setAiRecs}
+          onClose={() => setShowTopEdit(false)}
+        />
+      )}
 
       {/* ── Today's summary strip ─────────────────────────────────────────── */}
       <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
@@ -552,20 +748,28 @@ export default function MissionsTab({ employee, onPointsEarned, onStreakUpdate }
             </div>
           )}
           {canManage && (
-            <button onClick={() => setShowManage(true)}
-              className="flex items-center gap-1 bg-gray-100 hover:bg-gray-200 transition-colors rounded-lg px-2.5 py-1.5 text-gray-600 ml-2">
-              <Settings size={13} />
-              <span className="text-[11px] font-semibold">Manage</span>
-            </button>
+            <div className="flex items-center gap-1 ml-2">
+              <button onClick={() => setShowTopEdit(true)}
+                className="flex items-center gap-1 bg-blue-50 hover:bg-blue-100 transition-colors rounded-lg px-2.5 py-1.5 text-blue-600"
+                title="Edit Weekly Challenge & AI Recs">
+                <Pencil size={12} />
+                <span className="text-[11px] font-semibold">Top</span>
+              </button>
+              <button onClick={() => setShowManage(true)}
+                className="flex items-center gap-1 bg-gray-100 hover:bg-gray-200 transition-colors rounded-lg px-2.5 py-1.5 text-gray-600">
+                <Settings size={13} />
+                <span className="text-[11px] font-semibold">Missions</span>
+              </button>
+            </div>
           )}
         </div>
       </div>
 
       {/* ── Weekly Challenge ─────────────────────────────────────────────── */}
-      <div className="pt-3"><WeeklyChallenge challenge={WEEKLY_CHALLENGE} /></div>
+      <div className="pt-3"><WeeklyChallenge challenge={challenge} /></div>
 
       {/* ── AI Recommender ───────────────────────────────────────────────── */}
-      <AIRecommender recommendations={AI_RECOMMENDATIONS} />
+      <AIRecommender recommendations={aiRecs} />
 
       {/* ── Category Filter ──────────────────────────────────────────────── */}
       <div className="px-4 mb-3">

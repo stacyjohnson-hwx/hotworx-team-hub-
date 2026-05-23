@@ -12,7 +12,7 @@ export default function CleaningPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Tasks</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Track cleaning, marketing, and operations tasks for the studio.</p>
+          <p className="text-sm text-gray-500 mt-0.5">Track cleaning and operations tasks for the studio.</p>
         </div>
       </div>
 
