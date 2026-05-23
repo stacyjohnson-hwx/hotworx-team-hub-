@@ -582,9 +582,8 @@ function PersonalGoalModal({ member, month, year, onSaved, onClose }) {
               <NumField label="Calls Made" value={form.calls_made} onChange={v => setF('calls_made', v)} integer />
               <NumField label="Texts Made" value={form.texts_made} onChange={v => setF('texts_made', v)} integer />
             </div>
-            <div className="flex items-center justify-between rounded-lg bg-orange-50 border border-orange-200 px-3 py-2">
+            <div className="rounded-lg bg-orange-50 border border-orange-200 px-3 py-2">
               <span className="text-xs text-orange-700 font-medium">📞 Goal: 50 outreaches per shift (calls or texts)</span>
-              <span className="text-xs font-bold text-orange-800">{(Number(form.calls_made) || 0) + (Number(form.texts_made) || 0)} total</span>
             </div>
           </section>
 
