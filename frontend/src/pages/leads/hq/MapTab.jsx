@@ -6,6 +6,7 @@ import { MapContainer, TileLayer, Marker, Popup, Circle, useMap, useMapEvents } 
 import { Plus, MapPin, X, Search, Loader2, Trash2, Building2, Home, ChevronRight, ExternalLink } from 'lucide-react'
 import { MAP_ACTIVITIES, EMPLOYEES } from '../data/mockData'
 import { apiGet } from '@/hooks/useApi'
+import useRole from '@/hooks/useRole'
 
 // ─── Studio ───────────────────────────────────────────────────────────────────
 const STUDIO = { lat: 43.0831, lng: -88.2490, name: 'HOTWORX Pewaukee', address: '1279 Capitol Drive' }
@@ -87,8 +88,9 @@ const DEFAULT_NEIGHBORHOODS = [
 ]
 
 // ─── localStorage ─────────────────────────────────────────────────────────────
-const ACT_KEY = 'leadgenhq_map_activities'
-const NBH_KEY = 'leadgenhq_neighborhoods'
+const ACT_KEY         = 'leadgenhq_map_activities'
+const NBH_KEY         = 'leadgenhq_neighborhoods'
+const NBH_DELETED_KEY = 'leadgenhq_neighborhoods_deleted'
 
 function loadActivities() {
   try {
@@ -100,11 +102,21 @@ function loadActivities() {
 function saveActivities(list) {
   try { localStorage.setItem(ACT_KEY, JSON.stringify(list.filter(a => a.id.startsWith('custom-')))) } catch {}
 }
+function loadDeletedDefaultIds() {
+  try { return new Set(JSON.parse(localStorage.getItem(NBH_DELETED_KEY) || '[]')) } catch { return new Set() }
+}
+function saveDeletedDefaultIds(ids) {
+  try { localStorage.setItem(NBH_DELETED_KEY, JSON.stringify([...ids])) } catch {}
+}
 function loadNeighborhoods() {
   try {
-    const custom = JSON.parse(localStorage.getItem(NBH_KEY) || '[]')
+    const deleted   = loadDeletedDefaultIds()
+    const custom    = JSON.parse(localStorage.getItem(NBH_KEY) || '[]')
     const customIds = new Set(custom.map(n => n.id))
-    return [...DEFAULT_NEIGHBORHOODS.filter(n => !customIds.has(n.id)), ...custom]
+    return [
+      ...DEFAULT_NEIGHBORHOODS.filter(n => !customIds.has(n.id) && !deleted.has(n.id)),
+      ...custom,
+    ]
   } catch { return DEFAULT_NEIGHBORHOODS }
 }
 function saveNeighborhoods(list) {
@@ -444,8 +456,6 @@ function LocationRow({ item, type, activities, onFly, onDelete }) {
   const covered   = nearest && getIntensity(nearest.dateCompleted) !== 'stale'
   const intensity = nearest ? getIntensity(nearest.dateCompleted) : null
 
-  const isCustom = item.id?.startsWith('custom-')
-
   function handleClick() {
     if (type === 'business' && !hasCoords) return // no pin to fly to
     onFly(item)
@@ -487,9 +497,10 @@ function LocationRow({ item, type, activities, onFly, onDelete }) {
         )}
       </div>
       <div className="flex items-center gap-1 flex-shrink-0">
-        {isCustom && onDelete && (
+        {onDelete && (
           <button onClick={e => { e.stopPropagation(); onDelete(item.id) }}
-            className="p-1 text-gray-200 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all">
+            className="p-1 text-gray-200 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
+            title="Remove neighborhood">
             <Trash2 size={12} />
           </button>
         )}
@@ -503,6 +514,7 @@ function LocationRow({ item, type, activities, onFly, onDelete }) {
 
 // ─── Main MapTab ──────────────────────────────────────────────────────────────
 export default function MapTab() {
+  const { isOwnerOrManager } = useRole()
   const [activities,     setActivities]     = useState(() => loadActivities())
   const [neighborhoods,  setNeighborhoods]  = useState(() => loadNeighborhoods())
   const [b2bContacts,    setB2bContacts]    = useState([])
@@ -531,7 +543,16 @@ export default function MapTab() {
 
   function saveActivity(a)    { setActivities(prev => [a, ...prev]) }
   function saveNeighborhood(n){ setNeighborhoods(prev => [...prev, n]) }
-  function delNeighborhood(id){ setNeighborhoods(prev => prev.filter(n => n.id !== id)) }
+  function delNeighborhood(id) {
+    if (!window.confirm('Remove this neighborhood from the map?')) return
+    setNeighborhoods(prev => prev.filter(n => n.id !== id))
+    // Persist deletion for default (non-custom) neighborhoods so they don't reappear on reload
+    if (!id.startsWith('custom-')) {
+      const deleted = loadDeletedDefaultIds()
+      deleted.add(id)
+      saveDeletedDefaultIds(deleted)
+    }
+  }
 
   // ALL B2B contacts normalized → shown in the list (single source of truth)
   const bizListItems = b2bContacts.map(c => ({
@@ -781,7 +802,7 @@ export default function MapTab() {
                 type={listTab === 'neighborhoods' ? 'neighborhood' : 'business'}
                 activities={activities}
                 onFly={item => setFlyTarget({ lat: item.lat, lng: item.lng, _t: Date.now() })}
-                onDelete={listTab === 'neighborhoods' ? delNeighborhood : undefined}
+                onDelete={listTab === 'neighborhoods' && isOwnerOrManager ? delNeighborhood : undefined}
               />
             ))
           )}
