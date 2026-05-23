@@ -326,8 +326,8 @@ export default function Dashboard() {
       {/* Quick-access cards */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
         <QuickCard
-          title="Cleaning"
-          description="View today's cleaning tasks"
+          title="Tasks"
+          description="View today's cleaning and operations tasks"
           href="/cleaning"
           color="bg-blue-50 border-blue-200"
           iconColor="text-blue-600"
