@@ -46,21 +46,22 @@ const DEFAULT_NEIGHBORHOODS = [
   { id:'nh-1',  name:'Pewaukee — Capitol Drive Corridor',  lat:43.0831, lng:-88.2490 },
   { id:'nh-2',  name:'Pewaukee Lake North Shore',           lat:43.0960, lng:-88.2640 },
   { id:'nh-3',  name:'Pewaukee Village',                   lat:43.0792, lng:-88.2773 },
-  { id:'nh-4',  name:'Hartland',                           lat:43.1041, lng:-88.3399 },
-  { id:'nh-5',  name:'Waukesha — Downtown',                lat:43.0117, lng:-88.2315 },
-  { id:'nh-6',  name:'Waukesha — Sunset Drive Area',       lat:43.0287, lng:-88.2490 },
-  { id:'nh-7',  name:'Brookfield — Bluemound Road',        lat:43.0500, lng:-88.1066 },
-  { id:'nh-8',  name:'Elm Grove',                          lat:43.0430, lng:-88.0928 },
-  { id:'nh-9',  name:'Menomonee Falls',                    lat:43.1789, lng:-88.1206 },
-  { id:'nh-10', name:'Sussex',                             lat:43.1341, lng:-88.2257 },
-  { id:'nh-11', name:'Oconomowoc',                         lat:43.1003, lng:-88.4985 },
-  { id:'nh-12', name:'Delafield',                          lat:43.0628, lng:-88.3976 },
-  { id:'nh-13', name:'Mukwonago',                          lat:42.8664, lng:-88.3379 },
-  { id:'nh-14', name:'Muskego',                            lat:42.9066, lng:-88.1334 },
-  { id:'nh-15', name:'New Berlin',                         lat:42.9764, lng:-88.1082 },
-  { id:'nh-16', name:'Waukesha — North End',               lat:43.0450, lng:-88.2315 },
-  { id:'nh-17', name:'Pewaukee — West Side',               lat:43.0831, lng:-88.3100 },
-  { id:'nh-18', name:'Wales',                              lat:43.0003, lng:-88.3773 },
+  { id:'nh-4',  name:'Five Fields — Pewaukee',             lat:43.0910, lng:-88.2620 },
+  { id:'nh-5',  name:'Hartland',                           lat:43.1041, lng:-88.3399 },
+  { id:'nh-6',  name:'Waukesha — Downtown',                lat:43.0117, lng:-88.2315 },
+  { id:'nh-7',  name:'Waukesha — Sunset Drive Area',       lat:43.0287, lng:-88.2490 },
+  { id:'nh-8',  name:'Brookfield — Bluemound Road',        lat:43.0500, lng:-88.1066 },
+  { id:'nh-9',  name:'Elm Grove',                          lat:43.0430, lng:-88.0928 },
+  { id:'nh-10', name:'Menomonee Falls',                    lat:43.1789, lng:-88.1206 },
+  { id:'nh-11', name:'Sussex',                             lat:43.1341, lng:-88.2257 },
+  { id:'nh-12', name:'Oconomowoc',                         lat:43.1003, lng:-88.4985 },
+  { id:'nh-13', name:'Delafield',                          lat:43.0628, lng:-88.3976 },
+  { id:'nh-14', name:'Mukwonago',                          lat:42.8664, lng:-88.3379 },
+  { id:'nh-15', name:'Muskego',                            lat:42.9066, lng:-88.1334 },
+  { id:'nh-16', name:'New Berlin',                         lat:42.9764, lng:-88.1082 },
+  { id:'nh-17', name:'Waukesha — North End',               lat:43.0450, lng:-88.2315 },
+  { id:'nh-18', name:'Pewaukee — West Side',               lat:43.0831, lng:-88.3100 },
+  { id:'nh-19', name:'Wales',                              lat:43.0003, lng:-88.3773 },
 ]
 
 // ─── localStorage ─────────────────────────────────────────────────────────────
@@ -150,6 +151,16 @@ function targetIcon(color='#9CA3AF') {
     iconSize:[12,12], iconAnchor:[6,6], popupAnchor:[0,-8],
   })
 }
+// Diamond pin for neighborhoods — distinct from round business dots
+function neighborhoodIcon(covered, color='#E8611A') {
+  const bg     = covered ? color : 'white'
+  const border = covered ? color : '#E8611A'
+  return L.divIcon({
+    className:'',
+    html:`<div style="width:14px;height:14px;background:${bg};border:2.5px solid ${border};transform:rotate(45deg);box-shadow:0 1px 5px rgba(0,0,0,.35);"></div>`,
+    iconSize:[14,14], iconAnchor:[7,7], popupAnchor:[0,-10],
+  })
+}
 
 function newId(prefix) { return `custom-${prefix}-${Date.now()}-${Math.random().toString(36).slice(2,6)}` }
 function fmt(isoStr) {
@@ -223,7 +234,7 @@ function AddLocationModal({ type, coords, onClose, onSave }) {
             <div className="flex gap-1.5">
               <input value={address} onChange={e => setAddress(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleSearch()}
-                placeholder={type === 'neighborhood' ? 'e.g. Hartland, WI' : 'e.g. 123 Main St, Pewaukee'}
+                placeholder={type === 'neighborhood' ? 'e.g. Five Fields Pewaukee or Hartland WI' : 'e.g. 123 Main St, Pewaukee'}
                 className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-[#E8611A]" />
               <button onClick={handleSearch} disabled={searching || !address.trim()}
                 className="px-3 py-2 bg-gray-900 text-white rounded-lg text-xs font-semibold disabled:opacity-40 flex items-center gap-1">
@@ -588,14 +599,36 @@ export default function MapTab() {
             <Popup><b>🔥 {STUDIO.name}</b><br /><span style={{fontSize:11,color:'#6b7280'}}>{STUDIO.address}</span></Popup>
           </Marker>
 
-          {/* Neighborhood target circles (uncovered = dashed outline) */}
+          {/* Neighborhood dashed circles (uncovered only) */}
           {neighborhoods.map(n => {
             const hit     = nearestActivity(n.lat, n.lng, activities, 0.8)
             const covered = hit && getIntensity(hit.dateCompleted) !== 'stale'
             if (covered) return null
             return (
-              <Circle key={n.id} center={[n.lat, n.lng]} radius={600}
+              <Circle key={n.id + '-circle'} center={[n.lat, n.lng]} radius={600}
                 pathOptions={{ color:'#E8611A', fillColor:'#E8611A', fillOpacity:0.03, weight:1, dashArray:'6 4', opacity:0.3 }} />
+            )
+          })}
+
+          {/* Neighborhood diamond pins — always visible so you can see every named area */}
+          {neighborhoods.map(n => {
+            const hit       = nearestActivity(n.lat, n.lng, activities, 0.8)
+            const covered   = hit && getIntensity(hit.dateCompleted) !== 'stale'
+            const intensity = hit ? getIntensity(hit.dateCompleted) : null
+            const color     = covered ? INTENSITY[intensity].color : '#E8611A'
+            return (
+              <Marker key={n.id + '-pin'} position={[n.lat, n.lng]} icon={neighborhoodIcon(covered, color)}>
+                <Popup maxWidth={220}>
+                  <div style={{fontFamily:'sans-serif',padding:'2px 0'}}>
+                    <p style={{fontWeight:700,fontSize:13,marginBottom:4}}>{n.name}</p>
+                    {covered && hit
+                      ? <p style={{fontSize:11,fontWeight:600,color}}>{INTENSITY[intensity].label} · {hit.employeeName} · {fmt(hit.dateCompleted)}</p>
+                      : <p style={{fontSize:11,color:'#9ca3af'}}>Not yet covered — needs outreach</p>
+                    }
+                    {n.notes && <p style={{fontSize:11,color:'#374151',fontStyle:'italic',marginTop:4}}>{n.notes}</p>}
+                  </div>
+                </Popup>
+              </Marker>
             )
           })}
 
