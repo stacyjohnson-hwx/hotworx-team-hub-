@@ -8,16 +8,19 @@ import { useAuth } from '@/contexts/AuthContext'
 const MISSIONS_KEY        = 'leadgenhq_missions'
 const CUSTOM_MISSIONS_KEY = 'leadgenhq_custom_missions'
 const HIDDEN_MISSIONS_KEY = 'leadgenhq_hidden_missions'
+const OVERRIDES_KEY       = 'leadgenhq_mission_overrides'
 const CHALLENGE_KEY       = 'leadgenhq_weekly_challenge'
 const AI_RECS_KEY         = 'leadgenhq_ai_recs'
 const PLAYS_KEY           = 'leadgenhq_plays'
 
-function loadMissionsState()   { try { return JSON.parse(localStorage.getItem(MISSIONS_KEY) || '{}') } catch { return {} } }
-function saveMissionsState(s)  { try { localStorage.setItem(MISSIONS_KEY, JSON.stringify(s)) } catch {} }
-function loadCustomMissions()  { try { return JSON.parse(localStorage.getItem(CUSTOM_MISSIONS_KEY) || '[]') } catch { return [] } }
-function saveCustomMissions(a) { try { localStorage.setItem(CUSTOM_MISSIONS_KEY, JSON.stringify(a)) } catch {} }
-function loadHiddenMissions()  { try { return JSON.parse(localStorage.getItem(HIDDEN_MISSIONS_KEY) || '[]') } catch { return [] } }
-function saveHiddenMissions(a) { try { localStorage.setItem(HIDDEN_MISSIONS_KEY, JSON.stringify(a)) } catch {} }
+function loadMissionsState()    { try { return JSON.parse(localStorage.getItem(MISSIONS_KEY) || '{}') } catch { return {} } }
+function saveMissionsState(s)   { try { localStorage.setItem(MISSIONS_KEY, JSON.stringify(s)) } catch {} }
+function loadCustomMissions()   { try { return JSON.parse(localStorage.getItem(CUSTOM_MISSIONS_KEY) || '[]') } catch { return [] } }
+function saveCustomMissions(a)  { try { localStorage.setItem(CUSTOM_MISSIONS_KEY, JSON.stringify(a)) } catch {} }
+function loadHiddenMissions()   { try { return JSON.parse(localStorage.getItem(HIDDEN_MISSIONS_KEY) || '[]') } catch { return [] } }
+function saveHiddenMissions(a)  { try { localStorage.setItem(HIDDEN_MISSIONS_KEY, JSON.stringify(a)) } catch {} }
+function loadOverrides()        { try { return JSON.parse(localStorage.getItem(OVERRIDES_KEY) || '{}') } catch { return {} } }
+function saveOverrides(o)       { try { localStorage.setItem(OVERRIDES_KEY, JSON.stringify(o)) } catch {} }
 function loadChallenge()       { try { return JSON.parse(localStorage.getItem(CHALLENGE_KEY)) || WEEKLY_CHALLENGE } catch { return WEEKLY_CHALLENGE } }
 function saveChallenge(c)      { try { localStorage.setItem(CHALLENGE_KEY, JSON.stringify(c)) } catch {} }
 function loadAiRecs()          { try { const s = JSON.parse(localStorage.getItem(AI_RECS_KEY)); return s ?? AI_RECOMMENDATIONS } catch { return AI_RECOMMENDATIONS } }
@@ -370,21 +373,40 @@ function MissionForm({ initial, onSave, onCancel }) {
 }
 
 // ─── Manage Missions Modal ────────────────────────────────────────────────────
-function ManageMissionsModal({ customMissions, hiddenMissions, onClose, onAddCustom, onEditCustom, onDeleteCustom, onToggleHide }) {
-  const [mode, setMode]   = useState('list')   // 'list' | 'add' | 'edit'
+function ManageMissionsModal({ customMissions, hiddenMissions, overrides, onClose, onAddCustom, onEditCustom, onDeleteCustom, onToggleHide, onEditBuiltIn, onResetBuiltIn }) {
+  const [mode, setMode]       = useState('list')   // 'list' | 'add' | 'edit-custom' | 'edit-builtin'
   const [editing, setEditing] = useState(null)
 
-  function startEdit(m) { setEditing(m); setMode('edit') }
+  function startEditCustom(m)  { setEditing(m); setMode('edit-custom') }
+  function startEditBuiltIn(m) {
+    // Pre-fill with any existing override, otherwise use original
+    setEditing({ ...m, ...(overrides[m.id] || {}) })
+    setMode('edit-builtin')
+  }
 
   function handleSaveNew(form) {
     onAddCustom({ ...form, id: newId(), type: 'standing', expiresAt: null, playId: null })
     setMode('list')
   }
 
-  function handleSaveEdit(form) {
+  function handleSaveEditCustom(form) {
     onEditCustom({ ...editing, ...form })
     setEditing(null); setMode('list')
   }
+
+  function handleSaveEditBuiltIn(form) {
+    onEditBuiltIn(editing.id, form)
+    setEditing(null); setMode('list')
+  }
+
+  function cancelEdit() { setEditing(null); setMode('list') }
+
+  const headerLabel = {
+    'list':         'Manage Missions',
+    'add':          'Add Mission',
+    'edit-custom':  'Edit Mission',
+    'edit-builtin': 'Edit Built-in Mission',
+  }[mode]
 
   return (
     <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center bg-black/50 px-4 pb-4">
@@ -394,21 +416,22 @@ function ManageMissionsModal({ customMissions, hiddenMissions, onClose, onAddCus
         <div className="bg-[#1A1A1A] px-5 py-4 flex items-center justify-between flex-shrink-0">
           <div>
             <p className="text-[#E8611A] text-xs font-bold uppercase tracking-wider mb-0.5">Lead Gen HQ</p>
-            <p className="text-white font-bold text-base">
-              {mode === 'add' ? 'Add Mission' : mode === 'edit' ? 'Edit Mission' : 'Manage Missions'}
-            </p>
+            <p className="text-white font-bold text-base">{headerLabel}</p>
           </div>
           <button onClick={onClose} className="text-white/40 hover:text-white/70 transition-colors"><X size={20} /></button>
         </div>
 
         <div className="overflow-y-auto flex-1 p-5">
 
-          {/* ── Add / Edit form ── */}
+          {/* ── Forms ── */}
           {mode === 'add' && (
-            <MissionForm onSave={handleSaveNew} onCancel={() => setMode('list')} />
+            <MissionForm onSave={handleSaveNew} onCancel={cancelEdit} />
           )}
-          {mode === 'edit' && editing && (
-            <MissionForm initial={editing} onSave={handleSaveEdit} onCancel={() => { setEditing(null); setMode('list') }} />
+          {mode === 'edit-custom' && editing && (
+            <MissionForm initial={editing} onSave={handleSaveEditCustom} onCancel={cancelEdit} />
+          )}
+          {mode === 'edit-builtin' && editing && (
+            <MissionForm initial={editing} onSave={handleSaveEditBuiltIn} onCancel={cancelEdit} />
           )}
 
           {/* ── Mission list ── */}
@@ -439,8 +462,8 @@ function ManageMissionsModal({ customMissions, hiddenMissions, onClose, onAddCus
                             <span className="text-[10px] font-semibold text-[#E8611A]">{m.points} pts</span>
                           </div>
                         </div>
-                        <button onClick={() => startEdit(m)} className="p-1 text-gray-400 hover:text-gray-700 transition-colors"><Pencil size={13} /></button>
-                        <button onClick={() => onDeleteCustom(m.id)} className="p-1 text-gray-400 hover:text-red-500 transition-colors"><Trash2 size={13} /></button>
+                        <button onClick={() => startEditCustom(m)} className="p-1 text-gray-400 hover:text-gray-700 transition-colors" title="Edit"><Pencil size={13} /></button>
+                        <button onClick={() => onDeleteCustom(m.id)} className="p-1 text-gray-400 hover:text-red-500 transition-colors" title="Delete"><Trash2 size={13} /></button>
                       </div>
                     ))}
                   </div>
@@ -450,25 +473,35 @@ function ManageMissionsModal({ customMissions, hiddenMissions, onClose, onAddCus
               {/* Divider */}
               <div className="border-t border-gray-100" />
 
-              {/* Built-in missions — show/hide toggle */}
+              {/* Built-in missions — edit / show/hide */}
               <div>
                 <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Built-in Missions</p>
-                <p className="text-[11px] text-gray-400 mb-2">Hide missions you don't want TSAs to see.</p>
+                <p className="text-[11px] text-gray-400 mb-2">Edit or hide missions TSAs can see. Edited missions show a dot.</p>
                 <div className="space-y-1.5">
                   {STANDING_MISSIONS.map(m => {
-                    const hidden = hiddenMissions.includes(m.id)
+                    const hidden   = hiddenMissions.includes(m.id)
+                    const modified = !!overrides[m.id]
+                    const display  = { ...m, ...(overrides[m.id] || {}) }
                     return (
                       <div key={m.id} className={`flex items-center gap-2 border rounded-lg px-3 py-2 transition-colors ${hidden ? 'bg-gray-50 border-gray-100 opacity-50' : 'bg-white border-gray-200'}`}>
                         <div className="flex-1 min-w-0">
-                          <p className={`text-sm font-medium truncate ${hidden ? 'text-gray-400 line-through' : 'text-gray-800'}`}>{m.title}</p>
+                          <div className="flex items-center gap-1.5">
+                            <p className={`text-sm font-medium truncate ${hidden ? 'text-gray-400 line-through' : 'text-gray-800'}`}>{display.title}</p>
+                            {modified && <span className="w-1.5 h-1.5 rounded-full bg-[#E8611A] flex-shrink-0" title="Edited" />}
+                          </div>
                           <div className="flex items-center gap-1.5 mt-0.5">
-                            <span className="text-[10px] text-gray-400">{m.category}</span>
+                            <span className="text-[10px] text-gray-400">{display.category}</span>
                             <span className="text-[10px] text-gray-300">·</span>
-                            <span className="text-[10px] font-semibold text-[#E8611A]">{m.points} pts</span>
+                            <span className="text-[10px] font-semibold text-[#E8611A]">{display.points} pts</span>
                           </div>
                         </div>
+                        <button onClick={() => startEditBuiltIn(m)} className="p-1 text-gray-400 hover:text-gray-700 transition-colors" title="Edit"><Pencil size={13} /></button>
+                        {modified && (
+                          <button onClick={() => onResetBuiltIn(m.id)} className="p-1 text-gray-300 hover:text-orange-500 transition-colors" title="Reset to original"><RotateCcw size={13} /></button>
+                        )}
                         <button onClick={() => onToggleHide(m.id)}
-                          className={`p-1 transition-colors ${hidden ? 'text-gray-300 hover:text-gray-500' : 'text-gray-400 hover:text-gray-700'}`}>
+                          className={`p-1 transition-colors ${hidden ? 'text-gray-300 hover:text-gray-500' : 'text-gray-400 hover:text-gray-700'}`}
+                          title={hidden ? 'Show' : 'Hide'}>
                           {hidden ? <EyeOff size={14} /> : <Eye size={14} />}
                         </button>
                       </div>
@@ -633,6 +666,7 @@ export default function MissionsTab({ employee, onPointsEarned, onStreakUpdate }
   const [missionsState,  setMissionsState]  = useState(() => loadMissionsState())
   const [customMissions, setCustomMissions] = useState(() => loadCustomMissions())
   const [hiddenMissions, setHiddenMissions] = useState(() => loadHiddenMissions())
+  const [overrides,      setOverrides]      = useState(() => loadOverrides())
   const [challenge,      setChallenge]      = useState(() => loadChallenge())
   const [aiRecs,         setAiRecs]         = useState(() => loadAiRecs())
   const [plays,          setPlays]          = useState(() => loadStoredPlays())
@@ -645,15 +679,18 @@ export default function MissionsTab({ employee, onPointsEarned, onStreakUpdate }
   useEffect(() => { saveMissionsState(missionsState) }, [missionsState])
   useEffect(() => { saveCustomMissions(customMissions) }, [customMissions])
   useEffect(() => { saveHiddenMissions(hiddenMissions) }, [hiddenMissions])
+  useEffect(() => { saveOverrides(overrides) }, [overrides])
   useEffect(() => { saveChallenge(challenge) }, [challenge])
   useEffect(() => { saveAiRecs(aiRecs) }, [aiRecs])
 
   // Completions for this employee
   const empCompletions = missionsState[employee.id] || {}
 
-  // Build full mission list: play missions (from localStorage plays) + visible built-ins + custom
+  // Build full mission list: play missions (from localStorage plays) + visible built-ins (with overrides applied) + custom
   const playMissions   = plays.filter(p => p.status === 'Active').flatMap(p => p.generatedMissions || [])
-  const visibleBuiltIn = STANDING_MISSIONS.filter(m => !hiddenMissions.includes(m.id))
+  const visibleBuiltIn = STANDING_MISSIONS
+    .filter(m => !hiddenMissions.includes(m.id))
+    .map(m => overrides[m.id] ? { ...m, ...overrides[m.id] } : m)
   const allMissions    = [...playMissions, ...visibleBuiltIn, ...customMissions]
   const filtered       = category === 'All' ? allMissions : allMissions.filter(m => m.category === category)
 
@@ -683,10 +720,12 @@ export default function MissionsTab({ employee, onPointsEarned, onStreakUpdate }
   }, [employee, missionsState, onPointsEarned, onStreakUpdate])
 
   // Manage handlers
-  function handleAddCustom(mission)    { setCustomMissions(prev => [...prev, mission]) }
-  function handleEditCustom(mission)   { setCustomMissions(prev => prev.map(m => m.id === mission.id ? mission : m)) }
-  function handleDeleteCustom(id)      { setCustomMissions(prev => prev.filter(m => m.id !== id)) }
-  function handleToggleHide(id)        { setHiddenMissions(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]) }
+  function handleAddCustom(mission)          { setCustomMissions(prev => [...prev, mission]) }
+  function handleEditCustom(mission)         { setCustomMissions(prev => prev.map(m => m.id === mission.id ? mission : m)) }
+  function handleDeleteCustom(id)            { setCustomMissions(prev => prev.filter(m => m.id !== id)) }
+  function handleToggleHide(id)              { setHiddenMissions(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]) }
+  function handleEditBuiltIn(id, form)       { setOverrides(prev => ({ ...prev, [id]: form })) }
+  function handleResetBuiltIn(id)            { setOverrides(prev => { const n = { ...prev }; delete n[id]; return n }) }
 
   // Next rank
   const currentRank    = getRank(employee.points)
@@ -702,11 +741,14 @@ export default function MissionsTab({ employee, onPointsEarned, onStreakUpdate }
         <ManageMissionsModal
           customMissions={customMissions}
           hiddenMissions={hiddenMissions}
+          overrides={overrides}
           onClose={() => setShowManage(false)}
           onAddCustom={handleAddCustom}
           onEditCustom={handleEditCustom}
           onDeleteCustom={handleDeleteCustom}
           onToggleHide={handleToggleHide}
+          onEditBuiltIn={handleEditBuiltIn}
+          onResetBuiltIn={handleResetBuiltIn}
         />
       )}
       {showTopEdit && (
