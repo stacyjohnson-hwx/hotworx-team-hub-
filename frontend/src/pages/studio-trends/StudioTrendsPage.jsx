@@ -347,6 +347,13 @@ function TableTab() {
 
       {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm">{error}</div>}
 
+      {!loading && (
+        <div className="flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 w-fit">
+          <span className="text-amber-500">◆</span>
+          <span>Highlighted rows are <strong>{new Date(2000, now.getMonth()).toLocaleString('default', { month: 'long' })}</strong> from past years — same month as today, for easy goal comparison</span>
+        </div>
+      )}
+
       {loading ? (
         <div className="text-center py-10 text-gray-400 text-sm">Loading…</div>
       ) : (
@@ -391,13 +398,15 @@ function TableTab() {
                 const netMbr     = (r.new_members || 0) - (r.cancellations || 0)
                 const ly         = yoy ? (prevYearMap[`${r.year}-${r.month}`] || null) : null
                 const itbDiff    = ly ? ((r.in_the_bank || 0) - (ly.in_the_bank || 0)) : null
+                const isSameMonth = r.month === (now.getMonth() + 1)
 
-                const td  = 'text-right px-3 py-2.5 text-gray-800 whitespace-nowrap'
-                const tdL = 'text-right px-3 py-2.5 text-gray-800 whitespace-nowrap border-l border-gray-100'
+                const td  = `text-right px-3 py-2.5 whitespace-nowrap ${isSameMonth ? 'text-amber-900' : 'text-gray-800'}`
+                const tdL = `text-right px-3 py-2.5 whitespace-nowrap border-l border-gray-100 ${isSameMonth ? 'text-amber-900' : 'text-gray-800'}`
 
                 return (
-                  <tr key={`${r.year}-${r.month}`} className="border-b border-gray-100 hover:bg-blue-50/40">
-                    <td className="sticky left-0 bg-white hover:bg-blue-50/40 px-3 py-2.5 font-semibold text-gray-900 whitespace-nowrap">
+                  <tr key={`${r.year}-${r.month}`} className={`border-b whitespace-nowrap ${isSameMonth ? 'bg-amber-50 border-amber-200 hover:bg-amber-100/70' : 'border-gray-100 hover:bg-blue-50/40'}`}>
+                    <td className={`sticky left-0 px-3 py-2.5 font-semibold whitespace-nowrap ${isSameMonth ? 'bg-amber-50 text-amber-800 border-l-2 border-l-amber-400' : 'bg-white text-gray-900'}`}>
+                      {isSameMonth && <span className="mr-1 text-amber-500 text-xs">◆</span>}
                       {monthLabel(r.month, r.year)}
                     </td>
                     <td className={tdL}>{fmt$(r.vending)}</td>
