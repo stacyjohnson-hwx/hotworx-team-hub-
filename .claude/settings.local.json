@@ -1,0 +1,40 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm create *)",
+      "mcp__Claude_in_Chrome__computer",
+      "mcp__Claude_in_Chrome__read_console_messages",
+      "mcp__Claude_in_Chrome__navigate",
+      "mcp__Claude_in_Chrome__javascript_tool",
+      "mcp__Claude_in_Chrome__get_page_text",
+      "Bash(cat /tmp/vite.log)",
+      "Bash(npm install *)",
+      "Bash(node -e ' *)",
+      "Bash(node --check /Users/stacyjohnson/Desktop/hotworx-team-hub/backend/src/routes/b2b.js)",
+      "Bash(node --check /Users/stacyjohnson/Desktop/hotworx-team-hub/backend/src/routes/orders.js)",
+      "mcp__supabase__list_migrations",
+      "mcp__supabase__execute_sql",
+      "Bash(npm --prefix frontend run build)",
+      "Bash(pip3 install *)",
+      "Bash(python3 -c ' *)",
+      "Bash(npx vite *)",
+      "Bash(node --check src/routes/events.js)",
+      "Bash(node --check src/index.js)",
+      "Bash(node --check /Users/stacyjohnson/Desktop/hotworx-team-hub/backend/src/routes/events.js)",
+      "Bash(node --check src/routes/b2b.js)",
+      "Bash(node --check src/middleware/authMiddleware.js)",
+      "Bash(node --check src/middleware/roleGuard.js)",
+      "Bash(lsof -ti:3001)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(xargs kill -9)",
+      "Bash(npm run *)",
+      "Bash(curl -s http://localhost:3001/api/health)",
+      "Bash(timeout 6 node src/index.js)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(lsof -ti:5173)",
+      "Bash(lsof -ti:5173,5174,3001)",
+      "Bash(node -e \"const {Resend} = require\\('resend'\\); console.log\\('resend ok'\\)\")",
+      "Bash(curl -s --max-time 5 http://localhost:5173)"
+    ]
+  }
+}

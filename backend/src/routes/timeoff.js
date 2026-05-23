@@ -1,0 +1,96 @@
+const express = require('express')
+const router = express.Router()
+const { createClient } = require('@supabase/supabase-js')
+const authenticate = require('../middleware/authMiddleware')
+const { requireRole } = require('../middleware/roleGuard')
+
+const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+
+async function withRequesterNames(requests) {
+  if (!requests.length) return []
+  const userIds = [...new Set(requests.map(r => r.requested_by).filter(Boolean))]
+  const nameMap = {}
+  for (const uid of userIds) {
+    const { data } = await db().auth.admin.getUserById(uid)
+    const u = data?.user
+    nameMap[uid] = u?.user_metadata?.full_name || u?.email?.split('@')[0] || 'Team Member'
+  }
+  return requests.map(r => ({ ...r, requester_name: nameMap[r.requested_by] || 'Team Member' }))
+}
+
+// GET /api/timeoff — own requests (TSA) or all (owner/manager)
+router.get('/', authenticate, async (req, res) => {
+  let query = db()
+    .from('time_off_requests')
+    .select('*')
+    .order('created_at', { ascending: false })
+
+  if (req.role === 'tsa') {
+    query = query.eq('requested_by', req.user.id)
+  }
+
+  const { data, error } = await query
+  if (error) return res.status(500).json({ error: error.message })
+
+  const withNames = await withRequesterNames(data)
+  res.json(withNames)
+})
+
+// POST /api/timeoff — TSA submits a request
+router.post('/', authenticate, async (req, res) => {
+  const { start_date, end_date, reason } = req.body
+  if (!start_date || !end_date) return res.status(400).json({ error: 'start_date and end_date are required' })
+
+  const { data, error } = await db()
+    .from('time_off_requests')
+    .insert({
+      requested_by: req.user.id,
+      start_date,
+      end_date,
+      reason: reason || null,
+    })
+    .select()
+    .single()
+
+  if (error) return res.status(500).json({ error: error.message })
+  const [withName] = await withRequesterNames([data])
+  res.status(201).json(withName)
+})
+
+// PATCH /api/timeoff/:id — approve or deny (owner/manager only)
+router.patch('/:id', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+  const { status, review_note } = req.body
+  if (!['approved', 'denied'].includes(status))
+    return res.status(400).json({ error: 'status must be approved or denied' })
+
+  const { data, error } = await db()
+    .from('time_off_requests')
+    .update({
+      status,
+      review_note: review_note || null,
+      reviewed_by: req.user.id,
+      reviewed_at: new Date().toISOString(),
+    })
+    .eq('id', req.params.id)
+    .select()
+    .single()
+
+  if (error) return res.status(500).json({ error: error.message })
+  const [withName] = await withRequesterNames([data])
+  res.json(withName)
+})
+
+// DELETE /api/timeoff/:id — TSA can cancel a pending request
+router.delete('/:id', authenticate, async (req, res) => {
+  const { error } = await db()
+    .from('time_off_requests')
+    .delete()
+    .eq('id', req.params.id)
+    .eq('requested_by', req.user.id)
+    .eq('status', 'pending')
+
+  if (error) return res.status(500).json({ error: error.message })
+  res.status(204).end()
+})
+
+module.exports = router

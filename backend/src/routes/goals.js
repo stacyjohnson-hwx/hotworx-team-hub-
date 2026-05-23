@@ -1,0 +1,355 @@
+const express = require('express')
+const router = express.Router()
+const { createClient } = require('@supabase/supabase-js')
+const authenticate = require('../middleware/authMiddleware')
+const { requireRole } = require('../middleware/roleGuard')
+const { calcCommission } = require('../services/commissionCalc')
+
+const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+
+const STUDIO_GOAL_DEFAULTS = {
+  eft_target: 500, eft_actual: 0,
+  memberships_target: 0, memberships_actual: 0,
+  retail_target: 0, retail_actual: 0,
+  conversion_rate_target: 35, conversion_rate_actual: 0,
+  checkin_show_rate_target: 80, checkin_show_rate_actual: 0,
+  close_rate_target: 50, close_rate_actual: 0,
+  in_the_bank_target: null,
+  total_leads_target: 145,
+  notes: '',
+}
+
+const PERSONAL_GOAL_DEFAULTS = {
+  eft_actual: 0, pos_collected: 0,
+  pif_6mo: 0, pif_12mo: 0,
+  retail_actual: 0,
+  sweat_basic: 0, sweat_elite: 0, total_memberships: 0,
+  calls_made: 0, texts_made: 0,
+  itb_bonus_override: null, itb_bonus_note: '',
+  net_eft_bonus_override: null,
+}
+
+async function getUserName(uid) {
+  const { data } = await db().auth.admin.getUserById(uid)
+  const u = data?.user
+  return {
+    name: u?.user_metadata?.full_name || u?.email?.split('@')[0] || 'Team Member',
+    email: u?.email,
+    role: u?.app_metadata?.role,
+    avatar_url: u?.user_metadata?.avatar_url || null,
+  }
+}
+
+async function getMonthlyHours(month, year) {
+  const m = String(month).padStart(2, '0')
+  const lastDay = new Date(year, month, 0).getDate()
+  const { data } = await db()
+    .from('shifts')
+    .select('tsa_id, start_time, end_time')
+    .gte('shift_date', `${year}-${m}-01`)
+    .lte('shift_date', `${year}-${m}-${String(lastDay).padStart(2, '0')}`)
+  const hoursMap = {}
+  for (const s of (data || [])) {
+    const [sh, sm] = (s.start_time || '0:0').split(':').map(Number)
+    const [eh, em] = (s.end_time   || '0:0').split(':').map(Number)
+    const hrs = Math.max(0, (eh * 60 + em - sh * 60 - sm) / 60)
+    hoursMap[s.tsa_id] = (hoursMap[s.tsa_id] || 0) + hrs
+  }
+  return hoursMap
+}
+
+async function getMonthlyShiftCounts(month, year) {
+  const m = String(month).padStart(2, '0')
+  const lastDay = new Date(year, month, 0).getDate()
+  const { data } = await db()
+    .from('shifts')
+    .select('tsa_id')
+    .gte('shift_date', `${year}-${m}-01`)
+    .lte('shift_date', `${year}-${m}-${String(lastDay).padStart(2, '0')}`)
+  const countMap = {}
+  for (const s of (data || [])) {
+    countMap[s.tsa_id] = (countMap[s.tsa_id] || 0) + 1
+  }
+  return countMap
+}
+
+async function getStudioGoalTargets(month, year) {
+  const { data } = await db()
+    .from('studio_goals')
+    .select('eft_target, memberships_target, retail_target')
+    .eq('month', month)
+    .eq('year', year)
+    .maybeSingle()
+  return data || {}
+}
+
+async function getStudioTrends(month, year) {
+  const [{ data: trends }, { data: goals }] = await Promise.all([
+    db().from('studio_trends').select('retail,membership_cash,in_the_bank,itb_goal,net_eft').eq('month', month).eq('year', year).maybeSingle(),
+    db().from('studio_goals').select('retail_actual,in_the_bank_target').eq('month', month).eq('year', year).maybeSingle(),
+  ])
+  const t = trends || {}
+  const g = goals || {}
+  return {
+    retail:         t.retail         ?? 0,
+    membership_cash:t.membership_cash?? 0,
+    in_the_bank:    t.in_the_bank    ?? 0,
+    itb_goal:       g.in_the_bank_target ?? t.itb_goal ?? 0,
+    net_eft:        t.net_eft        ?? 0,
+  }
+}
+
+// ── Studio Goals ─────────────────────────────────────────────────────────────
+
+router.get('/studio', authenticate, async (req, res) => {
+  const { month, year } = req.query
+  if (!month || !year) return res.status(400).json({ error: 'month and year required' })
+
+  const [{ data: goals, error }, { data: trends }] = await Promise.all([
+    db().from('studio_goals').select('*').eq('month', month).eq('year', year).maybeSingle(),
+    db().from('studio_trends').select(
+      'leads,cancellations,total_member_count,new_members,' +
+      'membership_cash,net_eft,eft_decrease,in_the_bank,itb_goal,' +
+      'eft_increase,retail'
+    ).eq('month', month).eq('year', year).maybeSingle(),
+  ])
+
+  if (error) return res.status(500).json({ error: error.message })
+
+  const base = goals || { ...STUDIO_GOAL_DEFAULTS, month: Number(month), year: Number(year) }
+  const t = trends || {}
+
+  res.json({
+    ...base,
+    // Actuals pulled from studio_trends (read-only on this endpoint)
+    eft_actual:           t.eft_increase       ?? base.eft_actual,
+    memberships_actual:   t.new_members        ?? base.memberships_actual,
+    retail_actual:        t.retail             ?? base.retail_actual,
+    total_leads_actual:   t.leads              ?? null,
+    cancellations_actual: t.cancellations      ?? null,
+    total_members_actual: t.total_member_count ?? null,
+    new_members_actual:   t.new_members        ?? null,
+    membership_cash:      t.membership_cash    ?? null,
+    net_eft:              t.net_eft            ?? null,
+    eft_decrease_actual:  t.eft_decrease       ?? null,
+    in_the_bank_actual:   t.in_the_bank        ?? null,
+    itb_goal:             t.itb_goal           ?? null,
+  })
+})
+
+router.put('/studio', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+  const { month, year, ...fields } = req.body
+  if (!month || !year) return res.status(400).json({ error: 'month and year required' })
+
+  const { data, error } = await db()
+    .from('studio_goals')
+    .upsert({ month, year, ...fields, updated_by: req.user.id, updated_at: new Date().toISOString() },
+      { onConflict: 'month,year' })
+    .select()
+    .single()
+
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data)
+})
+
+// ── Personal Goals ────────────────────────────────────────────────────────────
+
+router.get('/personal', authenticate, async (req, res) => {
+  const { month, year } = req.query
+  if (!month || !year) return res.status(400).json({ error: 'month and year required' })
+
+  if (req.role === 'tsa') {
+    const m = String(month).padStart(2, '0')
+    const lastDay = new Date(Number(year), Number(month), 0).getDate()
+    const startDate = `${year}-${m}-01`
+    const endDate   = `${year}-${m}-${String(lastDay).padStart(2, '0')}`
+
+    const [{ data, error }, hoursMap, studioTargets, { data: myShifts }] = await Promise.all([
+      db().from('personal_goals').select('*').eq('tsa_id', req.user.id).eq('month', month).eq('year', year).maybeSingle(),
+      getMonthlyHours(Number(month), Number(year)),
+      getStudioGoalTargets(month, year),
+      db().from('shifts').select('id, shift_date, start_time, end_time, notes')
+        .eq('tsa_id', req.user.id).gte('shift_date', startDate).lte('shift_date', endDate)
+        .order('shift_date').order('start_time'),
+    ])
+
+    if (error) return res.status(500).json({ error: error.message })
+    const goals = data || { ...PERSONAL_GOAL_DEFAULTS, tsa_id: req.user.id, month: Number(month), year: Number(year) }
+    const { name, avatar_url } = await getUserName(req.user.id)
+    const commission = calcCommission(goals, 'tsa')
+
+    const myHours    = hoursMap[req.user.id] || 0
+    const totalHours = Object.values(hoursMap).reduce((s, h) => s + h, 0)
+    const hoursPct   = totalHours > 0 ? myHours / totalHours : 0
+    const shifts     = myShifts || []
+    const shiftCount = shifts.length
+
+    const eftGoal     = studioTargets.eft_target        ? Math.round(studioTargets.eft_target        * hoursPct * 100) / 100 : null
+    const membersGoal = studioTargets.memberships_target ? Math.round(studioTargets.memberships_target * hoursPct)           : null
+    const retailGoal  = studioTargets.retail_target     ? Math.round(studioTargets.retail_target     * hoursPct * 100) / 100 : null
+
+    const todayStr    = new Date().toLocaleDateString('en-CA')
+
+    return res.json([{
+      ...goals,
+      tsa_name: name, avatar_url, commission,
+      scheduled_hours:          Math.round(myHours * 10) / 10,
+      scheduled_shifts:         shiftCount,
+      total_team_hours:         Math.round(totalHours * 10) / 10,
+      hours_pct:                hoursPct,
+      eft_goal_computed:        eftGoal,
+      memberships_goal_computed:membersGoal,
+      retail_goal_computed:     retailGoal,
+      eft_per_shift:            (shiftCount > 0 && eftGoal)     ? Math.round(eftGoal     / shiftCount * 100) / 100 : null,
+      memberships_per_shift:    (shiftCount > 0 && membersGoal) ? Math.round(membersGoal / shiftCount * 10)  / 10  : null,
+      retail_per_shift:         (shiftCount > 0 && retailGoal)  ? Math.round(retailGoal  / shiftCount * 100) / 100 : null,
+      studio_targets:           studioTargets,
+      all_shifts:               shifts,
+      todays_shifts:            shifts.filter(s => s.shift_date === todayStr),
+    }])
+  }
+
+  // Owner/manager: all users merged with goals
+  const { data: { users }, error: uErr } = await db().auth.admin.listUsers()
+  if (uErr) return res.status(500).json({ error: uErr.message })
+
+  const studioUsers = users.filter(u => ['tsa', 'manager', 'owner'].includes(u.app_metadata?.role))
+
+  const { data: goalsData, error: gErr } = await db()
+    .from('personal_goals').select('*').eq('month', month).eq('year', year)
+  if (gErr) return res.status(500).json({ error: gErr.message })
+
+  // Fetch studio trends, hours, and goal targets in parallel
+  const [studioData, hoursMap, studioTargets] = await Promise.all([
+    getStudioTrends(month, year),
+    getMonthlyHours(Number(month), Number(year)),
+    getStudioGoalTargets(month, year),
+  ])
+
+  const goalsMap = {}
+  for (const g of goalsData) goalsMap[g.tsa_id] = g
+
+  // Total hours across TSA + manager only (owner excluded from goal distribution)
+  const nonOwners = studioUsers.filter(u => u.app_metadata?.role !== 'owner')
+  const totalHours = nonOwners.reduce((sum, u) => sum + (hoursMap[u.id] || 0), 0)
+
+  const result = studioUsers.map(u => {
+    const userRole = u.app_metadata?.role
+    const goals = goalsMap[u.id] || { ...PERSONAL_GOAL_DEFAULTS, tsa_id: u.id, month: Number(month), year: Number(year) }
+    const commission = calcCommission(goals, userRole, studioData)
+
+    const scheduledHours = userRole !== 'owner' ? (hoursMap[u.id] || 0) : 0
+    const hoursPct = totalHours > 0 ? scheduledHours / totalHours : 0
+
+    return {
+      ...goals,
+      tsa_name:   u.user_metadata?.full_name || u.email?.split('@')[0] || 'Team Member',
+      tsa_email:  u.email,
+      tsa_role:   userRole,
+      avatar_url: u.user_metadata?.avatar_url || null,
+      commission,
+      studio_data: userRole === 'manager' ? studioData : undefined,
+      // Hours-based goal allocation
+      scheduled_hours:          Math.round(scheduledHours * 10) / 10,
+      hours_pct:                hoursPct,
+      total_team_hours:         Math.round(totalHours * 10) / 10,
+      eft_goal_computed:        studioTargets.eft_target        ? Math.round(studioTargets.eft_target        * hoursPct * 100) / 100 : null,
+      memberships_goal_computed:studioTargets.memberships_target ? Math.round(studioTargets.memberships_target * hoursPct)           : null,
+      retail_goal_computed:     studioTargets.retail_target     ? Math.round(studioTargets.retail_target     * hoursPct * 100) / 100 : null,
+    }
+  })
+
+  res.json(result.sort((a, b) => a.tsa_name.localeCompare(b.tsa_name)))
+})
+
+router.put('/personal/:tsaId', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+  const { month, year, ...fields } = req.body
+  if (!month || !year) return res.status(400).json({ error: 'month and year required' })
+
+  const { data, error } = await db()
+    .from('personal_goals')
+    .upsert({
+      tsa_id: req.params.tsaId, month, year,
+      ...fields,
+      updated_by: req.user.id,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'tsa_id,month,year' })
+    .select()
+    .single()
+
+  if (error) return res.status(500).json({ error: error.message })
+
+  const { name, avatar_url, role: userRole } = await getUserName(req.params.tsaId)
+  const studioData = userRole === 'manager' ? await getStudioTrends(month, year) : {}
+  const commission = calcCommission(data, userRole, studioData)
+  res.json({ ...data, tsa_name: name, avatar_url, tsa_role: userRole, commission, studio_data: userRole === 'manager' ? studioData : undefined })
+})
+
+// ── Team Performance Leaderboard (all roles) ──────────────────────────────────
+
+router.get('/leaderboard', authenticate, async (req, res) => {
+  const { month, year } = req.query
+  if (!month || !year) return res.status(400).json({ error: 'month and year required' })
+
+  const { data: { users }, error: uErr } = await db().auth.admin.listUsers()
+  if (uErr) return res.status(500).json({ error: uErr.message })
+
+  const studioUsers = users.filter(u => ['tsa', 'manager'].includes(u.app_metadata?.role))
+
+  const [{ data: goalsData, error: gErr }, hoursMap, shiftCountMap, studioTargets] = await Promise.all([
+    db().from('personal_goals')
+      .select('tsa_id, total_memberships, retail_actual, sweat_basic, sweat_elite, pos_collected, eft_actual, pif_6mo, pif_12mo, itb_bonus_override, calls_made, texts_made')
+      .eq('month', month).eq('year', year),
+    getMonthlyHours(Number(month), Number(year)),
+    getMonthlyShiftCounts(Number(month), Number(year)),
+    getStudioGoalTargets(month, year),
+  ])
+
+  if (gErr) return res.status(500).json({ error: gErr.message })
+
+  const goalsMap = {}
+  for (const g of (goalsData || [])) goalsMap[g.tsa_id] = g
+
+  const totalHours = studioUsers.reduce((sum, u) => sum + (hoursMap[u.id] || 0), 0)
+
+  const result = studioUsers
+    .filter(u => (hoursMap[u.id] || 0) > 0)
+    .map(u => {
+      const userRole = u.app_metadata?.role
+      const goals = goalsMap[u.id] || {}
+      const scheduledHours = hoursMap[u.id] || 0
+      const hoursPct = totalHours > 0 ? scheduledHours / totalHours : 0
+      const membersGoal = studioTargets.memberships_target ? Math.round(studioTargets.memberships_target * hoursPct) : null
+      const retailGoal  = studioTargets.retail_target ? Math.round(studioTargets.retail_target * hoursPct * 100) / 100 : null
+      const commission  = calcCommission(goals, userRole)
+      return {
+        tsa_id:       u.id,
+        tsa_name:     u.user_metadata?.full_name || u.email?.split('@')[0] || 'Team Member',
+        tsa_role:     userRole,
+        avatar_url:   u.user_metadata?.avatar_url || null,
+        total_memberships:         goals.total_memberships || 0,
+        sweat_basic:               goals.sweat_basic        || 0,
+        sweat_elite:               goals.sweat_elite        || 0,
+        retail_actual:             goals.retail_actual      || 0,
+        pos_collected:             goals.pos_collected      || 0,
+        calls_made:                goals.calls_made         || 0,
+        texts_made:                goals.texts_made         || 0,
+        outreach:                  (goals.calls_made || 0) + (goals.texts_made || 0),
+        shift_count:               shiftCountMap[u.id]      || 0,
+        outreach_goal:             (shiftCountMap[u.id] || 0) * 50,
+        scheduled_hours:           Math.round(scheduledHours * 10) / 10,
+        hours_pct:                 hoursPct,
+        memberships_goal_computed: membersGoal,
+        retail_goal_computed:      retailGoal,
+        commission_total:          commission.total,
+        commission_retail_rate:    commission.retail_rate   || 0,
+        commission_retail:         commission.retail_commission || 0,
+        commission_eft:            commission.eft_commission    || 0,
+        commission_itb:            commission.itb_bonus         || 0,
+      }
+    })
+
+  res.json(result)
+})
+
+module.exports = router
