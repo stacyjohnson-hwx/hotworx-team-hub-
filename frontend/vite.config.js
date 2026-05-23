@@ -9,6 +9,14 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
+  optimizeDeps: {
+    include: ['leaflet'],
+  },
+  build: {
+    commonjsOptions: {
+      include: [/leaflet/, /node_modules/],
+    },
+  },
   server: {
     headers: {
       'Content-Security-Policy': "script-src 'self' 'unsafe-eval' 'unsafe-inline'; default-src * 'unsafe-inline' 'unsafe-eval' data: blob:",
