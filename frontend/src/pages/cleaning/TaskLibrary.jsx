@@ -83,7 +83,7 @@ export default function TaskLibrary() {
   }
 
   const allFreqs = [...new Set(tasks.map(t => t.frequency))]
-  const allTypes = [...new Set(tasks.map(t => t.task_type).filter(Boolean))]
+  const allTypes = [...new Set(tasks.map(t => t.task_type).filter(Boolean))].filter(t => t !== 'Marketing')
 
   const filtered = tasks.filter(t => {
     if (filterFreq !== 'all' && t.frequency !== filterFreq) return false

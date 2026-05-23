@@ -232,7 +232,7 @@ export default function TaskList() {
   })
 
   const activeFreqs = [...new Set(tasks.map(t => t.frequency))]
-  const activeTypes = [...new Set(tasks.map(t => t.task_type).filter(Boolean))]
+  const activeTypes = [...new Set(tasks.map(t => t.task_type).filter(Boolean))].filter(t => t !== 'Marketing')
 
   if (loading) {
     return (
