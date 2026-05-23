@@ -114,6 +114,8 @@ function makeItem(text, isDefault = false) {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+function todayStr() { return new Date().toISOString().slice(0, 10) }
+
 function fmtDate(str) {
   if (!str) return ''
   return new Date(str + 'T00:00:00').toLocaleDateString('en-US', {
@@ -124,6 +126,21 @@ function fmtDateTime(iso) {
   return new Date(iso).toLocaleDateString('en-US', {
     month: 'short', day: 'numeric', year: 'numeric',
   })
+}
+function daysFromToday(dateStr) {
+  if (!dateStr) return null
+  const diff = Math.round((new Date(dateStr + 'T00:00:00') - new Date(todayStr() + 'T00:00:00')) / 86400000)
+  return diff
+}
+function relativeMeetingLabel(dateStr) {
+  const d = daysFromToday(dateStr)
+  if (d === null) return null
+  if (d === 0)  return { text: 'Today',     cls: 'text-red-600 font-semibold' }
+  if (d === 1)  return { text: 'Tomorrow',  cls: 'text-orange-600 font-semibold' }
+  if (d === -1) return { text: 'Yesterday', cls: 'text-gray-500' }
+  if (d > 0 && d <= 7)  return { text: `In ${d} days`,      cls: 'text-blue-600' }
+  if (d < 0 && d >= -7) return { text: `${Math.abs(d)} days ago`, cls: 'text-gray-400' }
+  return null
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -137,6 +154,7 @@ function AgendaModal({ agenda, onSave, onClose }) {
   const [isDragging, setIsDragging] = useState(false)
 
   const [meetingType,  setMeetingType]  = useState(agenda?.meetingType || 'manager_meeting')
+  const [meetingDate,  setMeetingDate]  = useState(agenda?.meetingDate || todayStr())
   const [title,        setTitle]        = useState(agenda?.title || '')
   const [items,        setItems]        = useState(() => {
     if (agenda) return agenda.items.map(i => ({ ...i }))
@@ -215,6 +233,7 @@ function AgendaModal({ agenda, onSave, onClose }) {
       onSave({
         id:          agenda?.id || uid(),
         meetingType,
+        meetingDate,
         title:       title.trim(),
         items:       items.filter(i => i.text.trim()),
         documents:   allDocs,
@@ -265,16 +284,29 @@ function AgendaModal({ agenda, onSave, onClose }) {
             </div>
           </div>
 
-          {/* Title */}
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">
-              Meeting Title <span className="text-red-400">*</span>
-            </label>
-            <input
-              autoFocus value={title} onChange={e => setTitle(e.target.value)}
-              placeholder={meetingType === 'manager_meeting' ? 'e.g. Weekly Manager Meeting' : 'e.g. Chrissy — May Check-in'}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-500"
-            />
+          {/* Title + Date row */}
+          <div className="grid grid-cols-5 gap-3">
+            <div className="col-span-3">
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Meeting Title <span className="text-red-400">*</span>
+              </label>
+              <input
+                autoFocus value={title} onChange={e => setTitle(e.target.value)}
+                placeholder={meetingType === 'manager_meeting' ? 'e.g. Weekly Manager Meeting' : 'e.g. Chrissy — May Check-in'}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-500"
+              />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Meeting Date <span className="text-red-400">*</span>
+              </label>
+              <input
+                type="date"
+                value={meetingDate}
+                onChange={e => setMeetingDate(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-500"
+              />
+            </div>
           </div>
 
           {/* Agenda items */}
@@ -446,19 +478,29 @@ function AgendaCard({ agenda, onEdit, onDelete, onToggleItem, onRemoveDoc }) {
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-gray-900 text-sm font-semibold leading-tight">{agenda.title}</p>
-          <p className="text-gray-400 text-xs mt-0.5">
-            {fmtDateTime(agenda.createdAt)}
+          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+            {/* Meeting date (primary) */}
+            {agenda.meetingDate ? (
+              <span className="text-xs text-gray-600 flex items-center gap-1">
+                <Calendar size={11} className="text-gray-400" />
+                {fmtDate(agenda.meetingDate)}
+              </span>
+            ) : (
+              <span className="text-xs text-gray-400">{fmtDateTime(agenda.createdAt)}</span>
+            )}
+            {/* Relative label (Today / Tomorrow / In N days) */}
+            {(() => { const rel = relativeMeetingLabel(agenda.meetingDate); return rel ? <span className={`text-xs ${rel.cls}`}>{rel.text}</span> : null })()}
             {total > 0 && (
-              <> · <span className={allDone ? 'text-green-600 font-medium' : ''}>
-                {checkedCount}/{total} items {allDone ? '✓ complete' : 'covered'}
-              </span></>
+              <span className={`text-xs ${allDone ? 'text-green-600 font-medium' : 'text-gray-400'}`}>
+                · {checkedCount}/{total} {allDone ? '✓ complete' : 'covered'}
+              </span>
             )}
             {docs.length > 0 && (
-              <> · <span className="text-gray-400">
-                <Paperclip size={10} className="inline mr-0.5" />{docs.length} doc{docs.length !== 1 ? 's' : ''}
-              </span></>
+              <span className="text-xs text-gray-400">
+                · <Paperclip size={10} className="inline mr-0.5" />{docs.length} doc{docs.length !== 1 ? 's' : ''}
+              </span>
             )}
-          </p>
+          </div>
         </div>
         {total > 0 && (
           <div className="flex-shrink-0 w-16">
@@ -572,9 +614,13 @@ function AgendaCard({ agenda, onEdit, onDelete, onToggleItem, onRemoveDoc }) {
 
 // ─── Agenda Tab ───────────────────────────────────────────────────────────────
 function AgendaTab() {
-  const [agendas,  setAgendas]  = useState(() => loadAgendas())
-  const [modal,    setModal]    = useState(null) // null | 'new' | agenda obj
+  const [agendas,    setAgendas]    = useState(() => loadAgendas())
+  const [modal,      setModal]      = useState(null)
+  const [view,       setView]       = useState('upcoming') // 'upcoming' | 'past'
   const [typeFilter, setTypeFilter] = useState('')
+  const [dateFrom,   setDateFrom]   = useState('')
+  const [dateTo,     setDateTo]     = useState('')
+  const [showFilter, setShowFilter] = useState(false)
 
   useEffect(() => { saveAgendas(agendas) }, [agendas])
 
@@ -588,7 +634,6 @@ function AgendaTab() {
   }
 
   function handleDelete(id) {
-    // Also clean up any stored doc blobs for this agenda
     const agenda = agendas.find(a => a.id === id)
     if (agenda?.documents) {
       agenda.documents.forEach(doc => deleteDocBlob(doc.id).catch(() => {}))
@@ -599,10 +644,7 @@ function AgendaTab() {
   function handleToggleItem(agendaId, itemId) {
     setAgendas(prev => prev.map(a => {
       if (a.id !== agendaId) return a
-      return {
-        ...a,
-        items: a.items.map(i => i.id === itemId ? { ...i, checked: !i.checked } : i),
-      }
+      return { ...a, items: a.items.map(i => i.id === itemId ? { ...i, checked: !i.checked } : i) }
     }))
   }
 
@@ -613,8 +655,37 @@ function AgendaTab() {
     ))
   }
 
-  const typesUsed = [...new Set(agendas.map(a => a.meetingType))]
-  const visible   = typeFilter ? agendas.filter(a => a.meetingType === typeFilter) : agendas
+  function clearFilters() { setTypeFilter(''); setDateFrom(''); setDateTo('') }
+  const hasFilters = typeFilter || dateFrom || dateTo
+
+  const today = todayStr()
+
+  // Split into upcoming (meetingDate >= today or no date) and past (meetingDate < today)
+  const upcoming = agendas
+    .filter(a => !a.meetingDate || a.meetingDate >= today)
+    .sort((a, b) => {
+      const da = a.meetingDate || a.createdAt.slice(0, 10)
+      const db = b.meetingDate || b.createdAt.slice(0, 10)
+      return da.localeCompare(db) // ascending: soonest first
+    })
+
+  const past = agendas
+    .filter(a => a.meetingDate && a.meetingDate < today)
+    .sort((a, b) => b.meetingDate.localeCompare(a.meetingDate)) // descending: most recent first
+
+  const pool = view === 'upcoming' ? upcoming : past
+
+  // Type options used within current pool
+  const typesUsed = [...new Set(pool.map(a => a.meetingType))]
+
+  // Apply filters
+  const visible = pool.filter(a => {
+    if (typeFilter && a.meetingType !== typeFilter) return false
+    const d = a.meetingDate || a.createdAt.slice(0, 10)
+    if (dateFrom && d < dateFrom) return false
+    if (dateTo   && d > dateTo)   return false
+    return true
+  })
 
   return (
     <div>
@@ -626,33 +697,35 @@ function AgendaTab() {
         />
       )}
 
-      {/* Toolbar */}
-      <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
-        {/* Type filter pills */}
-        {typesUsed.length > 1 && (
-          <div className="flex gap-2 flex-wrap">
-            <button
-              onClick={() => setTypeFilter('')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors ${
-                !typeFilter ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+      {/* ── Upcoming / Past tabs ── */}
+      <div className="flex items-center gap-3 mb-4">
+        <div className="flex gap-1 bg-gray-100 p-1 rounded-xl">
+          {[
+            { key: 'upcoming', label: `Upcoming${upcoming.length ? ` (${upcoming.length})` : ''}` },
+            { key: 'past',     label: `Past${past.length ? ` (${past.length})` : ''}` },
+          ].map(({ key, label }) => (
+            <button key={key} onClick={() => { setView(key); clearFilters() }}
+              className={`px-4 py-1.5 text-sm font-semibold rounded-lg transition-all ${
+                view === key ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'
               }`}>
-              All
+              {label}
             </button>
-            {typesUsed.map(val => {
-              const t = getMeetingType(val)
-              return (
-                <button
-                  key={val}
-                  onClick={() => setTypeFilter(typeFilter === val ? '' : val)}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors ${
-                    typeFilter === val ? t.color + ' ring-2 ring-offset-1 ring-red-300' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
-                  }`}>
-                  {t.label}
-                </button>
-              )
-            })}
-          </div>
-        )}
+          ))}
+        </div>
+
+        {/* Filter toggle */}
+        <button
+          onClick={() => setShowFilter(f => !f)}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${
+            hasFilters
+              ? 'bg-red-50 border-red-200 text-red-600'
+              : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
+          }`}>
+          <Calendar size={13} />
+          Filter
+          {hasFilters && <span className="ml-0.5 w-4 h-4 bg-red-600 text-white rounded-full flex items-center justify-center text-[10px] font-bold">!</span>}
+        </button>
+
         <button
           onClick={() => setModal('new')}
           className="ml-auto flex items-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors shadow-sm">
@@ -660,19 +733,83 @@ function AgendaTab() {
         </button>
       </div>
 
-      {/* List */}
+      {/* ── Filter panel ── */}
+      {showFilter && (
+        <div className="mb-4 p-4 bg-gray-50 border border-gray-200 rounded-xl space-y-3">
+          {/* Date range */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">From date</label>
+              <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-500" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">To date</label>
+              <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-500" />
+            </div>
+          </div>
+
+          {/* Meeting type pills */}
+          {typesUsed.length > 1 && (
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1.5">Meeting type</label>
+              <div className="flex gap-2 flex-wrap">
+                <button onClick={() => setTypeFilter('')}
+                  className={`px-3 py-1 text-xs font-semibold rounded-lg border transition-colors ${
+                    !typeFilter ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
+                  }`}>All</button>
+                {typesUsed.map(val => {
+                  const t = getMeetingType(val)
+                  return (
+                    <button key={val} onClick={() => setTypeFilter(typeFilter === val ? '' : val)}
+                      className={`px-3 py-1 text-xs font-semibold rounded-lg border transition-colors ${
+                        typeFilter === val ? t.color + ' ring-1 ring-offset-1 ring-red-300' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
+                      }`}>{t.label}</button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {hasFilters && (
+            <button onClick={clearFilters}
+              className="text-xs text-gray-400 hover:text-red-600 font-medium transition-colors">
+              Clear all filters
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* ── List ── */}
       {visible.length === 0 ? (
         <div className="text-center py-20 text-gray-400">
           <ClipboardList size={40} className="mx-auto mb-3 opacity-30" />
-          <p className="text-sm font-medium text-gray-500">No agendas yet</p>
-          <p className="text-xs mt-1 text-gray-400">
-            Create an agenda before your meeting — Manager Meetings auto-load the standard items.
-          </p>
-          <button
-            onClick={() => setModal('new')}
-            className="mt-4 px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700">
-            Create First Agenda
-          </button>
+          {pool.length === 0 ? (
+            <>
+              <p className="text-sm font-medium text-gray-500">
+                {view === 'upcoming' ? 'No upcoming meetings' : 'No past meetings'}
+              </p>
+              <p className="text-xs mt-1 text-gray-400">
+                {view === 'upcoming'
+                  ? 'Create an agenda — Manager Meetings auto-load the standard items.'
+                  : 'Past meetings will appear here once their date has passed.'}
+              </p>
+              {view === 'upcoming' && (
+                <button onClick={() => setModal('new')}
+                  className="mt-4 px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700">
+                  Create First Agenda
+                </button>
+              )}
+            </>
+          ) : (
+            <>
+              <p className="text-sm font-medium text-gray-500">No agendas match your filters</p>
+              <button onClick={clearFilters} className="mt-3 text-sm text-red-600 hover:text-red-700 font-medium">
+                Clear filters
+              </button>
+            </>
+          )}
         </div>
       ) : (
         <div className="space-y-3">
