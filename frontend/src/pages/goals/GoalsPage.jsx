@@ -22,9 +22,13 @@ function calcCommission(goals, role, studioData = {}) {
     const eft_rate      = eft_exceeds ? 0.30 : 0.15
     const eft_comm      = pos * eft_rate
     const pif_comm      = p6 * 0.05 + p12 * 0.10
-    const rm_total      = (Number(studioData.retail) || 0) + (Number(studioData.membership_cash) || 0)
+    const retail_amt    = Number(studioData.retail) || 0
+    const mbr_cash_amt  = Number(studioData.membership_cash) || 0
+    const rm_total      = retail_amt + mbr_cash_amt
     const rm_qualifies  = rm_total >= 5000
     const rm_bonus      = rm_qualifies ? round2(rm_total * 0.04) : 0
+    const retail_bonus  = rm_qualifies ? round2(retail_amt * 0.04) : 0
+    const mbr_cash_bonus = rm_qualifies ? round2(mbr_cash_amt * 0.04) : 0
 
     let itb_bonus
     if (goals.itb_bonus_override != null && goals.itb_bonus_override !== '') {
@@ -53,7 +57,7 @@ function calcCommission(goals, role, studioData = {}) {
     return {
       type: 'manager', eft_rate, eft_exceeds, eft_quota: quota,
       eft_commission: round2(eft_comm), pif_commission: round2(pif_comm),
-      rm_bonus, rm_total: round2(rm_total), rm_qualifies,
+      rm_bonus, rm_total: round2(rm_total), rm_qualifies, retail_bonus, mbr_cash_bonus,
       itb_bonus, net_eft_bonus,
       total: round2(eft_comm + pif_comm + rm_bonus + itb_bonus + net_eft_bonus),
     }
@@ -1253,8 +1257,11 @@ function CommissionBreakdown({ commission: c, isManager }) {
         {isManager ? (
           <>
             <CommLine
-              label={`Retail + Membership Cash (4%${c.rm_qualifies ? ' — ✓ $5k met' : ' — below $5k min'})`}
-              value={fmt$(c.rm_bonus)} highlight={c.rm_qualifies} />
+              label={`Retail (4%${c.rm_qualifies ? ' — ✓ $5k met' : ' — below $5k min'})`}
+              value={fmt$(c.retail_bonus)} highlight={c.rm_qualifies && c.retail_bonus > 0} />
+            <CommLine
+              label="Membership Cash (4%)"
+              value={fmt$(c.mbr_cash_bonus)} highlight={c.rm_qualifies && c.mbr_cash_bonus > 0} />
             <CommLine label="ITB Bonus (studio In The Bank)" value={fmt$(c.itb_bonus)} highlight={c.itb_bonus > 0} />
             <CommLine label="Net EFT Tier Bonus" value={fmt$(c.net_eft_bonus)} highlight={c.net_eft_bonus > 0} />
           </>
