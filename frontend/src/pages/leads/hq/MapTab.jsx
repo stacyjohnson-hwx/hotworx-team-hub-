@@ -394,30 +394,38 @@ function LogActivityModal({ coords, onClose, onSave }) {
 
 // ─── Location list row ────────────────────────────────────────────────────────
 function LocationRow({ item, type, activities, onFly, onDelete }) {
+  const hasCoords = !!(item.lat && item.lng)
+
   // For neighborhoods: coverage-based dot; for businesses: B2B status color
   const dotColor = type === 'business'
-    ? (B2B_STATUS_COLOR[item.status] || '#D1D5DB')
+    ? (hasCoords ? (B2B_STATUS_COLOR[item.status] || '#D1D5DB') : '#E5E7EB')
     : (() => {
-        const nearest  = nearestActivity(item.lat, item.lng, activities, 0.8)
-        const covered  = nearest && getIntensity(nearest.dateCompleted) !== 'stale'
+        const nearest   = nearestActivity(item.lat, item.lng, activities, 0.8)
+        const covered   = nearest && getIntensity(nearest.dateCompleted) !== 'stale'
         const intensity = nearest ? getIntensity(nearest.dateCompleted) : null
         return covered ? INTENSITY[intensity].color : '#D1D5DB'
       })()
 
   // Coverage info only used for neighborhoods
-  const nearest  = type === 'neighborhood' ? nearestActivity(item.lat, item.lng, activities, 0.8) : null
-  const covered  = nearest && getIntensity(nearest.dateCompleted) !== 'stale'
+  const nearest   = type === 'neighborhood' ? nearestActivity(item.lat, item.lng, activities, 0.8) : null
+  const covered   = nearest && getIntensity(nearest.dateCompleted) !== 'stale'
   const intensity = nearest ? getIntensity(nearest.dateCompleted) : null
 
   const isCustom = item.id?.startsWith('custom-')
 
+  function handleClick() {
+    if (type === 'business' && !hasCoords) return // no pin to fly to
+    onFly(item)
+  }
+
   return (
-    <button onClick={() => onFly(item)}
-      className="w-full flex items-center gap-3 py-2.5 px-1 border-b border-gray-50 last:border-0 hover:bg-orange-50/40 transition-colors text-left group rounded">
+    <div
+      onClick={handleClick}
+      className={`w-full flex items-center gap-3 py-2.5 px-1 border-b border-gray-50 last:border-0 transition-colors text-left group rounded ${type === 'business' && !hasCoords ? 'opacity-60 cursor-default' : 'hover:bg-orange-50/40 cursor-pointer'}`}>
       <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: dotColor }} />
       <div className="flex-1 min-w-0">
         <p className="text-sm font-semibold text-gray-800 leading-tight truncate">{item.name}</p>
-        <div className="flex items-center gap-2 mt-0.5">
+        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
           {type === 'business' ? (
             <>
               {item.industry && <span className="text-[11px] text-gray-400">{item.industry}</span>}
@@ -425,6 +433,9 @@ function LocationRow({ item, type, activities, onFly, onDelete }) {
                 <span className="text-[11px] font-medium" style={{ color: B2B_STATUS_COLOR[item.status] || '#9CA3AF' }}>
                   {B2B_STATUS_LABEL[item.status] || item.status}
                 </span>
+              )}
+              {!hasCoords && (
+                <span className="text-[11px] text-amber-500 font-medium">No location — add address in B2B Tracker</span>
               )}
             </>
           ) : (
@@ -438,7 +449,7 @@ function LocationRow({ item, type, activities, onFly, onDelete }) {
             </>
           )}
         </div>
-        {item.address && type === 'business' && (
+        {item.address && type === 'business' && hasCoords && (
           <p className="text-[11px] text-gray-400 mt-0.5 truncate">{item.address}</p>
         )}
       </div>
@@ -449,9 +460,11 @@ function LocationRow({ item, type, activities, onFly, onDelete }) {
             <Trash2 size={12} />
           </button>
         )}
-        <ChevronRight size={14} className="text-gray-300 group-hover:text-[#E8611A] transition-colors" />
+        {hasCoords && (
+          <ChevronRight size={14} className="text-gray-300 group-hover:text-[#E8611A] transition-colors" />
+        )}
       </div>
-    </button>
+    </div>
   )
 }
 
@@ -487,18 +500,19 @@ export default function MapTab() {
   function saveNeighborhood(n){ setNeighborhoods(prev => [...prev, n]) }
   function delNeighborhood(id){ setNeighborhoods(prev => prev.filter(n => n.id !== id)) }
 
-  // Normalize B2B contacts → map-friendly shape (only those with coords)
-  const bizItems = b2bContacts
-    .filter(c => c.latitude && c.longitude)
-    .map(c => ({
-      id:       c.id,
-      name:     c.business_name,
-      lat:      c.latitude,
-      lng:      c.longitude,
-      industry: c.industry,
-      status:   c.status,
-      address:  c.address,
-    }))
+  // ALL B2B contacts normalized → shown in the list (single source of truth)
+  const bizListItems = b2bContacts.map(c => ({
+    id:       c.id,
+    name:     c.business_name,
+    lat:      c.latitude  || null,
+    lng:      c.longitude || null,
+    industry: c.industry,
+    status:   c.status,
+    address:  c.address,
+  }))
+
+  // Only contacts with coordinates get map pins
+  const bizMapItems = bizListItems.filter(b => b.lat && b.lng)
 
   // Stats
   const fresh  = activities.filter(a => getIntensity(a.dateCompleted) === 'fresh').length
@@ -510,7 +524,7 @@ export default function MapTab() {
     const hit = nearestActivity(n.lat, n.lng, activities, 0.8)
     return hit && getIntensity(hit.dateCompleted) !== 'stale'
   }).length
-  const coveredBiz = bizItems.filter(b => {
+  const coveredBiz = bizMapItems.filter(b => {
     const hit = nearestActivity(b.lat, b.lng, activities, 0.25)
     return hit && getIntensity(hit.dateCompleted) !== 'stale'
   }).length
@@ -519,7 +533,7 @@ export default function MapTab() {
   const searchLc = search.toLowerCase()
   const listItems = listTab === 'neighborhoods'
     ? neighborhoods.filter(n => n.name.toLowerCase().includes(searchLc))
-    : bizItems.filter(b =>
+    : bizListItems.filter(b =>
         (b.name     || '').toLowerCase().includes(searchLc) ||
         (b.industry || '').toLowerCase().includes(searchLc) ||
         (b.address  || '').toLowerCase().includes(searchLc)
@@ -617,8 +631,8 @@ export default function MapTab() {
             )
           })}
 
-          {/* B2B business pins — colored by pipeline status */}
-          {bizItems.map(b => {
+          {/* B2B business pins — colored by pipeline status (only contacts with coords) */}
+          {bizMapItems.map(b => {
             const hit      = nearestActivity(b.lat, b.lng, activities, 0.25)
             const visited  = hit && getIntensity(hit.dateCompleted) !== 'stale'
             const pinColor = B2B_STATUS_COLOR[b.status] || '#9CA3AF'
@@ -662,7 +676,7 @@ export default function MapTab() {
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${listTab==='businesses' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
                 <Building2 size={11} /> Businesses
                 <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${listTab==='businesses' ? 'bg-orange-100 text-orange-600' : 'bg-gray-200 text-gray-500'}`}>
-                  {coveredBiz}/{bizItems.length}
+                  {coveredBiz}/{bizListItems.length}
                 </span>
               </button>
             </div>
