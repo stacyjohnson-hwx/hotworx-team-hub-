@@ -682,11 +682,29 @@ function TeamPerformance({ month, year, currentUserId }) {
 
   const sorted = [...curr].sort((a, b) => score(b) - score(a))
 
+  // Dense ranking: ties share the same rank, next rank is sequential (not skipped)
+  const denseRanks = []
+  sorted.forEach((member, idx) => {
+    if (idx === 0) { denseRanks.push(1); return }
+    const prev = denseRanks[idx - 1]
+    denseRanks.push(score(member) === score(sorted[idx - 1]) ? prev : prev + 1)
+  })
+  // Build a map from tsa_id → dense rank for quick lookup
+  const rankMap = Object.fromEntries(sorted.map((m, i) => [m.tsa_id, denseRanks[i]]))
+
   // Max outreach in the current group (for relative bar fill)
   const maxOutreach = Math.max(1, ...curr.map(m => (m.calls_made || 0) + (m.texts_made || 0)))
 
-  // Top 3 with non-zero activity
-  const top3 = sorted.filter(m => score(m) > 0).slice(0, 3)
+  // Top 3 podium slots: unique rank positions 1/2/3 with non-zero score
+  // Multiple people can share rank 1 or 2 — take first representative per rank
+  const podiumRank1 = sorted.filter(m => score(m) > 0 && rankMap[m.tsa_id] === 1)
+  const podiumRank2 = sorted.filter(m => score(m) > 0 && rankMap[m.tsa_id] === 2)
+  const podiumRank3 = sorted.filter(m => score(m) > 0 && rankMap[m.tsa_id] === 3)
+  // For the 3-slot podium display pick one per slot (first alphabetically if tied)
+  const podium1 = podiumRank1[0]
+  const podium2 = podiumRank2[0]
+  const podium3 = podiumRank3[0]
+  const top3    = [podium1, podium2, podium3].filter(Boolean)
 
   return (
     <div>
@@ -719,23 +737,27 @@ function TeamPerformance({ month, year, currentUserId }) {
         ))}
       </div>
 
-      {/* Podium — top 3 when there's activity */}
+      {/* Podium — show when at least 2 unique rank positions have activity */}
       {top3.length >= 2 && (
         <div className="mb-6 flex items-end justify-center gap-3">
           {/* 2nd place (left, shorter) */}
-          {top3[1] && <PodiumSlot member={top3[1]} rank={2} metric={metric} colors={colorMap[top3[1].tsa_id]} isMe={top3[1].tsa_id === currentUserId} height="h-20" />}
+          {podium2 && <PodiumSlot member={podium2} rank={2} metric={metric} colors={colorMap[podium2.tsa_id]} isMe={podium2.tsa_id === currentUserId} height="h-20"
+            tiedCount={podiumRank2.length} />}
           {/* 1st place (center, tallest) */}
-          {top3[0] && <PodiumSlot member={top3[0]} rank={1} metric={metric} colors={colorMap[top3[0].tsa_id]} isMe={top3[0].tsa_id === currentUserId} height="h-28" />}
+          {podium1 && <PodiumSlot member={podium1} rank={1} metric={metric} colors={colorMap[podium1.tsa_id]} isMe={podium1.tsa_id === currentUserId} height="h-28"
+            tiedCount={podiumRank1.length} />}
           {/* 3rd place (right, shortest) */}
-          {top3[2] && <PodiumSlot member={top3[2]} rank={3} metric={metric} colors={colorMap[top3[2].tsa_id]} isMe={top3[2].tsa_id === currentUserId} height="h-14" />}
+          {podium3 && <PodiumSlot member={podium3} rank={3} metric={metric} colors={colorMap[podium3.tsa_id]} isMe={podium3.tsa_id === currentUserId} height="h-14"
+            tiedCount={podiumRank3.length} />}
         </div>
       )}
 
       {/* Leaderboard cards */}
       <div className="space-y-3">
-        {sorted.map((member, idx) => {
+        {sorted.map((member) => {
           const colors  = colorMap[member.tsa_id] || PALETTE[0]
           const isMe    = member.tsa_id === currentUserId
+          const rank    = rankMap[member.tsa_id]
           const prev    = prevMap[member.tsa_id]
 
           const mActual = member.total_memberships || 0
@@ -788,9 +810,9 @@ function TeamPerformance({ month, year, currentUserId }) {
               <div className="flex items-center gap-3 px-4 py-4 bg-white">
                 {/* Rank */}
                 <div className="flex-shrink-0 w-9 text-center">
-                  {idx < 3
-                    ? <span className="text-2xl leading-none">{MEDALS[idx]}</span>
-                    : <span className="text-base font-bold text-gray-300">#{idx + 1}</span>
+                  {rank <= 3
+                    ? <span className="text-2xl leading-none">{MEDALS[rank - 1]}</span>
+                    : <span className="text-base font-bold text-gray-300">#{rank}</span>
                   }
                 </div>
 
@@ -955,7 +977,7 @@ function TeamPerformance({ month, year, currentUserId }) {
   )
 }
 
-function PodiumSlot({ member, rank, metric, colors, isMe, height }) {
+function PodiumSlot({ member, rank, metric, colors, isMe, height, tiedCount = 1 }) {
   const val = metric === 'members'
     ? `${member.total_memberships} mbrs`
     : metric === 'retail'
@@ -964,8 +986,15 @@ function PodiumSlot({ member, rank, metric, colors, isMe, height }) {
 
   return (
     <div className="flex flex-col items-center gap-2 w-28">
-      {/* Medal */}
-      <span className="text-2xl">{MEDALS[rank - 1]}</span>
+      {/* Medal + tie badge */}
+      <div className="flex flex-col items-center gap-0.5">
+        <span className="text-2xl">{MEDALS[rank - 1]}</span>
+        {tiedCount > 1 && (
+          <span className="text-[10px] font-bold text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded-full">
+            {tiedCount}-way tie
+          </span>
+        )}
+      </div>
       {/* Avatar */}
       <div className={`w-14 h-14 rounded-full flex items-center justify-center ${colors?.avatar || 'bg-gray-400'} ${isMe ? 'ring-3 ring-yellow-400' : ''} overflow-hidden flex-shrink-0`}>
         {member.avatar_url
