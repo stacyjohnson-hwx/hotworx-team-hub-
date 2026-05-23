@@ -1,10 +1,73 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
 import {
   MessageSquare, Plus, X, Edit2, Trash2, ChevronDown, ChevronUp,
   CheckSquare, User, Calendar, ArrowRight, Check, AlertCircle, Loader,
-  ClipboardList, GripVertical,
+  ClipboardList, GripVertical, Paperclip, Download, FileText, Image,
+  FileSpreadsheet, File as FileIcon, UploadCloud,
 } from 'lucide-react'
+
+// ─── IndexedDB document store ────────────────────────────────────────────────
+const DB_NAME    = 'hotworx_agenda_docs'
+const DB_STORE   = 'blobs'
+const DB_VERSION = 1
+
+function openDocDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION)
+    req.onupgradeneeded = e => e.target.result.createObjectStore(DB_STORE)
+    req.onsuccess  = e => resolve(e.target.result)
+    req.onerror    = e => reject(e.target.error)
+  })
+}
+
+async function saveDocBlob(id, blob) {
+  const db = await openDocDB()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DB_STORE, 'readwrite')
+    tx.objectStore(DB_STORE).put(blob, id)
+    tx.oncomplete = resolve
+    tx.onerror    = e => reject(e.target.error)
+  })
+}
+
+async function getDocBlob(id) {
+  const db = await openDocDB()
+  return new Promise((resolve, reject) => {
+    const tx  = db.transaction(DB_STORE, 'readonly')
+    const req = tx.objectStore(DB_STORE).get(id)
+    req.onsuccess = e => resolve(e.target.result)
+    req.onerror   = e => reject(e.target.error)
+  })
+}
+
+async function deleteDocBlob(id) {
+  const db = await openDocDB()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DB_STORE, 'readwrite')
+    tx.objectStore(DB_STORE).delete(id)
+    tx.oncomplete = resolve
+    tx.onerror    = e => reject(e.target.error)
+  })
+}
+
+function docId() { return `doc-${Date.now()}-${Math.random().toString(36).slice(2,7)}` }
+
+function fmtFileSize(bytes) {
+  if (bytes < 1024)        return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function FileTypeIcon({ mimeType, size = 14 }) {
+  if (mimeType?.startsWith('image/'))
+    return <Image size={size} className="text-blue-500" />
+  if (mimeType?.includes('spreadsheet') || mimeType?.includes('excel') || mimeType?.includes('csv'))
+    return <FileSpreadsheet size={size} className="text-green-600" />
+  if (mimeType?.includes('pdf') || mimeType?.includes('word') || mimeType?.includes('text'))
+    return <FileText size={size} className="text-red-500" />
+  return <FileIcon size={size} className="text-gray-400" />
+}
 
 // ─── Session constants ────────────────────────────────────────────────────────
 const SESSION_TYPES = [
@@ -69,18 +132,23 @@ function fmtDateTime(iso) {
 
 // ─── Agenda Create/Edit Modal ─────────────────────────────────────────────────
 function AgendaModal({ agenda, onSave, onClose }) {
-  const isNew = !agenda
+  const isNew     = !agenda
+  const fileInput = useRef(null)
+  const [isDragging, setIsDragging] = useState(false)
 
-  const [meetingType, setMeetingType] = useState(agenda?.meetingType || 'manager_meeting')
-  const [title,       setTitle]       = useState(agenda?.title || '')
-  const [items,       setItems]       = useState(() => {
+  const [meetingType,  setMeetingType]  = useState(agenda?.meetingType || 'manager_meeting')
+  const [title,        setTitle]        = useState(agenda?.title || '')
+  const [items,        setItems]        = useState(() => {
     if (agenda) return agenda.items.map(i => ({ ...i }))
-    // New agenda — pre-load defaults for manager meeting
     return MANAGER_DEFAULTS.map(t => makeItem(t, true))
   })
-  const [newItemText, setNewItemText] = useState('')
+  const [newItemText,  setNewItemText]  = useState('')
+  // existingDocs: already saved docs from the agenda (metadata only)
+  const [existingDocs, setExistingDocs] = useState(agenda?.documents || [])
+  // pendingFiles: newly selected File objects not yet persisted
+  const [pendingFiles, setPendingFiles] = useState([])
+  const [saving,       setSaving]       = useState(false)
 
-  // When meeting type changes, offer to swap default items
   function handleTypeChange(val) {
     setMeetingType(val)
     const defaultItems = items.filter(i => i.isDefault)
@@ -88,7 +156,6 @@ function AgendaModal({ agenda, onSave, onClose }) {
     if (val === 'manager_meeting') {
       setItems([...MANAGER_DEFAULTS.map(t => makeItem(t, true)), ...customItems])
     } else if (defaultItems.length > 0 && defaultItems.every(i => !i.checked)) {
-      // Clear out manager defaults if switching away and none are checked
       setItems(customItems)
     }
   }
@@ -98,35 +165,70 @@ function AgendaModal({ agenda, onSave, onClose }) {
     setItems(prev => [...prev, makeItem(newItemText.trim())])
     setNewItemText('')
   }
-
-  function removeItem(id) {
-    setItems(prev => prev.filter(i => i.id !== id))
-  }
-
+  function removeItem(id) { setItems(prev => prev.filter(i => i.id !== id)) }
   function moveItem(id, dir) {
     setItems(prev => {
       const idx = prev.findIndex(i => i.id === id)
       if ((dir === -1 && idx === 0) || (dir === 1 && idx === prev.length - 1)) return prev
-      const next = [...prev]
-      ;[next[idx], next[idx + dir]] = [next[idx + dir], next[idx]]
-      return next
+      const next = [...prev]; [next[idx], next[idx + dir]] = [next[idx + dir], next[idx]]; return next
     })
   }
 
-  function handleSave() {
-    if (!title.trim()) return
-    onSave({
-      id:          agenda?.id || uid(),
-      meetingType,
-      title:       title.trim(),
-      items:       items.filter(i => i.text.trim()),
-      createdAt:   agenda?.createdAt || new Date().toISOString(),
-      updatedAt:   new Date().toISOString(),
+  // File handling
+  function addFiles(files) {
+    const newFiles = Array.from(files).filter(f => {
+      // Deduplicate by name+size
+      const already = pendingFiles.some(p => p.name === f.name && p.size === f.size)
+      const existAlready = existingDocs.some(d => d.name === f.name && d.size === f.size)
+      return !already && !existAlready
     })
-    onClose()
+    setPendingFiles(prev => [...prev, ...newFiles])
+  }
+
+  function removePending(idx) {
+    setPendingFiles(prev => prev.filter((_, i) => i !== idx))
+  }
+
+  async function removeExisting(docMeta) {
+    setExistingDocs(prev => prev.filter(d => d.id !== docMeta.id))
+    try { await deleteDocBlob(docMeta.id) } catch {}
+  }
+
+  function handleDrop(e) {
+    e.preventDefault(); setIsDragging(false)
+    addFiles(e.dataTransfer.files)
+  }
+
+  async function handleSave() {
+    if (!title.trim()) return
+    setSaving(true)
+    try {
+      // Persist pending file blobs to IndexedDB
+      const newDocMeta = await Promise.all(
+        pendingFiles.map(async (file) => {
+          const id = docId()
+          await saveDocBlob(id, file)
+          return { id, name: file.name, size: file.size, type: file.type, uploadedAt: new Date().toISOString() }
+        })
+      )
+      const allDocs = [...existingDocs, ...newDocMeta]
+      onSave({
+        id:          agenda?.id || uid(),
+        meetingType,
+        title:       title.trim(),
+        items:       items.filter(i => i.text.trim()),
+        documents:   allDocs,
+        createdAt:   agenda?.createdAt || new Date().toISOString(),
+        updatedAt:   new Date().toISOString(),
+      })
+      onClose()
+    } finally {
+      setSaving(false)
+    }
   }
 
   const mt = getMeetingType(meetingType)
+  const totalDocs = existingDocs.length + pendingFiles.length
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
@@ -151,16 +253,12 @@ function AgendaModal({ agenda, onSave, onClose }) {
             <label className="block text-xs font-medium text-gray-600 mb-2">Meeting Type</label>
             <div className="flex flex-wrap gap-2">
               {MEETING_TYPES.map(t => (
-                <button
-                  key={t.value}
-                  type="button"
-                  onClick={() => handleTypeChange(t.value)}
+                <button key={t.value} type="button" onClick={() => handleTypeChange(t.value)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
                     meetingType === t.value
                       ? t.color + ' ring-2 ring-offset-1 ring-red-400'
                       : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
-                  }`}
-                >
+                  }`}>
                   {t.label}
                 </button>
               ))}
@@ -173,9 +271,7 @@ function AgendaModal({ agenda, onSave, onClose }) {
               Meeting Title <span className="text-red-400">*</span>
             </label>
             <input
-              autoFocus
-              value={title}
-              onChange={e => setTitle(e.target.value)}
+              autoFocus value={title} onChange={e => setTitle(e.target.value)}
               placeholder={meetingType === 'manager_meeting' ? 'e.g. Weekly Manager Meeting' : 'e.g. Chrissy — May Check-in'}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-500"
             />
@@ -191,65 +287,109 @@ function AgendaModal({ agenda, onSave, onClose }) {
                 </span>
               )}
             </label>
-
             <div className="space-y-1.5 mb-3">
               {items.map((item, idx) => (
                 <div key={item.id} className="flex items-center gap-2 group">
-                  <span className="text-gray-200 cursor-grab flex-shrink-0">
-                    <GripVertical size={14} />
-                  </span>
+                  <span className="text-gray-200 cursor-grab flex-shrink-0"><GripVertical size={14} /></span>
                   <div className={`flex-1 flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${
                     item.isDefault ? 'bg-red-50 border border-red-100' : 'bg-gray-50 border border-gray-100'
                   }`}>
                     <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${item.isDefault ? 'bg-red-400' : 'bg-gray-300'}`} />
                     <span className="flex-1 text-gray-800">{item.text}</span>
-                    {item.isDefault && (
-                      <span className="text-[10px] text-red-400 font-medium flex-shrink-0">default</span>
-                    )}
+                    {item.isDefault && <span className="text-[10px] text-red-400 font-medium flex-shrink-0">default</span>}
                   </div>
                   <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => moveItem(item.id, -1)}
-                      disabled={idx === 0}
-                      className="p-1 text-gray-300 hover:text-gray-600 disabled:opacity-20">
-                      <ChevronUp size={13} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => moveItem(item.id, 1)}
-                      disabled={idx === items.length - 1}
-                      className="p-1 text-gray-300 hover:text-gray-600 disabled:opacity-20">
-                      <ChevronDown size={13} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => removeItem(item.id)}
-                      className="p-1 text-gray-300 hover:text-red-400">
-                      <X size={13} />
-                    </button>
+                    <button type="button" onClick={() => moveItem(item.id, -1)} disabled={idx === 0}
+                      className="p-1 text-gray-300 hover:text-gray-600 disabled:opacity-20"><ChevronUp size={13} /></button>
+                    <button type="button" onClick={() => moveItem(item.id, 1)} disabled={idx === items.length - 1}
+                      className="p-1 text-gray-300 hover:text-gray-600 disabled:opacity-20"><ChevronDown size={13} /></button>
+                    <button type="button" onClick={() => removeItem(item.id)}
+                      className="p-1 text-gray-300 hover:text-red-400"><X size={13} /></button>
                   </div>
                 </div>
               ))}
             </div>
-
-            {/* Add item input */}
             <div className="flex gap-2">
-              <input
-                value={newItemText}
-                onChange={e => setNewItemText(e.target.value)}
+              <input value={newItemText} onChange={e => setNewItemText(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && addItem()}
                 placeholder="Add agenda item…"
-                className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-500"
-              />
-              <button
-                type="button"
-                onClick={addItem}
-                disabled={!newItemText.trim()}
+                className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-500" />
+              <button type="button" onClick={addItem} disabled={!newItemText.trim()}
                 className="px-3 py-2 bg-gray-900 text-white text-xs font-semibold rounded-lg disabled:opacity-30 hover:bg-gray-700">
                 <Plus size={14} />
               </button>
             </div>
+          </div>
+
+          {/* ── Documents ─────────────────────────────────────────────────── */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-2 flex items-center gap-1.5">
+              <Paperclip size={12} /> Documents
+              {totalDocs > 0 && (
+                <span className="ml-1 text-[10px] font-semibold bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">
+                  {totalDocs}
+                </span>
+              )}
+            </label>
+
+            {/* Drop zone */}
+            <div
+              onDragOver={e => { e.preventDefault(); setIsDragging(true) }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={handleDrop}
+              onClick={() => fileInput.current?.click()}
+              className={`border-2 border-dashed rounded-xl px-4 py-5 flex flex-col items-center gap-2 cursor-pointer transition-all ${
+                isDragging
+                  ? 'border-red-400 bg-red-50'
+                  : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              <UploadCloud size={22} className={isDragging ? 'text-red-400' : 'text-gray-300'} />
+              <p className="text-xs text-gray-500 text-center leading-snug">
+                <span className="font-semibold text-gray-700">Click to upload</span> or drag & drop
+              </p>
+              <p className="text-[10px] text-gray-400">Any file type · Multiple files OK</p>
+            </div>
+            <input ref={fileInput} type="file" multiple className="hidden"
+              onChange={e => { addFiles(e.target.files); e.target.value = '' }} />
+
+            {/* Existing saved docs */}
+            {existingDocs.length > 0 && (
+              <div className="mt-2 space-y-1.5">
+                {existingDocs.map(doc => (
+                  <div key={doc.id} className="flex items-center gap-2.5 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+                    <FileTypeIcon mimeType={doc.type} size={14} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-gray-800 truncate">{doc.name}</p>
+                      <p className="text-[10px] text-gray-400">{fmtFileSize(doc.size)} · saved</p>
+                    </div>
+                    <button type="button" onClick={() => removeExisting(doc)}
+                      className="p-1 text-gray-300 hover:text-red-400 transition-colors flex-shrink-0">
+                      <X size={13} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Pending new files */}
+            {pendingFiles.length > 0 && (
+              <div className="mt-2 space-y-1.5">
+                {pendingFiles.map((file, idx) => (
+                  <div key={idx} className="flex items-center gap-2.5 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                    <FileTypeIcon mimeType={file.type} size={14} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-gray-800 truncate">{file.name}</p>
+                      <p className="text-[10px] text-gray-400">{fmtFileSize(file.size)} · pending</p>
+                    </div>
+                    <button type="button" onClick={() => removePending(idx)}
+                      className="p-1 text-gray-300 hover:text-red-400 transition-colors flex-shrink-0">
+                      <X size={13} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -259,11 +399,9 @@ function AgendaModal({ agenda, onSave, onClose }) {
             className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 font-medium">
             Cancel
           </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={!title.trim()}
-            className="px-5 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg disabled:opacity-40 transition-colors">
+          <button type="button" onClick={handleSave} disabled={!title.trim() || saving}
+            className="px-5 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg disabled:opacity-40 transition-colors flex items-center gap-2">
+            {saving && <Loader size={13} className="animate-spin" />}
             {isNew ? 'Create Agenda' : 'Save Changes'}
           </button>
         </div>
@@ -273,22 +411,36 @@ function AgendaModal({ agenda, onSave, onClose }) {
 }
 
 // ─── Agenda Card ──────────────────────────────────────────────────────────────
-function AgendaCard({ agenda, onEdit, onDelete, onToggleItem }) {
+function AgendaCard({ agenda, onEdit, onDelete, onToggleItem, onRemoveDoc }) {
   const [expanded,      setExpanded]      = useState(true)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [downloading,   setDownloading]   = useState(null)
 
-  const mt          = getMeetingType(agenda.meetingType)
+  const mt           = getMeetingType(agenda.meetingType)
   const checkedCount = agenda.items.filter(i => i.checked).length
   const total        = agenda.items.length
   const allDone      = total > 0 && checkedCount === total
+  const docs         = agenda.documents || []
+
+  async function handleDownload(doc) {
+    setDownloading(doc.id)
+    try {
+      const blob = await getDocBlob(doc.id)
+      if (!blob) { alert('File not found — it may have been cleared.'); return }
+      const url = URL.createObjectURL(blob)
+      const a   = Object.assign(document.createElement('a'), { href: url, download: doc.name })
+      document.body.appendChild(a); a.click()
+      setTimeout(() => { URL.revokeObjectURL(url); a.remove() }, 500)
+    } finally {
+      setDownloading(null)
+    }
+  }
 
   return (
     <div className={`bg-white border rounded-xl shadow-sm overflow-hidden transition-all ${allDone ? 'border-green-200' : 'border-gray-200'}`}>
       {/* Header */}
-      <div
-        className="flex items-start gap-3 px-4 py-4 cursor-pointer hover:bg-gray-50 transition-colors"
-        onClick={() => setExpanded(e => !e)}
-      >
+      <div className="flex items-start gap-3 px-4 py-4 cursor-pointer hover:bg-gray-50 transition-colors"
+        onClick={() => setExpanded(e => !e)}>
         <div className={`mt-0.5 px-2 py-1 rounded-md text-[11px] font-bold border flex-shrink-0 ${mt.color}`}>
           {mt.label}
         </div>
@@ -301,66 +453,95 @@ function AgendaCard({ agenda, onEdit, onDelete, onToggleItem }) {
                 {checkedCount}/{total} items {allDone ? '✓ complete' : 'covered'}
               </span></>
             )}
+            {docs.length > 0 && (
+              <> · <span className="text-gray-400">
+                <Paperclip size={10} className="inline mr-0.5" />{docs.length} doc{docs.length !== 1 ? 's' : ''}
+              </span></>
+            )}
           </p>
         </div>
-        {/* Progress bar */}
         {total > 0 && (
           <div className="flex-shrink-0 w-16">
             <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-              <div
-                className={`h-full rounded-full transition-all ${allDone ? 'bg-green-500' : 'bg-red-500'}`}
-                style={{ width: `${(checkedCount / total) * 100}%` }}
-              />
+              <div className={`h-full rounded-full transition-all ${allDone ? 'bg-green-500' : 'bg-red-500'}`}
+                style={{ width: `${(checkedCount / total) * 100}%` }} />
             </div>
           </div>
         )}
         {expanded
           ? <ChevronUp size={15} className="text-gray-400 flex-shrink-0 mt-1" />
-          : <ChevronDown size={15} className="text-gray-400 flex-shrink-0 mt-1" />
-        }
+          : <ChevronDown size={15} className="text-gray-400 flex-shrink-0 mt-1" />}
       </div>
 
-      {/* Expanded checklist */}
+      {/* Expanded body */}
       {expanded && (
         <div className="border-t border-gray-100">
+
+          {/* Checklist */}
           <div className="px-5 py-3 space-y-1">
             {agenda.items.length === 0 ? (
               <p className="text-sm text-gray-400 italic py-2">No agenda items.</p>
             ) : (
               agenda.items.map(item => (
-                <label
-                  key={item.id}
-                  className="flex items-center gap-3 py-1.5 cursor-pointer group rounded-lg hover:bg-gray-50 px-2 -mx-2 transition-colors"
-                >
-                  <div
-                    onClick={() => onToggleItem(agenda.id, item.id)}
+                <label key={item.id}
+                  className="flex items-center gap-3 py-1.5 cursor-pointer group rounded-lg hover:bg-gray-50 px-2 -mx-2 transition-colors">
+                  <div onClick={() => onToggleItem(agenda.id, item.id)}
                     className={`w-5 h-5 rounded border-2 flex-shrink-0 flex items-center justify-center transition-all ${
-                      item.checked
-                        ? 'bg-green-500 border-green-500'
-                        : 'border-gray-300 group-hover:border-gray-400'
-                    }`}
-                  >
+                      item.checked ? 'bg-green-500 border-green-500' : 'border-gray-300 group-hover:border-gray-400'
+                    }`}>
                     {item.checked && <Check size={11} className="text-white" strokeWidth={3} />}
                   </div>
-                  <span className={`text-sm flex-1 transition-colors ${
-                    item.checked ? 'text-gray-400 line-through' : 'text-gray-800'
-                  }`}>
+                  <span className={`text-sm flex-1 transition-colors ${item.checked ? 'text-gray-400 line-through' : 'text-gray-800'}`}>
                     {item.text}
                   </span>
                   {item.isDefault && !item.checked && (
-                    <span className="text-[10px] text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
-                      default
-                    </span>
+                    <span className="text-[10px] text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">default</span>
                   )}
                 </label>
               ))
             )}
           </div>
 
+          {/* Documents */}
+          {docs.length > 0 && (
+            <div className="px-5 py-3 border-t border-gray-100">
+              <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <Paperclip size={11} /> Documents ({docs.length})
+              </p>
+              <div className="space-y-1.5">
+                {docs.map(doc => (
+                  <div key={doc.id} className="flex items-center gap-2.5 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 group">
+                    <FileTypeIcon mimeType={doc.type} size={14} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-gray-800 truncate">{doc.name}</p>
+                      <p className="text-[10px] text-gray-400">{fmtFileSize(doc.size)}</p>
+                    </div>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button
+                        onClick={() => handleDownload(doc)}
+                        disabled={downloading === doc.id}
+                        className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        title="Download">
+                        {downloading === doc.id
+                          ? <Loader size={13} className="animate-spin" />
+                          : <Download size={13} />}
+                      </button>
+                      <button
+                        onClick={() => onRemoveDoc(agenda.id, doc)}
+                        className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                        title="Remove">
+                        <X size={13} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Footer */}
           <div className="flex items-center gap-2 px-4 py-3 border-t border-gray-100">
-            <button
-              onClick={() => onEdit(agenda)}
+            <button onClick={() => onEdit(agenda)}
               className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors">
               <Edit2 size={12} /> Edit
             </button>
@@ -368,20 +549,15 @@ function AgendaCard({ agenda, onEdit, onDelete, onToggleItem }) {
               {confirmDelete ? (
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-gray-500">Delete this agenda?</span>
-                  <button
-                    onClick={() => onDelete(agenda.id)}
+                  <button onClick={() => onDelete(agenda.id)}
                     className="px-2.5 py-1.5 bg-red-600 text-white text-xs font-medium rounded-lg hover:bg-red-700">
                     Delete
                   </button>
-                  <button
-                    onClick={() => setConfirmDelete(false)}
-                    className="text-xs text-gray-400 hover:text-gray-700 px-2">
-                    Cancel
-                  </button>
+                  <button onClick={() => setConfirmDelete(false)}
+                    className="text-xs text-gray-400 hover:text-gray-700 px-2">Cancel</button>
                 </div>
               ) : (
-                <button
-                  onClick={() => setConfirmDelete(true)}
+                <button onClick={() => setConfirmDelete(true)}
                   className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
                   <Trash2 size={12} /> Delete
                 </button>
@@ -412,6 +588,11 @@ function AgendaTab() {
   }
 
   function handleDelete(id) {
+    // Also clean up any stored doc blobs for this agenda
+    const agenda = agendas.find(a => a.id === id)
+    if (agenda?.documents) {
+      agenda.documents.forEach(doc => deleteDocBlob(doc.id).catch(() => {}))
+    }
     setAgendas(prev => prev.filter(a => a.id !== id))
   }
 
@@ -423,6 +604,13 @@ function AgendaTab() {
         items: a.items.map(i => i.id === itemId ? { ...i, checked: !i.checked } : i),
       }
     }))
+  }
+
+  function handleRemoveDoc(agendaId, doc) {
+    deleteDocBlob(doc.id).catch(() => {})
+    setAgendas(prev => prev.map(a =>
+      a.id !== agendaId ? a : { ...a, documents: (a.documents || []).filter(d => d.id !== doc.id) }
+    ))
   }
 
   const typesUsed = [...new Set(agendas.map(a => a.meetingType))]
@@ -495,6 +683,7 @@ function AgendaTab() {
               onEdit={setModal}
               onDelete={handleDelete}
               onToggleItem={handleToggleItem}
+              onRemoveDoc={handleRemoveDoc}
             />
           ))}
         </div>
