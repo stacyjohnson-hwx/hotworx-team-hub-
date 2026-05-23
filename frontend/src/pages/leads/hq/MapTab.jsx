@@ -1,9 +1,11 @@
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import { MapContainer, TileLayer, Marker, Popup, Circle, useMap, useMapEvents } from 'react-leaflet'
-import { Plus, MapPin, X, Search, Loader2, Trash2, Building2, Home, ChevronRight } from 'lucide-react'
+import { Plus, MapPin, X, Search, Loader2, Trash2, Building2, Home, ChevronRight, ExternalLink } from 'lucide-react'
 import { MAP_ACTIVITIES, EMPLOYEES } from '../data/mockData'
+import { apiGet } from '@/hooks/useApi'
 
 // ─── Studio ───────────────────────────────────────────────────────────────────
 const STUDIO = { lat: 43.0831, lng: -88.2490, name: 'HOTWORX Pewaukee', address: '1279 Capitol Drive' }
@@ -62,9 +64,8 @@ const DEFAULT_NEIGHBORHOODS = [
 ]
 
 // ─── localStorage ─────────────────────────────────────────────────────────────
-const ACT_KEY  = 'leadgenhq_map_activities'
-const NBH_KEY  = 'leadgenhq_neighborhoods'
-const BIZ_KEY  = 'leadgenhq_businesses'
+const ACT_KEY = 'leadgenhq_map_activities'
+const NBH_KEY = 'leadgenhq_neighborhoods'
 
 function loadActivities() {
   try {
@@ -86,11 +87,23 @@ function loadNeighborhoods() {
 function saveNeighborhoods(list) {
   try { localStorage.setItem(NBH_KEY, JSON.stringify(list.filter(n => n.id.startsWith('custom-')))) } catch {}
 }
-function loadBusinesses() {
-  try { return JSON.parse(localStorage.getItem(BIZ_KEY) || '[]') } catch { return [] }
+
+// B2B status colors for map pins
+const B2B_STATUS_COLOR = {
+  active_partner:    '#E8611A',
+  meeting_scheduled: '#9333EA',
+  contacted:         '#F59E0B',
+  new_lead:          '#3B82F6',
+  follow_up:         '#EF4444',
+  not_interested:    '#9CA3AF',
 }
-function saveBusinesses(list) {
-  try { localStorage.setItem(BIZ_KEY, JSON.stringify(list)) } catch {}
+const B2B_STATUS_LABEL = {
+  active_partner:    'Active Partner',
+  meeting_scheduled: 'Meeting Scheduled',
+  contacted:         'Contacted',
+  new_lead:          'New Lead',
+  follow_up:         'Follow Up',
+  not_interested:    'Not Interested',
 }
 
 // ─── Geo helpers ──────────────────────────────────────────────────────────────
@@ -381,12 +394,22 @@ function LogActivityModal({ coords, onClose, onSave }) {
 
 // ─── Location list row ────────────────────────────────────────────────────────
 function LocationRow({ item, type, activities, onFly, onDelete }) {
-  const threshold = type === 'neighborhood' ? 0.8 : 0.25
-  const nearest   = nearestActivity(item.lat, item.lng, activities, threshold)
-  const covered   = nearest && getIntensity(nearest.dateCompleted) !== 'stale'
+  // For neighborhoods: coverage-based dot; for businesses: B2B status color
+  const dotColor = type === 'business'
+    ? (B2B_STATUS_COLOR[item.status] || '#D1D5DB')
+    : (() => {
+        const nearest  = nearestActivity(item.lat, item.lng, activities, 0.8)
+        const covered  = nearest && getIntensity(nearest.dateCompleted) !== 'stale'
+        const intensity = nearest ? getIntensity(nearest.dateCompleted) : null
+        return covered ? INTENSITY[intensity].color : '#D1D5DB'
+      })()
+
+  // Coverage info only used for neighborhoods
+  const nearest  = type === 'neighborhood' ? nearestActivity(item.lat, item.lng, activities, 0.8) : null
+  const covered  = nearest && getIntensity(nearest.dateCompleted) !== 'stale'
   const intensity = nearest ? getIntensity(nearest.dateCompleted) : null
-  const dotColor  = covered ? INTENSITY[intensity].color : '#D1D5DB'
-  const isCustom  = item.id.startsWith('custom-')
+
+  const isCustom = item.id?.startsWith('custom-')
 
   return (
     <button onClick={() => onFly(item)}
@@ -395,20 +418,32 @@ function LocationRow({ item, type, activities, onFly, onDelete }) {
       <div className="flex-1 min-w-0">
         <p className="text-sm font-semibold text-gray-800 leading-tight truncate">{item.name}</p>
         <div className="flex items-center gap-2 mt-0.5">
-          {type === 'business' && item.category && (
-            <span className="text-[11px] text-gray-400">{item.category}</span>
+          {type === 'business' ? (
+            <>
+              {item.industry && <span className="text-[11px] text-gray-400">{item.industry}</span>}
+              {item.status && (
+                <span className="text-[11px] font-medium" style={{ color: B2B_STATUS_COLOR[item.status] || '#9CA3AF' }}>
+                  {B2B_STATUS_LABEL[item.status] || item.status}
+                </span>
+              )}
+            </>
+          ) : (
+            <>
+              {covered && nearest && (
+                <span className="text-[11px] font-medium" style={{ color: dotColor }}>
+                  {INTENSITY[intensity].label} · {nearest.employeeName} · {fmt(nearest.dateCompleted)}
+                </span>
+              )}
+              {!covered && <span className="text-[11px] text-gray-400">Not yet covered</span>}
+            </>
           )}
-          {covered && nearest && (
-            <span className="text-[11px] font-medium" style={{ color: dotColor }}>
-              {INTENSITY[intensity].label} · {nearest.employeeName} · {fmt(nearest.dateCompleted)}
-            </span>
-          )}
-          {!covered && <span className="text-[11px] text-gray-400">Not yet covered</span>}
         </div>
-        {item.notes && <p className="text-[11px] text-gray-400 mt-0.5 truncate">{item.notes}</p>}
+        {item.address && type === 'business' && (
+          <p className="text-[11px] text-gray-400 mt-0.5 truncate">{item.address}</p>
+        )}
       </div>
       <div className="flex items-center gap-1 flex-shrink-0">
-        {isCustom && (
+        {isCustom && onDelete && (
           <button onClick={e => { e.stopPropagation(); onDelete(item.id) }}
             className="p-1 text-gray-200 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all">
             <Trash2 size={12} />
@@ -424,27 +459,46 @@ function LocationRow({ item, type, activities, onFly, onDelete }) {
 export default function MapTab() {
   const [activities,     setActivities]     = useState(() => loadActivities())
   const [neighborhoods,  setNeighborhoods]  = useState(() => loadNeighborhoods())
-  const [businesses,     setBusinesses]     = useState(() => loadBusinesses())
+  const [b2bContacts,    setB2bContacts]    = useState([])
+  const [b2bLoading,     setB2bLoading]     = useState(true)
   const [flyTarget,      setFlyTarget]      = useState(null)
   const [listTab,        setListTab]        = useState('neighborhoods')
   const [search,         setSearch]         = useState('')
   const [placingPin,     setPlacingPin]     = useState(false)
-  const [modal,          setModal]          = useState(null) // null | 'activity' | 'neighborhood' | 'business'
+  const [modal,          setModal]          = useState(null) // null | 'activity' | 'neighborhood'
   const [pendingCoords,  setPendingCoords]  = useState(null)
 
-  useEffect(() => { saveActivities(activities) },    [activities])
+  useEffect(() => { saveActivities(activities) },       [activities])
   useEffect(() => { saveNeighborhoods(neighborhoods) }, [neighborhoods])
-  useEffect(() => { saveBusinesses(businesses) },    [businesses])
+
+  // Fetch B2B contacts from API (auto-populates the businesses list + map pins)
+  useEffect(() => {
+    setB2bLoading(true)
+    apiGet('/api/b2b/contacts')
+      .then(data => setB2bContacts(Array.isArray(data) ? data : []))
+      .catch(() => setB2bContacts([]))
+      .finally(() => setB2bLoading(false))
+  }, [])
 
   function handleMapClick(latlng) { setPendingCoords(latlng); setPlacingPin(false); setModal('activity') }
   function closeModal()           { setModal(null); setPendingCoords(null); setPlacingPin(false) }
 
   function saveActivity(a)    { setActivities(prev => [a, ...prev]) }
   function saveNeighborhood(n){ setNeighborhoods(prev => [...prev, n]) }
-  function saveBusiness(b)    { setBusinesses(prev => [...prev, b]) }
-  function deleteActivity(id) { setActivities(prev => prev.filter(a => a.id !== id)) }
   function delNeighborhood(id){ setNeighborhoods(prev => prev.filter(n => n.id !== id)) }
-  function deleteBusiness(id) { setBusinesses(prev => prev.filter(b => b.id !== id)) }
+
+  // Normalize B2B contacts → map-friendly shape (only those with coords)
+  const bizItems = b2bContacts
+    .filter(c => c.latitude && c.longitude)
+    .map(c => ({
+      id:       c.id,
+      name:     c.business_name,
+      lat:      c.latitude,
+      lng:      c.longitude,
+      industry: c.industry,
+      status:   c.status,
+      address:  c.address,
+    }))
 
   // Stats
   const fresh  = activities.filter(a => getIntensity(a.dateCompleted) === 'fresh').length
@@ -456,7 +510,7 @@ export default function MapTab() {
     const hit = nearestActivity(n.lat, n.lng, activities, 0.8)
     return hit && getIntensity(hit.dateCompleted) !== 'stale'
   }).length
-  const coveredBiz = businesses.filter(b => {
+  const coveredBiz = bizItems.filter(b => {
     const hit = nearestActivity(b.lat, b.lng, activities, 0.25)
     return hit && getIntensity(hit.dateCompleted) !== 'stale'
   }).length
@@ -465,7 +519,11 @@ export default function MapTab() {
   const searchLc = search.toLowerCase()
   const listItems = listTab === 'neighborhoods'
     ? neighborhoods.filter(n => n.name.toLowerCase().includes(searchLc))
-    : businesses.filter(b => b.name.toLowerCase().includes(searchLc) || (b.category||'').toLowerCase().includes(searchLc))
+    : bizItems.filter(b =>
+        (b.name     || '').toLowerCase().includes(searchLc) ||
+        (b.industry || '').toLowerCase().includes(searchLc) ||
+        (b.address  || '').toLowerCase().includes(searchLc)
+      )
 
   return (
     <div className="flex flex-col">
@@ -475,9 +533,6 @@ export default function MapTab() {
       )}
       {modal === 'neighborhood' && (
         <AddLocationModal type="neighborhood" coords={null} onClose={closeModal} onSave={saveNeighborhood} />
-      )}
-      {modal === 'business' && (
-        <AddLocationModal type="business" coords={null} onClose={closeModal} onSave={saveBusiness} />
       )}
 
       {/* ── Top controls ───────────────────────────────────────────────────── */}
@@ -493,7 +548,7 @@ export default function MapTab() {
         </div>
         <div className="flex items-center gap-1.5">
           {placingPin && <span className="text-[11px] font-semibold text-[#E8611A] animate-pulse">Click map…</span>}
-          <button onClick={() => { setPlacingPin(p => !p) }}
+          <button onClick={() => setPlacingPin(p => !p)}
             className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${placingPin ? 'bg-[#E8611A] text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>
             <MapPin size={11} /> Pin
           </button>
@@ -521,10 +576,9 @@ export default function MapTab() {
 
           {/* Neighborhood target circles (uncovered = dashed outline) */}
           {neighborhoods.map(n => {
-            const hit      = nearestActivity(n.lat, n.lng, activities, 0.8)
-            const covered  = hit && getIntensity(hit.dateCompleted) !== 'stale'
-            const intensity = hit ? getIntensity(hit.dateCompleted) : null
-            if (covered) return null // covered neighborhoods shown via activity circles
+            const hit     = nearestActivity(n.lat, n.lng, activities, 0.8)
+            const covered = hit && getIntensity(hit.dateCompleted) !== 'stale'
+            if (covered) return null
             return (
               <Circle key={n.id} center={[n.lat, n.lng]} radius={600}
                 pathOptions={{ color:'#E8611A', fillColor:'#E8611A', fillOpacity:0.03, weight:1, dashArray:'6 4', opacity:0.3 }} />
@@ -563,19 +617,25 @@ export default function MapTab() {
             )
           })}
 
-          {/* Business target pins */}
-          {businesses.map(b => {
-            const hit     = nearestActivity(b.lat, b.lng, activities, 0.25)
-            const visited = hit && getIntensity(hit.dateCompleted) !== 'stale'
+          {/* B2B business pins — colored by pipeline status */}
+          {bizItems.map(b => {
+            const hit      = nearestActivity(b.lat, b.lng, activities, 0.25)
+            const visited  = hit && getIntensity(hit.dateCompleted) !== 'stale'
+            const pinColor = B2B_STATUS_COLOR[b.status] || '#9CA3AF'
             return (
-              <Marker key={b.id} position={[b.lat, b.lng]} icon={visited ? activityIcon(INTENSITY[getIntensity(hit.dateCompleted)].color) : targetIcon()}>
+              <Marker key={b.id} position={[b.lat, b.lng]} icon={activityIcon(pinColor)}>
                 <Popup>
                   <div style={{fontFamily:'sans-serif',padding:'2px 0'}}>
                     <p style={{fontWeight:700,fontSize:13,marginBottom:4}}>{b.name}</p>
-                    {b.category && <p style={{fontSize:11,color:'#6b7280',marginBottom:2}}>{b.category}</p>}
-                    {visited ? <p style={{fontSize:11,fontWeight:600,color:INTENSITY[getIntensity(hit.dateCompleted)].color}}>Visited · {fmt(hit.dateCompleted)}</p>
-                              : <p style={{fontSize:11,color:'#9ca3af'}}>Not yet visited</p>}
-                    {b.notes && <p style={{fontSize:11,color:'#374151',marginTop:4,fontStyle:'italic'}}>{b.notes}</p>}
+                    {b.industry && <p style={{fontSize:11,color:'#6b7280',marginBottom:2}}>{b.industry}</p>}
+                    <p style={{fontSize:11,fontWeight:600,color:pinColor,marginBottom:2}}>
+                      {B2B_STATUS_LABEL[b.status] || b.status}
+                    </p>
+                    {visited
+                      ? <p style={{fontSize:11,color:INTENSITY[getIntensity(hit.dateCompleted)].color}}>Outreach logged · {fmt(hit.dateCompleted)}</p>
+                      : <p style={{fontSize:11,color:'#9ca3af'}}>No outreach logged yet</p>
+                    }
+                    {b.address && <p style={{fontSize:11,color:'#6b7280',marginTop:2}}>{b.address}</p>}
                   </div>
                 </Popup>
               </Marker>
@@ -602,15 +662,22 @@ export default function MapTab() {
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${listTab==='businesses' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
                 <Building2 size={11} /> Businesses
                 <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${listTab==='businesses' ? 'bg-orange-100 text-orange-600' : 'bg-gray-200 text-gray-500'}`}>
-                  {coveredBiz}/{businesses.length}
+                  {coveredBiz}/{bizItems.length}
                 </span>
               </button>
             </div>
-            <button
-              onClick={() => setModal(listTab === 'neighborhoods' ? 'neighborhood' : 'business')}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-[#E8611A] text-white hover:bg-orange-600 transition-colors">
-              <Plus size={11} /> Add
-            </button>
+            {listTab === 'neighborhoods' ? (
+              <button
+                onClick={() => setModal('neighborhood')}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-[#E8611A] text-white hover:bg-orange-600 transition-colors">
+                <Plus size={11} /> Add
+              </button>
+            ) : (
+              <Link to="/b2b"
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors">
+                <ExternalLink size={11} /> B2B Tracker
+              </Link>
+            )}
           </div>
 
           {/* Search */}
@@ -624,9 +691,18 @@ export default function MapTab() {
 
         {/* List items */}
         <div className="px-4 py-1">
-          {listItems.length === 0 ? (
+          {listTab === 'businesses' && b2bLoading ? (
+            <div className="flex items-center justify-center py-8 gap-2 text-gray-400">
+              <Loader2 size={16} className="animate-spin" />
+              <span className="text-sm">Loading businesses…</span>
+            </div>
+          ) : listItems.length === 0 ? (
             <p className="text-sm text-gray-400 text-center py-6">
-              {search ? 'No results.' : listTab === 'businesses' ? 'No businesses yet. Add one!' : 'No neighborhoods match.'}
+              {search
+                ? 'No results.'
+                : listTab === 'businesses'
+                  ? 'No businesses with coordinates yet — add addresses in the B2B Tracker.'
+                  : 'No neighborhoods match.'}
             </p>
           ) : (
             listItems.map(item => (
@@ -636,7 +712,7 @@ export default function MapTab() {
                 type={listTab === 'neighborhoods' ? 'neighborhood' : 'business'}
                 activities={activities}
                 onFly={item => setFlyTarget({ lat: item.lat, lng: item.lng, _t: Date.now() })}
-                onDelete={listTab === 'neighborhoods' ? delNeighborhood : deleteBusiness}
+                onDelete={listTab === 'neighborhoods' ? delNeighborhood : undefined}
               />
             ))
           )}

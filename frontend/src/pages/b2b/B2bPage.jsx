@@ -65,6 +65,17 @@ const blankForm = {
   industry: '', website: '', social_handle: '', logo_url: '',
   status: 'new_lead', discount_desc: '', discount_ongoing: false,
   next_action: '', next_action_date: '', notes: '', assigned_to: '',
+  latitude: null, longitude: null,
+}
+
+async function geocodeAddress(address) {
+  if (!address?.trim()) return null
+  const params = new URLSearchParams({ q: address + ', Wisconsin, USA', format: 'json', limit: '1', countrycodes: 'us' })
+  try {
+    const data = await fetch(`https://nominatim.openstreetmap.org/search?${params}`).then(r => r.json())
+    if (data.length) return { latitude: parseFloat(data[0].lat), longitude: parseFloat(data[0].lon) }
+  } catch {}
+  return null
 }
 
 // ─── Contact Modal ────────────────────────────────────────────────────────────
@@ -86,6 +97,8 @@ function ContactModal({ contact, users, onSave, onClose }) {
     next_action_date: contact.next_action_date || '',
     notes:            contact.notes || '',
     assigned_to:      contact.assigned_to || '',
+    latitude:         contact.latitude || null,
+    longitude:        contact.longitude || null,
   } : { ...blankForm })
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -113,7 +126,21 @@ function ContactModal({ contact, users, onSave, onClose }) {
     if (!form.business_name.trim()) { setError('Business name is required'); return }
     setSaving(true); setError('')
     try {
-      const payload = { ...form, assigned_to: form.assigned_to || null, next_action_date: form.next_action_date || null, website: form.website || null, social_handle: form.social_handle || null, logo_url: form.logo_url || null }
+      // Auto-geocode address if it changed or lat/lng not yet set
+      let { latitude, longitude } = form
+      const addressChanged = contact ? form.address !== contact.address : true
+      if (form.address && (addressChanged || !latitude)) {
+        const coords = await geocodeAddress(form.address)
+        if (coords) { latitude = coords.latitude; longitude = coords.longitude }
+      }
+      const payload = {
+        ...form, latitude, longitude,
+        assigned_to: form.assigned_to || null,
+        next_action_date: form.next_action_date || null,
+        website: form.website || null,
+        social_handle: form.social_handle || null,
+        logo_url: form.logo_url || null,
+      }
       const saved = contact?.id ? await apiPut(`/api/b2b/contacts/${contact.id}`, payload) : await apiPost('/api/b2b/contacts', payload)
       onSave(saved)
     } catch (err) { setError(err.message || 'Save failed') }

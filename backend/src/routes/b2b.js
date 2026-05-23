@@ -33,7 +33,7 @@ router.post('/contacts', authenticate, requireRole('owner', 'manager'), async (r
     business_name, contact_name, phone, email, address, industry,
     website, social_handle, logo_url,
     status, discount_desc, discount_ongoing, next_action, next_action_date,
-    notes, assigned_to,
+    notes, assigned_to, latitude, longitude,
   } = req.body
 
   if (!business_name) return res.status(400).json({ error: 'business_name is required' })
@@ -57,6 +57,8 @@ router.post('/contacts', authenticate, requireRole('owner', 'manager'), async (r
       next_action_date: next_action_date || null,
       notes: notes || null,
       assigned_to: assigned_to || null,
+      latitude: latitude || null,
+      longitude: longitude || null,
       created_by: req.user.id,
     })
     .select()
@@ -72,7 +74,7 @@ router.put('/contacts/:id', authenticate, requireRole('owner', 'manager'), async
     business_name, contact_name, phone, email, address, industry,
     website, social_handle, logo_url,
     status, discount_desc, discount_ongoing, next_action, next_action_date,
-    notes, assigned_to,
+    notes, assigned_to, latitude, longitude,
   } = req.body
 
   const { data, error } = await supabase()
@@ -82,6 +84,8 @@ router.put('/contacts/:id', authenticate, requireRole('owner', 'manager'), async
       website, social_handle, logo_url,
       status, discount_desc, discount_ongoing, next_action, next_action_date,
       notes, assigned_to,
+      latitude: latitude || null,
+      longitude: longitude || null,
       updated_at: new Date().toISOString(),
     })
     .eq('id', req.params.id)
