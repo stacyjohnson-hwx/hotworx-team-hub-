@@ -97,8 +97,9 @@ const NBH_OVERRIDE_KEY = 'leadgenhq_neighborhoods_overrides'  // edits to defaul
 function loadActivities() {
   try {
     const saved = localStorage.getItem(ACT_KEY)
-    if (saved) return JSON.parse(saved)
-    return MAP_ACTIVITIES   // first-ever load: seed with mock data
+    const list = saved ? JSON.parse(saved) : MAP_ACTIVITIES
+    // Remove any activity that landed in Pewaukee Lake (bad mock coordinates)
+    return list.filter(a => a.id !== 'ma-8')
   } catch { return MAP_ACTIVITIES }
 }
 function saveActivities(list) {
@@ -186,8 +187,11 @@ async function geocode(query) {
 // ─── Leaflet icons ────────────────────────────────────────────────────────────
 const STUDIO_ICON = L.divIcon({
   className:'',
-  html:`<div style="width:32px;height:32px;border-radius:50%;background:#1A1A1A;border:3px solid #E8611A;display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 3px 10px rgba(0,0,0,.45);">🔥</div>`,
-  iconSize:[32,32], iconAnchor:[16,16], popupAnchor:[0,-18],
+  html:`<div style="position:relative;display:inline-block;filter:drop-shadow(0 3px 8px rgba(0,0,0,.5));">
+    <div style="background:#C8102E;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-weight:900;font-size:9px;letter-spacing:1px;padding:5px 8px;border-radius:6px;white-space:nowrap;border:2px solid #fff;">HOTWORX</div>
+    <div style="position:absolute;bottom:-6px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:6px solid #C8102E;"></div>
+  </div>`,
+  iconSize:[72,36], iconAnchor:[36,42], popupAnchor:[0,-44],
 })
 function activityIcon(color) {
   return L.divIcon({

@@ -531,21 +531,6 @@ export const MAP_ACTIVITIES = [
     notes: 'Attended open play, met 12 regulars. 3 said they\'d come try HOTWORX this week. Good lead source.',
     intensity: 'fading',
   },
-  {
-    id: 'ma-8',
-    locationName: 'Pewaukee High School Teacher Lot',
-    latitude: 43.0905,
-    longitude: -88.2530,
-    activityType: 'Flyer Drop',
-    dateCompleted: daysAgo(20),
-    employee: 'chrissy',
-    employeeName: 'Chrissy',
-    missionId: 'sm-7',
-    playId: null,
-    points: 25,
-    notes: 'Left flyers under windshields before school let out. About 30 cars. Teacher Appreciation timing was great.',
-    intensity: 'fading',
-  },
 ]
 
 // ─── Weekly Challenge ─────────────────────────────────────────────────────────
