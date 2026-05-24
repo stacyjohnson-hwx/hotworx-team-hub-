@@ -202,6 +202,21 @@ function activityIcon(color) {
     iconSize:[14,14], iconAnchor:[7,7], popupAnchor:[0,-9],
   })
 }
+function bizIcon(logoUrl, color) {
+  if (logoUrl) {
+    return L.divIcon({
+      className:'',
+      html:`<div style="position:relative;display:inline-block;">
+        <div style="width:34px;height:34px;border-radius:50%;border:2.5px solid ${color};overflow:hidden;background:white;box-shadow:0 2px 8px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;">
+          <img src="${logoUrl}" style="width:30px;height:30px;object-fit:contain;" />
+        </div>
+        <div style="position:absolute;bottom:-5px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:5px solid ${color};"></div>
+      </div>`,
+      iconSize:[34,41], iconAnchor:[17,46], popupAnchor:[0,-48],
+    })
+  }
+  return activityIcon(color)
+}
 function targetIcon(color='#9CA3AF') {
   return L.divIcon({
     className:'',
@@ -1075,6 +1090,7 @@ export default function MapTab() {
     industry: c.industry,
     status:   c.status,
     address:  c.address,
+    logo_url: c.logo_url  || null,
   }))
 
   // Only contacts with coordinates get map pins
@@ -1259,16 +1275,20 @@ export default function MapTab() {
             )
           })}
 
-          {/* B2B business pins — colored by pipeline status (only contacts with coords) */}
+          {/* B2B business pins — logo avatar if available, colored dot otherwise */}
           {bizMapItems.map(b => {
             const hit      = nearestActivity(b.lat, b.lng, activities, 0.25)
             const visited  = hit && getIntensity(hit.dateCompleted) !== 'stale'
             const pinColor = B2B_STATUS_COLOR[b.status] || '#9CA3AF'
             return (
-              <Marker key={b.id} position={[b.lat, b.lng]} icon={activityIcon(pinColor)}>
-                <Popup>
+              <Marker key={b.id} position={[b.lat, b.lng]} icon={bizIcon(b.logo_url, pinColor)}>
+                <Popup maxWidth={200}>
                   <div style={{fontFamily:'sans-serif',padding:'2px 0'}}>
-                    <p style={{fontWeight:700,fontSize:13,marginBottom:4}}>{b.name}</p>
+                    {b.logo_url && (
+                      <img src={b.logo_url} alt={b.name}
+                        style={{width:48,height:48,objectFit:'contain',display:'block',margin:'0 auto 8px',borderRadius:6,background:'#f9fafb',padding:2}} />
+                    )}
+                    <p style={{fontWeight:700,fontSize:13,marginBottom:4,textAlign: b.logo_url ? 'center' : 'left'}}>{b.name}</p>
                     {b.industry && <p style={{fontSize:11,color:'#6b7280',marginBottom:2}}>{b.industry}</p>}
                     <p style={{fontSize:11,fontWeight:600,color:pinColor,marginBottom:2}}>
                       {B2B_STATUS_LABEL[b.status] || b.status}
