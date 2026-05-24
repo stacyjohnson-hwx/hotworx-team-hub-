@@ -45,6 +45,7 @@ export default function ProfilePage() {
   const [quizOpen, setQuizOpen]       = useState(false)
   const [avatarUrl, setAvatarUrl]     = useState(profile?.avatar_url || null)
   const [uploading, setUploading]     = useState(false)
+  const [avatarError, setAvatarError] = useState('')
   const fileRef                       = useRef(null)
 
   const setI = (k, v) => setInfo(f => ({ ...f, [k]: v }))
@@ -68,15 +69,19 @@ export default function ProfilePage() {
     const file = e.target.files?.[0]
     if (!file || !authUser) return
     const ext = file.name.split('.').pop().toLowerCase()
-    if (!['jpg', 'jpeg', 'png', 'webp'].includes(ext)) return
+    if (!['jpg', 'jpeg', 'png', 'webp'].includes(ext)) {
+      setAvatarError('Please upload a JPG, PNG, or WebP image.')
+      return
+    }
 
     setUploading(true)
+    setAvatarError('')
     try {
       const path = `${authUser.id}/avatar.${ext}`
       const { error: upErr } = await supabase.storage
         .from('avatars')
         .upload(path, file, { upsert: true, contentType: file.type })
-      if (upErr) return
+      if (upErr) throw new Error(upErr.message)
 
       const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path)
       const url = `${publicUrl}?t=${Date.now()}`
@@ -86,6 +91,8 @@ export default function ProfilePage() {
       await supabase.auth.updateUser({ data: { avatar_url: url } })
       await apiPut('/api/users/me', { avatar_url: url })
       await refreshProfile()
+    } catch (err) {
+      setAvatarError(err.message || 'Upload failed. Please try again.')
     } finally {
       setUploading(false)
       e.target.value = ''
@@ -128,7 +135,10 @@ export default function ProfilePage() {
               <span className="text-xs text-teal-600 font-medium">✓ Onboarding complete</span>
             )}
           </div>
-          <p className="text-xs text-gray-400 mt-2">Click the camera to update your photo</p>
+          {avatarError
+            ? <p className="text-xs text-red-500 mt-2">{avatarError}</p>
+            : <p className="text-xs text-gray-400 mt-2">Click the camera to update your photo</p>
+          }
         </div>
       </div>
 
