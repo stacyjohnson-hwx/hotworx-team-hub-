@@ -231,7 +231,12 @@ router.post('/:id/reset-password', authenticate, requireRole('owner', 'manager')
     const { data: { user }, error: userErr } = await supabase.auth.admin.getUserById(id)
     if (userErr || !user) return res.status(404).json({ error: 'User not found' })
 
-    const { data, error } = await supabase.auth.admin.generateLink({ type: 'recovery', email: user.email })
+    const redirectTo = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/login`
+    const { data, error } = await supabase.auth.admin.generateLink({
+      type: 'recovery',
+      email: user.email,
+      options: { redirectTo },
+    })
     if (error) return res.status(400).json({ error: error.message })
     res.json({ reset_link: data?.properties?.action_link || null })
   } catch (err) {
