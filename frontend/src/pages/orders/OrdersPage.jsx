@@ -468,7 +468,8 @@ export default function OrdersPage() {
   }
 
   const visibleOrders = orders.filter(o => {
-    if (!statusFilter && o.status === 'received') return false
+    if (statusFilter && statusFilter !== 'active' && o.status !== statusFilter) return false
+    if (statusFilter === 'active' && (o.status === 'received' || o.status === 'cancelled')) return false
     // Month/year filter applied to created_at
     if (monthFilter || yearFilter) {
       const d = new Date(o.created_at || o.updated_at)
@@ -549,6 +550,7 @@ export default function OrdersPage() {
           onChange={e => setStatusFilter(e.target.value)}
         >
           <option value="">All statuses</option>
+          <option value="active">Active only</option>
           {STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
         </select>
         {/* Category */}
@@ -576,7 +578,11 @@ export default function OrdersPage() {
           <Package size={40} className="mx-auto mb-3 opacity-40" />
           <p className="text-sm font-medium text-gray-500">No orders found</p>
           <p className="text-xs mt-1 text-gray-400">
-            {monthFilter ? 'No orders for this month. Try "All months" to see everything.' : 'Click "Request Item" to submit a new request.'}
+            {monthFilter && statusFilter === 'active'
+              ? 'No active orders this month. Try "All statuses" to see received and cancelled orders too.'
+              : monthFilter
+              ? 'No orders for this month. Try "All months" to see everything.'
+              : 'Click "Request Item" to submit a new request.'}
           </p>
         </div>
       ) : (
