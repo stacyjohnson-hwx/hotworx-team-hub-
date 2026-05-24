@@ -1054,6 +1054,13 @@ export default function B2bPage() {
     return matchSearch && matchStatus && matchIndustry
   })
 
+  const filteredPartners = contacts.filter(c => {
+    const q = searchQuery.toLowerCase()
+    const matchSearch = !q || [c.business_name, c.contact_name, c.email, c.industry].some(f => f?.toLowerCase().includes(q))
+    const matchIndustry = !industryFilter || c.industry === industryFilter
+    return c.status === 'active_partner' && matchSearch && matchIndustry
+  })
+
   if (loading) return (
     <div className="flex items-center justify-center h-64">
       <div className="w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
@@ -1087,7 +1094,7 @@ export default function B2bPage() {
       {/* Tabs */}
       <div className="flex gap-1 mb-5 border-b border-gray-200">
         {[{ key: 'pipeline', label: 'Pipeline' }, { key: 'partners', label: 'Active Partners' }].map(t => (
-          <button key={t.key} onClick={() => setTab(t.key)}
+          <button key={t.key} onClick={() => { setTab(t.key); if (t.key === 'partners') setStatusFilter('') }}
             className={`px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${
               tab === t.key ? 'border-orange-500 text-orange-500' : 'border-transparent text-gray-500 hover:text-gray-800'
             }`}>
@@ -1097,31 +1104,31 @@ export default function B2bPage() {
       </div>
 
       {/* Search + filter */}
-      {tab === 'pipeline' && (
-        <div className="flex gap-3 mb-6 flex-wrap">
-          <input
-            className="flex-1 min-w-48 bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 text-sm placeholder-gray-400 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
-            placeholder="Search by name, industry, email…"
-            value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-          />
-          <select
-            className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-orange-500"
-            value={industryFilter} onChange={e => setIndustryFilter(e.target.value)}>
-            <option value="">All types</option>
-            {INDUSTRIES.map(i => <option key={i} value={i}>{i}</option>)}
-          </select>
+      <div className="flex gap-3 mb-6 flex-wrap">
+        <input
+          className="flex-1 min-w-48 bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 text-sm placeholder-gray-400 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+          placeholder="Search by name, industry, email…"
+          value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+        />
+        <select
+          className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-orange-500"
+          value={industryFilter} onChange={e => setIndustryFilter(e.target.value)}>
+          <option value="">All industries</option>
+          {INDUSTRIES.map(i => <option key={i} value={i}>{i}</option>)}
+        </select>
+        {tab === 'pipeline' && (
           <select
             className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-orange-500"
             value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
             <option value="">All statuses</option>
             {STATUSES.filter(s => s.value !== 'active_partner').map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
           </select>
-        </div>
-      )}
+        )}
+      </div>
 
       {tab === 'pipeline'
         ? <PipelineTab contacts={filtered} users={users} isOwnerOrManager={isOwnerOrManager} onEdit={setModalContact} onDelete={handleDelete} onStatusChange={handleStatusChange} />
-        : <ActivePartnersTab contacts={contacts} users={users} isOwnerOrManager={isOwnerOrManager} onEdit={setModalContact} />
+        : <ActivePartnersTab contacts={filteredPartners} users={users} isOwnerOrManager={isOwnerOrManager} onEdit={setModalContact} />
       }
 
       {modalContact !== null && (
