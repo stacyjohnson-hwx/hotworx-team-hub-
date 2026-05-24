@@ -52,6 +52,17 @@ function fmtDate(str) {
   return new Date(str + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
+function fmtLastContact(iso) {
+  if (!iso) return null
+  const days = Math.floor((Date.now() - new Date(iso)) / 86400000)
+  if (days === 0) return 'Today'
+  if (days === 1) return 'Yesterday'
+  if (days < 7)  return `${days}d ago`
+  if (days < 30) return `${Math.floor(days / 7)}w ago`
+  if (days < 365) return `${Math.floor(days / 30)}mo ago`
+  return `${Math.floor(days / 365)}y ago`
+}
+
 function fmtDateTime(str) {
   if (!str) return '—'
   return new Date(str).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
@@ -555,6 +566,12 @@ function PipelineRow({ contact, users, isOwnerOrManager, onEdit, onDelete, onLog
               )}
             </p>
           )}
+          {fmtLastContact(contact.last_interacted_at) && (
+            <p className="text-xs mt-0.5 text-gray-400 flex items-center gap-1">
+              <MessageSquare size={10} className="flex-shrink-0" />
+              Last contacted: {fmtLastContact(contact.last_interacted_at)}
+            </p>
+          )}
         </div>
 
         {/* Quick action buttons */}
@@ -861,8 +878,56 @@ function ActivePartnerCard({ contact, users, isOwnerOrManager, onEdit, onLog }) 
 }
 
 // ─── Active Partners Tab ──────────────────────────────────────────────────────
+function ActivePartnerRow({ contact, isOwnerOrManager, onEdit, onLog }) {
+  const lastContact = fmtLastContact(contact.last_interacted_at)
+  const daysSince = contact.last_interacted_at
+    ? Math.floor((Date.now() - new Date(contact.last_interacted_at)) / 86400000)
+    : null
+  const needsCheckin = daysSince !== null && daysSince > 30
+
+  return (
+    <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors">
+      {contact.logo_url
+        ? <img src={contact.logo_url} alt="" className="w-9 h-9 rounded-lg object-contain bg-gray-50 border border-gray-200 flex-shrink-0" />
+        : <div className="w-9 h-9 rounded-lg bg-orange-50 border border-orange-200 flex items-center justify-center flex-shrink-0">
+            <Building2 size={16} className="text-orange-500" />
+          </div>
+      }
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold text-gray-900 truncate">{contact.business_name}</p>
+        <div className="flex items-center gap-2 flex-wrap mt-0.5">
+          {contact.contact_name && <span className="text-xs text-gray-500">{contact.contact_name}</span>}
+          {contact.industry && <span className="text-xs text-gray-400">· {contact.industry}</span>}
+          {contact.discount_desc && (
+            <span className="text-xs text-orange-600 font-medium flex items-center gap-0.5">
+              <Tag size={10} /> {contact.discount_desc}
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="flex items-center gap-3 flex-shrink-0">
+        {lastContact && (
+          <span className={`text-xs font-medium flex items-center gap-1 ${needsCheckin ? 'text-red-500' : 'text-gray-400'}`}>
+            <MessageSquare size={11} /> {lastContact}
+          </span>
+        )}
+        {!lastContact && <span className="text-xs text-gray-300 italic">No contact yet</span>}
+        {isOwnerOrManager && (
+          <div className="flex items-center gap-0.5">
+            {contact.phone && <a href={`tel:${contact.phone}`} className="p-1.5 text-gray-300 hover:text-orange-500 rounded"><Phone size={13} /></a>}
+            {contact.email && <a href={`mailto:${contact.email}`} className="p-1.5 text-gray-300 hover:text-orange-500 rounded"><Mail size={13} /></a>}
+            <button onClick={() => onLog()} className="p-1.5 text-gray-300 hover:text-orange-500 rounded"><MessageSquare size={13} /></button>
+            <button onClick={() => onEdit(contact)} className="p-1.5 text-gray-300 hover:text-gray-600 rounded"><Edit2 size={13} /></button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function ActivePartnersTab({ contacts, users, isOwnerOrManager, onEdit }) {
   const [logTarget, setLogTarget] = useState(null)
+  const [viewMode, setViewMode]   = useState('card') // 'card' | 'list'
   const handleInteractionSaved = i => { logTarget?.callback?.(i); setLogTarget(null) }
 
   const partners = contacts.filter(c => c.status === 'active_partner')
@@ -878,18 +943,48 @@ function ActivePartnersTab({ contacts, users, isOwnerOrManager, onEdit }) {
           </p>
         </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {partners.map(c => (
-            <ActivePartnerCard
-              key={c.id}
-              contact={c}
-              users={users}
-              isOwnerOrManager={isOwnerOrManager}
-              onEdit={onEdit}
-              onLog={cb => setLogTarget({ contact: c, callback: cb })}
-            />
-          ))}
-        </div>
+        <>
+          {/* View toggle */}
+          <div className="flex justify-end mb-4">
+            <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+              <button onClick={() => setViewMode('card')}
+                className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors ${viewMode === 'card' ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>
+                Cards
+              </button>
+              <button onClick={() => setViewMode('list')}
+                className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors ${viewMode === 'list' ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>
+                List
+              </button>
+            </div>
+          </div>
+
+          {viewMode === 'card' ? (
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {partners.map(c => (
+                <ActivePartnerCard
+                  key={c.id}
+                  contact={c}
+                  users={users}
+                  isOwnerOrManager={isOwnerOrManager}
+                  onEdit={onEdit}
+                  onLog={cb => setLogTarget({ contact: c, callback: cb })}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+              {partners.map(c => (
+                <ActivePartnerRow
+                  key={c.id}
+                  contact={c}
+                  isOwnerOrManager={isOwnerOrManager}
+                  onEdit={onEdit}
+                  onLog={() => setLogTarget({ contact: c, callback: i => {} })}
+                />
+              ))}
+            </div>
+          )}
+        </>
       )}
       {logTarget && (
         <LogInteractionModal

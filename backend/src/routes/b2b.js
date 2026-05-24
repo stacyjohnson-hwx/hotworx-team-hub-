@@ -24,7 +24,21 @@ router.get('/contacts', authenticate, async (req, res) => {
 
   const { data, error } = await query
   if (error) return res.status(500).json({ error: error.message })
-  res.json(data)
+
+  // Attach last_interacted_at from interactions table
+  const { data: lastRows } = await supabase()
+    .from('b2b_interactions')
+    .select('contact_id, logged_at')
+    .order('logged_at', { ascending: false })
+
+  const lastMap = {}
+  if (lastRows) {
+    for (const row of lastRows) {
+      if (!lastMap[row.contact_id]) lastMap[row.contact_id] = row.logged_at
+    }
+  }
+
+  res.json(data.map(c => ({ ...c, last_interacted_at: lastMap[c.id] || null })))
 })
 
 // ─── POST /api/b2b/contacts ──────────────────────────────────────────────────
