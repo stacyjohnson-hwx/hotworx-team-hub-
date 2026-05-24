@@ -29,9 +29,9 @@ const INTERACTION_TYPES = [
 
 const INDUSTRIES = [
   'Apartments', 'Chiropractic', 'Corporate / Office', 'Gym / Fitness', 'Healthcare',
-  'Massage', 'Neighborhood / HOA', 'Nutrition / Wellness', 'Physical Therapy',
-  'Real Estate', 'Restaurant', 'Retail', 'Salon / Spa', 'Sports / Athletics',
-  'Yoga / Pilates', 'Other',
+  'Influencer', 'Massage', 'Municipal', 'Neighborhood / HOA', 'Networking Group',
+  'Nutrition / Wellness', 'Physical Therapy', 'Real Estate', 'Restaurant', 'Retail',
+  'Salon / Spa', 'School', 'Sports / Athletics', 'Yoga / Pilates', 'Other',
 ]
 
 function statusMeta(val) {
