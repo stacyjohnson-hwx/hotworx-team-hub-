@@ -273,11 +273,16 @@ function ContactModal({ contact, users, onSave, onClose }) {
 function LogInteractionModal({ contact, onSave, onClose }) {
   const [type, setType] = useState('call')
   const [notes, setNotes] = useState('')
+  const [date, setDate] = useState(new Date().toLocaleDateString('en-CA')) // YYYY-MM-DD
   const [saving, setSaving] = useState(false)
 
   const handleSubmit = async (e) => {
     e.preventDefault(); setSaving(true)
-    try { const saved = await apiPost(`/api/b2b/contacts/${contact.id}/interactions`, { type, notes }); onSave(saved) }
+    try {
+      const logged_at = new Date(date + 'T12:00:00').toISOString()
+      const saved = await apiPost(`/api/b2b/contacts/${contact.id}/interactions`, { type, notes, logged_at })
+      onSave(saved)
+    }
     finally { setSaving(false) }
   }
 
@@ -305,6 +310,10 @@ function LogInteractionModal({ contact, onSave, onClose }) {
                 </button>
               ))}
             </div>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">Date</label>
+            <input type="date" className={inputCls} value={date} onChange={e => setDate(e.target.value)} />
           </div>
           <div>
             <label className="block text-xs font-semibold text-gray-700 mb-1">Notes</label>

@@ -149,7 +149,7 @@ router.get('/contacts/:id/interactions', authenticate, async (req, res) => {
 
 // ─── POST /api/b2b/contacts/:id/interactions ─────────────────────────────────
 router.post('/contacts/:id/interactions', authenticate, async (req, res) => {
-  const { type, notes } = req.body
+  const { type, notes, logged_at } = req.body
 
   if (!type) return res.status(400).json({ error: 'type is required' })
 
@@ -160,6 +160,7 @@ router.post('/contacts/:id/interactions', authenticate, async (req, res) => {
       type,
       notes: notes || null,
       logged_by: req.user.id,
+      ...(logged_at ? { logged_at } : {}),
     })
     .select()
     .single()
