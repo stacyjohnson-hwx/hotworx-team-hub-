@@ -879,48 +879,98 @@ function ActivePartnerCard({ contact, users, isOwnerOrManager, onEdit, onLog }) 
 
 // ─── Active Partners Tab ──────────────────────────────────────────────────────
 function ActivePartnerRow({ contact, isOwnerOrManager, onEdit, onLog }) {
+  const [expanded,     setExpanded]     = useState(false)
+  const [interactions, setInteractions] = useState(null)
+  const [loadingHist,  setLoadingHist]  = useState(false)
+
   const lastContact = fmtLastContact(contact.last_interacted_at)
   const daysSince = contact.last_interacted_at
     ? Math.floor((Date.now() - new Date(contact.last_interacted_at)) / 86400000)
     : null
   const needsCheckin = daysSince !== null && daysSince > 30
 
+  async function handleExpand() {
+    const show = !expanded; setExpanded(show)
+    if (show && interactions === null) {
+      setLoadingHist(true)
+      try { setInteractions(await apiGet(`/api/b2b/contacts/${contact.id}/interactions`)) }
+      finally { setLoadingHist(false) }
+    }
+  }
+
   return (
-    <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors">
-      {contact.logo_url
-        ? <img src={contact.logo_url} alt="" className="w-9 h-9 rounded-lg object-contain bg-gray-50 border border-gray-200 flex-shrink-0" />
-        : <div className="w-9 h-9 rounded-lg bg-orange-50 border border-orange-200 flex items-center justify-center flex-shrink-0">
-            <Building2 size={16} className="text-orange-500" />
+    <div className="border-b border-gray-100 last:border-0">
+      <div className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors">
+        {contact.logo_url
+          ? <img src={contact.logo_url} alt="" className="w-9 h-9 rounded-lg object-contain bg-gray-50 border border-gray-200 flex-shrink-0" />
+          : <div className="w-9 h-9 rounded-lg bg-orange-50 border border-orange-200 flex items-center justify-center flex-shrink-0">
+              <Building2 size={16} className="text-orange-500" />
+            </div>
+        }
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-gray-900 truncate">{contact.business_name}</p>
+          <div className="flex items-center gap-2 flex-wrap mt-0.5">
+            {contact.contact_name && <span className="text-xs text-gray-500">{contact.contact_name}</span>}
+            {contact.industry && <span className="text-xs text-gray-400">· {contact.industry}</span>}
+            {contact.discount_desc && (
+              <span className="text-xs text-orange-600 font-medium flex items-center gap-0.5">
+                <Tag size={10} /> {contact.discount_desc}
+              </span>
+            )}
           </div>
-      }
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-gray-900 truncate">{contact.business_name}</p>
-        <div className="flex items-center gap-2 flex-wrap mt-0.5">
-          {contact.contact_name && <span className="text-xs text-gray-500">{contact.contact_name}</span>}
-          {contact.industry && <span className="text-xs text-gray-400">· {contact.industry}</span>}
-          {contact.discount_desc && (
-            <span className="text-xs text-orange-600 font-medium flex items-center gap-0.5">
-              <Tag size={10} /> {contact.discount_desc}
+        </div>
+        <div className="flex items-center gap-3 flex-shrink-0">
+          {lastContact && (
+            <span className={`text-xs font-medium flex items-center gap-1 ${needsCheckin ? 'text-red-500' : 'text-gray-400'}`}>
+              <MessageSquare size={11} /> {lastContact}
             </span>
           )}
+          {!lastContact && <span className="text-xs text-gray-300 italic">No contact yet</span>}
+          {isOwnerOrManager && (
+            <div className="flex items-center gap-0.5">
+              {contact.phone && <a href={`tel:${contact.phone}`} className="p-1.5 text-gray-300 hover:text-orange-500 rounded"><Phone size={13} /></a>}
+              {contact.email && <a href={`mailto:${contact.email}`} className="p-1.5 text-gray-300 hover:text-orange-500 rounded"><Mail size={13} /></a>}
+              <button onClick={() => onLog(i => setInteractions(prev => prev ? [i, ...prev] : [i]))} className="p-1.5 text-gray-300 hover:text-orange-500 rounded"><MessageSquare size={13} /></button>
+              <button onClick={() => onEdit(contact)} className="p-1.5 text-gray-300 hover:text-gray-600 rounded"><Edit2 size={13} /></button>
+            </div>
+          )}
+          <button onClick={handleExpand} className="p-1.5 text-gray-200 hover:text-gray-500 rounded transition-colors">
+            {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+          </button>
         </div>
       </div>
-      <div className="flex items-center gap-3 flex-shrink-0">
-        {lastContact && (
-          <span className={`text-xs font-medium flex items-center gap-1 ${needsCheckin ? 'text-red-500' : 'text-gray-400'}`}>
-            <MessageSquare size={11} /> {lastContact}
-          </span>
-        )}
-        {!lastContact && <span className="text-xs text-gray-300 italic">No contact yet</span>}
-        {isOwnerOrManager && (
-          <div className="flex items-center gap-0.5">
-            {contact.phone && <a href={`tel:${contact.phone}`} className="p-1.5 text-gray-300 hover:text-orange-500 rounded"><Phone size={13} /></a>}
-            {contact.email && <a href={`mailto:${contact.email}`} className="p-1.5 text-gray-300 hover:text-orange-500 rounded"><Mail size={13} /></a>}
-            <button onClick={() => onLog()} className="p-1.5 text-gray-300 hover:text-orange-500 rounded"><MessageSquare size={13} /></button>
-            <button onClick={() => onEdit(contact)} className="p-1.5 text-gray-300 hover:text-gray-600 rounded"><Edit2 size={13} /></button>
-          </div>
-        )}
-      </div>
+
+      {/* Inline history */}
+      {expanded && (
+        <div className="px-4 pb-3 bg-gray-50 border-t border-gray-100">
+          {loadingHist ? (
+            <p className="text-xs text-gray-400 py-2">Loading…</p>
+          ) : interactions?.length ? (
+            <div className="space-y-0">
+              {interactions.map(i => {
+                const meta = INTERACTION_TYPES.find(t => t.value === i.type) || INTERACTION_TYPES[4]
+                const Icon = meta.icon
+                return (
+                  <div key={i.id} className="flex items-start gap-2.5 py-2.5 border-b border-gray-100 last:border-0">
+                    <div className="w-6 h-6 rounded-full bg-orange-100 border border-orange-200 flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <Icon size={11} className="text-orange-500" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-gray-800">
+                        <span className="capitalize">{i.type}</span>
+                        <span className="text-gray-400 font-normal ml-1">by {i.logged_by_name} · {fmtDateTime(i.logged_at)}</span>
+                      </p>
+                      {i.notes && <p className="text-xs text-gray-500 mt-0.5">{i.notes}</p>}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <p className="text-xs text-gray-400 py-2 italic">No interactions logged yet.</p>
+          )}
+        </div>
+      )}
     </div>
   )
 }
