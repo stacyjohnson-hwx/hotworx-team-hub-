@@ -927,7 +927,7 @@ function ActivePartnerRow({ contact, isOwnerOrManager, onEdit, onLog }) {
 
 function ActivePartnersTab({ contacts, users, isOwnerOrManager, onEdit }) {
   const [logTarget, setLogTarget] = useState(null)
-  const [viewMode, setViewMode]   = useState('card') // 'card' | 'list'
+  const [viewMode, setViewMode]   = useState('list') // 'card' | 'list'
   const handleInteractionSaved = i => { logTarget?.callback?.(i); setLogTarget(null) }
 
   const partners = contacts.filter(c => c.status === 'active_partner')
