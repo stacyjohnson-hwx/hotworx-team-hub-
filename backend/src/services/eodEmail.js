@@ -1,5 +1,15 @@
-const { Resend } = require('resend')
+const nodemailer = require('nodemailer')
 const { createClient } = require('@supabase/supabase-js')
+
+function createTransport() {
+  return nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
+    },
+  })
+}
 
 const THRESHOLD = parseFloat(process.env.DRAWER_VARIANCE_THRESHOLD || '5')
 const ENG_GOAL = 3
@@ -169,33 +179,45 @@ async function fetchSubmissionsForDate(dateStr) {
 }
 
 async function sendEodEmail(dateStr) {
-  if (!process.env.RESEND_API_KEY) {
-    console.log('[EOD Email] RESEND_API_KEY not set — skipping email')
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    console.log('[EOD Email] EMAIL_USER/EMAIL_PASS not set — skipping email')
     return
   }
 
   const submissions = await fetchSubmissionsForDate(dateStr)
   const html = buildHtml(dateStr, submissions)
-  const resend = new Resend(process.env.RESEND_API_KEY)
-  const fromEmail = process.env.FROM_EMAIL || 'HOTWORX Pewaukee <onboarding@resend.dev>'
   const recipients = [process.env.OWNER_EMAIL, process.env.MANAGER_EMAIL].filter(Boolean)
 
   const dateLabel = new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
   })
 
-  const { error } = await resend.emails.send({
-    from: fromEmail,
-    to: recipients,
-    subject: `${process.env.STUDIO_NAME || 'HOTWORX Pewaukee'} — EOD Report ${dateLabel}`,
-    html,
-  })
-
-  if (error) {
-    console.error('[EOD Email] Send failed:', error)
-  } else {
+  try {
+    const transporter = createTransport()
+    await transporter.sendMail({
+      from: `HOTWORX Pewaukee <${process.env.EMAIL_USER}>`,
+      to: recipients.join(', '),
+      subject: `${process.env.STUDIO_NAME || 'HOTWORX Pewaukee'} — EOD Report ${dateLabel}`,
+      html,
+    })
     console.log(`[EOD Email] Sent for ${dateStr} to ${recipients.join(', ')}`)
+  } catch (err) {
+    console.error('[EOD Email] Send failed:', err.message)
   }
 }
 
-module.exports = { sendEodEmail }
+async function sendEmail({ to, subject, html }) {
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    console.log('[Email] EMAIL_USER/EMAIL_PASS not set — skipping')
+    return
+  }
+  const transporter = createTransport()
+  await transporter.sendMail({
+    from: `HOTWORX Pewaukee <${process.env.EMAIL_USER}>`,
+    to,
+    subject,
+    html,
+  })
+}
+
+module.exports = { sendEodEmail, sendEmail }

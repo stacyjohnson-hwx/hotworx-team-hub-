@@ -3,6 +3,7 @@ const router = express.Router()
 const { createClient } = require('@supabase/supabase-js')
 const authenticate = require('../middleware/authMiddleware')
 const { requireRole } = require('../middleware/roleGuard')
+const { sendEmail } = require('../services/eodEmail')
 
 // All DB access goes through the Supabase JS client (HTTPS / REST API),
 // not a direct pg connection — avoids IPv6 issues on Railway.
@@ -232,13 +233,31 @@ router.post('/:id/reset-password', authenticate, requireRole('owner', 'manager')
     if (userErr || !user) return res.status(404).json({ error: 'User not found' })
 
     const redirectTo = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/login`
-    const { data, error } = await supabase.auth.admin.generateLink({
+    const { data, error } = await admin.auth.admin.generateLink({
       type: 'recovery',
       email: user.email,
       options: { redirectTo },
     })
     if (error) return res.status(400).json({ error: error.message })
-    res.json({ reset_link: data?.properties?.action_link || null })
+
+    const resetLink = data?.properties?.action_link
+    if (resetLink) {
+      await sendEmail({
+        to: user.email,
+        subject: `${process.env.STUDIO_NAME || 'HOTWORX Pewaukee'} — Password Reset`,
+        html: `
+          <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;">
+            <h2 style="color:#C8102E;margin-bottom:8px;">Password Reset</h2>
+            <p style="color:#374151;">Hi ${user.user_metadata?.full_name || user.email},</p>
+            <p style="color:#374151;">Click the button below to reset your HOTWORX Team Hub password. This link expires in 1 hour.</p>
+            <a href="${resetLink}" style="display:inline-block;margin:16px 0;padding:12px 24px;background:#C8102E;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Reset My Password</a>
+            <p style="color:#6b7280;font-size:13px;">If you didn't request this, ignore this email.</p>
+          </div>
+        `,
+      })
+    }
+
+    res.json({ sent: !!resetLink, email: user.email })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }

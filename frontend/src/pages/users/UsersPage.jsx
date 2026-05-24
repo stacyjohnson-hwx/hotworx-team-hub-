@@ -190,23 +190,16 @@ function UserModal({ user, currentRole, onSave, onClose }) {
 // ─── Reset Password Modal ──────────────────────────────────────────────────────
 function ResetPasswordModal({ user, onClose }) {
   const [loading, setLoading] = useState(false)
-  const [link, setLink]       = useState(null)
-  const [copied, setCopied]   = useState(false)
+  const [sent, setSent]       = useState(false)
   const [error, setError]     = useState('')
 
   const handleReset = async () => {
     setLoading(true); setError('')
     try {
-      const data = await apiPost(`/api/users/${user.id}/reset-password`, {})
-      setLink(data.reset_link)
+      await apiPost(`/api/users/${user.id}/reset-password`, {})
+      setSent(true)
     } catch (err) { setError(err.message) }
     finally { setLoading(false) }
-  }
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(link)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
   }
 
   return (
@@ -217,25 +210,21 @@ function ResetPasswordModal({ user, onClose }) {
           <button onClick={onClose} className="text-gray-300 hover:text-white"><X size={18} /></button>
         </div>
         <div className="px-5 py-4 space-y-3">
-          <p className="text-sm text-gray-700">Generate a one-time password reset link for <strong>{user.name}</strong>.</p>
-          {error && <div className="bg-red-50 border border-red-300 text-red-700 text-sm rounded-lg px-3 py-2">{error}</div>}
-          {link ? (
+          {sent ? (
+            <div className="flex items-center gap-3 bg-teal-50 border border-teal-200 rounded-lg px-4 py-3">
+              <Check size={18} className="text-teal-600 flex-shrink-0" />
+              <p className="text-sm text-teal-800">Password reset email sent to <strong>{user.email}</strong>. The link expires in 1 hour.</p>
+            </div>
+          ) : (
             <>
-              <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-                <p className="text-xs text-gray-500 mb-1">Share this link — it expires in 24 hours</p>
-                <p className="text-xs font-mono text-gray-800 break-all">{link}</p>
-              </div>
-              <button onClick={handleCopy}
-                className="flex items-center gap-1.5 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold rounded-lg">
-                {copied ? <Check size={14} /> : <Copy size={14} />} {copied ? 'Copied!' : 'Copy Link'}
+              <p className="text-sm text-gray-700">Send a password reset email to <strong>{user.name}</strong> at <span className="text-gray-500">{user.email}</span>.</p>
+              {error && <div className="bg-red-50 border border-red-300 text-red-700 text-sm rounded-lg px-3 py-2">{error}</div>}
+              <button onClick={handleReset} disabled={loading}
+                className="flex items-center gap-2 px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-bold rounded-lg disabled:opacity-50">
+                <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+                {loading ? 'Sending…' : 'Send Reset Email'}
               </button>
             </>
-          ) : (
-            <button onClick={handleReset} disabled={loading}
-              className="flex items-center gap-2 px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-bold rounded-lg disabled:opacity-50">
-              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-              {loading ? 'Generating…' : 'Generate Reset Link'}
-            </button>
           )}
         </div>
         <div className="flex justify-end px-5 py-3 border-t border-gray-200">
