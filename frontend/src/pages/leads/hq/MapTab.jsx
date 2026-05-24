@@ -187,11 +187,13 @@ async function geocode(query) {
 // ─── Leaflet icons ────────────────────────────────────────────────────────────
 const STUDIO_ICON = L.divIcon({
   className:'',
-  html:`<div style="position:relative;display:inline-block;filter:drop-shadow(0 3px 8px rgba(0,0,0,.5));">
-    <div style="background:#C8102E;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-weight:900;font-size:9px;letter-spacing:1px;padding:5px 8px;border-radius:6px;white-space:nowrap;border:2px solid #fff;">HOTWORX</div>
-    <div style="position:absolute;bottom:-6px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:6px solid #C8102E;"></div>
+  html:`<div style="position:relative;display:inline-block;filter:drop-shadow(0 4px 10px rgba(0,0,0,.5));">
+    <div style="background:#fff;border-radius:8px;padding:4px 8px;border:2px solid #C8102E;">
+      <img src="/hotworx-logo.svg" style="height:26px;width:auto;display:block;" alt="HOTWORX" />
+    </div>
+    <div style="position:absolute;bottom:-7px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:7px solid #C8102E;"></div>
   </div>`,
-  iconSize:[72,36], iconAnchor:[36,42], popupAnchor:[0,-44],
+  iconSize:[110,42], iconAnchor:[55,49], popupAnchor:[0,-51],
 })
 function activityIcon(color) {
   return L.divIcon({
