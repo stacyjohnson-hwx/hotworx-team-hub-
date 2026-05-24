@@ -838,14 +838,6 @@ function TeamPerformance({ month, year, currentUserId }) {
                       <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-medium">Manager</span>
                     )}
                   </div>
-                  <div className="flex items-center gap-2 mt-1 flex-wrap">
-                    {pacingLabel && (
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${pacingLabel.cls}`}>{pacingLabel.label}</span>
-                    )}
-                    {trendLabel && (
-                      <span className={`text-xs font-medium ${trendLabel.cls}`}>{trendLabel.label}</span>
-                    )}
-                  </div>
                 </div>
 
                 {/* Big score */}
