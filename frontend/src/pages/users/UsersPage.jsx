@@ -4,7 +4,7 @@ import { apiGet, apiPost, apiPut, apiPatch } from '@/hooks/useApi'
 import {
   Users, Plus, Edit2, UserX, UserCheck, X, Eye, EyeOff,
   Mail, Phone, Calendar, Shield, RefreshCw, Copy, Check,
-  Building2, ChevronDown,
+  Building2, ChevronDown, ClipboardList,
 } from 'lucide-react'
 
 const ROLES = [
@@ -246,8 +246,112 @@ function ResetPasswordModal({ user, onClose }) {
   )
 }
 
+// ─── Quiz Viewer Modal ─────────────────────────────────────────────────────────
+const QUIZ_SECTIONS = [
+  {
+    emoji: '✨', title: 'Dreaming Bigger',
+    fields: [
+      { key: 'saving_for',        label: 'What are you saving up for?' },
+      { key: 'motivation_types',  label: 'What motivates you?', array: true },
+      { key: 'motivation_other',  label: 'Other motivation details' },
+      { key: 'appreciation_style',label: 'How do you like to be appreciated?' },
+    ],
+  },
+  {
+    emoji: '🍓', title: 'Favorites',
+    fields: [
+      { key: 'fav_snack',      label: 'Favorite snack' },
+      { key: 'fav_smoothie',   label: 'Favorite smoothie' },
+      { key: 'fav_coffee',     label: 'Favorite coffee drink' },
+      { key: 'fav_restaurant', label: 'Favorite restaurant' },
+      { key: 'fav_shop',       label: 'Favorite place to shop' },
+      { key: 'fav_gift_card',  label: 'Favorite gift card' },
+    ],
+  },
+  {
+    emoji: '🎉', title: 'Fun Stuff',
+    fields: [
+      { key: 'fav_color',  label: 'Favorite color' },
+      { key: 'fav_music',  label: 'Favorite music' },
+      { key: 'fav_relax',  label: 'How do you like to relax?' },
+      { key: 'fun_fact',   label: 'Fun fact about you' },
+    ],
+  },
+  {
+    emoji: '🔥', title: 'Motivation Style',
+    fields: [
+      { key: 'motivation_styles',   label: 'Motivation styles', array: true },
+      { key: 'contest_excitement',  label: 'What excites you most about contests?' },
+      { key: 'personal_goal',       label: 'Personal goal this month' },
+      { key: 'anything_else',       label: 'Anything else we should know?' },
+    ],
+  },
+]
+
+function QuizModal({ user, onClose }) {
+  const q = user.quiz_answers || {}
+  const hasAnswers = Object.keys(q).length > 0
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl w-full max-w-lg shadow-2xl border border-gray-200 max-h-[90vh] flex flex-col"
+        onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-800 rounded-t-xl flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <Avatar user={user} size={8} />
+            <div>
+              <h2 className="text-white font-bold">{user.name}'s Motivation Quiz</h2>
+              <p className="text-gray-400 text-xs">Read-only view</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-gray-300 hover:text-white"><X size={18} /></button>
+        </div>
+
+        <div className="overflow-y-auto px-6 py-5 space-y-6 flex-1">
+          {!hasAnswers ? (
+            <div className="text-center py-10 text-gray-400">
+              <ClipboardList size={32} className="mx-auto mb-3 opacity-40" />
+              <p className="text-sm">{user.name} hasn't completed the quiz yet.</p>
+            </div>
+          ) : (
+            QUIZ_SECTIONS.map(section => {
+              const sectionAnswers = section.fields.filter(f => q[f.key] && (Array.isArray(q[f.key]) ? q[f.key].length > 0 : true))
+              if (sectionAnswers.length === 0) return null
+              return (
+                <div key={section.title}>
+                  <h3 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
+                    <span>{section.emoji}</span> {section.title}
+                  </h3>
+                  <div className="space-y-2">
+                    {section.fields.map(f => {
+                      const val = q[f.key]
+                      if (!val || (Array.isArray(val) && val.length === 0)) return null
+                      return (
+                        <div key={f.key} className="bg-gray-50 rounded-lg px-3 py-2.5">
+                          <p className="text-xs font-semibold text-gray-500 mb-0.5">{f.label}</p>
+                          <p className="text-sm text-gray-900">
+                            {f.array ? (Array.isArray(val) ? val.join(', ') : val) : val}
+                          </p>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })
+          )}
+        </div>
+
+        <div className="flex justify-end px-6 py-4 border-t border-gray-200 flex-shrink-0">
+          <button onClick={onClose} className="px-5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-semibold rounded-lg transition-colors">Close</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── User Card ─────────────────────────────────────────────────────────────────
-function UserCard({ user, currentUserId, currentRole, onEdit, onToggleActive, onResetPassword }) {
+function UserCard({ user, currentUserId, currentRole, onEdit, onToggleActive, onResetPassword, onViewQuiz }) {
   const [confirm, setConfirm] = useState(false)
   const isSelf = user.id === currentUserId
   const canDeactivate = !isSelf && (currentRole === 'owner' || (currentRole === 'manager' && user.role === 'tsa'))
@@ -294,6 +398,12 @@ function UserCard({ user, currentUserId, currentRole, onEdit, onToggleActive, on
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-gray-50 border border-gray-200 hover:border-orange-300 hover:text-orange-600 text-gray-600 rounded-lg transition-colors">
             <Edit2 size={11} /> Edit
           </button>
+          {(user.role === 'tsa' || user.role === 'manager') && (
+            <button onClick={() => onViewQuiz(user)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-gray-50 border border-gray-200 hover:border-purple-300 hover:text-purple-600 text-gray-600 rounded-lg transition-colors">
+              <ClipboardList size={11} /> {user.quiz_answers && Object.keys(user.quiz_answers).length > 0 ? 'View Quiz' : 'No Quiz Yet'}
+            </button>
+          )}
           <button onClick={() => onResetPassword(user)}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-gray-50 border border-gray-200 hover:border-blue-300 hover:text-blue-600 text-gray-600 rounded-lg transition-colors">
             <RefreshCw size={11} /> Reset PW
@@ -332,6 +442,7 @@ export default function UsersPage() {
   const [showModal, setShowModal]   = useState(false)
   const [editUser, setEditUser]     = useState(null)
   const [resetUser, setResetUser]   = useState(null)
+  const [quizUser, setQuizUser]     = useState(null)
   const [filter, setFilter]         = useState('active')
 
   const load = useCallback(async () => {
@@ -420,6 +531,7 @@ export default function UsersPage() {
                   onEdit={setEditUser}
                   onToggleActive={handleToggleActive}
                   onResetPassword={setResetUser}
+                  onViewQuiz={setQuizUser}
                 />
               ))}
             </div>
@@ -435,6 +547,9 @@ export default function UsersPage() {
       )}
       {editUser && (
         <UserModal user={editUser} currentRole={role} onSave={handleSave} onClose={() => setEditUser(null)} />
+      )}
+      {quizUser && (
+        <QuizModal user={quizUser} onClose={() => setQuizUser(null)} />
       )}
       {resetUser && (
         <ResetPasswordModal user={resetUser} onClose={() => setResetUser(null)} />
