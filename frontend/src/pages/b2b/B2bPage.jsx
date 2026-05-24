@@ -81,10 +81,20 @@ const blankForm = {
 
 async function geocodeAddress(address) {
   if (!address?.trim()) return null
-  const params = new URLSearchParams({ q: address + ', Wisconsin, USA', format: 'json', limit: '1', countrycodes: 'us' })
+  const params = new URLSearchParams({
+    q: address + ', Wisconsin, USA',
+    format: 'json', limit: '1', countrycodes: 'us', addressdetails: '1',
+  })
   try {
     const data = await fetch(`https://nominatim.openstreetmap.org/search?${params}`).then(r => r.json())
-    if (data.length) return { latitude: parseFloat(data[0].lat), longitude: parseFloat(data[0].lon) }
+    if (!data.length) return null
+    const result = data[0]
+    // Require either a road (real street address) or a recognised place type.
+    // Rejects low-confidence guesses that land contacts in lakes / wrong cities.
+    const hasRoad = !!result.address?.road
+    const goodType = ['neighbourhood', 'suburb', 'village', 'town', 'city', 'hamlet', 'quarter'].includes(result.type)
+    if (!hasRoad && !goodType) return null
+    return { latitude: parseFloat(result.lat), longitude: parseFloat(result.lon) }
   } catch {}
   return null
 }
