@@ -9,7 +9,7 @@ import { apiGet, apiPut } from '@/hooks/useApi'
 import { useRole } from '@/hooks/useRole'
 
 // ─── Studio ───────────────────────────────────────────────────────────────────
-const STUDIO = { lat: 43.0831, lng: -88.2490, name: 'HOTWORX Pewaukee', address: '1279 Capitol Drive' }
+const STUDIO = { lat: 43.08398, lng: -88.23366, name: 'HOTWORX Pewaukee', address: '1279 Capitol Drive, Pewaukee, WI 53072' }
 const MAP_CENTER = [43.05, -88.23]
 const MAP_ZOOM   = 11
 
@@ -56,7 +56,7 @@ const DEFAULT_NEIGHBORHOODS = [
   { id:'nh-9',  name:'Sunset Meadows',                      lat:43.0880, lng:-88.2630 },
   { id:'nh-10', name:'Pewaukee Lake North Shore',           lat:43.0960, lng:-88.2640 },
   { id:'nh-11', name:'Pewaukee Village',                    lat:43.0792, lng:-88.2773 },
-  { id:'nh-12', name:'Pewaukee — Capitol Drive Corridor',   lat:43.0831, lng:-88.2490 },
+  { id:'nh-12', name:'Pewaukee — Capitol Drive Corridor',   lat:43.0840, lng:-88.2400 },
   { id:'nh-13', name:'Pewaukee — West Side',                lat:43.0831, lng:-88.3100 },
   { id:'nh-14', name:'Pewaukee — Silvernail Road Area',     lat:43.0497, lng:-88.2930 },
   // ── Hartland ──────────────────────────────────────────────────────────────
