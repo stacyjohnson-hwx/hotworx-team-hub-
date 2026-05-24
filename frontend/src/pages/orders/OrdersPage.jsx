@@ -1,11 +1,12 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRole } from '@/hooks/useRole'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
 import {
   ShoppingCart, Plus, X, ChevronDown, ChevronUp, Trash2, Check,
   Package, Clock, CheckCircle2, XCircle, Truck,
-  DollarSign, Edit2, Filter,
+  DollarSign, Edit2, Filter, BarChart2,
 } from 'lucide-react'
+import OrdersAnalytics from './OrdersAnalytics'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const STATUSES = [
@@ -423,9 +424,11 @@ export default function OrdersPage() {
   const isOwnerOrManager = role === 'owner' || role === 'manager'
 
   const [orders, setOrders] = useState([])
+  const [allOrders, setAllOrders] = useState([])   // unfiltered — for analytics
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [modal, setModal] = useState(null)   // null=closed, false=new, object=edit
+  const [showAnalytics, setShowAnalytics] = useState(false)
   const [statusFilter, setStatusFilter] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
   const [monthFilter, setMonthFilter] = useState(String(CURRENT_MONTH))
@@ -437,8 +440,12 @@ export default function OrdersPage() {
       if (statusFilter) params.set('status', statusFilter)
       if (categoryFilter) params.set('category', categoryFilter)
       const qs = params.toString()
-      const data = await apiGet(`/api/orders${qs ? '?' + qs : ''}`)
+      const [data, all] = await Promise.all([
+        apiGet(`/api/orders${qs ? '?' + qs : ''}`),
+        apiGet('/api/orders'),
+      ])
       setOrders(sortOrders(data))
+      setAllOrders(all)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -508,18 +515,37 @@ export default function OrdersPage() {
             {pendingCount === 0 && approvedCount === 0 && 'Track supply and retail requests'}
           </p>
         </div>
-        <button
-          onClick={() => setModal(false)}
-          className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors shadow-sm"
-        >
-          <Plus size={16} /> Request Item
-        </button>
+        <div className="flex items-center gap-2">
+          {isOwnerOrManager && (
+            <button
+              onClick={() => setShowAnalytics(v => !v)}
+              className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border transition-colors ${
+                showAnalytics
+                  ? 'bg-gray-800 text-white border-gray-800'
+                  : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400'
+              }`}
+            >
+              <BarChart2 size={15} /> Analytics
+            </button>
+          )}
+          <button
+            onClick={() => setModal(false)}
+            className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors shadow-sm"
+          >
+            <Plus size={16} /> Request Item
+          </button>
+        </div>
       </div>
 
       {error && (
         <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3">
           {error}
         </div>
+      )}
+
+      {/* Analytics panel — owner/manager only */}
+      {isOwnerOrManager && showAnalytics && allOrders.length > 0 && (
+        <OrdersAnalytics orders={allOrders} />
       )}
 
       {/* Filters */}
