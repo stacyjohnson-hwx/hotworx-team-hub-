@@ -56,7 +56,7 @@ async function buildUserMap(db) {
 router.get('/', authenticate, async (req, res) => {
   const db = supabase()
   const role = req.user.app_metadata?.role
-  const { status, category } = req.query
+  const { status, category, vendor } = req.query
 
   let query = db
     .from('orders')
@@ -65,6 +65,7 @@ router.get('/', authenticate, async (req, res) => {
 
   if (status) query = query.eq('status', status)
   if (category) query = query.eq('category', category)
+  if (vendor) query = query.eq('vendor', vendor)
 
   // TSA can only see pending orders + their own
   if (role === 'tsa') {

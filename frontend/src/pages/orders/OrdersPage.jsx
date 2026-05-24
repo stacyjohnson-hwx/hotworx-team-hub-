@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useRole } from '@/hooks/useRole'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
 import {
@@ -431,8 +431,10 @@ export default function OrdersPage() {
   const [showAnalytics, setShowAnalytics] = useState(false)
   const [statusFilter, setStatusFilter] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
+  const [vendorFilter, setVendorFilter] = useState('')
   const [monthFilter, setMonthFilter] = useState(String(CURRENT_MONTH))
   const [yearFilter, setYearFilter] = useState(String(CURRENT_YEAR))
+  const listRef = useRef(null)
 
   const load = useCallback(async () => {
     try {
@@ -474,12 +476,34 @@ export default function OrdersPage() {
     setOrders(prev => prev.filter(o => o.id !== id))
   }
 
+  // Drill-down from analytics: apply filters and scroll to list
+  const handleDrillDown = useCallback((filters) => {
+    if (filters.category !== undefined) setCategoryFilter(filters.category)
+    if (filters.vendor    !== undefined) setVendorFilter(filters.vendor)
+    if (filters.monthFilter !== undefined) setMonthFilter(filters.monthFilter)
+    if (filters.yearFilter  !== undefined) setYearFilter(filters.yearFilter)
+    if (filters.status    !== undefined) setStatusFilter(filters.status)
+    // Show all statuses (including received) when drilling in
+    setStatusFilter(prev => filters.status !== undefined ? filters.status : '')
+    setTimeout(() => listRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80)
+  }, [])
+
+  // Distinct vendor list from allOrders (sorted by usage)
+  const vendorOptions = useMemo(() => {
+    const map = {}
+    for (const o of allOrders) {
+      if (o.vendor?.trim()) map[o.vendor.trim()] = (map[o.vendor.trim()] || 0) + 1
+    }
+    return Object.entries(map).sort((a, b) => b[1] - a[1]).map(([v]) => v)
+  }, [allOrders])
+
   const visibleOrders = orders.filter(o => {
     if (statusFilter && statusFilter !== 'active' && o.status !== statusFilter) return false
     if (statusFilter === 'active' && (o.status === 'received' || o.status === 'cancelled')) return false
-    // Month/year filter applied to created_at
+    if (vendorFilter && o.vendor !== vendorFilter) return false
+    // Month/year filter applied to ordered_at or created_at
     if (monthFilter || yearFilter) {
-      const d = new Date(o.created_at || o.updated_at)
+      const d = new Date(o.ordered_at || o.created_at || o.updated_at)
       if (yearFilter && String(d.getFullYear()) !== yearFilter) return false
       if (monthFilter && String(d.getMonth() + 1) !== monthFilter) return false
     }
@@ -545,7 +569,7 @@ export default function OrdersPage() {
 
       {/* Analytics panel — owner/manager only */}
       {isOwnerOrManager && showAnalytics && allOrders.length > 0 && (
-        <OrdersAnalytics orders={allOrders} />
+        <OrdersAnalytics orders={allOrders} onDrillDown={handleDrillDown} />
       )}
 
       {/* Filters */}
@@ -588,9 +612,20 @@ export default function OrdersPage() {
           <option value="">All categories</option>
           {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
         </select>
-        {(monthFilter !== String(CURRENT_MONTH) || yearFilter !== String(CURRENT_YEAR) || statusFilter || categoryFilter) && (
+        {/* Vendor */}
+        {vendorOptions.length > 0 && (
+          <select
+            className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-700 bg-white focus:outline-none focus:border-red-500"
+            value={vendorFilter}
+            onChange={e => setVendorFilter(e.target.value)}
+          >
+            <option value="">All vendors</option>
+            {vendorOptions.map(v => <option key={v} value={v}>{v}</option>)}
+          </select>
+        )}
+        {(monthFilter !== String(CURRENT_MONTH) || yearFilter !== String(CURRENT_YEAR) || statusFilter || categoryFilter || vendorFilter) && (
           <button
-            onClick={() => { setMonthFilter(String(CURRENT_MONTH)); setYearFilter(String(CURRENT_YEAR)); setStatusFilter(''); setCategoryFilter('') }}
+            onClick={() => { setMonthFilter(String(CURRENT_MONTH)); setYearFilter(String(CURRENT_YEAR)); setStatusFilter(''); setCategoryFilter(''); setVendorFilter('') }}
             className="text-xs text-red-600 hover:text-red-700 font-medium px-2 py-1.5 rounded hover:bg-red-50 transition-colors"
           >
             Reset
@@ -599,6 +634,7 @@ export default function OrdersPage() {
       </div>
 
       {/* Orders list */}
+      <div ref={listRef} />
       {visibleOrders.length === 0 ? (
         <div className="text-center py-20 text-gray-400">
           <Package size={40} className="mx-auto mb-3 opacity-40" />
