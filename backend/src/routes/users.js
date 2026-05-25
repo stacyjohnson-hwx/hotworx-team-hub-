@@ -236,14 +236,14 @@ router.post('/:id/reset-password', authenticate, requireRole('owner', 'manager')
     if (userErr || !user) return res.status(404).json({ error: 'User not found' })
 
     const redirectTo = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password`
-    const { error } = await sb.auth.admin.generateLink({
+    const { data: linkData, error } = await sb.auth.admin.generateLink({
       type: 'recovery',
       email: user.email,
       options: { redirectTo },
     })
     if (error) return res.status(400).json({ error: error.message })
 
-    res.json({ sent: true, email: user.email })
+    res.json({ sent: true, email: user.email, reset_link: linkData?.properties?.action_link || null })
   } catch (err) {
     console.error('[reset-password]', err.message)
     res.status(500).json({ error: err.message })

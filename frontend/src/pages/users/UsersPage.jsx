@@ -188,17 +188,25 @@ function UserModal({ user, currentRole, onSave, onClose }) {
 
 // ─── Reset Password Modal ──────────────────────────────────────────────────────
 function ResetPasswordModal({ user, onClose }) {
-  const [loading, setLoading] = useState(false)
-  const [sent, setSent]       = useState(false)
-  const [error, setError]     = useState('')
+  const [loading, setLoading]   = useState(false)
+  const [resetLink, setResetLink] = useState(null)
+  const [copied, setCopied]     = useState(false)
+  const [error, setError]       = useState('')
 
   const handleReset = async () => {
     setLoading(true); setError('')
     try {
-      await apiPost(`/api/users/${user.id}/reset-password`, {})
-      setSent(true)
+      const res = await apiPost(`/api/users/${user.id}/reset-password`, {})
+      setResetLink(res.reset_link || null)
     } catch (err) { setError(err.message) }
     finally { setLoading(false) }
+  }
+
+  const handleCopy = () => {
+    if (!resetLink) return
+    navigator.clipboard.writeText(resetLink)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
   }
 
   return (
@@ -209,19 +217,33 @@ function ResetPasswordModal({ user, onClose }) {
           <button onClick={onClose} className="text-gray-300 hover:text-white"><X size={18} /></button>
         </div>
         <div className="px-5 py-4 space-y-3">
-          {sent ? (
-            <div className="flex items-center gap-3 bg-teal-50 border border-teal-200 rounded-lg px-4 py-3">
-              <Check size={18} className="text-teal-600 flex-shrink-0" />
-              <p className="text-sm text-teal-800">Password reset email sent to <strong>{user.email}</strong>. The link expires in 1 hour.</p>
+          {resetLink ? (
+            <div className="space-y-3">
+              <div className="flex items-start gap-3 bg-teal-50 border border-teal-200 rounded-lg px-4 py-3">
+                <Check size={18} className="text-teal-600 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-teal-800">Link generated for <strong>{user.name}</strong>. Copy it and send directly — no email needed. <span className="font-semibold">Expires in 1 hour.</span></p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-gray-500 mb-1">Reset Link</p>
+                <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5">
+                  <span className="flex-1 text-xs text-gray-500 truncate">{resetLink}</span>
+                  <button onClick={handleCopy}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold rounded-lg flex-shrink-0 transition-colors">
+                    {copied ? <Check size={12} /> : <Copy size={12} />}
+                    {copied ? 'Copied!' : 'Copy'}
+                  </button>
+                </div>
+                <p className="text-[11px] text-gray-400 mt-1.5">Text or message this link to {user.name}. It works once and expires in 1 hour.</p>
+              </div>
             </div>
           ) : (
             <>
-              <p className="text-sm text-gray-700">Send a password reset email to <strong>{user.name}</strong> at <span className="text-gray-500">{user.email}</span>.</p>
+              <p className="text-sm text-gray-700">Generate a password reset link for <strong>{user.name}</strong>. You can copy it and send it to them directly.</p>
               {error && <div className="bg-red-50 border border-red-300 text-red-700 text-sm rounded-lg px-3 py-2">{error}</div>}
               <button onClick={handleReset} disabled={loading}
                 className="flex items-center gap-2 px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-bold rounded-lg disabled:opacity-50">
                 <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-                {loading ? 'Sending…' : 'Send Reset Email'}
+                {loading ? 'Generating…' : 'Generate Reset Link'}
               </button>
             </>
           )}
