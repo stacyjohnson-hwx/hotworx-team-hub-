@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Target, BookOpen, Map, Trophy, ChevronDown, Flame, Zap, Phone } from 'lucide-react'
 import { EMPLOYEES, getRank } from '../data/mockData'
+import { useAuth } from '@/contexts/AuthContext'
 import MissionsTab    from './MissionsTab'
 import PlaysTab       from './PlaysTab'
 import MapTab         from './MapTab'
@@ -8,13 +9,25 @@ import LeaderboardTab from './LeaderboardTab'
 import OutreachTab    from '../OutreachTab'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const TABS = [
-  { id: 'missions',     label: 'Missions',    icon: Target,    shortLabel: 'Missions'    },
-  { id: 'plays',        label: 'Plays',       icon: BookOpen,  shortLabel: 'Plays'       },
-  { id: 'outreach',     label: 'Outreach',    icon: Phone,     shortLabel: 'Outreach'    },
-  { id: 'map',          label: 'Map',         icon: Map,       shortLabel: 'Map'         },
-  { id: 'leaderboard',  label: 'Leaderboard', icon: Trophy,    shortLabel: 'Board'       },
+const TSA_TABS = [
+  { id: 'missions',  label: 'Missions', icon: Target,   shortLabel: 'Missions' },
+  { id: 'plays',     label: 'Plays',    icon: BookOpen, shortLabel: 'Plays'    },
+  { id: 'outreach',  label: 'Outreach', icon: Phone,    shortLabel: 'Outreach' },
 ]
+
+const ALL_TABS = [
+  ...TSA_TABS,
+  { id: 'map',         label: 'Map',         icon: Map,    shortLabel: 'Map'   },
+  { id: 'leaderboard', label: 'Leaderboard', icon: Trophy, shortLabel: 'Board' },
+]
+
+// Derive an employee ID from the logged-in user's first name
+function getEmployeeIdFromProfile(profile) {
+  if (!profile?.name) return null
+  const firstName = profile.name.trim().split(' ')[0].toLowerCase()
+  const match = EMPLOYEES.find(e => e.id === firstName || e.name.toLowerCase() === firstName)
+  return match?.id || null
+}
 
 const STORAGE_KEY   = 'leadgenhq_state'
 const DATA_VERSION  = 3   // bump to wipe all stale localStorage points/missions
@@ -57,10 +70,23 @@ function saveState(patch) {
 
 // ─── HQ Shell ─────────────────────────────────────────────────────────────────
 export default function LeadGenHQ() {
+  const { role, profile } = useAuth()
+  const isTsa = role === 'tsa'
+
   const saved = loadState()
 
-  const [activeTab,       setActiveTab]       = useState(saved.activeTab || 'missions')
-  const [activeEmployeeId, setActiveEmployeeId] = useState(saved.activeEmployeeId || 'chrissy')
+  // TSAs are locked to their own employee profile
+  const tsaEmployeeId = isTsa ? (getEmployeeIdFromProfile(profile) || 'chrissy') : null
+  const tabs = isTsa ? TSA_TABS : ALL_TABS
+
+  const defaultTab = saved.activeTab && tabs.find(t => t.id === saved.activeTab)
+    ? saved.activeTab
+    : 'missions'
+
+  const [activeTab,       setActiveTab]       = useState(defaultTab)
+  const [activeEmployeeId, setActiveEmployeeId] = useState(
+    isTsa ? tsaEmployeeId : (saved.activeEmployeeId || 'chrissy')
+  )
   const [employees,       setEmployees]       = useState(() => {
     // Merge localStorage point/streak overrides onto base mock data
     const overrides = saved.employeeOverrides || {}
@@ -125,13 +151,9 @@ export default function LeadGenHQ() {
             <p className="text-white font-bold text-lg leading-tight">HOTWORX Pewaukee</p>
           </div>
 
-          {/* Employee switcher */}
-          <div className="relative">
-            <button
-              onClick={() => setShowEmployeePicker(p => !p)}
-              className="flex items-center gap-2 bg-white/10 hover:bg-white/20 transition-colors rounded-xl px-3 py-2"
-            >
-              {/* Avatar circle */}
+          {/* Employee switcher — managers/owners only */}
+          {isTsa ? (
+            <div className="flex items-center gap-2 bg-white/10 rounded-xl px-3 py-2">
               <div className="w-7 h-7 rounded-full bg-[#E8611A] flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
                 {employee.name[0]}
               </div>
@@ -139,36 +161,50 @@ export default function LeadGenHQ() {
                 <p className="text-white text-xs font-semibold leading-tight">{employee.name}</p>
                 <p className="text-white/50 text-[10px] leading-tight capitalize">{employee.role}</p>
               </div>
-              <ChevronDown size={12} className={`text-white/60 transition-transform ${showEmployeePicker ? 'rotate-180' : ''}`} />
-            </button>
+            </div>
+          ) : (
+            <div className="relative">
+              <button
+                onClick={() => setShowEmployeePicker(p => !p)}
+                className="flex items-center gap-2 bg-white/10 hover:bg-white/20 transition-colors rounded-xl px-3 py-2"
+              >
+                <div className="w-7 h-7 rounded-full bg-[#E8611A] flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                  {employee.name[0]}
+                </div>
+                <div className="text-left">
+                  <p className="text-white text-xs font-semibold leading-tight">{employee.name}</p>
+                  <p className="text-white/50 text-[10px] leading-tight capitalize">{employee.role}</p>
+                </div>
+                <ChevronDown size={12} className={`text-white/60 transition-transform ${showEmployeePicker ? 'rotate-180' : ''}`} />
+              </button>
 
-            {/* Dropdown */}
-            {showEmployeePicker && (
-              <div className="absolute right-0 top-full mt-1.5 z-50 bg-white rounded-xl shadow-xl border border-gray-100 w-48 overflow-hidden">
-                {employees.map(emp => {
-                  const r = getRank(emp.points)
-                  return (
-                    <button
-                      key={emp.id}
-                      onClick={() => { setActiveEmployeeId(emp.id); setShowEmployeePicker(false) }}
-                      className={`w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-gray-50 transition-colors text-left ${emp.id === activeEmployeeId ? 'bg-orange-50' : ''}`}
-                    >
-                      <div className="w-7 h-7 rounded-full bg-[#E8611A] flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-                        {emp.name[0]}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-gray-900 text-sm font-medium leading-tight truncate">{emp.name}</p>
-                        <p className={`text-[10px] font-medium leading-tight ${r.color}`}>{r.name}</p>
-                      </div>
-                      {emp.id === activeEmployeeId && (
-                        <div className="w-1.5 h-1.5 rounded-full bg-[#E8611A] flex-shrink-0" />
-                      )}
-                    </button>
-                  )
-                })}
-              </div>
-            )}
-          </div>
+              {showEmployeePicker && (
+                <div className="absolute right-0 top-full mt-1.5 z-50 bg-white rounded-xl shadow-xl border border-gray-100 w-48 overflow-hidden">
+                  {employees.map(emp => {
+                    const r = getRank(emp.points)
+                    return (
+                      <button
+                        key={emp.id}
+                        onClick={() => { setActiveEmployeeId(emp.id); setShowEmployeePicker(false) }}
+                        className={`w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-gray-50 transition-colors text-left ${emp.id === activeEmployeeId ? 'bg-orange-50' : ''}`}
+                      >
+                        <div className="w-7 h-7 rounded-full bg-[#E8611A] flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                          {emp.name[0]}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-gray-900 text-sm font-medium leading-tight truncate">{emp.name}</p>
+                          <p className={`text-[10px] font-medium leading-tight ${r.color}`}>{r.name}</p>
+                        </div>
+                        {emp.id === activeEmployeeId && (
+                          <div className="w-1.5 h-1.5 rounded-full bg-[#E8611A] flex-shrink-0" />
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* ── Stats bar ─────────────────────────────────────────────────── */}
@@ -194,7 +230,7 @@ export default function LeadGenHQ() {
 
         {/* ── Tab bar ───────────────────────────────────────────────────── */}
         <div className="flex gap-0 border-b border-white/10">
-          {TABS.map(tab => {
+          {tabs.map(tab => {
             const Icon    = tab.icon
             const isActive = activeTab === tab.id
             return (
