@@ -35,7 +35,18 @@
       "Bash(lsof -ti:5173,5174,3001)",
       "Bash(node -e \"const {Resend} = require\\('resend'\\); console.log\\('resend ok'\\)\")",
       "Bash(curl -s --max-time 5 http://localhost:5173)",
-      "Bash(cp /Users/stacyjohnson/Desktop/hotworx-team-hub/frontend/.env /Users/stacyjohnson/Desktop/frontend-env.txt)"
+      "Bash(cp /Users/stacyjohnson/Desktop/hotworx-team-hub/frontend/.env /Users/stacyjohnson/Desktop/frontend-env.txt)",
+      "WebFetch(domain:hotworx-team.vercel.app)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "WebFetch(domain:hotworx-team-hub-production.up.railway.app)",
+      "WebSearch",
+      "WebFetch(domain:www.neighborhoods.com)",
+      "WebFetch(domain:wisconsin.hometownlocator.com)",
+      "WebFetch(domain:www.homesbymarco.com)",
+      "mcp__supabase__get_project_url",
+      "Bash(curl -s \"https://cdn.prod.website-files.com/67040add09cdc82708e09899/671aa6b1fab06fe17619c32b_HW.svg\" -o /Users/stacyjohnson/Desktop/hotworx-team-hub/frontend/public/hotworx-logo.svg)"
     ]
   }
 }

@@ -1,15 +1,17 @@
 import { useState, useEffect } from 'react'
-import { Target, BookOpen, Map, Trophy, ChevronDown, Flame, Zap } from 'lucide-react'
+import { Target, BookOpen, Map, Trophy, ChevronDown, Flame, Zap, Phone } from 'lucide-react'
 import { EMPLOYEES, getRank } from '../data/mockData'
 import MissionsTab    from './MissionsTab'
 import PlaysTab       from './PlaysTab'
 import MapTab         from './MapTab'
 import LeaderboardTab from './LeaderboardTab'
+import OutreachTab    from '../OutreachTab'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const TABS = [
   { id: 'missions',     label: 'Missions',    icon: Target,    shortLabel: 'Missions'    },
   { id: 'plays',        label: 'Plays',       icon: BookOpen,  shortLabel: 'Plays'       },
+  { id: 'outreach',     label: 'Outreach',    icon: Phone,     shortLabel: 'Outreach'    },
   { id: 'map',          label: 'Map',         icon: Map,       shortLabel: 'Map'         },
   { id: 'leaderboard',  label: 'Leaderboard', icon: Trophy,    shortLabel: 'Board'       },
 ]
@@ -197,6 +199,7 @@ export default function LeadGenHQ() {
       <div className="flex-1 overflow-y-auto" onClick={() => setShowEmployeePicker(false)}>
         {activeTab === 'missions'    && <MissionsTab    employee={employee} onPointsEarned={handlePointsEarned} onStreakUpdate={handleStreakUpdate} />}
         {activeTab === 'plays'       && <PlaysTab       employee={employee} />}
+        {activeTab === 'outreach'    && <OutreachTab />}
         {activeTab === 'map'         && <MapTab         employee={employee} />}
         {activeTab === 'leaderboard' && <LeaderboardTab employee={employee} employees={employees} />}
       </div>

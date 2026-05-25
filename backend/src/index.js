@@ -42,6 +42,7 @@ app.use('/api/training',  require('./routes/training'))
 
 app.use('/api/todo',      require('./routes/todo'))
 app.use('/api/coaching',  require('./routes/coaching'))
+app.use('/api/outreach',  require('./routes/outreach'))
 
 const { startEodCron } = require('./jobs/eodEmailCron')
 
