@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { CheckCircle, Circle, RefreshCw, ChevronDown, Clock, History, X } from 'lucide-react'
 import { apiGet, apiPost, apiDelete } from '@/hooks/useApi'
 import { useAuth } from '@/contexts/AuthContext'
@@ -138,9 +138,14 @@ function HistoryModal({ task, onClose }) {
 
 // ── Main TaskList ─────────────────────────────────────────────────────────────
 
+// Always use Central time so tasks reset at midnight CT, not midnight UTC
+function getTodayCT() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' })
+}
+
 export default function TaskList() {
   const { user } = useAuth()
-  const today = new Date().toISOString().slice(0, 10)
+  const [today, setToday] = useState(getTodayCT)
 
   const [tasks, setTasks] = useState([])
   const [loading, setLoading] = useState(true)
@@ -151,32 +156,43 @@ export default function TaskList() {
   const [filterFreq, setFilterFreq] = useState('all')
   const [filterType, setFilterType] = useState('all')
 
-  const load = useCallback(async () => {
-    setLoading(true)
+  const load = useCallback(async (showSpinner = false) => {
+    if (showSpinner) setLoading(true)
     setError(null)
     try {
-      const data = await apiGet(`/api/cleaning/today?date=${today}`)
+      const currentDate = getTodayCT()
+      // If date rolled over midnight CT, update the date state
+      setToday(prev => prev !== currentDate ? currentDate : prev)
+      const data = await apiGet(`/api/cleaning/today?date=${currentDate}`)
       setTasks(data.tasks)
     } catch (e) {
       setError(e.message)
     } finally {
-      setLoading(false)
+      if (showSpinner) setLoading(false)
     }
-  }, [today])
+  }, [])
 
-  useEffect(() => { load() }, [load])
+  // Initial load with spinner
+  useEffect(() => { load(true) }, [load])
+
+  // Poll every 30 seconds — picks up completions from other users without a manual refresh
+  useEffect(() => {
+    const interval = setInterval(() => load(false), 30_000)
+    return () => clearInterval(interval)
+  }, [load])
 
   async function toggle(task) {
     if (toggling.has(task.id)) return
     setToggling(prev => new Set(prev).add(task.id))
+    const currentDate = getTodayCT()
     try {
       if (task.completed) {
-        await apiDelete('/api/cleaning/complete', { task_id: task.id, date: today })
+        await apiDelete('/api/cleaning/complete', { task_id: task.id, date: currentDate })
         setTasks(prev => prev.map(t =>
           t.id === task.id ? { ...t, completed: false, completion: null } : t
         ))
       } else {
-        await apiPost('/api/cleaning/complete', { task_id: task.id, date: today })
+        await apiPost('/api/cleaning/complete', { task_id: task.id, date: currentDate })
         // After completing, update last_completion to today
         const nowStr = new Date().toISOString()
         setTasks(prev => prev.map(t =>
