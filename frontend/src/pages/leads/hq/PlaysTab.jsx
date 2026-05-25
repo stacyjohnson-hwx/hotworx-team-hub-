@@ -243,7 +243,7 @@ function ManagePlaysModal({ plays, onClose, onAdd, onEdit, onDelete, onToggleSta
         {/* Header */}
         <div className="bg-[#1A1A1A] px-5 py-4 flex items-center justify-between flex-shrink-0">
           <div>
-            <p className="text-[#E8611A] text-xs font-bold uppercase tracking-wider mb-0.5">Lead Gen HQ</p>
+            <p className="text-[#E8611A] text-xs font-bold uppercase tracking-wider mb-0.5">Growth HQ</p>
             <p className="text-white font-bold text-base">
               {mode === 'add' ? 'Add Play' : mode === 'edit' ? 'Edit Play' : 'Manage Plays'}
             </p>

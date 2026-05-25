@@ -97,7 +97,7 @@ export default function LeadGenHQ() {
           <div>
             <div className="flex items-center gap-2 mb-0.5">
               <Zap size={14} className="text-[#E8611A]" fill="#E8611A" />
-              <span className="text-[10px] font-bold tracking-widest text-[#E8611A] uppercase">Lead Gen HQ</span>
+              <span className="text-[10px] font-bold tracking-widest text-[#E8611A] uppercase">Growth HQ</span>
             </div>
             <p className="text-white font-bold text-lg leading-tight">HOTWORX Pewaukee</p>
           </div>

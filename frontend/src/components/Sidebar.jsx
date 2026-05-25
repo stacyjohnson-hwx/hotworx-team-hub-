@@ -29,7 +29,7 @@ const allNavItems = [
   { to: '/dashboard',      label: 'Dashboard',       icon: LayoutDashboard, roles: ['owner', 'manager', 'tsa'] },
   { to: '/schedule',       label: 'Schedule',         icon: Calendar,        roles: ['owner', 'manager', 'tsa'] },
   { to: '/goals',          label: 'Goals',            icon: Target,          roles: ['owner', 'manager', 'tsa'] },
-  { to: '/leads',          label: 'Lead Generation',  icon: TrendingUp,      roles: ['owner', 'manager', 'tsa'] },
+  { to: '/leads',          label: 'Growth',           icon: TrendingUp,      roles: ['owner', 'manager', 'tsa'] },
   { to: '/studio-trends',  label: 'Studio Trends',    icon: BarChart2,       roles: ['owner', 'manager'] },
   { to: '/events',         label: 'Events & Promos',  icon: Megaphone,       roles: ['owner', 'manager', 'tsa'] },
   { to: '/b2b',            label: 'B2B Outreach',     icon: Building2,       roles: ['owner', 'manager', 'tsa'] },
