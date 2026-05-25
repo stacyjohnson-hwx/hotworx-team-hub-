@@ -210,7 +210,7 @@ const INITIAL_FORM = {
   sweat_basic: '', sweat_elite: '', cancellations_count: '', cancellations_notes: '',
   retail_amount: '', sales_notes: '',
   watched_training_video: false, used_sales_gpt: false, role_played_script: false,
-  orders_needed: '', general_notes: '',
+  orders_needed: '', general_notes: '', support_notes: '',
 }
 
 export default function EodForm({ submittedShifts, onSubmitted }) {
@@ -375,6 +375,12 @@ export default function EodForm({ submittedShifts, onSubmitted }) {
               <label className="block text-xs font-medium text-gray-700 mb-1">General Notes <span className="text-gray-400 font-normal">(optional)</span></label>
               <textarea rows={3} value={form.general_notes} onChange={e => set('general_notes', e.target.value)}
                 placeholder="Anything the manager or owner should know…"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-600/40 focus:border-red-600 resize-none" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">How can we better support you in achieving your goals? <span className="text-gray-400 font-normal">(optional)</span></label>
+              <textarea rows={3} value={form.support_notes} onChange={e => set('support_notes', e.target.value)}
+                placeholder="Resources, coaching, tools, or anything else that would help…"
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-600/40 focus:border-red-600 resize-none" />
             </div>
           </Section>
