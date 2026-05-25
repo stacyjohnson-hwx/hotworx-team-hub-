@@ -52,10 +52,9 @@ async function buildUserMap(db) {
 }
 
 // ─── GET /api/orders ─────────────────────────────────────────────────────────
-// owner/manager: all orders. TSA: pending + own orders.
+// all roles can see all orders
 router.get('/', authenticate, async (req, res) => {
   const db = supabase()
-  const role = req.user.app_metadata?.role
   const { status, category, vendor } = req.query
 
   let query = db
@@ -66,11 +65,6 @@ router.get('/', authenticate, async (req, res) => {
   if (status) query = query.eq('status', status)
   if (category) query = query.eq('category', category)
   if (vendor) query = query.eq('vendor', vendor)
-
-  // TSA can only see pending orders + their own
-  if (role === 'tsa') {
-    query = query.or(`status.eq.pending,requested_by.eq.${req.user.id}`)
-  }
 
   const [ordersRes, userMap] = await Promise.all([query, buildUserMap(db)])
   if (ordersRes.error) return res.status(500).json({ error: ordersRes.error.message })
