@@ -17,17 +17,32 @@ const TABS = [
 ]
 
 const STORAGE_KEY   = 'leadgenhq_state'
-const DATA_VERSION  = 2   // bump this to wipe stale localStorage points
+const DATA_VERSION  = 3   // bump to wipe all stale localStorage points/missions
+
+// All Growth HQ keys that hold employee progress — wipe them on version change
+const ALL_HQ_KEYS = [
+  'leadgenhq_state',
+  'leadgenhq_missions',
+  'leadgenhq_custom_missions',
+  'leadgenhq_hidden_missions',
+  'leadgenhq_mission_overrides',
+  'leadgenhq_mission_order',
+  'leadgenhq_map_activities',
+  'leadgenhq_map_activities_version',
+  'leadgenhq_weekly_challenge',
+  'leadgenhq_ai_recs',
+  'leadgenhq_plays',
+]
 
 function loadState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return {}
     const parsed = JSON.parse(raw)
-    // If data version changed, discard employee overrides so zeroed mock data wins
+    // Version changed — wipe every Growth HQ key so no stale points survive
     if (parsed.dataVersion !== DATA_VERSION) {
-      const { employeeOverrides: _drop, dataVersion: _dv, ...rest } = parsed
-      return rest
+      ALL_HQ_KEYS.forEach(k => localStorage.removeItem(k))
+      return {}
     }
     return parsed
   } catch { return {} }
