@@ -7,7 +7,7 @@ import {
   Gift, MapPin, Clock, ChevronDown, ChevronUp,
   AlertCircle, Loader2, Building2, Phone, Mail, Search, Star,
 } from 'lucide-react'
-import RatingModal, { StarDisplay } from '@/components/RatingModal' from 'lucide-react'
+import RatingModal, { StarDisplay } from '@/components/RatingModal'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
