@@ -1,8 +1,10 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { ChevronDown, ChevronUp, Zap, Clock, CheckCircle2, Circle, Tag, X, Plus,
-         Pencil, Trash2, Settings, ToggleLeft, ToggleRight } from 'lucide-react'
+         Pencil, Trash2, Settings, ToggleLeft, ToggleRight, Star } from 'lucide-react'
 import { GROWTH_PLAYS } from '../data/mockData'
 import { useAuth } from '@/contexts/AuthContext'
+import RatingModal, { StarDisplay } from '@/components/RatingModal'
+import { apiGet } from '@/hooks/useApi'
 
 // ─── localStorage helpers ─────────────────────────────────────────────────────
 const PLAYS_KEY = 'leadgenhq_plays'
@@ -315,7 +317,7 @@ function ManagePlaysModal({ plays, onClose, onAdd, onEdit, onDelete, onToggleSta
 }
 
 // ─── Play Detail Modal ────────────────────────────────────────────────────────
-function PlayDetailModal({ play, onClose }) {
+function PlayDetailModal({ play, onClose, rating, onRate }) {
   const [stepsDone, setStepsDone] = useState([])
 
   function toggleStep(i) {
@@ -457,10 +459,22 @@ function PlayDetailModal({ play, onClose }) {
           )}
         </div>
 
-        <div className="px-5 py-3 border-t border-gray-100 flex-shrink-0">
+        <div className="px-5 py-3 border-t border-gray-100 flex-shrink-0 flex gap-2">
+          <button
+            onClick={() => onRate(play)}
+            className={`flex items-center justify-center gap-1.5 flex-1 py-2.5 rounded-xl border text-sm font-semibold transition-colors ${
+              rating
+                ? 'border-amber-300 text-amber-600 hover:bg-amber-50'
+                : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            <Star size={14} fill={rating ? '#fbbf24' : 'none'} strokeWidth={1.5} className={rating ? 'text-amber-400' : 'text-gray-400'} />
+            {rating ? 'Update Rating' : 'Rate This Play'}
+            {rating && <StarDisplay rating={rating.rating} size={12} />}
+          </button>
           <button
             onClick={onClose}
-            className="w-full py-2.5 rounded-xl bg-[#1A1A1A] text-white text-sm font-semibold hover:bg-gray-800 transition-colors"
+            className="flex-1 py-2.5 rounded-xl bg-[#1A1A1A] text-white text-sm font-semibold hover:bg-gray-800 transition-colors"
           >
             Close
           </button>
@@ -539,6 +553,18 @@ export default function PlaysTab() {
   const [category,    setCategory]    = useState('All')
   const [detailPlay,  setDetailPlay]  = useState(null)
   const [showManage,  setShowManage]  = useState(false)
+  const [ratings,     setRatings]     = useState({})   // keyed by play.id
+  const [ratingPlay,  setRatingPlay]  = useState(null) // play being rated
+
+  useEffect(() => {
+    apiGet('/api/feedback?item_type=play')
+      .then(data => {
+        const map = {}
+        data.forEach(f => { map[f.item_id] = f })
+        setRatings(map)
+      })
+      .catch(() => {})
+  }, [])
 
   // Persist plays
   function updatePlays(next) { setPlays(next); savePlays(next) }
@@ -562,10 +588,29 @@ export default function PlaysTab() {
   const allActive        = plays.filter(p => p.status === 'Active')
   const allInactive      = plays.filter(p => p.status !== 'Active')
 
+  const now = new Date()
+
   return (
     <div className="pb-4">
       {detailPlay && (
-        <PlayDetailModal play={detailPlay} onClose={() => setDetailPlay(null)} />
+        <PlayDetailModal
+          play={detailPlay}
+          onClose={() => setDetailPlay(null)}
+          rating={ratings[detailPlay.id] || null}
+          onRate={p => { setRatingPlay(p); setDetailPlay(null) }}
+        />
+      )}
+      {ratingPlay && (
+        <RatingModal
+          itemType="play"
+          itemId={ratingPlay.id}
+          itemTitle={ratingPlay.name}
+          month={now.getMonth() + 1}
+          year={now.getFullYear()}
+          existing={ratings[ratingPlay.id] || null}
+          onSaved={result => setRatings(prev => ({ ...prev, [ratingPlay.id]: result }))}
+          onClose={() => setRatingPlay(null)}
+        />
       )}
       {showManage && (
         <ManagePlaysModal

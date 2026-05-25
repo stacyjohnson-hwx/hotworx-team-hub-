@@ -3,6 +3,7 @@ import { CheckCircle2, Circle, Zap, Clock, RotateCcw, ChevronDown, ChevronUp,
          Flame, Star, Trophy, X, Plus, Pencil, Trash2, Settings, Eye, EyeOff, GripVertical } from 'lucide-react'
 import { STANDING_MISSIONS, GROWTH_PLAYS, WEEKLY_CHALLENGE, AI_RECOMMENDATIONS, getRank, RANKS } from '../data/mockData'
 import { useAuth } from '@/contexts/AuthContext'
+import RatingModal from '@/components/RatingModal'
 
 // ─── localStorage helpers ─────────────────────────────────────────────────────
 const MISSIONS_KEY        = 'leadgenhq_missions'
@@ -508,8 +509,9 @@ function ManageMissionsModal({ customMissions, hiddenMissions, overrides, onClos
 // ─── Mission Card ─────────────────────────────────────────────────────────────
 function MissionCard({ mission, completions, onComplete, isPlayMission, canDrag,
                        onDragStart, onDragOver, onDrop, onDragEnd, isDragOver }) {
-  const [expanded,  setExpanded]  = useState(false)
-  const [showProof, setShowProof] = useState(false)
+  const [expanded,    setExpanded]    = useState(false)
+  const [showProof,   setShowProof]   = useState(false)
+  const [showRating,  setShowRating]  = useState(false)
 
   const todayStr       = new Date().toLocaleDateString('en-CA')
   const completedToday = completions?.some(c => c.date === todayStr) ?? false
@@ -517,11 +519,29 @@ function MissionCard({ mission, completions, onComplete, isPlayMission, canDrag,
   const expiryLabel = timeUntil(mission.expiresAt)
   const isExpired   = expiryLabel === 'Expired'
 
-  function handleConfirm(note) { setShowProof(false); onComplete(mission, note) }
+  function handleConfirm(note) {
+    setShowProof(false)
+    onComplete(mission, note)
+    setShowRating(true)
+  }
+
+  const now = new Date()
 
   return (
     <>
       {showProof && <ProofModal mission={mission} onConfirm={handleConfirm} onCancel={() => setShowProof(false)} />}
+      {showRating && (
+        <RatingModal
+          itemType="mission"
+          itemId={mission.id}
+          itemTitle={mission.title}
+          month={now.getMonth() + 1}
+          year={now.getFullYear()}
+          existing={null}
+          onSaved={() => {}}
+          onClose={() => setShowRating(false)}
+        />
+      )}
       <div
         draggable={canDrag}
         onDragStart={canDrag ? () => onDragStart(mission.id) : undefined}

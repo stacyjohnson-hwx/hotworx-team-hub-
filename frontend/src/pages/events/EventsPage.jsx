@@ -5,8 +5,9 @@ import { useMonth } from '@/contexts/MonthContext'
 import {
   Plus, X, Edit2, Trash2, Calendar, Tag, Repeat,
   Gift, MapPin, Clock, ChevronDown, ChevronUp,
-  AlertCircle, Loader2, Building2, Phone, Mail, Search,
+  AlertCircle, Loader2, Building2, Phone, Mail, Search, Star,
 } from 'lucide-react'
+import RatingModal, { StarDisplay } from '@/components/RatingModal' from 'lucide-react'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -123,7 +124,7 @@ const inputCls = 'w-full rounded-lg border border-gray-300 bg-white text-gray-90
 
 // ─── Events Tab ──────────────────────────────────────────────────────────────
 
-function EventCard({ event, canEdit, onEdit, onDelete }) {
+function EventCard({ event, canEdit, onEdit, onDelete, rating, onRate }) {
   const [expanded, setExpanded] = useState(false)
   const meta = eventTypeMeta(event.event_type)
   const past = isExpired(event.end_date || event.start_date)
@@ -175,6 +176,16 @@ function EventCard({ event, canEdit, onEdit, onDelete }) {
           </div>
 
           <div className="flex items-center gap-1 flex-shrink-0">
+            {past && (
+              <button
+                onClick={() => onRate(event)}
+                className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold transition-colors ${rating ? 'text-amber-600 hover:bg-amber-50' : 'text-gray-400 hover:text-amber-600 hover:bg-amber-50'}`}
+                title="Rate this event"
+              >
+                <Star className="w-3.5 h-3.5" fill={rating ? '#fbbf24' : 'none'} strokeWidth={1.5} />
+                {rating ? <StarDisplay rating={rating.rating} size={11} /> : <span className="hidden sm:inline">Rate</span>}
+              </button>
+            )}
             {canEdit && (
               <>
                 <button onClick={() => onEdit(event)} className="p-1.5 rounded-lg text-gray-400 hover:text-orange-500 hover:bg-orange-50 transition-colors">
@@ -402,12 +413,20 @@ function EventsTab({ month, year, canEdit }) {
   const [filter, setFilter] = useState('upcoming')
   const [filterMonth, setFilterMonth] = useState('all')
   const [filterYear, setFilterYear] = useState('all')
+  const [ratings, setRatings] = useState({})          // keyed by event.id → feedback row
+  const [ratingTarget, setRatingTarget] = useState(null)  // event being rated
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const data = await apiGet(`/api/events?month=${month}&year=${year}`)
+      const [data, feedbackData] = await Promise.all([
+        apiGet(`/api/events?month=${month}&year=${year}`),
+        apiGet('/api/feedback?item_type=event').catch(() => []),
+      ])
       setEvents(data)
+      const map = {}
+      feedbackData.forEach(f => { map[f.item_id] = f })
+      setRatings(map)
     } catch (err) {
       console.error(err)
     } finally {
@@ -512,7 +531,10 @@ function EventsTab({ month, year, canEdit }) {
           {filtered.map(e => (
             <EventCard key={e.id} event={e} canEdit={canEdit}
               onEdit={ev => { setEditing(ev); setShowForm(true) }}
-              onDelete={handleDelete} />
+              onDelete={handleDelete}
+              rating={ratings[e.id] || null}
+              onRate={ev => setRatingTarget(ev)}
+            />
           ))}
         </div>
       )}
@@ -526,13 +548,26 @@ function EventsTab({ month, year, canEdit }) {
           onClose={() => { setShowForm(false); setEditing(null) }}
         />
       )}
+
+      {ratingTarget && (
+        <RatingModal
+          itemType="event"
+          itemId={ratingTarget.id}
+          itemTitle={ratingTarget.title}
+          month={ratingTarget.start_date ? new Date(ratingTarget.start_date + 'T00:00:00').getMonth() + 1 : month}
+          year={ratingTarget.start_date ? new Date(ratingTarget.start_date + 'T00:00:00').getFullYear() : year}
+          existing={ratings[ratingTarget.id] || null}
+          onSaved={result => setRatings(prev => ({ ...prev, [ratingTarget.id]: result }))}
+          onClose={() => setRatingTarget(null)}
+        />
+      )}
     </div>
   )
 }
 
 // ─── Promotions Tab ───────────────────────────────────────────────────────────
 
-function PromoCard({ promo, canEdit, onEdit, onDelete }) {
+function PromoCard({ promo, canEdit, onEdit, onDelete, rating, onRate }) {
   function formatDiscount() {
     if (!promo.discount_value && promo.discount_unit !== 'free') return null
     if (promo.discount_unit === 'free') return 'Free'
@@ -591,16 +626,28 @@ function PromoCard({ promo, canEdit, onEdit, onDelete }) {
             )}
           </div>
 
-          {canEdit && (
-            <div className="flex items-center gap-1 flex-shrink-0">
-              <button onClick={() => onEdit(promo)} className="p-1.5 rounded-lg text-gray-400 hover:text-orange-500 hover:bg-orange-50 transition-colors">
-                <Edit2 className="w-4 h-4" />
+          <div className="flex items-center gap-1 flex-shrink-0">
+            {expired && (
+              <button
+                onClick={() => onRate(promo)}
+                className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold transition-colors ${rating ? 'text-amber-600 hover:bg-amber-50' : 'text-gray-400 hover:text-amber-600 hover:bg-amber-50'}`}
+                title="Rate this promotion"
+              >
+                <Star className="w-3.5 h-3.5" fill={rating ? '#fbbf24' : 'none'} strokeWidth={1.5} />
+                {rating ? <StarDisplay rating={rating.rating} size={11} /> : <span className="hidden sm:inline">Rate</span>}
               </button>
-              <button onClick={() => onDelete(promo.id)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors">
-                <Trash2 className="w-4 h-4" />
-              </button>
-            </div>
-          )}
+            )}
+            {canEdit && (
+              <>
+                <button onClick={() => onEdit(promo)} className="p-1.5 rounded-lg text-gray-400 hover:text-orange-500 hover:bg-orange-50 transition-colors">
+                  <Edit2 className="w-4 h-4" />
+                </button>
+                <button onClick={() => onDelete(promo.id)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors">
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -727,12 +774,20 @@ function PromosTab({ month, year, canEdit }) {
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState(null)
   const [filter, setFilter] = useState('active')
+  const [ratings, setRatings] = useState({})
+  const [ratingTarget, setRatingTarget] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const data = await apiGet(`/api/events/promotions?month=${month}&year=${year}`)
+      const [data, feedbackData] = await Promise.all([
+        apiGet(`/api/events/promotions?month=${month}&year=${year}`),
+        apiGet('/api/feedback?item_type=promo').catch(() => []),
+      ])
       setPromos(data)
+      const map = {}
+      feedbackData.forEach(f => { map[f.item_id] = f })
+      setRatings(map)
     } catch (err) {
       console.error(err)
     } finally {
@@ -809,7 +864,10 @@ function PromosTab({ month, year, canEdit }) {
           {filtered.map(p => (
             <PromoCard key={p.id} promo={p} canEdit={canEdit}
               onEdit={pr => { setEditing(pr); setShowForm(true) }}
-              onDelete={handleDelete} />
+              onDelete={handleDelete}
+              rating={ratings[p.id] || null}
+              onRate={pr => setRatingTarget(pr)}
+            />
           ))}
         </div>
       )}
@@ -821,6 +879,19 @@ function PromosTab({ month, year, canEdit }) {
           year={year}
           onSave={handleSave}
           onClose={() => { setShowForm(false); setEditing(null) }}
+        />
+      )}
+
+      {ratingTarget && (
+        <RatingModal
+          itemType="promo"
+          itemId={ratingTarget.id}
+          itemTitle={ratingTarget.title}
+          month={ratingTarget.start_date ? new Date(ratingTarget.start_date + 'T00:00:00').getMonth() + 1 : month}
+          year={ratingTarget.start_date ? new Date(ratingTarget.start_date + 'T00:00:00').getFullYear() : year}
+          existing={ratings[ratingTarget.id] || null}
+          onSaved={result => setRatings(prev => ({ ...prev, [ratingTarget.id]: result }))}
+          onClose={() => setRatingTarget(null)}
         />
       )}
     </div>
