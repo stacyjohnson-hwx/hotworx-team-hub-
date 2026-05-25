@@ -991,7 +991,7 @@ function LocationRow({ item, type, activities, onFly, onDelete, onShowHistory, o
 
 // ─── Main MapTab ──────────────────────────────────────────────────────────────
 export default function MapTab() {
-  const { isOwnerOrManager } = useRole()
+  const isOwnerOrManager = true // all roles can add/edit map activities and notes
   const [activities,       setActivities]       = useState(() => loadActivities())
   const [neighborhoods,    setNeighborhoods]    = useState(() => loadNeighborhoods())
   const [b2bContacts,      setB2bContacts]      = useState([])

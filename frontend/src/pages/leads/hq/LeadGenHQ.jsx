@@ -13,6 +13,7 @@ const TSA_TABS = [
   { id: 'missions',  label: 'Missions', icon: Target,   shortLabel: 'Missions' },
   { id: 'plays',     label: 'Plays',    icon: BookOpen, shortLabel: 'Plays'    },
   { id: 'outreach',  label: 'Outreach', icon: Phone,    shortLabel: 'Outreach' },
+  { id: 'map',       label: 'Map',      icon: Map,      shortLabel: 'Map'      },
 ]
 
 const ALL_TABS = [
