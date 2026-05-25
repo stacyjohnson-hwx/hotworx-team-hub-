@@ -209,9 +209,6 @@ const INITIAL_FORM = {
   drawer_start: '', cash_collected: '', credit_collected: '', drawer_end: '',
   sweat_basic: '', sweat_elite: '', cancellations_count: '', cancellations_notes: '',
   retail_amount: '', sales_notes: '',
-  phone_calls: '', sms_sent: '', red_appt_scheduled: '',
-  notes_added_missed: false, followed_up_missed: false, survey_sent_red_appts: false,
-  leads_notes: '',
   watched_training_video: false, used_sales_gpt: false, role_played_script: false,
   orders_needed: '', general_notes: '',
 }
@@ -330,26 +327,6 @@ export default function EodForm({ submittedShifts, onSubmitted }) {
                 {hasVarianceAlert ? ' — over threshold, double-check your count.' : ' ✓'}
               </div>
             )}
-          </Section>
-
-          {/* Lead Generation */}
-          <Section title="Lead Generation">
-            <div className="grid grid-cols-3 gap-3">
-              <NumberInput label="Phone Calls" value={form.phone_calls} onChange={v => set('phone_calls', v)} goal={50} />
-              <NumberInput label="SMS Sent" value={form.sms_sent} onChange={v => set('sms_sent', v)} goal={50} />
-              <NumberInput label="Red Appt Scheduled" value={form.red_appt_scheduled} onChange={v => set('red_appt_scheduled', v)} goal={5} />
-            </div>
-            <div className="pt-1 space-y-2.5">
-              <CheckRow label="Notes added to all missed guests" checked={form.notes_added_missed} onChange={v => set('notes_added_missed', v)} />
-              <CheckRow label="Followed up with all missed guests from yesterday" checked={form.followed_up_missed} onChange={v => set('followed_up_missed', v)} />
-              <CheckRow label="Survey sent to tomorrow's red appointments" checked={form.survey_sent_red_appts} onChange={v => set('survey_sent_red_appts', v)} />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Notes <span className="text-gray-400 font-normal">(optional)</span></label>
-              <textarea rows={2} value={form.leads_notes} onChange={e => set('leads_notes', e.target.value)}
-                placeholder="Any lead follow-up context…"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-600/40 focus:border-red-600 resize-none" />
-            </div>
           </Section>
 
           {/* Sales */}
