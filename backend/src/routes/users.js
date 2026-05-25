@@ -164,7 +164,7 @@ router.post('/', authenticate, requireRole('owner', 'manager'), async (req, res)
 // PUT /api/users/:id — update any user (owner/manager only)
 router.put('/:id', authenticate, requireRole('owner', 'manager'), async (req, res) => {
   const { id } = req.params
-  const { full_name, role, phone, birthday } = req.body
+  const { full_name, role, phone, birthday, email } = req.body
 
   if (req.role === 'manager' && role && role !== 'tsa') {
     return res.status(403).json({ error: 'Managers can only assign TSA role' })
@@ -175,6 +175,7 @@ router.put('/:id', authenticate, requireRole('owner', 'manager'), async (req, re
     const authUpdates = {}
     if (full_name) authUpdates.user_metadata = { full_name }
     if (role)      authUpdates.app_metadata  = { role }
+    if (email)     authUpdates.email         = email
     if (Object.keys(authUpdates).length) {
       const { error } = await supabase.auth.admin.updateUserById(id, authUpdates)
       if (error) return res.status(400).json({ error: error.message })

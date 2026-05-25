@@ -75,7 +75,7 @@ function UserModal({ user, currentRole, onSave, onClose }) {
         role:      form.role,
         phone:     form.phone || null,
         birthday:  form.birthday || null,
-        ...(!isEdit && { email: form.email }),
+        email:     form.email || undefined,
       }
       const saved = isEdit
         ? await apiPut(`/api/users/${user.id}`, payload)
@@ -152,12 +152,11 @@ function UserModal({ user, currentRole, onSave, onClose }) {
                 {availableRoles.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
               </select>
             </div>
-            {!isEdit && (
-              <div className="col-span-2">
-                <label className={labelCls}>Email *</label>
-                <input type="email" className={inputCls} value={form.email} onChange={e => set('email', e.target.value)} placeholder="jane@example.com" />
-              </div>
-            )}
+            <div className="col-span-2">
+              <label className={labelCls}>Email {isEdit ? '' : '*'}</label>
+              <input type="email" className={inputCls} value={form.email} onChange={e => set('email', e.target.value)} placeholder="jane@example.com" />
+              {isEdit && <p className="text-[11px] text-gray-400 mt-1">Changing this updates their login email address.</p>}
+            </div>
             <div>
               <label className={labelCls}>Phone</label>
               <input className={inputCls} value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="(262) 555-0100" />
