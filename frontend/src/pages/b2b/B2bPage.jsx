@@ -20,13 +20,13 @@ const STATUSES = [
 ]
 
 const INTERACTION_TYPES = [
-  { value: 'call',    label: 'Call',    icon: PhoneCall  },
-  { value: 'email',   label: 'Email',   icon: AtSign     },
-  { value: 'visit',   label: 'Visit',   icon: MapPin     },
-  { value: 'meeting', label: 'Meeting', icon: Users      },
-  { value: 'collab',  label: 'Collab',  icon: Handshake  },
-  { value: 'drop',    label: 'Drop',    icon: Package    },
-  { value: 'dm',      label: 'DM',      icon: Send       },
+  { value: 'call',    label: 'Call',    icon: PhoneCall     },
+  { value: 'email',   label: 'Email',   icon: AtSign        },
+  { value: 'visit',   label: 'Visit',   icon: MapPin        },
+  { value: 'meeting', label: 'Meeting', icon: Users         },
+  { value: 'collab',  label: 'Collab',  icon: Handshake     },
+  { value: 'drop',    label: 'Drop',    icon: Package       },
+  { value: 'dm',      label: 'DM',      icon: Send          },
   { value: 'other',   label: 'Other',   icon: MessageSquare },
 ]
 
