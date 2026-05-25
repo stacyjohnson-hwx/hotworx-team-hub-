@@ -1,23 +1,8 @@
-import { useState } from 'react'
-import { CheckCircle, ExternalLink, AlertTriangle } from 'lucide-react'
-import { apiPost } from '@/hooks/useApi'
+import { useState, useEffect } from 'react'
+import { CheckCircle, ExternalLink, AlertTriangle, Phone, MessageSquare, Sparkles, ClipboardCheck } from 'lucide-react'
+import { apiPost, apiGet } from '@/hooks/useApi'
 
 const VARIANCE_THRESHOLD = 5
-const ENG_GOAL = 3
-
-const ENGAGEMENT_ITEMS = [
-  { key: 'eng_testimonial',    label: 'Ask a member for a testimonial video' },
-  { key: 'eng_google_review',  label: 'Google Review asked for' },
-  { key: 'eng_photos_members', label: 'Photos/videos of members with foam boards or in workouts' },
-  { key: 'eng_photos_rewards', label: 'Photos of members redeeming their rewards' },
-  { key: 'eng_ambassador',     label: 'Tell a member about the ambassador program' },
-  { key: 'eng_app_link',       label: 'Show a member how to send the link on their app' },
-  { key: 'eng_biz_month',      label: 'Tell a member about Business of the Month and how to enter the raffle' },
-  { key: 'eng_ig_tiktok',      label: 'Create an Instagram post / TikTok' },
-  { key: 'eng_new_member',     label: 'Get to know a new member' },
-  { key: 'eng_follow_up',      label: 'Follow up with members to see how things are going' },
-  { key: 'eng_thank_you_cards',label: 'Write thank you cards to new members' },
-]
 
 function calcVariance(form) {
   const start = parseFloat(form.drawer_start) || 0
@@ -90,6 +75,135 @@ function CheckRow({ label, checked, onChange, href }) {
   )
 }
 
+// ─── Shift at a Glance ────────────────────────────────────────────────────────
+
+function StatPill({ label, value, icon: Icon, color }) {
+  return (
+    <div className={`flex items-center gap-2 bg-white rounded-xl border px-3 py-2.5 ${color}`}>
+      <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${color.replace('border-', 'bg-').replace('-200', '-100')}`}>
+        <Icon size={14} className={color.replace('border-', 'text-').replace('-200', '-600')} />
+      </div>
+      <div className="min-w-0">
+        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide leading-none mb-0.5">{label}</p>
+        <p className="text-base font-bold text-gray-900 leading-none">{value}</p>
+      </div>
+    </div>
+  )
+}
+
+function ShiftAtAGlance() {
+  const [outreach, setOutreach]   = useState(null)
+  const [cleaning, setCleaning]   = useState(null)
+  const [loading,  setLoading]    = useState(true)
+
+  useEffect(() => {
+    const today = new Date().toISOString().split('T')[0]
+    Promise.all([
+      apiGet(`/api/outreach/logs/summary?date=${today}`),
+      apiGet(`/api/cleaning/today?date=${today}`),
+    ])
+      .then(([out, clean]) => { setOutreach(out); setCleaning(clean) })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  const totalCalls  = outreach?.totalCalls  || 0
+  const totalTexts  = outreach?.totalTexts  || 0
+  const activeTiles = (outreach?.byTile || []).filter(t => (t.calls_made || 0) + (t.texts_made || 0) > 0)
+  const allTasks    = cleaning?.tasks || []
+  const doneTasks   = allTasks.filter(t => t.completed)
+  const pendingTasks = allTasks.filter(t => !t.completed)
+
+  return (
+    <div className="rounded-xl overflow-hidden border border-gray-200 shadow-sm">
+      {/* Header */}
+      <div className="bg-[#1A1A1A] px-4 py-3 flex items-center gap-2">
+        <Sparkles size={14} className="text-[#E8611A]" />
+        <h3 className="text-xs font-bold tracking-widest text-white uppercase">Shift at a Glance</h3>
+        <span className="ml-auto text-[10px] text-white/40">Auto-populated · read only</span>
+      </div>
+
+      <div className="bg-gray-50 p-4 space-y-4">
+        {loading ? (
+          <div className="flex items-center justify-center py-6">
+            <div className="w-5 h-5 border-2 border-gray-300 border-t-[#E8611A] rounded-full animate-spin" />
+          </div>
+        ) : (
+          <>
+            {/* ── Outreach ── */}
+            <div>
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Outreach</p>
+              {totalCalls === 0 && totalTexts === 0 ? (
+                <p className="text-xs text-gray-400 italic">No outreach logged today yet.</p>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-2 mb-3">
+                    <StatPill label="Calls Made"  value={totalCalls} icon={Phone}          color="border-blue-200" />
+                    <StatPill label="Texts Sent"  value={totalTexts} icon={MessageSquare}  color="border-violet-200" />
+                  </div>
+                  {activeTiles.length > 0 && (
+                    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                      {activeTiles.map((tile, i) => (
+                        <div key={tile.tile_id || i}
+                          className={`flex items-center justify-between px-3 py-2 text-xs ${i < activeTiles.length - 1 ? 'border-b border-gray-100' : ''}`}>
+                          <span className="font-medium text-gray-700 truncate pr-2">{tile.outreach_tiles?.title || 'Outreach Tile'}</span>
+                          <span className="text-gray-400 flex-shrink-0">
+                            {tile.calls_made > 0 && <span className="text-blue-600 font-semibold">{tile.calls_made}c</span>}
+                            {tile.calls_made > 0 && tile.texts_made > 0 && <span className="text-gray-300 mx-1">·</span>}
+                            {tile.texts_made > 0 && <span className="text-violet-600 font-semibold">{tile.texts_made}t</span>}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* ── Cleaning ── */}
+            <div>
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                <span>Cleaning</span>
+                {doneTasks.length > 0 && (
+                  <span className="bg-green-100 text-green-700 text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+                    {doneTasks.length}/{allTasks.length} done
+                  </span>
+                )}
+              </p>
+              {allTasks.length === 0 ? (
+                <p className="text-xs text-gray-400 italic">No cleaning tasks for today.</p>
+              ) : (
+                <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                  {doneTasks.map((task, i) => (
+                    <div key={task.id}
+                      className={`flex items-center gap-2.5 px-3 py-2 text-xs ${i < allTasks.length - 1 ? 'border-b border-gray-100' : ''}`}>
+                      <div className="w-4 h-4 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                        <ClipboardCheck size={10} className="text-green-600" />
+                      </div>
+                      <span className="text-gray-700 font-medium truncate">{task.title}</span>
+                      <span className="ml-auto text-gray-300 text-[10px] flex-shrink-0 capitalize">{task.frequency}</span>
+                    </div>
+                  ))}
+                  {pendingTasks.map((task, i) => (
+                    <div key={task.id}
+                      className={`flex items-center gap-2.5 px-3 py-2 text-xs ${doneTasks.length + i < allTasks.length - 1 ? 'border-b border-gray-100' : ''}`}>
+                      <div className="w-4 h-4 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
+                        <div className="w-2 h-2 rounded-full bg-gray-300" />
+                      </div>
+                      <span className="text-gray-400 truncate">{task.title}</span>
+                      <span className="ml-auto text-gray-300 text-[10px] flex-shrink-0 capitalize">{task.frequency}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 const INITIAL_FORM = {
   shift_type: '',
   drawer_start: '', cash_collected: '', credit_collected: '', drawer_end: '',
@@ -98,10 +212,6 @@ const INITIAL_FORM = {
   phone_calls: '', sms_sent: '', red_appt_scheduled: '',
   notes_added_missed: false, followed_up_missed: false, survey_sent_red_appts: false,
   leads_notes: '',
-  eng_testimonial: false, eng_google_review: false, eng_photos_members: false,
-  eng_photos_rewards: false, eng_ambassador: false, eng_app_link: false,
-  eng_biz_month: false, eng_ig_tiktok: false, eng_new_member: false,
-  eng_follow_up: false, eng_thank_you_cards: false,
   watched_training_video: false, used_sales_gpt: false, role_played_script: false,
   orders_needed: '', general_notes: '',
 }
@@ -121,9 +231,6 @@ export default function EodForm({ submittedShifts, onSubmitted }) {
 
   const alreadySubmitted = submittedShifts.map(s => s.shift_type)
   const availableShifts = ['mid', 'closing'].filter(s => !alreadySubmitted.includes(s))
-
-  const engCount = ENGAGEMENT_ITEMS.filter(i => form[i.key]).length
-  const engGoalMet = engCount >= ENG_GOAL
 
   async function submit(e) {
     e.preventDefault()
@@ -269,28 +376,15 @@ export default function EodForm({ submittedShifts, onSubmitted }) {
             </div>
           </Section>
 
-          {/* Membership Engagement */}
-          <Section
-            title="Membership Engagement"
-            badge={
-              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${engGoalMet ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                {engCount} / {ENGAGEMENT_ITEMS.length} — Goal: {ENG_GOAL}
-              </span>
-            }
-          >
-            <div className="space-y-2.5">
-              {ENGAGEMENT_ITEMS.map(item => (
-                <CheckRow key={item.key} label={item.label} checked={form[item.key]} onChange={v => set(item.key, v)} />
-              ))}
-            </div>
-          </Section>
-
           {/* Sales Training */}
           <Section title="Sales Training">
             <CheckRow label="Watched sales training video" checked={form.watched_training_video} onChange={v => set('watched_training_video', v)} href={import.meta.env.VITE_SALES_VIDEO_URL} />
             <CheckRow label="Role played / practiced script" checked={form.role_played_script} onChange={v => set('role_played_script', v)} />
             <CheckRow label="Practiced with Sales GPT" checked={form.used_sales_gpt} onChange={v => set('used_sales_gpt', v)} href={import.meta.env.VITE_SALES_GPT_URL} />
           </Section>
+
+          {/* Shift at a Glance */}
+          <ShiftAtAGlance />
 
           {/* Orders & Notes */}
           <Section title="Orders & Notes">

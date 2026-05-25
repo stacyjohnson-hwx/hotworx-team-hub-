@@ -225,40 +225,26 @@ router.patch('/:id/reactivate', authenticate, requireRole('owner', 'manager'), a
 })
 
 // POST /api/users/:id/reset-password
+// Supabase generateLink (type: 'recovery') both generates the link AND sends
+// the reset email via Supabase's own email system — no nodemailer needed here.
 router.post('/:id/reset-password', authenticate, requireRole('owner', 'manager'), async (req, res) => {
   const { id } = req.params
   try {
-    const supabase = adminClient()
-    const { data: { user }, error: userErr } = await supabase.auth.admin.getUserById(id)
+    const sb = adminClient()
+    const { data: { user }, error: userErr } = await sb.auth.admin.getUserById(id)
     if (userErr || !user) return res.status(404).json({ error: 'User not found' })
 
-    const redirectTo = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/login`
-    const { data, error } = await supabase.auth.admin.generateLink({
+    const redirectTo = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password`
+    const { error } = await sb.auth.admin.generateLink({
       type: 'recovery',
       email: user.email,
       options: { redirectTo },
     })
     if (error) return res.status(400).json({ error: error.message })
 
-    const resetLink = data?.properties?.action_link
-    if (resetLink) {
-      await sendEmail({
-        to: user.email,
-        subject: `${process.env.STUDIO_NAME || 'HOTWORX Pewaukee'} — Password Reset`,
-        html: `
-          <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;">
-            <h2 style="color:#C8102E;margin-bottom:8px;">Password Reset</h2>
-            <p style="color:#374151;">Hi ${user.user_metadata?.full_name || user.email},</p>
-            <p style="color:#374151;">Click the button below to reset your HOTWORX Team Hub password. This link expires in 1 hour.</p>
-            <a href="${resetLink}" style="display:inline-block;margin:16px 0;padding:12px 24px;background:#C8102E;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Reset My Password</a>
-            <p style="color:#6b7280;font-size:13px;">If you didn't request this, ignore this email.</p>
-          </div>
-        `,
-      })
-    }
-
-    res.json({ sent: !!resetLink, email: user.email })
+    res.json({ sent: true, email: user.email })
   } catch (err) {
+    console.error('[reset-password]', err.message)
     res.status(500).json({ error: err.message })
   }
 })

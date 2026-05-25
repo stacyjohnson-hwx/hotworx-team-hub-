@@ -583,35 +583,52 @@ export default function OutreachTab() {
     <div className="p-4 max-w-3xl mx-auto">
 
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <div>
+      <div className="mb-4">
+        <div className="flex items-center justify-between mb-3">
           <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
             <Phone size={18} className="text-red-600" /> Outreach
           </h2>
-          <p className="text-xs text-gray-500 mt-0.5">
-            {todayTotalCalls > 0 || todayTotalTexts > 0
-              ? <>Today: <span className="text-green-600 font-medium">{todayTotalCalls} calls</span> · <span className="text-blue-600 font-medium">{todayTotalTexts} texts</span></>
-              : 'Log your calls and texts for each list below'}
-          </p>
-        </div>
-        {isOwnerOrManager && (
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setEditMode(v => !v)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${editMode ? 'bg-gray-800 text-white border-gray-800' : 'border-gray-300 text-gray-600 hover:border-gray-400'}`}
-            >
-              {editMode ? 'Done Editing' : 'Manage Tiles'}
-            </button>
-            {editMode && (
+          {isOwnerOrManager && (
+            <div className="flex items-center gap-2">
               <button
-                onClick={() => setTileModal(false)}
-                className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+                onClick={() => setEditMode(v => !v)}
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${editMode ? 'bg-gray-800 text-white border-gray-800' : 'border-gray-300 text-gray-600 hover:border-gray-400'}`}
               >
-                <Plus size={13} /> Add Tile
+                {editMode ? 'Done Editing' : 'Manage Tiles'}
               </button>
-            )}
+              {editMode && (
+                <button
+                  onClick={() => setTileModal(false)}
+                  className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+                >
+                  <Plus size={13} /> Add Tile
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Big daily totals */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-green-50 border border-green-100 rounded-2xl p-4 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-green-500 flex items-center justify-center flex-shrink-0">
+              <Phone size={20} className="text-white" />
+            </div>
+            <div>
+              <p className="text-3xl font-black text-green-700 leading-none">{todayTotalCalls}</p>
+              <p className="text-xs text-green-600 font-medium mt-0.5">Calls Today</p>
+            </div>
           </div>
-        )}
+          <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-blue-500 flex items-center justify-center flex-shrink-0">
+              <MessageSquare size={20} className="text-white" />
+            </div>
+            <div>
+              <p className="text-3xl font-black text-blue-700 leading-none">{todayTotalTexts}</p>
+              <p className="text-xs text-blue-600 font-medium mt-0.5">Texts Today</p>
+            </div>
+          </div>
+        </div>
       </div>
 
       {error && (

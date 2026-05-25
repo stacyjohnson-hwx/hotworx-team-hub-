@@ -4,7 +4,7 @@ import { apiGet, apiPost, apiPut, apiPatch } from '@/hooks/useApi'
 import {
   Users, Plus, Edit2, UserX, UserCheck, X, Eye, EyeOff,
   Mail, Phone, Calendar, Shield, RefreshCw, Copy, Check,
-  Building2, ChevronDown, ClipboardList,
+  Building2, ChevronDown, ClipboardList, GraduationCap,
 } from 'lucide-react'
 
 const ROLES = [
@@ -340,7 +340,7 @@ function QuizModal({ user, onClose }) {
 }
 
 // ─── User Card ─────────────────────────────────────────────────────────────────
-function UserCard({ user, currentUserId, currentRole, onEdit, onToggleActive, onResetPassword, onViewQuiz }) {
+function UserCard({ user, currentUserId, currentRole, onEdit, onToggleActive, onResetPassword, onViewQuiz, trainingCompleted, trainingTotal }) {
   const [confirm, setConfirm] = useState(false)
   const isSelf = user.id === currentUserId
   const canDeactivate = !isSelf && (currentRole === 'owner' || (currentRole === 'manager' && user.role === 'tsa'))
@@ -381,6 +381,32 @@ function UserCard({ user, currentUserId, currentRole, onEdit, onToggleActive, on
             </p>
           )}
         </div>
+
+        {/* Training progress */}
+        {trainingTotal > 0 && (
+          <div className="mt-3 bg-gray-50 rounded-xl px-3 py-2.5">
+            <div className="flex items-center justify-between mb-1.5">
+              <div className="flex items-center gap-1.5">
+                <GraduationCap size={12} className="text-indigo-500" />
+                <span className="text-xs font-semibold text-gray-600">Training</span>
+              </div>
+              <span className="text-xs font-bold text-gray-800">
+                {trainingCompleted} <span className="text-gray-400 font-normal">/ {trainingTotal}</span>
+              </span>
+            </div>
+            <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-indigo-500 rounded-full transition-all"
+                style={{ width: `${Math.round((trainingCompleted / trainingTotal) * 100)}%` }}
+              />
+            </div>
+            <p className="text-[10px] text-gray-400 mt-1">
+              {trainingTotal - trainingCompleted === 0
+                ? '🎉 All complete!'
+                : `${trainingTotal - trainingCompleted} remaining`}
+            </p>
+          </div>
+        )}
 
         <div className="flex items-center gap-1.5 mt-4 flex-wrap">
           <button onClick={() => onEdit(user)}
@@ -425,19 +451,24 @@ function UserCard({ user, currentUserId, currentRole, onEdit, onToggleActive, on
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 export default function UsersPage() {
   const { role, user: currentUser } = useRole()
-  const [users, setUsers]           = useState([])
-  const [loading, setLoading]       = useState(true)
-  const [error, setError]           = useState('')
-  const [showModal, setShowModal]   = useState(false)
-  const [editUser, setEditUser]     = useState(null)
-  const [resetUser, setResetUser]   = useState(null)
-  const [quizUser, setQuizUser]     = useState(null)
-  const [filter, setFilter]         = useState('active')
+  const [users, setUsers]                   = useState([])
+  const [loading, setLoading]               = useState(true)
+  const [error, setError]                   = useState('')
+  const [showModal, setShowModal]           = useState(false)
+  const [editUser, setEditUser]             = useState(null)
+  const [resetUser, setResetUser]           = useState(null)
+  const [quizUser, setQuizUser]             = useState(null)
+  const [filter, setFilter]                 = useState('active')
+  const [trainingStats, setTrainingStats]   = useState({ totalResources: 0, countsByUser: {} })
 
   const load = useCallback(async () => {
     try {
-      const data = await apiGet('/api/users')
+      const [data, stats] = await Promise.all([
+        apiGet('/api/users'),
+        apiGet('/api/training/stats').catch(() => ({ totalResources: 0, countsByUser: {} })),
+      ])
       setUsers(data)
+      setTrainingStats(stats)
     } catch (err) { setError(err.message) }
     finally { setLoading(false) }
   }, [])
@@ -521,6 +552,8 @@ export default function UsersPage() {
                   onToggleActive={handleToggleActive}
                   onResetPassword={setResetUser}
                   onViewQuiz={setQuizUser}
+                  trainingCompleted={trainingStats.countsByUser[u.id] || 0}
+                  trainingTotal={trainingStats.totalResources}
                 />
               ))}
             </div>

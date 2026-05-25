@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { ChevronLeft, ChevronRight, Plus, Pencil, Trash2, RefreshCw, X, Flag, Calendar, LayoutGrid, MessageSquare } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, Pencil, Trash2, RefreshCw, X, Flag, Calendar, LayoutGrid, MessageSquare, Tag } from 'lucide-react'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
 import { useRole } from '@/hooks/useRole'
 
@@ -74,6 +74,78 @@ function fmtHours(mins) {
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
+// ─── Promo layout helpers ─────────────────────────────────────────────────────
+
+// Build promo color from promo_type
+const PROMO_COLORS = {
+  discount:     { bar: 'bg-amber-500',  text: 'text-white', badge: 'bg-amber-400/30' },
+  free_session: { bar: 'bg-green-500',  text: 'text-white', badge: 'bg-green-400/30' },
+  referral:     { bar: 'bg-blue-500',   text: 'text-white', badge: 'bg-blue-400/30'  },
+  flash_sale:   { bar: 'bg-red-500',    text: 'text-white', badge: 'bg-red-400/30'   },
+  bundle:       { bar: 'bg-purple-500', text: 'text-white', badge: 'bg-purple-400/30' },
+  other:        { bar: 'bg-gray-500',   text: 'text-white', badge: 'bg-gray-400/30'  },
+}
+function promoColor(type) { return PROMO_COLORS[type] || PROMO_COLORS.other }
+
+// Given a list of promos and the 7 weekDays for a row, compute column spans + lane rows
+// Returns { items: [{promo, colStart, colEnd, lane, isStart, isEnd}], laneCount }
+function layoutPromosForWeek(promos, weekDays) {
+  if (!promos?.length || !weekDays?.length) return { items: [], laneCount: 0 }
+  const weekStart = toDateStr(weekDays[0])
+  const weekEnd   = toDateStr(weekDays[weekDays.length - 1])
+
+  const visible = promos.filter(p => {
+    if (!p.start_date) return false
+    const pEnd = p.end_date || p.start_date
+    return p.start_date <= weekEnd && pEnd >= weekStart
+  })
+  if (!visible.length) return { items: [], laneCount: 0 }
+
+  // Sort: longer spans first, then by start date
+  visible.sort((a, b) => {
+    const aEnd = a.end_date || a.start_date
+    const bEnd = b.end_date || b.start_date
+    const aLen = (new Date(aEnd) - new Date(a.start_date)) / 86400000
+    const bLen = (new Date(bEnd) - new Date(b.start_date)) / 86400000
+    return bLen - aLen || a.start_date.localeCompare(b.start_date)
+  })
+
+  const mapped = visible.map(p => {
+    const pEnd     = p.end_date || p.start_date
+    const clampStart = p.start_date < weekStart ? weekStart : p.start_date
+    const clampEnd   = pEnd > weekEnd ? weekEnd : pEnd
+    const cs = weekDays.findIndex(d => toDateStr(d) === clampStart)
+    const ce = weekDays.findIndex(d => toDateStr(d) === clampEnd)
+    return {
+      promo: p,
+      colStart: cs < 0 ? 0 : cs,
+      colEnd:   ce < 0 ? weekDays.length - 1 : ce,
+      isStart:  p.start_date >= weekStart,
+      isEnd:    pEnd <= weekEnd,
+    }
+  })
+
+  // First-fit lane assignment
+  const lanes = []
+  const result = []
+  for (const item of mapped) {
+    let laneIdx = lanes.findIndex(lane =>
+      lane.every(placed => placed.colEnd < item.colStart || placed.colStart > item.colEnd)
+    )
+    if (laneIdx === -1) { laneIdx = lanes.length; lanes.push([]) }
+    lanes[laneIdx].push({ colStart: item.colStart, colEnd: item.colEnd })
+    result.push({ ...item, lane: laneIdx })
+  }
+  return { items: result, laneCount: lanes.length }
+}
+
+function promoLabel(promo) {
+  if (!promo.discount_value || promo.discount_unit === 'other') return ''
+  if (promo.discount_unit === 'free') return 'FREE'
+  if (promo.discount_unit === '%') return `${promo.discount_value}% off`
+  return `$${promo.discount_value} off`
+}
+
 // ─── Color system ─────────────────────────────────────────────────────────────
 
 const PERSON_COLORS = [
@@ -113,6 +185,7 @@ export default function SchedulePage() {
   const [timeOffReqs,    setTimeOffReqs]     = useState([])
   const [blockedDays,    setBlockedDays]     = useState([])
   const [events,         setEvents]          = useState([])
+  const [promotions,     setPromotions]      = useState([])
   const [loading,        setLoading]         = useState(true)
   const [error,          setError]           = useState(null)
   const [formState,      setFormState]       = useState(null)
@@ -134,18 +207,20 @@ export default function SchedulePage() {
     setError(null)
     try {
       const { weekStart: start, end } = rangeParams()
-      const [shiftsData, usersData, timeOffData, blockedData, eventsData] = await Promise.all([
+      const [shiftsData, usersData, timeOffData, blockedData, eventsData, promosData] = await Promise.all([
         apiGet(`/api/schedule?weekStart=${start}&end=${end}`),
         apiGet('/api/users'),
         apiGet(`/api/schedule/timeoff-week?weekStart=${start}&end=${end}`),
         apiGet(`/api/schedule/blocked?weekStart=${start}&end=${end}`),
         apiGet(`/api/events?startDate=${start}&endDate=${end}`),
+        apiGet(`/api/events/promotions?startDate=${start}&endDate=${end}`),
       ])
       setShifts(shiftsData)
       setUsers(usersData) // all roles including owner
       setTimeOffReqs(timeOffData)
       setBlockedDays(blockedData)
       setEvents(eventsData)
+      setPromotions(promosData || [])
     } catch (e) {
       setError(e.message)
     } finally {
@@ -274,6 +349,7 @@ export default function SchedulePage() {
             timeOffReqs={timeOffReqs}
             blockedDays={blockedDays}
             events={events}
+            promotions={promotions}
             loading={loading}
             today={today}
             isOwnerOrManager={isOwnerOrManager}
@@ -296,6 +372,7 @@ export default function SchedulePage() {
           timeOffReqs={timeOffReqs}
           blockedDays={blockedDays}
           events={events}
+          promotions={promotions}
           loading={loading}
           today={today}
           isOwnerOrManager={isOwnerOrManager}
@@ -330,9 +407,10 @@ export default function SchedulePage() {
 
 // ─── Week grid ────────────────────────────────────────────────────────────────
 
-function WeekGrid({ days, shifts, timeOffReqs, blockedDays, events, loading, today, isOwnerOrManager, onAdd, onEdit, onDelete, onAddHoliday, onRemoveHoliday }) {
-  // Time-off legend
+function WeekGrid({ days, shifts, timeOffReqs, blockedDays, events, promotions, loading, today, isOwnerOrManager, onAdd, onEdit, onDelete, onAddHoliday, onRemoveHoliday }) {
   const uniqueTimeOff = [...new Map(timeOffReqs.map(r => [r.requested_by, r])).values()]
+  const { items: promoItems, laneCount } = layoutPromosForWeek(promotions, days)
+  const [promoDetail, setPromoDetail] = useState(null)
 
   return (
     <>
@@ -347,23 +425,73 @@ function WeekGrid({ days, shifts, timeOffReqs, blockedDays, events, loading, tod
         </div>
       )}
 
-      <div className="grid grid-cols-7 gap-2">
+      {/* ── Day-name header row ── */}
+      <div className="grid grid-cols-7 gap-2 mb-1">
         {days.map((day, i) => {
           const dateStr = toDateStr(day)
-          const isToday  = dateStr === today
-          const dayShifts   = shifts.filter(s => s.shift_date === dateStr)
-          const dayTimeOff  = timeOffReqs.filter(r => dateInRange(dateStr, r.start_date, r.end_date))
-          const dayEvents   = (events || []).filter(e => dateInRange(dateStr, e.start_date, e.end_date || e.start_date))
-          const blocked = blockedDays.find(b => b.block_date === dateStr)
+          const isToday = dateStr === today
+          return (
+            <div key={dateStr} className="text-center py-2">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{DAY_LABELS[i]}</p>
+              <div className={`w-8 h-8 mx-auto flex items-center justify-center rounded-full mt-0.5 ${
+                isToday ? 'bg-red-600 text-white font-bold' : 'text-gray-800 font-semibold'
+              } text-base`}>
+                {day.getDate()}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* ── All-day promo banner strip ── */}
+      {laneCount > 0 && (
+        <div
+          className="grid grid-cols-7 gap-2 mb-2"
+          style={{ gridTemplateRows: `repeat(${laneCount}, 22px)` }}
+        >
+          {promoItems.map(({ promo, colStart, colEnd, lane, isStart, isEnd }) => {
+            const c = promoColor(promo.promo_type)
+            const label = promoLabel(promo)
+            return (
+              <div
+                key={promo.id}
+                onClick={() => setPromoDetail(promo)}
+                style={{
+                  gridColumn: `${colStart + 1} / ${colEnd + 2}`,
+                  gridRow: lane + 1,
+                }}
+                className={`flex items-center gap-1.5 px-2 text-white text-[11px] font-semibold leading-none overflow-hidden cursor-pointer hover:brightness-110 transition-all
+                  ${c.bar}
+                  ${isStart ? 'rounded-l-full pl-2.5' : 'rounded-l-none pl-1'}
+                  ${isEnd   ? 'rounded-r-full pr-2'   : 'rounded-r-none pr-0'}
+                `}
+              >
+                {isStart && <Tag size={10} className="flex-shrink-0 opacity-80" />}
+                <span className="truncate">{promo.title}</span>
+                {isStart && label && (
+                  <span className={`flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded-full font-bold ${c.badge} ml-auto mr-1`}>
+                    {label}
+                  </span>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+      {promoDetail && <DetailModal item={promoDetail} type="promo" onClose={() => setPromoDetail(null)} />}
+
+      {/* ── Day content columns ── */}
+      <div className="grid grid-cols-7 gap-2">
+        {days.map((day, i) => {
+          const dateStr    = toDateStr(day)
+          const isToday    = dateStr === today
+          const dayShifts  = shifts.filter(s => s.shift_date === dateStr)
+          const dayTimeOff = timeOffReqs.filter(r => dateInRange(dateStr, r.start_date, r.end_date))
+          const dayEvents  = (events || []).filter(e => dateInRange(dateStr, e.start_date, e.end_date || e.start_date))
+          const blocked    = blockedDays.find(b => b.block_date === dateStr)
 
           return (
-            <div key={dateStr} className={`bg-white rounded-xl border ${isToday ? 'border-red-600' : 'border-gray-200'} overflow-hidden min-h-[160px] flex flex-col`}>
-              {/* Day header */}
-              <div className={`px-2 py-2 text-center border-b ${isToday ? 'bg-red-600 border-red-600' : 'bg-gray-50 border-gray-200'}`}>
-                <p className={`text-xs font-semibold uppercase tracking-wide ${isToday ? 'text-white' : 'text-gray-500'}`}>{DAY_LABELS[i]}</p>
-                <p className={`text-lg font-bold leading-tight ${isToday ? 'text-white' : 'text-gray-900'}`}>{day.getDate()}</p>
-              </div>
-
+            <div key={dateStr} className={`bg-white rounded-xl border ${isToday ? 'border-red-400' : 'border-gray-200'} overflow-hidden min-h-[120px] flex flex-col`}>
               {blocked && (
                 <div className={`px-2 py-1 flex items-center justify-between text-xs font-medium border-b ${
                   blocked.block_type === 'holiday' ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-gray-100 text-gray-600 border-gray-200'
@@ -423,8 +551,9 @@ function WeekGrid({ days, shifts, timeOffReqs, blockedDays, events, loading, tod
 
 // ─── Month grid ───────────────────────────────────────────────────────────────
 
-function MonthGrid({ monthYear, shifts, timeOffReqs, blockedDays, events, loading, today, isOwnerOrManager, onAdd, onEdit, onDelete, onAddHoliday, onRemoveHoliday }) {
+function MonthGrid({ monthYear, shifts, timeOffReqs, blockedDays, events, promotions, loading, today, isOwnerOrManager, onAdd, onEdit, onDelete, onAddHoliday, onRemoveHoliday }) {
   const { weeks } = getMonthGrid(monthYear.year, monthYear.month)
+  const [promoDetail, setPromoDetail] = useState(null)
   const currentMonthStart = toDateStr(new Date(monthYear.year, monthYear.month, 1))
   const currentMonthEnd   = toDateStr(new Date(monthYear.year, monthYear.month + 1, 0))
 
@@ -439,97 +568,303 @@ function MonthGrid({ monthYear, shifts, timeOffReqs, blockedDays, events, loadin
         ))}
       </div>
 
+      {promoDetail && <DetailModal item={promoDetail} type="promo" onClose={() => setPromoDetail(null)} />}
+
       {loading ? (
         <div className="flex items-center justify-center py-16 text-gray-400">
           <RefreshCw className="w-5 h-5 animate-spin mr-2" /> Loading…
         </div>
       ) : (
-        weeks.map((week, wi) => (
-          <div key={wi} className="grid grid-cols-7 border-b last:border-b-0 border-gray-100">
-            {week.map((day, di) => {
-              const dateStr    = toDateStr(day)
-              const isToday    = dateStr === today
-              const inMonth    = dateStr >= currentMonthStart && dateStr <= currentMonthEnd
-              const dayShifts  = shifts.filter(s => s.shift_date === dateStr)
-              const dayTimeOff = timeOffReqs.filter(r => dateInRange(dateStr, r.start_date, r.end_date))
-              const dayEvents  = (events || []).filter(e => dateInRange(dateStr, e.start_date, e.end_date || e.start_date))
-              const blocked    = blockedDays.find(b => b.block_date === dateStr)
+        weeks.map((week, wi) => {
+          const { items: promoItems, laneCount } = layoutPromosForWeek(promotions, week)
 
-              return (
-                <div key={dateStr} className={`min-h-[100px] border-r last:border-r-0 border-gray-100 flex flex-col ${!inMonth ? 'bg-gray-50/50' : ''}`}>
-                  {/* Day number */}
-                  <div className="flex items-start justify-between px-2 pt-1.5 pb-1">
-                    <span className={`text-sm font-semibold w-7 h-7 flex items-center justify-center rounded-full ${
-                      isToday ? 'bg-red-600 text-white' : inMonth ? 'text-gray-900' : 'text-gray-300'
-                    }`}>
-                      {day.getDate()}
-                    </span>
-                    {isOwnerOrManager && inMonth && !blocked && (
-                      <div className="flex gap-0.5 opacity-0 group-hover:opacity-100">
-                        <button onClick={() => onAddHoliday(dateStr)} title="Mark holiday"
-                          className="p-0.5 text-gray-300 hover:text-amber-500 transition-colors">
-                          <Flag className="w-3 h-3" />
-                        </button>
-                        <button onClick={() => onAdd(dateStr)} title="Add shift"
-                          className="p-0.5 text-gray-300 hover:text-red-600 transition-colors">
-                          <Plus className="w-3 h-3" />
-                        </button>
+          return (
+            <div key={wi} className="border-b last:border-b-0 border-gray-100">
+
+              {/* ── Promo banner strip for this week row ── */}
+              {laneCount > 0 && (
+                <div
+                  className="grid grid-cols-7 bg-gray-50/60 border-b border-orange-100"
+                  style={{ gridTemplateRows: `repeat(${laneCount}, 20px)`, padding: '3px 0' }}
+                >
+                  {promoItems.map(({ promo, colStart, colEnd, lane, isStart, isEnd }) => {
+                    const c = promoColor(promo.promo_type)
+                    const label = promoLabel(promo)
+                    return (
+                      <div
+                        key={promo.id}
+                        onClick={() => setPromoDetail(promo)}
+                        style={{
+                          gridColumn: `${colStart + 1} / ${colEnd + 2}`,
+                          gridRow: lane + 1,
+                          marginLeft: isStart ? 4 : 0,
+                          marginRight: isEnd ? 4 : 0,
+                        }}
+                        className={`flex items-center gap-1 px-1.5 text-white text-[10px] font-semibold leading-none overflow-hidden cursor-pointer hover:brightness-110 transition-all h-5
+                          ${c.bar}
+                          ${isStart ? 'rounded-l-full' : ''}
+                          ${isEnd   ? 'rounded-r-full' : ''}
+                        `}
+                      >
+                        {isStart && <Tag size={8} className="flex-shrink-0 opacity-80" />}
+                        <span className="truncate">{promo.title}</span>
+                        {isStart && label && (
+                          <span className="flex-shrink-0 ml-auto text-[9px] font-bold opacity-90">{label}</span>
+                        )}
                       </div>
-                    )}
-                  </div>
+                    )
+                  })}
+                </div>
+              )}
 
-                  {blocked && (
-                    <div className={`mx-1 mb-1 px-1.5 py-0.5 rounded text-xs font-medium flex items-center justify-between ${
-                      blocked.block_type === 'holiday' ? 'bg-amber-100 text-amber-800' : 'bg-gray-200 text-gray-600'
-                    }`}>
-                      <span className="truncate text-xs">{blocked.label}</span>
-                      {isOwnerOrManager && (
-                        <button onClick={() => onRemoveHoliday(blocked.id)} className="ml-1 flex-shrink-0">
-                          <X className="w-2.5 h-2.5" />
+              {/* ── Day cells ── */}
+              <div className="grid grid-cols-7">
+                {week.map((day) => {
+                  const dateStr    = toDateStr(day)
+                  const isToday    = dateStr === today
+                  const inMonth    = dateStr >= currentMonthStart && dateStr <= currentMonthEnd
+                  const dayShifts  = shifts.filter(s => s.shift_date === dateStr)
+                  const dayTimeOff = timeOffReqs.filter(r => dateInRange(dateStr, r.start_date, r.end_date))
+                  const dayEvents  = (events || []).filter(e => dateInRange(dateStr, e.start_date, e.end_date || e.start_date))
+                  const blocked    = blockedDays.find(b => b.block_date === dateStr)
+
+                  return (
+                    <div key={dateStr} className={`min-h-[90px] border-r last:border-r-0 border-gray-100 flex flex-col ${!inMonth ? 'bg-gray-50/50' : ''}`}>
+                      {/* Day number */}
+                      <div className="flex items-start justify-between px-2 pt-1.5 pb-1">
+                        <span className={`text-sm font-semibold w-7 h-7 flex items-center justify-center rounded-full ${
+                          isToday ? 'bg-red-600 text-white' : inMonth ? 'text-gray-900' : 'text-gray-300'
+                        }`}>
+                          {day.getDate()}
+                        </span>
+                        {isOwnerOrManager && inMonth && !blocked && (
+                          <div className="flex gap-0.5 opacity-0 group-hover:opacity-100">
+                            <button onClick={() => onAddHoliday(dateStr)} title="Mark holiday"
+                              className="p-0.5 text-gray-300 hover:text-amber-500 transition-colors">
+                              <Flag className="w-3 h-3" />
+                            </button>
+                            <button onClick={() => onAdd(dateStr)} title="Add shift"
+                              className="p-0.5 text-gray-300 hover:text-red-600 transition-colors">
+                              <Plus className="w-3 h-3" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {blocked && (
+                        <div className={`mx-1 mb-1 px-1.5 py-0.5 rounded text-xs font-medium flex items-center justify-between ${
+                          blocked.block_type === 'holiday' ? 'bg-amber-100 text-amber-800' : 'bg-gray-200 text-gray-600'
+                        }`}>
+                          <span className="truncate text-xs">{blocked.label}</span>
+                          {isOwnerOrManager && (
+                            <button onClick={() => onRemoveHoliday(blocked.id)} className="ml-1 flex-shrink-0">
+                              <X className="w-2.5 h-2.5" />
+                            </button>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Events + shift + time-off chips */}
+                      <div className="px-1 pb-1 space-y-0.5 flex-1">
+                        {dayEvents.map(e => (
+                          <MonthEventChip key={e.id} event={e} />
+                        ))}
+                        {dayShifts.map(s => (
+                          <MonthChip
+                            key={s.id}
+                            shift={s}
+                            color={shiftColor(s.tsa_id)}
+                            label={s.tsa_name}
+                            sub={`${formatTime(s.start_time)}–${formatTime(s.end_time)}`}
+                            canEdit={isOwnerOrManager}
+                            onEdit={() => onEdit(s)}
+                            onDelete={() => onDelete(s.id)}
+                          />
+                        ))}
+                        {dayTimeOff.map(r => (
+                          <div key={r.id} className={`rounded px-1.5 py-0.5 text-xs border ${timeOffColor(r.requested_by)}`}>
+                            <span className="font-medium truncate block">{r.requester_name}</span>
+                            <span className="opacity-75 text-xs">Off</span>
+                          </div>
+                        ))}
+                      </div>
+
+                      {isOwnerOrManager && inMonth && (
+                        <button
+                          onClick={() => onAdd(dateStr)}
+                          className="w-full py-1 text-xs text-gray-300 hover:text-red-600 hover:bg-red-50 transition-colors flex items-center justify-center gap-0.5 opacity-0 hover:opacity-100 focus:opacity-100"
+                        >
+                          <Plus className="w-3 h-3" />
                         </button>
                       )}
                     </div>
-                  )}
-
-                  {/* Events + shift + time-off chips */}
-                  <div className="px-1 pb-1 space-y-0.5 flex-1">
-                    {dayEvents.map(e => (
-                      <MonthEventChip key={e.id} event={e} />
-                    ))}
-                    {dayShifts.map(s => (
-                      <MonthChip
-                        key={s.id}
-                        color={shiftColor(s.tsa_id)}
-                        label={s.tsa_name}
-                        sub={`${formatTime(s.start_time)}–${formatTime(s.end_time)}`}
-                        canEdit={isOwnerOrManager}
-                        onEdit={() => onEdit(s)}
-                        onDelete={() => onDelete(s.id)}
-                      />
-                    ))}
-                    {dayTimeOff.map(r => (
-                      <div key={r.id} className={`rounded px-1.5 py-0.5 text-xs border ${timeOffColor(r.requested_by)}`}>
-                        <span className="font-medium truncate block">{r.requester_name}</span>
-                        <span className="opacity-75 text-xs">Off</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Add shift button — show on hover via CSS */}
-                  {isOwnerOrManager && inMonth && (
-                    <button
-                      onClick={() => onAdd(dateStr)}
-                      className="w-full py-1 text-xs text-gray-300 hover:text-red-600 hover:bg-red-50 transition-colors flex items-center justify-center gap-0.5 opacity-0 hover:opacity-100 focus:opacity-100"
-                    >
-                      <Plus className="w-3 h-3" />
-                    </button>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        ))
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })
       )}
+    </div>
+  )
+}
+
+// ─── Detail modal ─────────────────────────────────────────────────────────────
+
+const EVENT_TYPE_LABELS = {
+  'in-store':    'In-Store',
+  'community':   'Community',
+  'b2b':         'B2B',
+  'corporate':   'Corporate',
+  'partnership': 'Partner',
+  'virtual':     'Virtual',
+  'other':       'Other',
+}
+
+const PROMO_TYPE_LABELS = {
+  discount:     'Discount',
+  free_session: 'Free Session',
+  referral:     'Referral',
+  flash_sale:   'Flash Sale',
+  bundle:       'Bundle',
+  other:        'Other',
+}
+
+function fmtFullDate(str) {
+  if (!str) return ''
+  return new Date(str + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+}
+
+function DetailModal({ item, type, onClose, onEdit, onDelete, canEdit }) {
+  // type: 'shift' | 'event' | 'promo'
+  const isShift = type === 'shift'
+  const isEvent = type === 'event'
+  const isPromo = type === 'promo'
+
+  const promoC = isPromo ? promoColor(item.promo_type) : null
+
+  function handleEdit(e) { e.stopPropagation(); onEdit?.(); onClose() }
+  function handleDelete(e) { e.stopPropagation(); if (window.confirm('Delete this item?')) { onDelete?.(); onClose() } }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
+
+        {/* Header */}
+        <div className={`px-5 py-4 flex items-start justify-between gap-3 ${
+          isShift ? 'bg-gray-800' : isEvent ? 'bg-red-700' : 'bg-gray-800'
+        }`}>
+          <div className="flex-1 min-w-0">
+            {isPromo && (
+              <span className={`inline-block text-xs font-bold px-2 py-0.5 rounded-full mb-1 ${promoC.bar} text-white`}>
+                {PROMO_TYPE_LABELS[item.promo_type] || 'Promo'}
+              </span>
+            )}
+            {isEvent && (
+              <span className="inline-block text-xs font-bold px-2 py-0.5 rounded-full mb-1 bg-red-600 text-white border border-red-400">
+                {EVENT_TYPE_LABELS[item.event_type] || 'Event'}
+              </span>
+            )}
+            {isShift && (
+              <span className="inline-block text-xs font-bold px-2 py-0.5 rounded-full mb-1 bg-gray-600 text-white">
+                Shift
+              </span>
+            )}
+            <p className="text-white font-bold text-lg leading-snug">
+              {isShift ? item.tsa_name : item.title}
+            </p>
+            {isShift && item.shift_type && (
+              <p className="text-gray-300 text-xs mt-0.5 capitalize">{item.shift_type}</p>
+            )}
+          </div>
+          <button onClick={onClose} className="text-white/50 hover:text-white flex-shrink-0 mt-0.5">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="p-5 space-y-3 max-h-[60vh] overflow-y-auto">
+
+          {/* Date / time */}
+          {isShift && (
+            <>
+              <Row label="Date" value={fmtFullDate(item.shift_date)} />
+              <Row label="Time" value={`${formatTime(item.start_time)} – ${formatTime(item.end_time)}`} />
+              {item.start_time && item.end_time && (
+                <Row label="Duration" value={fmtHours(shiftMinutes(item.start_time, item.end_time))} />
+              )}
+            </>
+          )}
+
+          {isEvent && (
+            <>
+              <Row label="Date" value={
+                item.end_date && item.end_date !== item.start_date
+                  ? `${fmtFullDate(item.start_date)} – ${fmtFullDate(item.end_date)}`
+                  : fmtFullDate(item.start_date)
+              } />
+              {(item.start_time || item.end_time) && (
+                <Row label="Time" value={[formatTime(item.start_time), formatTime(item.end_time)].filter(Boolean).join(' – ')} />
+              )}
+              {item.location && <Row label="Location" value={item.location} />}
+              {item.description && <Row label="Description" value={item.description} />}
+              {item.b2b_partners?.length > 0 && (
+                <Row label="B2B Partners" value={item.b2b_partners.map(p => p.business_name).join(', ')} />
+              )}
+            </>
+          )}
+
+          {isPromo && (
+            <>
+              <Row label="Dates" value={
+                item.end_date && item.end_date !== item.start_date
+                  ? `${fmtFullDate(item.start_date)} – ${fmtFullDate(item.end_date)}`
+                  : fmtFullDate(item.start_date)
+              } />
+              {item.ongoing && (
+                <div className="flex items-center gap-1.5 text-xs text-orange-600 font-semibold">
+                  <Tag className="w-3 h-3" /> Ongoing — carries forward each month
+                </div>
+              )}
+              {item.discount_value && item.discount_unit !== 'other' && (
+                <Row label="Discount" value={
+                  item.discount_unit === 'free' ? 'FREE'
+                  : item.discount_unit === '%' ? `${item.discount_value}% off`
+                  : `$${item.discount_value} off`
+                } />
+              )}
+              {item.description && <Row label="Description" value={item.description} />}
+            </>
+          )}
+
+          {/* Notes — always last */}
+          {item.notes && <Row label="Notes" value={item.notes} multiline />}
+
+        </div>
+
+        {/* Footer */}
+        {canEdit && (isShift || isEvent) && (
+          <div className="px-5 pb-5 flex gap-2">
+            <button onClick={handleEdit}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-gray-800 text-white text-sm font-semibold hover:bg-gray-700 transition-colors">
+              <Pencil className="w-4 h-4" /> Edit
+            </button>
+            <button onClick={handleDelete}
+              className="px-4 py-2 rounded-xl border border-red-200 text-red-600 text-sm font-semibold hover:bg-red-50 transition-colors">
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function Row({ label, value, multiline }) {
+  return (
+    <div>
+      <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-0.5">{label}</p>
+      <p className={`text-sm text-gray-800 ${multiline ? 'whitespace-pre-wrap' : ''}`}>{value}</p>
     </div>
   )
 }
@@ -538,64 +873,78 @@ function MonthGrid({ monthYear, shifts, timeOffReqs, blockedDays, events, loadin
 
 // Week view — full-height chip with title + optional time + type badge
 function WeekEventChip({ event }) {
-  const typeLabel = {
-    'in-store':    'In-Store',
-    'community':   'Community',
-    'b2b':         'B2B',
-    'corporate':   'Corporate',
-    'partnership': 'Partner',
-    'virtual':     'Virtual',
-    'other':       'Other',
-  }[event.event_type] || event.event_type || 'Event'
+  const [open, setOpen] = useState(false)
+  const typeLabel = EVENT_TYPE_LABELS[event.event_type] || event.event_type || 'Event'
 
   return (
-    <div className="rounded-lg border border-red-300 bg-red-50 px-2 py-1.5 text-xs text-red-800">
-      <div className="flex items-start justify-between gap-1">
-        <p className="font-semibold truncate leading-tight">★ {event.title}</p>
-        <span className="flex-shrink-0 text-[9px] bg-red-100 text-red-600 px-1 py-0.5 rounded font-medium border border-red-200 leading-none mt-0.5">
-          {typeLabel}
-        </span>
+    <>
+      <div onClick={() => setOpen(true)} className="rounded-lg border border-red-300 bg-red-50 px-2 py-1.5 text-xs text-red-800 cursor-pointer hover:bg-red-100 transition-colors">
+        <div className="flex items-start justify-between gap-1">
+          <p className="font-semibold truncate leading-tight">★ {event.title}</p>
+          <span className="flex-shrink-0 text-[9px] bg-red-100 text-red-600 px-1 py-0.5 rounded font-medium border border-red-200 leading-none mt-0.5">
+            {typeLabel}
+          </span>
+        </div>
+        {(event.start_time || event.location) && (
+          <p className="opacity-70 mt-0.5 truncate">
+            {event.start_time ? formatTime(event.start_time) : ''}
+            {event.start_time && event.location ? ' · ' : ''}
+            {event.location || ''}
+          </p>
+        )}
       </div>
-      {(event.start_time || event.location) && (
-        <p className="opacity-70 mt-0.5 truncate">
-          {event.start_time ? formatTime(event.start_time) : ''}
-          {event.start_time && event.location ? ' · ' : ''}
-          {event.location || ''}
-        </p>
-      )}
-    </div>
+      {open && <DetailModal item={event} type="event" onClose={() => setOpen(false)} />}
+    </>
   )
 }
 
 // Month view — compact chip, just title + optional time
 function MonthEventChip({ event }) {
+  const [open, setOpen] = useState(false)
   return (
-    <div className="rounded px-1.5 py-0.5 text-xs border border-red-300 bg-red-50 text-red-800">
-      <span className="font-semibold truncate block">★ {event.title}</span>
-      {event.start_time && (
-        <span className="opacity-70 text-[10px]">{formatTime(event.start_time)}</span>
-      )}
-    </div>
+    <>
+      <div onClick={() => setOpen(true)} className="rounded px-1.5 py-0.5 text-xs border border-red-300 bg-red-50 text-red-800 cursor-pointer hover:bg-red-100 transition-colors">
+        <span className="font-semibold truncate block">★ {event.title}</span>
+        {event.start_time && (
+          <span className="opacity-70 text-[10px]">{formatTime(event.start_time)}</span>
+        )}
+      </div>
+      {open && <DetailModal item={event} type="event" onClose={() => setOpen(false)} />}
+    </>
   )
 }
 
-function MonthChip({ color, label, sub, canEdit, onEdit, onDelete }) {
+function MonthChip({ shift, color, label, sub, canEdit, onEdit, onDelete }) {
+  const [open, setOpen] = useState(false)
   const [hover, setHover] = useState(false)
   return (
-    <div
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      className={`relative rounded px-1.5 py-0.5 text-xs border ${color} cursor-default`}
-    >
-      <span className="font-medium truncate block pr-8">{label}</span>
-      <span className="opacity-70 text-xs">{sub}</span>
-      {canEdit && hover && (
-        <div className="absolute top-0.5 right-0.5 flex gap-0.5">
-          <button onClick={onEdit} className="p-0.5 rounded hover:bg-white/60"><Pencil className="w-2.5 h-2.5" /></button>
-          <button onClick={onDelete} className="p-0.5 rounded hover:bg-white/60"><Trash2 className="w-2.5 h-2.5" /></button>
-        </div>
+    <>
+      <div
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+        onClick={() => setOpen(true)}
+        className={`relative rounded px-1.5 py-0.5 text-xs border ${color} cursor-pointer hover:brightness-95 transition-all`}
+      >
+        <span className="font-medium truncate block pr-8">{label}</span>
+        <span className="opacity-70 text-xs">{sub}</span>
+        {canEdit && hover && (
+          <div className="absolute top-0.5 right-0.5 flex gap-0.5" onClick={e => e.stopPropagation()}>
+            <button onClick={onEdit} className="p-0.5 rounded hover:bg-white/60"><Pencil className="w-2.5 h-2.5" /></button>
+            <button onClick={onDelete} className="p-0.5 rounded hover:bg-white/60"><Trash2 className="w-2.5 h-2.5" /></button>
+          </div>
+        )}
+      </div>
+      {open && shift && (
+        <DetailModal
+          item={shift}
+          type="shift"
+          canEdit={canEdit}
+          onClose={() => setOpen(false)}
+          onEdit={onEdit}
+          onDelete={onDelete}
+        />
       )}
-    </div>
+    </>
   )
 }
 
@@ -678,27 +1027,41 @@ function HoursTable({ shifts, days }) {
 
 function ShiftCard({ shift, canEdit, onEdit, onDelete }) {
   const [hover, setHover] = useState(false)
+  const [open, setOpen]   = useState(false)
   return (
-    <div
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      className={`relative rounded-lg border px-2 py-1.5 text-xs ${shiftColor(shift.tsa_id)}`}
-    >
-      <p className="font-semibold truncate">{shift.tsa_name}</p>
-      <p className="opacity-75">{formatTime(shift.start_time)}–{formatTime(shift.end_time)}</p>
-      {shift.notes && (
-        <p className="flex items-start gap-0.5 mt-1 opacity-70 text-[10px] leading-tight">
-          <MessageSquare className="w-2.5 h-2.5 mt-0.5 shrink-0" />
-          <span className="truncate">{shift.notes}</span>
-        </p>
+    <>
+      <div
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+        onClick={() => setOpen(true)}
+        className={`relative rounded-lg border px-2 py-1.5 text-xs cursor-pointer hover:brightness-95 transition-all ${shiftColor(shift.tsa_id)}`}
+      >
+        <p className="font-semibold truncate">{shift.tsa_name}</p>
+        <p className="opacity-75">{formatTime(shift.start_time)}–{formatTime(shift.end_time)}</p>
+        {shift.notes && (
+          <p className="flex items-start gap-0.5 mt-1 opacity-70 text-[10px] leading-tight">
+            <MessageSquare className="w-2.5 h-2.5 mt-0.5 shrink-0" />
+            <span className="truncate">{shift.notes}</span>
+          </p>
+        )}
+        {canEdit && hover && (
+          <div className="absolute top-1 right-1 flex gap-0.5" onClick={e => e.stopPropagation()}>
+            <button onClick={onEdit} className="p-0.5 rounded hover:bg-white/60"><Pencil className="w-3 h-3" /></button>
+            <button onClick={onDelete} className="p-0.5 rounded hover:bg-white/60"><Trash2 className="w-3 h-3" /></button>
+          </div>
+        )}
+      </div>
+      {open && (
+        <DetailModal
+          item={shift}
+          type="shift"
+          canEdit={canEdit}
+          onClose={() => setOpen(false)}
+          onEdit={onEdit}
+          onDelete={onDelete}
+        />
       )}
-      {canEdit && hover && (
-        <div className="absolute top-1 right-1 flex gap-0.5">
-          <button onClick={onEdit} className="p-0.5 rounded hover:bg-white/60"><Pencil className="w-3 h-3" /></button>
-          <button onClick={onDelete} className="p-0.5 rounded hover:bg-white/60"><Trash2 className="w-3 h-3" /></button>
-        </div>
-      )}
-    </div>
+    </>
   )
 }
 

@@ -143,16 +143,40 @@ router.delete('/:id', authenticate, requireRole('owner', 'manager'), async (req,
 // ─── PROMOTIONS ───────────────────────────────────────────────────────────────
 
 router.get('/promotions', authenticate, async (req, res) => {
-  const { month, year } = req.query
+  const { month, year, startDate, endDate } = req.query
   try {
-    let monthQ = supabase().from('promotions').select('*')
-    if (month) monthQ = monthQ.eq('month', parseInt(month))
-    if (year)  monthQ = monthQ.eq('year',  parseInt(year))
-    const ongoingQ = supabase().from('promotions').select('*').eq('ongoing', true)
-    const [{ data: monthData, error: e1 }, { data: ongoingData, error: e2 }] = await Promise.all([monthQ, ongoingQ])
+    let mainQ = supabase().from('promotions').select('*')
+
+    if (startDate && endDate) {
+      // Date-range mode (schedule page): no active filter — show every promo whose
+      // dates overlap the visible range regardless of the active flag.
+      mainQ = mainQ.lte('start_date', endDate)
+    } else {
+      // Month/year mode (Events page): respect the active flag
+      mainQ = mainQ.eq('active', true)
+      if (month) mainQ = mainQ.eq('month', parseInt(month))
+      if (year)  mainQ = mainQ.eq('year',  parseInt(year))
+    }
+
+    // Ongoing promos: always include when in date-range mode; respect active in month/year mode
+    const ongoingQ = startDate && endDate
+      ? supabase().from('promotions').select('*').eq('ongoing', true)
+      : supabase().from('promotions').select('*').eq('ongoing', true).eq('active', true)
+    const [{ data: mainData, error: e1 }, { data: ongoingData, error: e2 }] = await Promise.all([mainQ, ongoingQ])
     if (e1) throw e1
     if (e2) throw e2
-    const merged = [...(ongoingData || []), ...(monthData || [])]
+
+    let merged = [...(ongoingData || []), ...(mainData || [])]
+
+    // Client-side filter: promo must overlap the date range
+    if (startDate && endDate) {
+      merged = merged.filter(p => {
+        if (!p.start_date) return p.ongoing // ongoing promos without dates always show
+        const pEnd = p.end_date || p.start_date
+        return p.start_date <= endDate && pEnd >= startDate
+      })
+    }
+
     const seen = new Set()
     res.json(merged.filter(p => { if (seen.has(p.id)) return false; seen.add(p.id); return true }))
   } catch (err) {

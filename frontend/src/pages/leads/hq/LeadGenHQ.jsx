@@ -16,19 +16,27 @@ const TABS = [
   { id: 'leaderboard',  label: 'Leaderboard', icon: Trophy,    shortLabel: 'Board'       },
 ]
 
-const STORAGE_KEY = 'leadgenhq_state'
+const STORAGE_KEY   = 'leadgenhq_state'
+const DATA_VERSION  = 2   // bump this to wipe stale localStorage points
 
 function loadState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    return raw ? JSON.parse(raw) : {}
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    // If data version changed, discard employee overrides so zeroed mock data wins
+    if (parsed.dataVersion !== DATA_VERSION) {
+      const { employeeOverrides: _drop, dataVersion: _dv, ...rest } = parsed
+      return rest
+    }
+    return parsed
   } catch { return {} }
 }
 
 function saveState(patch) {
   try {
     const current = loadState()
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...current, ...patch }))
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...current, dataVersion: DATA_VERSION, ...patch }))
   } catch {}
 }
 

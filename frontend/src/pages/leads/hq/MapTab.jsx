@@ -93,13 +93,20 @@ const NBH_KEY          = 'leadgenhq_neighborhoods'
 const NBH_DELETED_KEY  = 'leadgenhq_neighborhoods_deleted'
 const NBH_OVERRIDE_KEY = 'leadgenhq_neighborhoods_overrides'  // edits to default neighborhoods
 
+const ACT_VERSION_KEY = 'leadgenhq_map_activities_version'
+const ACT_VERSION     = 2  // bump to wipe stale mock activities from localStorage
+
 // Activities: save the full list (not just custom-*) so edits/deletes to mock data persist
 function loadActivities() {
   try {
+    // If version mismatch, discard stored activities and start fresh
+    if (localStorage.getItem(ACT_VERSION_KEY) !== String(ACT_VERSION)) {
+      localStorage.removeItem(ACT_KEY)
+      localStorage.setItem(ACT_VERSION_KEY, String(ACT_VERSION))
+      return MAP_ACTIVITIES
+    }
     const saved = localStorage.getItem(ACT_KEY)
-    const list = saved ? JSON.parse(saved) : MAP_ACTIVITIES
-    // Remove any activity that landed in Pewaukee Lake (bad mock coordinates)
-    return list.filter(a => a.id !== 'ma-8')
+    return saved ? JSON.parse(saved) : MAP_ACTIVITIES
   } catch { return MAP_ACTIVITIES }
 }
 function saveActivities(list) {

@@ -12,7 +12,6 @@ function createTransport() {
 }
 
 const THRESHOLD = parseFloat(process.env.DRAWER_VARIANCE_THRESHOLD || '5')
-const ENG_GOAL = 3
 
 function variance(row) {
   return parseFloat(row.drawer_end) - parseFloat(row.drawer_start) - parseFloat(row.cash_collected)
@@ -45,20 +44,46 @@ function sectionHeader(title) {
   return `<tr><td colspan="2" style="font-weight:700;font-size:12px;color:#374151;padding:10px 0 4px;border-bottom:1px solid #f3f4f6;text-transform:uppercase;letter-spacing:.05em;">${title}</td></tr>`
 }
 
-function engCount(sub) {
-  const keys = ['eng_testimonial','eng_google_review','eng_photos_members','eng_photos_rewards',
-    'eng_ambassador','eng_app_link','eng_biz_month','eng_ig_tiktok',
-    'eng_new_member','eng_follow_up','eng_thank_you_cards']
-  return keys.filter(k => sub[k]).length
-}
-
-function buildShiftBlock(row_data) {
+// outreachSummary: { totalCalls, totalTexts, tiles: [{title, calls, texts}] }
+// cleaningItems: string[] of task labels completed today by this user
+function buildShiftBlock(row_data, outreachSummary, cleaningItems) {
   const v = variance(row_data)
   const varAbs = Math.abs(v)
   const varColor = varAbs > THRESHOLD ? '#C8102E' : '#16a34a'
   const varText = `${v >= 0 ? '+' : ''}${fmt(v)}${varAbs > THRESHOLD ? ' ⚠️' : ''}`
-  const ec = engCount(row_data)
-  const engColor = ec >= ENG_GOAL ? '#16a34a' : '#9ca3af'
+
+  // Outreach section HTML
+  const outreachRows = (() => {
+    if (!outreachSummary || (outreachSummary.totalCalls === 0 && outreachSummary.totalTexts === 0)) {
+      return `<tr><td colspan="2" style="padding:5px 0;font-size:13px;color:#9ca3af;">No outreach logged today.</td></tr>`
+    }
+    const tilesWorked = (outreachSummary.tiles || []).filter(t => t.calls > 0 || t.texts > 0)
+    return `
+      <tr>
+        <td style="padding:5px 0;font-size:15px;font-weight:800;color:#16a34a;">📞 ${outreachSummary.totalCalls} calls &nbsp; 💬 ${outreachSummary.totalTexts} texts</td>
+        <td></td>
+      </tr>
+      ${tilesWorked.length > 0 ? `
+      <tr><td colspan="2" style="padding:4px 0 2px;font-size:11px;color:#6b7280;font-weight:600;text-transform:uppercase;letter-spacing:.04em;">Lists targeted:</td></tr>
+      ${tilesWorked.map(t => `
+        <tr><td colspan="2" style="padding:2px 0;font-size:12px;color:#374151;">
+          &bull; ${t.title}
+          ${t.calls > 0 ? `<span style="color:#16a34a;"> &bull; ${t.calls} call${t.calls !== 1 ? 's' : ''}</span>` : ''}
+          ${t.texts > 0 ? `<span style="color:#2563eb;"> &bull; ${t.texts} text${t.texts !== 1 ? 's' : ''}</span>` : ''}
+        </td></tr>`).join('')}
+      ` : ''}
+    `
+  })()
+
+  // Cleaning section HTML
+  const cleaningRows = (() => {
+    if (!cleaningItems || cleaningItems.length === 0) {
+      return `<tr><td colspan="2" style="padding:5px 0;font-size:13px;color:#9ca3af;">No cleaning tasks logged today.</td></tr>`
+    }
+    return cleaningItems.map(label =>
+      `<tr><td colspan="2" style="padding:2px 0;font-size:12px;color:#374151;">✅ ${label}</td></tr>`
+    ).join('')
+  })()
 
   return `
   <div style="margin-bottom:24px;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
@@ -79,8 +104,6 @@ function buildShiftBlock(row_data) {
         </tr>
 
         ${sectionHeader('Lead Generation')}
-        ${row('Phone Calls', row_data.phone_calls ?? 0)}
-        ${row('SMS Sent', row_data.sms_sent ?? 0)}
         ${row('Red Appointments Scheduled', row_data.red_appt_scheduled ?? 0)}
         <tr><td colspan="2" style="padding:4px 0;font-size:13px;">${check(row_data.notes_added_missed)} Notes added to all missed guests</td></tr>
         <tr><td colspan="2" style="padding:4px 0;font-size:13px;">${check(row_data.followed_up_missed)} Followed up with missed guests from yesterday</td></tr>
@@ -95,19 +118,11 @@ function buildShiftBlock(row_data) {
         ${row('Retail Sales', fmt(row_data.retail_amount))}
         ${row_data.sales_notes ? `<tr><td colspan="2" style="padding:4px 0;color:#6b7280;font-size:12px;font-style:italic;">${row_data.sales_notes}</td></tr>` : ''}
 
-        ${sectionHeader('Membership Engagement')}
-        <tr><td colspan="2" style="padding:5px 0;font-size:13px;color:${engColor};font-weight:600;">${ec} of 11 completed (goal: ${ENG_GOAL})</td></tr>
-        <tr><td colspan="2" style="padding:3px 0;font-size:12px;">${check(row_data.eng_testimonial)} Testimonial video ask</td></tr>
-        <tr><td colspan="2" style="padding:3px 0;font-size:12px;">${check(row_data.eng_google_review)} Google Review asked</td></tr>
-        <tr><td colspan="2" style="padding:3px 0;font-size:12px;">${check(row_data.eng_photos_members)} Photos/videos of members</td></tr>
-        <tr><td colspan="2" style="padding:3px 0;font-size:12px;">${check(row_data.eng_photos_rewards)} Photos of rewards redemption</td></tr>
-        <tr><td colspan="2" style="padding:3px 0;font-size:12px;">${check(row_data.eng_ambassador)} Ambassador program mention</td></tr>
-        <tr><td colspan="2" style="padding:3px 0;font-size:12px;">${check(row_data.eng_app_link)} Showed app referral link</td></tr>
-        <tr><td colspan="2" style="padding:3px 0;font-size:12px;">${check(row_data.eng_biz_month)} Business of the Month mention</td></tr>
-        <tr><td colspan="2" style="padding:3px 0;font-size:12px;">${check(row_data.eng_ig_tiktok)} Instagram / TikTok created</td></tr>
-        <tr><td colspan="2" style="padding:3px 0;font-size:12px;">${check(row_data.eng_new_member)} Got to know a new member</td></tr>
-        <tr><td colspan="2" style="padding:3px 0;font-size:12px;">${check(row_data.eng_follow_up)} Followed up with members</td></tr>
-        <tr><td colspan="2" style="padding:3px 0;font-size:12px;">${check(row_data.eng_thank_you_cards)} Thank you cards written</td></tr>
+        ${sectionHeader('Outreach')}
+        ${outreachRows}
+
+        ${sectionHeader('Cleaning Completed')}
+        ${cleaningRows}
 
         ${sectionHeader('Sales Training')}
         <tr><td colspan="2" style="padding:4px 0;font-size:13px;">${check(row_data.watched_training_video)} Watched training video</td></tr>
@@ -130,7 +145,7 @@ function buildShiftBlock(row_data) {
   </div>`
 }
 
-function buildHtml(dateStr, submissions) {
+function buildHtml(dateStr, submissions, outreachByUser, cleaningByUser) {
   const dateLabel = new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
   })
@@ -147,7 +162,11 @@ function buildHtml(dateStr, submissions) {
     <div style="background:#fff;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 10px 10px;padding:24px;">
       ${submissions.length === 0
         ? '<p style="color:#6b7280;font-size:14px;">No EOD submissions were recorded for this date.</p>'
-        : submissions.map(buildShiftBlock).join('')}
+        : submissions.map(s => buildShiftBlock(
+            s,
+            outreachByUser[s.submitted_by] || null,
+            cleaningByUser[s.submitted_by] || []
+          )).join('')}
       <div style="margin-top:16px;padding-top:16px;border-top:1px solid #f3f4f6;font-size:12px;color:#9ca3af;text-align:center;">
         ${process.env.STUDIO_NAME} · ${process.env.STUDIO_ADDRESS} · Internal use only
       </div>
@@ -159,6 +178,8 @@ function buildHtml(dateStr, submissions) {
 
 async function fetchSubmissionsForDate(dateStr) {
   const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+
+  // Fetch EOD submissions
   const { data: submissions, error } = await db
     .from('eod_submissions')
     .select('*')
@@ -166,16 +187,53 @@ async function fetchSubmissionsForDate(dateStr) {
     .order('submitted_at')
 
   if (error) throw new Error(error.message)
-  if (!submissions.length) return []
+  if (!submissions.length) return { submissions: [], outreachByUser: {}, cleaningByUser: {} }
 
   const userIds = [...new Set(submissions.map(s => s.submitted_by))]
+
+  // Fetch user names
   const nameMap = {}
   for (const uid of userIds) {
     const { data } = await db.auth.admin.getUserById(uid)
     nameMap[uid] = data?.user?.user_metadata?.full_name || data?.user?.email?.split('@')[0] || 'Team Member'
   }
 
-  return submissions.map(s => ({ ...s, submitter_name: nameMap[s.submitted_by] || 'Team Member' }))
+  // Fetch outreach logs for all submitters on this date (with tile names)
+  const { data: outreachLogs } = await db
+    .from('outreach_logs')
+    .select('tsa_id, calls_made, texts_made, outreach_tiles(title)')
+    .eq('log_date', dateStr)
+    .in('tsa_id', userIds)
+
+  // Build outreach summary keyed by user id
+  const outreachByUser = {}
+  for (const uid of userIds) {
+    const userLogs = (outreachLogs || []).filter(l => l.tsa_id === uid)
+    const totalCalls = userLogs.reduce((s, l) => s + (l.calls_made || 0), 0)
+    const totalTexts = userLogs.reduce((s, l) => s + (l.texts_made || 0), 0)
+    const tiles = userLogs
+      .filter(l => (l.calls_made || 0) > 0 || (l.texts_made || 0) > 0)
+      .map(l => ({ title: l.outreach_tiles?.title || 'Unknown', calls: l.calls_made || 0, texts: l.texts_made || 0 }))
+    outreachByUser[uid] = { totalCalls, totalTexts, tiles }
+  }
+
+  // Fetch cleaning completions for all submitters on this date
+  const { data: cleaningCompletions } = await db
+    .from('cleaning_completions')
+    .select('completed_by, cleaning_tasks(task_name)')
+    .eq('completion_date', dateStr)
+    .in('completed_by', userIds)
+
+  // Build cleaning list keyed by user id
+  const cleaningByUser = {}
+  for (const uid of userIds) {
+    cleaningByUser[uid] = (cleaningCompletions || [])
+      .filter(c => c.completed_by === uid)
+      .map(c => c.cleaning_tasks?.task_name || 'Task')
+  }
+
+  const enrichedSubmissions = submissions.map(s => ({ ...s, submitter_name: nameMap[s.submitted_by] || 'Team Member' }))
+  return { submissions: enrichedSubmissions, outreachByUser, cleaningByUser }
 }
 
 async function sendEodEmail(dateStr) {
@@ -184,8 +242,8 @@ async function sendEodEmail(dateStr) {
     return
   }
 
-  const submissions = await fetchSubmissionsForDate(dateStr)
-  const html = buildHtml(dateStr, submissions)
+  const { submissions, outreachByUser, cleaningByUser } = await fetchSubmissionsForDate(dateStr)
+  const html = buildHtml(dateStr, submissions, outreachByUser, cleaningByUser)
   const recipients = [process.env.OWNER_EMAIL, process.env.MANAGER_EMAIL].filter(Boolean)
 
   const dateLabel = new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', {

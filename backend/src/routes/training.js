@@ -108,6 +108,30 @@ router.delete('/:id', authenticate, requireRole('owner', 'manager'), async (req,
   res.status(204).end()
 })
 
+// ─── GET /api/training/stats ─────────────────────────────────────────────────
+// Returns total resource count + per-user completion counts for the Team page
+router.get('/stats', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+  const db = supabase()
+
+  const [{ data: resources, error: rErr }, { data: completions, error: cErr }] = await Promise.all([
+    db.from('training_resources').select('id'),
+    db.from('training_completions').select('user_id, resource_id'),
+  ])
+
+  if (rErr) return res.status(500).json({ error: rErr.message })
+  if (cErr) return res.status(500).json({ error: cErr.message })
+
+  const totalResources = (resources || []).length
+
+  // Count unique completions per user
+  const countsByUser = {}
+  for (const c of completions || []) {
+    countsByUser[c.user_id] = (countsByUser[c.user_id] || 0) + 1
+  }
+
+  res.json({ totalResources, countsByUser })
+})
+
 // ─── POST /api/training/:id/complete ─────────────────────────────────────────
 router.post('/:id/complete', authenticate, async (req, res) => {
   const { data, error } = await supabase()

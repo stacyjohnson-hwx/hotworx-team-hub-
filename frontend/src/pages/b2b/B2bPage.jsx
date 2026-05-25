@@ -6,7 +6,7 @@ import {
   Plus, X, Phone, Mail, MapPin, Building2, Tag,
   MessageSquare, ChevronDown, ChevronUp, Edit2, Trash2, Clock,
   PhoneCall, AtSign, Users, Handshake, AlertCircle,
-  Gift, Globe, ImagePlus, Loader2, Calendar,
+  Gift, Globe, ImagePlus, Loader2, Calendar, Package, Send,
 } from 'lucide-react'
 
 // ─── Brand-safe status config (no green) ─────────────────────────────────────
@@ -20,10 +20,13 @@ const STATUSES = [
 ]
 
 const INTERACTION_TYPES = [
-  { value: 'call',    label: 'Call',    icon: PhoneCall },
-  { value: 'email',   label: 'Email',   icon: AtSign },
-  { value: 'visit',   label: 'Visit',   icon: MapPin },
-  { value: 'meeting', label: 'Meeting', icon: Users },
+  { value: 'call',    label: 'Call',    icon: PhoneCall  },
+  { value: 'email',   label: 'Email',   icon: AtSign     },
+  { value: 'visit',   label: 'Visit',   icon: MapPin     },
+  { value: 'meeting', label: 'Meeting', icon: Users      },
+  { value: 'collab',  label: 'Collab',  icon: Handshake  },
+  { value: 'drop',    label: 'Drop',    icon: Package    },
+  { value: 'dm',      label: 'DM',      icon: Send       },
   { value: 'other',   label: 'Other',   icon: MessageSquare },
 ]
 
@@ -270,27 +273,33 @@ function ContactModal({ contact, users, onSave, onClose }) {
 }
 
 // ─── Log Interaction Modal ────────────────────────────────────────────────────
-function LogInteractionModal({ contact, onSave, onClose }) {
-  const [type, setType] = useState('call')
-  const [notes, setNotes] = useState('')
-  const [date, setDate] = useState(new Date().toLocaleDateString('en-CA')) // YYYY-MM-DD
+function LogInteractionModal({ contact, existingInteraction, onSave, onClose }) {
+  const isEdit = !!existingInteraction
+  const [type,   setType]   = useState(existingInteraction?.type  || 'call')
+  const [notes,  setNotes]  = useState(existingInteraction?.notes || '')
+  const [date,   setDate]   = useState(
+    existingInteraction
+      ? new Date(existingInteraction.logged_at).toLocaleDateString('en-CA')
+      : new Date().toLocaleDateString('en-CA')
+  )
   const [saving, setSaving] = useState(false)
 
   const handleSubmit = async (e) => {
     e.preventDefault(); setSaving(true)
     try {
       const logged_at = new Date(date + 'T12:00:00').toISOString()
-      const saved = await apiPost(`/api/b2b/contacts/${contact.id}/interactions`, { type, notes, logged_at })
-      onSave(saved)
-    }
-    finally { setSaving(false) }
+      const saved = isEdit
+        ? await apiPut(`/api/b2b/interactions/${existingInteraction.id}`, { type, notes, logged_at })
+        : await apiPost(`/api/b2b/contacts/${contact.id}/interactions`, { type, notes, logged_at })
+      onSave(saved, isEdit)
+    } finally { setSaving(false) }
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <form className="bg-white rounded-xl w-full max-w-md shadow-2xl border border-gray-200" onClick={e => e.stopPropagation()} onSubmit={handleSubmit}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 bg-gray-800 rounded-t-xl">
-          <h2 className="text-white font-bold">Log Interaction</h2>
+          <h2 className="text-white font-bold">{isEdit ? 'Edit Interaction' : 'Log Interaction'}</h2>
           <button type="button" onClick={onClose} className="text-gray-300 hover:text-white"><X size={18} /></button>
         </div>
         <div className="px-5 py-4 space-y-4">
@@ -323,11 +332,95 @@ function LogInteractionModal({ contact, onSave, onClose }) {
         <div className="flex justify-end gap-3 px-5 py-4 border-t border-gray-200">
           <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 font-medium">Cancel</button>
           <button type="submit" disabled={saving} className="px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-bold rounded-lg disabled:opacity-50">
-            {saving ? 'Logging…' : 'Log Interaction'}
+            {saving ? 'Saving…' : isEdit ? 'Save Changes' : 'Log Interaction'}
           </button>
         </div>
       </form>
     </div>
+  )
+}
+
+// ─── Shared interaction row with edit / delete ────────────────────────────────
+function InteractionRow({ interaction, contact, isOwnerOrManager, onUpdated, onDeleted, compact = false }) {
+  const [confirmDel,  setConfirmDel]  = useState(false)
+  const [deleting,    setDeleting]    = useState(false)
+  const [editing,     setEditing]     = useState(false)
+  const meta = INTERACTION_TYPES.find(t => t.value === interaction.type) || INTERACTION_TYPES[INTERACTION_TYPES.length - 1]
+  const Icon = meta.icon
+
+  const handleDelete = async () => {
+    setDeleting(true)
+    try {
+      await apiDelete(`/api/b2b/interactions/${interaction.id}`)
+      onDeleted(interaction.id)
+    } catch { setDeleting(false); setConfirmDel(false) }
+  }
+
+  const handleSaved = (saved) => {
+    onUpdated(saved)
+    setEditing(false)
+  }
+
+  return (
+    <>
+      <div className={`flex items-start gap-2.5 ${compact ? 'py-2.5 border-b border-gray-100 last:border-0' : 'pt-3'}`}>
+        <div className={`${compact ? 'w-6 h-6' : 'w-7 h-7'} rounded-full bg-orange-100 border border-orange-200 flex items-center justify-center flex-shrink-0 mt-0.5`}>
+          <Icon size={compact ? 11 : 12} className="text-orange-500" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-semibold text-gray-800">
+            <span className="capitalize">{meta.label}</span>
+            <span className="text-gray-500 font-normal ml-1">by {interaction.logged_by_name}</span>
+            <span className="text-gray-400 ml-1.5">{fmtDateTime(interaction.logged_at)}</span>
+          </p>
+          {interaction.notes && <p className={`text-xs text-gray-600 mt-0.5 ${compact ? '' : ''}`}>{interaction.notes}</p>}
+        </div>
+        {isOwnerOrManager && (
+          <div className="flex items-center gap-0.5 flex-shrink-0 ml-1">
+            {!confirmDel ? (
+              <>
+                <button
+                  onClick={() => setEditing(true)}
+                  className="p-1 text-gray-300 hover:text-blue-500 rounded transition-colors"
+                  title="Edit"
+                >
+                  <Edit2 size={11} />
+                </button>
+                <button
+                  onClick={() => setConfirmDel(true)}
+                  className="p-1 text-gray-300 hover:text-red-500 rounded transition-colors"
+                  title="Delete"
+                >
+                  <Trash2 size={11} />
+                </button>
+              </>
+            ) : (
+              <div className="flex items-center gap-1.5 bg-red-50 border border-red-200 rounded-lg px-2 py-0.5">
+                <span className="text-[10px] text-red-600 font-semibold">Delete?</span>
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="text-[10px] text-red-600 font-bold hover:text-red-800 disabled:opacity-50"
+                >Yes</button>
+                <button
+                  onClick={() => setConfirmDel(false)}
+                  className="text-[10px] text-gray-400 hover:text-gray-600"
+                >No</button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {editing && (
+        <LogInteractionModal
+          contact={contact}
+          existingInteraction={interaction}
+          onSave={handleSaved}
+          onClose={() => setEditing(false)}
+        />
+      )}
+    </>
   )
 }
 
@@ -473,25 +566,17 @@ function ContactCard({ contact, users, isOwnerOrManager, onEdit, onDelete, onLog
           {loadingHistory ? (
             <p className="text-xs text-gray-400 py-3">Loading…</p>
           ) : interactions?.length ? (
-            interactions.map(i => {
-              const meta = INTERACTION_TYPES.find(t => t.value === i.type) || INTERACTION_TYPES[4]
-              const Icon = meta.icon
-              return (
-                <div key={i.id} className="flex items-start gap-2.5 pt-3">
-                  <div className="w-7 h-7 rounded-full bg-orange-100 border border-orange-200 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <Icon size={12} className="text-orange-500" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs text-gray-800 font-semibold">
-                      <span className="capitalize">{i.type}</span>
-                      <span className="text-gray-500 font-normal ml-1">by {i.logged_by_name}</span>
-                      <span className="text-gray-400 ml-1.5">{fmtDateTime(i.logged_at)}</span>
-                    </p>
-                    {i.notes && <p className="text-xs text-gray-600 mt-0.5">{i.notes}</p>}
-                  </div>
-                </div>
-              )
-            })
+            interactions.map(i => (
+              <InteractionRow
+                key={i.id}
+                interaction={i}
+                contact={contact}
+                isOwnerOrManager={isOwnerOrManager}
+                compact={false}
+                onUpdated={updated => setInteractions(prev => prev.map(x => x.id === updated.id ? { ...x, ...updated } : x))}
+                onDeleted={id => setInteractions(prev => prev.filter(x => x.id !== id))}
+              />
+            ))
           ) : (
             <p className="text-xs text-gray-400 pt-3 italic">No interactions logged yet.</p>
           )}
@@ -650,24 +735,17 @@ function PipelineRow({ contact, users, isOwnerOrManager, onEdit, onDelete, onLog
             <p className="text-xs text-gray-400 py-2">Loading…</p>
           ) : interactions?.length ? (
             <div className="space-y-0">
-              {interactions.map(i => {
-                const meta = INTERACTION_TYPES.find(t => t.value === i.type) || INTERACTION_TYPES[4]
-                const Icon = meta.icon
-                return (
-                  <div key={i.id} className="flex items-start gap-2.5 py-2.5 border-b border-gray-100 last:border-0">
-                    <div className="w-6 h-6 rounded-full bg-orange-100 border border-orange-200 flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <Icon size={11} className="text-orange-500" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-xs font-semibold text-gray-800">
-                        <span className="capitalize">{i.type}</span>
-                        <span className="text-gray-400 font-normal ml-1">by {i.logged_by_name} · {fmtDateTime(i.logged_at)}</span>
-                      </p>
-                      {i.notes && <p className="text-xs text-gray-500 mt-0.5">{i.notes}</p>}
-                    </div>
-                  </div>
-                )
-              })}
+              {interactions.map(i => (
+                <InteractionRow
+                  key={i.id}
+                  interaction={i}
+                  contact={contact}
+                  isOwnerOrManager={isOwnerOrManager}
+                  compact={true}
+                  onUpdated={updated => setInteractions(prev => prev.map(x => x.id === updated.id ? { ...x, ...updated } : x))}
+                  onDeleted={id => setInteractions(prev => prev.filter(x => x.id !== id))}
+                />
+              ))}
             </div>
           ) : (
             <p className="text-xs text-gray-400 py-2 italic">No interactions logged yet.</p>
@@ -869,24 +947,17 @@ function ActivePartnerCard({ contact, users, isOwnerOrManager, onEdit, onLog }) 
           {loadingHist ? (
             <p className="text-xs text-gray-400 py-3">Loading…</p>
           ) : interactions?.length ? (
-            interactions.map(i => {
-              const meta = INTERACTION_TYPES.find(t => t.value === i.type) || INTERACTION_TYPES[4]
-              const Icon = meta.icon
-              return (
-                <div key={i.id} className="flex items-start gap-2.5 pt-3">
-                  <div className="w-7 h-7 rounded-full bg-orange-100 border border-orange-200 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <Icon size={12} className="text-orange-500" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold text-gray-800">
-                      <span className="capitalize">{i.type}</span>
-                      <span className="text-gray-400 font-normal ml-1">by {i.logged_by_name} · {fmtDateTime(i.logged_at)}</span>
-                    </p>
-                    {i.notes && <p className="text-xs text-gray-600 mt-0.5">{i.notes}</p>}
-                  </div>
-                </div>
-              )
-            })
+            interactions.map(i => (
+              <InteractionRow
+                key={i.id}
+                interaction={i}
+                contact={contact}
+                isOwnerOrManager={isOwnerOrManager}
+                compact={false}
+                onUpdated={updated => setInteractions(prev => prev.map(x => x.id === updated.id ? { ...x, ...updated } : x))}
+                onDeleted={id => setInteractions(prev => prev.filter(x => x.id !== id))}
+              />
+            ))
           ) : (
             <p className="text-xs text-gray-400 pt-3 italic">No interactions logged yet.</p>
           )}
@@ -966,24 +1037,17 @@ function ActivePartnerRow({ contact, isOwnerOrManager, onEdit, onLog }) {
             <p className="text-xs text-gray-400 py-2">Loading…</p>
           ) : interactions?.length ? (
             <div className="space-y-0">
-              {interactions.map(i => {
-                const meta = INTERACTION_TYPES.find(t => t.value === i.type) || INTERACTION_TYPES[4]
-                const Icon = meta.icon
-                return (
-                  <div key={i.id} className="flex items-start gap-2.5 py-2.5 border-b border-gray-100 last:border-0">
-                    <div className="w-6 h-6 rounded-full bg-orange-100 border border-orange-200 flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <Icon size={11} className="text-orange-500" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-xs font-semibold text-gray-800">
-                        <span className="capitalize">{i.type}</span>
-                        <span className="text-gray-400 font-normal ml-1">by {i.logged_by_name} · {fmtDateTime(i.logged_at)}</span>
-                      </p>
-                      {i.notes && <p className="text-xs text-gray-500 mt-0.5">{i.notes}</p>}
-                    </div>
-                  </div>
-                )
-              })}
+              {interactions.map(i => (
+                <InteractionRow
+                  key={i.id}
+                  interaction={i}
+                  contact={contact}
+                  isOwnerOrManager={isOwnerOrManager}
+                  compact={true}
+                  onUpdated={updated => setInteractions(prev => prev.map(x => x.id === updated.id ? { ...x, ...updated } : x))}
+                  onDeleted={id => setInteractions(prev => prev.filter(x => x.id !== id))}
+                />
+              ))}
             </div>
           ) : (
             <p className="text-xs text-gray-400 py-2 italic">No interactions logged yet.</p>

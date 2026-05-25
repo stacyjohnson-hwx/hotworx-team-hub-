@@ -169,6 +169,26 @@ router.post('/contacts/:id/interactions', authenticate, async (req, res) => {
   res.status(201).json(data)
 })
 
+// ─── PUT /api/b2b/interactions/:id ───────────────────────────────────────────
+router.put('/interactions/:id', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+  const { type, notes, logged_at } = req.body
+  if (!type) return res.status(400).json({ error: 'type is required' })
+
+  const { data, error } = await supabase()
+    .from('b2b_interactions')
+    .update({
+      type,
+      notes: notes || null,
+      ...(logged_at ? { logged_at } : {}),
+    })
+    .eq('id', req.params.id)
+    .select()
+    .single()
+
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data)
+})
+
 // ─── DELETE /api/b2b/interactions/:id ────────────────────────────────────────
 router.delete('/interactions/:id', authenticate, requireRole('owner', 'manager'), async (req, res) => {
   const { error } = await supabase()

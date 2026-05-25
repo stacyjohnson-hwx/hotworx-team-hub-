@@ -408,7 +408,7 @@ function ManageMissionsModal({ customMissions, hiddenMissions, overrides, onClos
     'list':         'Manage Missions',
     'add':          'Add Mission',
     'edit-custom':  'Edit Mission',
-    'edit-builtin': 'Edit Built-in Mission',
+    'edit-builtin': 'Edit Mission',
   }[mode]
 
   return (
@@ -439,79 +439,55 @@ function ManageMissionsModal({ customMissions, hiddenMissions, overrides, onClos
 
           {/* ── Mission list ── */}
           {mode === 'list' && (
-            <div className="space-y-4">
-
-              {/* Custom missions */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">Custom Missions</p>
-                  <button onClick={() => setMode('add')}
-                    className="flex items-center gap-1 text-xs font-semibold text-[#E8611A] hover:text-orange-700 transition-colors">
-                    <Plus size={13} /> Add Mission
-                  </button>
-                </div>
-
-                {customMissions.length === 0 ? (
-                  <p className="text-xs text-gray-400 italic py-2">No custom missions yet. Add one above.</p>
-                ) : (
-                  <div className="space-y-1.5">
-                    {customMissions.map(m => (
-                      <div key={m.id} className="flex items-center gap-2 bg-orange-50 border border-orange-100 rounded-lg px-3 py-2">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-gray-800 truncate">{m.title}</p>
-                          <div className="flex items-center gap-1.5 mt-0.5">
-                            <span className="text-[10px] text-gray-400">{m.category}</span>
-                            <span className="text-[10px] text-gray-300">·</span>
-                            <span className="text-[10px] font-semibold text-[#E8611A]">{m.points} pts</span>
-                          </div>
-                        </div>
-                        <button onClick={() => startEditCustom(m)} className="p-1 text-gray-400 hover:text-gray-700 transition-colors" title="Edit"><Pencil size={13} /></button>
-                        <button onClick={() => onDeleteCustom(m.id)} className="p-1 text-gray-400 hover:text-red-500 transition-colors" title="Delete"><Trash2 size={13} /></button>
-                      </div>
-                    ))}
-                  </div>
-                )}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-[11px] text-gray-400">Edit or hide any mission. Edited missions show a dot.</p>
+                <button onClick={() => setMode('add')}
+                  className="flex items-center gap-1 text-xs font-semibold text-[#E8611A] hover:text-orange-700 transition-colors flex-shrink-0 ml-3">
+                  <Plus size={13} /> Add
+                </button>
               </div>
 
-              {/* Divider */}
-              <div className="border-t border-gray-100" />
-
-              {/* Built-in missions — edit / show/hide */}
-              <div>
-                <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Built-in Missions</p>
-                <p className="text-[11px] text-gray-400 mb-2">Edit or hide missions TSAs can see. Edited missions show a dot.</p>
-                <div className="space-y-1.5">
-                  {STANDING_MISSIONS.map(m => {
-                    const hidden   = hiddenMissions.includes(m.id)
-                    const modified = !!overrides[m.id]
-                    const display  = { ...m, ...(overrides[m.id] || {}) }
-                    return (
-                      <div key={m.id} className={`flex items-center gap-2 border rounded-lg px-3 py-2 transition-colors ${hidden ? 'bg-gray-50 border-gray-100 opacity-50' : 'bg-white border-gray-200'}`}>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <p className={`text-sm font-medium truncate ${hidden ? 'text-gray-400 line-through' : 'text-gray-800'}`}>{display.title}</p>
-                            {modified && <span className="w-1.5 h-1.5 rounded-full bg-[#E8611A] flex-shrink-0" title="Edited" />}
-                          </div>
-                          <div className="flex items-center gap-1.5 mt-0.5">
-                            <span className="text-[10px] text-gray-400">{display.category}</span>
-                            <span className="text-[10px] text-gray-300">·</span>
-                            <span className="text-[10px] font-semibold text-[#E8611A]">{display.points} pts</span>
-                          </div>
-                        </div>
-                        <button onClick={() => startEditBuiltIn(m)} className="p-1 text-gray-400 hover:text-gray-700 transition-colors" title="Edit"><Pencil size={13} /></button>
-                        {modified && (
-                          <button onClick={() => onResetBuiltIn(m.id)} className="p-1 text-gray-300 hover:text-orange-500 transition-colors" title="Reset to original"><RotateCcw size={13} /></button>
+              {/* All missions in one unified list: custom first, then built-ins */}
+              {[...customMissions, ...STANDING_MISSIONS.map(m => ({ ...m, ...(overrides[m.id] || {}), _isBuiltIn: true, _originalId: m.id, _modified: !!overrides[m.id] }))].map(m => {
+                const isCustom = !m._isBuiltIn
+                const hidden   = hiddenMissions.includes(m._originalId || m.id)
+                return (
+                  <div key={m.id}
+                    className={`flex items-center gap-2 border rounded-lg px-3 py-2.5 transition-colors ${hidden ? 'bg-gray-50 border-gray-100 opacity-50' : 'bg-white border-gray-200'}`}>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <p className={`text-sm font-medium truncate ${hidden ? 'text-gray-400 line-through' : 'text-gray-800'}`}>{m.title}</p>
+                        {m._modified && <span className="w-1.5 h-1.5 rounded-full bg-[#E8611A] flex-shrink-0" title="Edited" />}
+                      </div>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-[10px] text-gray-400">{m.category}</span>
+                        <span className="text-[10px] text-gray-300">·</span>
+                        <span className="text-[10px] font-semibold text-[#E8611A]">{m.points} pts</span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => isCustom ? startEditCustom(m) : startEditBuiltIn(STANDING_MISSIONS.find(s => s.id === m._originalId))}
+                      className="p-1 text-gray-400 hover:text-gray-700 transition-colors" title="Edit">
+                      <Pencil size={13} />
+                    </button>
+                    {isCustom ? (
+                      <button onClick={() => onDeleteCustom(m.id)} className="p-1 text-gray-400 hover:text-red-500 transition-colors" title="Delete"><Trash2 size={13} /></button>
+                    ) : (
+                      <>
+                        {m._modified && (
+                          <button onClick={() => onResetBuiltIn(m._originalId)} className="p-1 text-gray-300 hover:text-orange-500 transition-colors" title="Reset to original"><RotateCcw size={13} /></button>
                         )}
-                        <button onClick={() => onToggleHide(m.id)}
+                        <button onClick={() => onToggleHide(m._originalId)}
                           className={`p-1 transition-colors ${hidden ? 'text-gray-300 hover:text-gray-500' : 'text-gray-400 hover:text-gray-700'}`}
                           title={hidden ? 'Show' : 'Hide'}>
                           {hidden ? <EyeOff size={14} /> : <Eye size={14} />}
                         </button>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
+                      </>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           )}
         </div>
@@ -596,7 +572,6 @@ function MissionCard({ mission, completions, onComplete, isPlayMission, canDrag,
                   'bg-orange-50 text-orange-600 border-orange-200'
                 }`}>{mission.category}</span>
                 {isPlayMission && <span className="text-[10px] font-medium px-1.5 py-0.5 rounded border bg-yellow-50 text-yellow-700 border-yellow-200">Active Play</span>}
-                {mission.id?.startsWith('custom-') && <span className="text-[10px] font-medium px-1.5 py-0.5 rounded border bg-violet-50 text-violet-600 border-violet-200">Custom</span>}
                 {expiryLabel && expiryLabel !== 'Expired' && <span className="text-[10px] font-medium text-amber-600">⏰ {expiryLabel}</span>}
                 {isExpired && <span className="text-[10px] font-medium text-gray-400">Expired</span>}
                 {completionCount > 0 && !completedToday && <span className="flex items-center gap-0.5 text-[10px] text-gray-400"><RotateCcw size={9} />{completionCount}×</span>}

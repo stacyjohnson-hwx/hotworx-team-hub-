@@ -193,14 +193,19 @@ router.get('/logs', authenticate, async (req, res) => {
 })
 
 // ─── POST /api/outreach/logs/upsert ─────────────────────────────────────────
-// Upsert calls/texts count for today
+// Upsert calls/texts count for today; syncs monthly totals to personal_goals
 router.post('/logs/upsert', authenticate, async (req, res) => {
   const { tile_id, calls_made, texts_made } = req.body
   if (!tile_id) return res.status(400).json({ error: 'tile_id required' })
 
-  const today = new Date().toISOString().split('T')[0]
+  const now = new Date()
+  const today = now.toISOString().split('T')[0]
+  const month = now.getMonth() + 1
+  const year  = now.getFullYear()
+  const db    = supabase()
 
-  const { data, error } = await supabase()
+  // Upsert today's log
+  const { data, error } = await db
     .from('outreach_logs')
     .upsert({
       tile_id,
@@ -208,12 +213,43 @@ router.post('/logs/upsert', authenticate, async (req, res) => {
       log_date: today,
       calls_made: calls_made ?? 0,
       texts_made: texts_made ?? 0,
-      updated_at: new Date().toISOString(),
+      updated_at: now.toISOString(),
     }, { onConflict: 'tile_id,tsa_id,log_date' })
     .select()
     .single()
 
   if (error) return res.status(500).json({ error: error.message })
+
+  // ── Sync monthly totals → personal_goals ──────────────────────────────
+  try {
+    const startOfMonth = `${year}-${String(month).padStart(2,'0')}-01`
+    const endOfMonth   = new Date(year, month, 0).toISOString().split('T')[0]
+
+    const { data: monthLogs } = await db
+      .from('outreach_logs')
+      .select('calls_made, texts_made')
+      .eq('tsa_id', req.user.id)
+      .gte('log_date', startOfMonth)
+      .lte('log_date', endOfMonth)
+
+    const totalCalls = (monthLogs || []).reduce((s, l) => s + (l.calls_made || 0), 0)
+    const totalTexts = (monthLogs || []).reduce((s, l) => s + (l.texts_made || 0), 0)
+
+    await db
+      .from('personal_goals')
+      .upsert({
+        tsa_id: req.user.id,
+        month,
+        year,
+        calls_made: totalCalls,
+        texts_made: totalTexts,
+        updated_at: now.toISOString(),
+      }, { onConflict: 'tsa_id,month,year', ignoreDuplicates: false })
+  } catch (syncErr) {
+    console.warn('[outreach] personal_goals sync failed:', syncErr.message)
+    // Non-fatal — don't block the response
+  }
+
   res.json(data)
 })
 
