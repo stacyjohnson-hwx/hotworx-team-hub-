@@ -1133,7 +1133,7 @@ function ActivePartnersTab({ contacts, users, isOwnerOrManager, onEdit }) {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function B2bPage() {
   const { role } = useRole()
-  const isOwnerOrManager = role === 'owner' || role === 'manager'
+  const isOwnerOrManager = true // all roles can view, add, and log interactions in B2B
 
   const [tab, setTab] = useState('pipeline')
   const [contacts, setContacts] = useState([])
