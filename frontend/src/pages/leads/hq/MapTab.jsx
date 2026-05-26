@@ -479,11 +479,12 @@ function LogActivityModal({ coords, onClose, onSave, onUpdate, prefill = {}, edi
   function handleSave() {
     if (!form.locationName.trim() || !form.lat || !form.lng) return
     const payload = {
-      locationName: form.locationName, latitude: form.lat, longitude: form.lng,
-      activityType: form.activityType,
-      dateCompleted: new Date(form.date+'T12:00:00').toISOString(),
-      employee: form.employeeId, employeeName: form.employeeName,
-      missionId: null, playId: null, points: Number(form.points), notes: form.notes,
+      locationName:   form.locationName, latitude: form.lat, longitude: form.lng,
+      activityType:   form.activityType,
+      dateCompleted:  new Date(form.date+'T12:00:00').toISOString(),
+      employee:       form.employeeId, employeeName: form.employeeName,
+      missionId:      null, playId: null, points: Number(form.points), notes: form.notes,
+      neighborhoodId: prefill.neighborhoodId || null,  // preserve tag from neighborhood modal
     }
     if (editActivity) {
       onUpdate?.({ ...editActivity, ...payload })
@@ -584,7 +585,10 @@ function NeighborhoodHistoryModal({
   const nearby = activities
     .filter(a => a.latitude && a.longitude)
     .map(a => ({ ...a, dist: distanceKm(neighborhood.lat, neighborhood.lng, a.latitude, a.longitude) }))
-    .filter(a => a.dist < 0.8)
+    .filter(a =>
+      // Prefer exact neighborhood tag; fall back to proximity for older untagged activities
+      a.neighborhoodId ? a.neighborhoodId === neighborhood.id : a.dist < 0.8
+    )
     .sort((a, b) => new Date(b.dateCompleted) - new Date(a.dateCompleted))
 
   const nearest   = nearby[0] || null
@@ -1038,10 +1042,11 @@ export default function MapTab() {
   function handleLogForNbh(nbh) {
     setNbhDetail(null)
     setLogPrefill({
-      locationName: nbh.name,
-      activityType: 'Flyer Drop',
-      lat: nbh.lat,
-      lng: nbh.lng,
+      locationName:   nbh.name,
+      activityType:   'Flyer Drop',
+      lat:            nbh.lat,
+      lng:            nbh.lng,
+      neighborhoodId: nbh.id,   // tag so history is exact-matched, not proximity-matched
     })
   }
 
