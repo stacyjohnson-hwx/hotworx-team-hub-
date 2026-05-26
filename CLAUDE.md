@@ -211,6 +211,20 @@ Update the Status column (⬜ = pending, 🔄 = in progress, ✅ = complete) as 
 
 ---
 
+## Deployment Rule — Always Push After Every Change
+
+**After completing any feature, fix, or update — always commit and push to GitHub immediately.**
+Vercel (frontend) and Railway (backend) auto-deploy on every push to `main`.
+Never leave changes only on the local machine. The live app at Vercel is what the team uses daily.
+
+```bash
+git add <changed files>
+git commit -m "Description of change"
+git push
+```
+
+---
+
 ## Local Development
 
 ```bash
