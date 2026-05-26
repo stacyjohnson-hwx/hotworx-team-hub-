@@ -6,7 +6,7 @@ const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 
 
 const CATEGORIES = ['Open', 'Close', 'Saunas', 'FX Zone']
 
-const TASK_TYPES = ['Cleaning', 'Operations']
+const TASK_TYPES = ['Cleaning', 'Operations', 'Mission']
 
 export default function TaskForm({ task, onSaved, onClose }) {
   const isEdit = !!task

@@ -71,9 +71,6 @@ export default function EodHistory() {
   const today = todayChicago()
   const [weekStart, setWeekStart] = useState(() => mondayOfWeek(today))
   const weekEnd = sundayOfWeek(weekStart)
-  // Cap weekEnd at today for the current week
-  const effectiveEnd = weekEnd > today ? today : weekEnd
-
   const isCurrentWeek = weekStart === mondayOfWeek(today)
 
   const [submissions, setSubmissions] = useState([])
@@ -86,14 +83,16 @@ export default function EodHistory() {
     setLoading(true)
     setError(null)
     try {
-      const data = await apiGet(`/api/eod?from=${weekStart}&to=${effectiveEnd}`)
+      // Use full Mon–Sun range so any day's submissions are visible.
+      // Future days simply have no data and won't render.
+      const data = await apiGet(`/api/eod?from=${weekStart}&to=${weekEnd}`)
       setSubmissions(data)
     } catch (e) {
       setError(e.message)
     } finally {
       setLoading(false)
     }
-  }, [weekStart, effectiveEnd])
+  }, [weekStart, weekEnd])
 
   useEffect(() => { load() }, [load])
 
@@ -140,10 +139,11 @@ export default function EodHistory() {
   }, {})
   const sortedDates = Object.keys(byDate).sort((a, b) => b.localeCompare(a))
 
-  // Week label
+  // Week label — always show full Mon–Sun range
+  const fmtShort = d => new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
   const weekLabel = isCurrentWeek
-    ? 'This week'
-    : `${new Date(weekStart + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${new Date(weekEnd + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+    ? `This week (${fmtShort(weekStart)} – ${fmtShort(weekEnd)})`
+    : `${fmtShort(weekStart)} – ${fmtShort(weekEnd)}`
 
   return (
     <div>
@@ -294,7 +294,21 @@ export default function EodHistory() {
                       </div>
                     )}
 
-                    {/* Completed Missions / Operations */}
+                    {/* Completed Operations Tasks */}
+                    {(sub.completed_operations?.length > 0) && (
+                      <div>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Operations Completed</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {sub.completed_operations.map((t, i) => (
+                            <span key={i} className="inline-flex items-center gap-1 bg-indigo-50 text-indigo-700 text-xs font-medium px-2 py-0.5 rounded-full border border-indigo-200">
+                              ✅ {t}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Completed Growth Missions */}
                     {(sub.completed_missions?.length > 0) && (
                       <div>
                         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Missions Completed</p>

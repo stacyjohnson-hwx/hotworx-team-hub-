@@ -45,10 +45,11 @@ function sectionHeader(title) {
 }
 
 // outreachSummary: { totalCalls, totalTexts, tiles: [{title, calls, texts}] }
-// tasksByUser: { cleaning: string[], operations: string[] }
+// tasksByUser: { cleaning: string[], operations: string[], missions: string[] }
 function buildShiftBlock(row_data, outreachSummary, tasksByUser) {
   const cleaningItems   = tasksByUser?.cleaning   || []
   const operationsItems = tasksByUser?.operations || []
+  const missionItems    = tasksByUser?.missions   || []
   const v = variance(row_data)
   const varAbs = Math.abs(v)
   const varColor = varAbs > THRESHOLD ? '#C8102E' : '#16a34a'
@@ -82,10 +83,15 @@ function buildShiftBlock(row_data, outreachSummary, tasksByUser) {
     ? cleaningItems.map(label => `<tr><td colspan="2" style="padding:2px 0;font-size:12px;color:#374151;">✅ ${label}</td></tr>`).join('')
     : `<tr><td colspan="2" style="padding:5px 0;font-size:13px;color:#9ca3af;">No cleaning tasks logged today.</td></tr>`
 
-  // Operations / Missions section HTML
+  // Operations section HTML
   const operationsRows = operationsItems.length
     ? operationsItems.map(label => `<tr><td colspan="2" style="padding:2px 0;font-size:12px;color:#374151;">✅ ${label}</td></tr>`).join('')
     : `<tr><td colspan="2" style="padding:5px 0;font-size:13px;color:#9ca3af;">No operations tasks logged today.</td></tr>`
+
+  // Missions section HTML
+  const missionsRows = missionItems.length
+    ? missionItems.map(label => `<tr><td colspan="2" style="padding:2px 0;font-size:12px;color:#374151;">✅ ${label}</td></tr>`).join('')
+    : `<tr><td colspan="2" style="padding:5px 0;font-size:13px;color:#9ca3af;">No missions logged today.</td></tr>`
 
   return `
   <div style="margin-bottom:24px;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
@@ -131,8 +137,11 @@ function buildShiftBlock(row_data, outreachSummary, tasksByUser) {
         ${sectionHeader('Cleaning Completed')}
         ${cleaningRows}
 
-        ${sectionHeader('Missions / Operations Completed')}
+        ${sectionHeader('Operations Completed')}
         ${operationsRows}
+
+        ${sectionHeader('Missions Completed')}
+        ${missionsRows}
 
         ${sectionHeader('Sales Training')}
         ${(() => {
@@ -182,7 +191,7 @@ function buildHtml(dateStr, submissions, outreachByUser, tasksByUser) {
         : submissions.map(s => buildShiftBlock(
             s,
             outreachByUser[s.submitted_by] || null,
-            tasksByUser[s.submitted_by]    || { cleaning: [], operations: [] }
+            tasksByUser[s.submitted_by]    || { cleaning: [], operations: [], missions: [] }
           )).join('')}
       <div style="margin-top:16px;padding-top:16px;border-top:1px solid #f3f4f6;font-size:12px;color:#9ca3af;text-align:center;">
         ${process.env.STUDIO_NAME} · ${process.env.STUDIO_ADDRESS} · Internal use only
@@ -256,17 +265,19 @@ async function fetchSubmissionsForDate(dateStr) {
     for (const uid of userIds) {
       const cleaning   = []
       const operations = []
+      const missions   = []
       for (const c of cleaningCompletions.filter(c => c.completed_by === uid)) {
         const t = taskMap[c.task_id]
         if (!t) continue
         if (t.task_type === 'Operations') operations.push(t.title)
+        else if (t.task_type === 'Mission') missions.push(t.title)
         else cleaning.push(t.title)
       }
-      tasksByUser[uid] = { cleaning, operations }
+      tasksByUser[uid] = { cleaning, operations, missions }
     }
   }
   for (const uid of userIds) {
-    if (!tasksByUser[uid]) tasksByUser[uid] = { cleaning: [], operations: [] }
+    if (!tasksByUser[uid]) tasksByUser[uid] = { cleaning: [], operations: [], missions: [] }
   }
 
   const enrichedSubmissions = submissions.map(s => ({ ...s, submitter_name: nameMap[s.submitted_by] || 'Team Member' }))

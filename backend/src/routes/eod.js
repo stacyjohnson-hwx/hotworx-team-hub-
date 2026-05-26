@@ -8,63 +8,66 @@ const { todayInChicago } = require('../jobs/eodEmailCron')
 
 const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 
-// ─── GET /api/eod?date=YYYY-MM-DD ────────────────────────────────────────────
-// Owner/Manager: all submissions for the date
-// TSA: their own submissions for the date
+// ─── GET /api/eod?date=YYYY-MM-DD  OR  ?from=YYYY-MM-DD&to=YYYY-MM-DD ─────────
+// Owner/Manager: all submissions; TSA: their own only
 router.get('/', authenticate, async (req, res) => {
-  const date = req.query.date || todayInChicago()
+  const today = todayInChicago()
+  const from  = req.query.from || req.query.date || today
+  const to    = req.query.to   || req.query.date || today
 
   let query = db()
     .from('eod_submissions')
     .select('*')
-    .eq('shift_date', date)
-    .order('submitted_at')
+    .gte('shift_date', from)
+    .lte('shift_date', to)
+    .order('submitted_at', { ascending: false })
 
-  if (req.role === 'tsa') {
-    query = query.eq('submitted_by', req.user.id)
-  }
+  if (req.role === 'tsa') query = query.eq('submitted_by', req.user.id)
 
   const { data, error } = await query
   if (error) return res.status(500).json({ error: error.message })
 
-  // Attach completed tasks (cleaning + operations/missions) for each submitter
   const submissions = data || []
-  if (submissions.length > 0) {
-    const userIds = [...new Set(submissions.map(s => s.submitted_by))]
-    const { data: completions } = await db()
-      .from('cleaning_completions')
-      .select('task_id, completed_by')
-      .eq('completion_date', date)
-      .in('completed_by', userIds)
+  if (submissions.length === 0) return res.json([])
 
-    if (completions && completions.length > 0) {
-      const taskIds = [...new Set(completions.map(c => c.task_id))]
-      const { data: tasks } = await db()
-        .from('cleaning_tasks')
-        .select('id, title, task_type')
-        .in('id', taskIds)
+  // Attach completed tasks per submitter per date
+  const userIds = [...new Set(submissions.map(s => s.submitted_by))]
+  const { data: completions } = await db()
+    .from('cleaning_completions')
+    .select('task_id, completed_by, completion_date')
+    .gte('completion_date', from)
+    .lte('completion_date', to)
+    .in('completed_by', userIds)
 
-      const taskMap = {}
-      for (const t of tasks || []) taskMap[t.id] = t
-
-      const tasksByUser = {}
-      for (const c of completions) {
-        const t = taskMap[c.task_id]
-        if (!t) continue
-        if (!tasksByUser[c.completed_by]) tasksByUser[c.completed_by] = { cleaning: [], missions: [] }
-        if (t.task_type === 'Operations') tasksByUser[c.completed_by].missions.push(t.title)
-        else tasksByUser[c.completed_by].cleaning.push(t.title)
-      }
-
-      return res.json(submissions.map(s => ({
-        ...s,
-        completed_cleaning: tasksByUser[s.submitted_by]?.cleaning  || [],
-        completed_missions: tasksByUser[s.submitted_by]?.missions  || [],
-      })))
-    }
+  const taskMap = {}
+  if (completions && completions.length > 0) {
+    const taskIds = [...new Set(completions.map(c => c.task_id))]
+    const { data: tasks } = await db()
+      .from('cleaning_tasks').select('id, title, task_type').in('id', taskIds)
+    for (const t of tasks || []) taskMap[t.id] = t
   }
 
-  res.json(submissions.map(s => ({ ...s, completed_cleaning: [], completed_missions: [] })))
+  // Key: `userId:date`
+  const tasksByKey = {}
+  for (const c of completions || []) {
+    const key = `${c.completed_by}:${c.completion_date}`
+    if (!tasksByKey[key]) tasksByKey[key] = { cleaning: [], operations: [], missions: [] }
+    const t = taskMap[c.task_id]
+    if (!t) continue
+    if (t.task_type === 'Operations') tasksByKey[key].operations.push(t.title)
+    else if (t.task_type === 'Mission') tasksByKey[key].missions.push(t.title)
+    else tasksByKey[key].cleaning.push(t.title)
+  }
+
+  res.json(submissions.map(s => {
+    const key = `${s.submitted_by}:${s.shift_date}`
+    return {
+      ...s,
+      completed_cleaning: tasksByKey[key]?.cleaning || [],
+      completed_operations: tasksByKey[key]?.operations || [],
+      completed_missions: tasksByKey[key]?.missions || [],
+    }
+  }))
 })
 
 // ─── GET /api/eod/mine ────────────────────────────────────────────────────────
