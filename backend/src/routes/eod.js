@@ -103,7 +103,7 @@ router.post('/', authenticate, async (req, res) => {
     // Sales training
     watched_training_video, used_sales_gpt, role_played_script,
     // Other
-    orders_needed, general_notes,
+    orders_needed, general_notes, support_notes,
     // Missions (Growth HQ) — array of title strings
     mission_titles,
   } = req.body
@@ -152,6 +152,7 @@ router.post('/', authenticate, async (req, res) => {
       role_played_script: !!role_played_script,
       orders_needed: orders_needed || null,
       general_notes: general_notes || null,
+      support_notes: support_notes || null,
       mission_titles: Array.isArray(mission_titles) && mission_titles.length > 0 ? mission_titles : [],
     })
     .select()

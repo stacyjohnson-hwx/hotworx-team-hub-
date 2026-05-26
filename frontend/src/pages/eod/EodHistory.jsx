@@ -258,8 +258,14 @@ export default function EodHistory() {
                         <p className="text-gray-700">Sweat Basic: {sub.sweat_basic ?? 0}</p>
                         <p className="text-gray-700">Sweat Elite: {sub.sweat_elite ?? 0}</p>
                         <p className="text-gray-700">Cancellations: {sub.cancellations_count ?? 0}</p>
+                        {sub.cancellations_notes && (
+                          <p className="text-gray-500 text-xs italic mt-0.5">↳ {sub.cancellations_notes}</p>
+                        )}
                         <p className="text-gray-700">Retail: {fmt(sub.retail_amount)}</p>
                         <p className="text-gray-700">Red Appts: {sub.red_appt_scheduled ?? 0}</p>
+                        {sub.sales_notes && (
+                          <p className="text-gray-500 text-xs italic mt-1">{sub.sales_notes}</p>
+                        )}
                       </div>
 
                       {/* Sales Training */}
@@ -322,11 +328,19 @@ export default function EodHistory() {
                       </div>
                     )}
 
-                    {/* Notes */}
+                    {/* General Notes */}
                     {sub.general_notes && (
                       <div>
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-0.5">Notes</p>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-0.5">General Notes</p>
                         <p className="text-gray-700 text-xs">{sub.general_notes}</p>
+                      </div>
+                    )}
+
+                    {/* Support Notes */}
+                    {sub.support_notes && (
+                      <div>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-0.5">How can we better support you?</p>
+                        <p className="text-gray-700 text-xs bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">{sub.support_notes}</p>
                       </div>
                     )}
                   </div>

@@ -164,8 +164,14 @@ function buildShiftBlock(row_data, outreachSummary, tasksByUser) {
 
       ${row_data.general_notes ? `
         <div style="margin-top:12px;">
-          <div style="font-weight:700;font-size:12px;color:#374151;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Notes</div>
+          <div style="font-weight:700;font-size:12px;color:#374151;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">General Notes</div>
           <div style="font-size:13px;color:#374151;">${row_data.general_notes}</div>
+        </div>` : ''}
+
+      ${row_data.support_notes ? `
+        <div style="margin-top:12px;">
+          <div style="font-weight:700;font-size:12px;color:#374151;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">How can we better support you?</div>
+          <div style="font-size:13px;color:#374151;background:#eff6ff;padding:8px 12px;border-radius:6px;border-left:3px solid #3b82f6;">${row_data.support_notes}</div>
         </div>` : ''}
     </div>
   </div>`
