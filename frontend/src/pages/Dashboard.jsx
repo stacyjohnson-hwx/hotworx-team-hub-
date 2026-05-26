@@ -226,6 +226,7 @@ function LinkCard({ link, canEdit, onEdit, onDelete }) {
 function ImportantLinks({ role }) {
   const [links,   setLinks]   = useState([])
   const [loading, setLoading] = useState(true)
+  const [fetchErr, setFetchErr] = useState(null)
   const [editing, setEditing] = useState(null) // null | 'new' | link object
 
   const canEdit = role === 'owner' || role === 'manager'
@@ -234,6 +235,7 @@ function ImportantLinks({ role }) {
   // One-time migration: if DB is empty, check for links saved in the old
   // localStorage format and save them to the database automatically.
   useEffect(() => {
+    setFetchErr(null)
     apiGet('/api/dashboard-links').then(async data => {
       const dbLinks = Array.isArray(data) ? data : []
       if (dbLinks.length === 0 && canEdit) {
@@ -262,11 +264,22 @@ function ImportantLinks({ role }) {
               setLinks(saved)
               return
             }
+            // Migration failed — still show localStorage links so nothing disappears
+            setLinks(old.map((l, i) => ({ ...l, id: l.id || `local-${i}`, image_url: l.imageUrl, manager_only: l.managerOnly })))
+            return
           }
         } catch { /* ignore localStorage errors */ }
       }
       setLinks(dbLinks)
-    }).catch(() => setLinks([])).finally(() => setLoading(false))
+    }).catch(err => {
+      setFetchErr(err.message)
+      // Fall back to localStorage so links don't disappear
+      try {
+        const raw = localStorage.getItem('dashboard_important_links')
+        const old = raw ? JSON.parse(raw) : []
+        setLinks(old.map((l, i) => ({ ...l, id: l.id || `local-${i}`, image_url: l.imageUrl, manager_only: l.managerOnly })))
+      } catch { setLinks([]) }
+    }).finally(() => setLoading(false))
   }, [canEdit])
 
   async function handleSave(data) {
@@ -308,6 +321,12 @@ function ImportantLinks({ role }) {
           onSave={handleSave}
           onClose={() => setEditing(null)}
         />
+      )}
+
+      {fetchErr && canEdit && (
+        <div className="mb-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg px-3 py-2">
+          ⚠️ Could not load links from server: <strong>{fetchErr}</strong>
+        </div>
       )}
 
       <div className="flex items-center justify-between mb-3">
