@@ -180,6 +180,19 @@ function nearestActivity(lat, lng, activities, thresholdKm) {
     .filter(a => a.dist < thresholdKm)
     .sort((a, b) => new Date(b.dateCompleted) - new Date(a.dateCompleted))[0] || null
 }
+// Neighborhood-aware: matches by neighborhoodId tag first, then falls back to proximity
+function nearestActivityForNeighborhood(nbh, activities) {
+  const candidates = activities.filter(a => a.latitude && a.longitude)
+  const tagged = candidates.filter(a => a.neighborhoodId === nbh.id)
+  if (tagged.length > 0) {
+    return tagged.sort((a, b) => new Date(b.dateCompleted) - new Date(a.dateCompleted))[0]
+  }
+  // Fall back to proximity for untagged legacy activities
+  return candidates
+    .map(a => ({ ...a, dist: distanceKm(nbh.lat, nbh.lng, a.latitude, a.longitude) }))
+    .filter(a => a.dist < 0.8)
+    .sort((a, b) => new Date(b.dateCompleted) - new Date(a.dateCompleted))[0] || null
+}
 
 // ─── Geocode ──────────────────────────────────────────────────────────────────
 async function geocode(query) {
@@ -885,17 +898,14 @@ function LocationRow({ item, type, activities, onFly, onDelete, onShowHistory, o
   const hasCoords = !!(item.lat && item.lng)
 
   // For neighborhoods: coverage-based dot; for businesses: B2B status color
+  const nearest   = type === 'neighborhood' ? nearestActivityForNeighborhood(item, activities) : null
   const dotColor = type === 'business'
     ? (hasCoords ? (B2B_STATUS_COLOR[item.status] || '#D1D5DB') : '#E5E7EB')
     : (() => {
-        const nearest   = nearestActivity(item.lat, item.lng, activities, 0.8)
         const covered   = nearest && getIntensity(nearest.dateCompleted) !== 'stale'
         const intensity = nearest ? getIntensity(nearest.dateCompleted) : null
         return covered ? INTENSITY[intensity].color : '#D1D5DB'
       })()
-
-  // Coverage info only used for neighborhoods
-  const nearest   = type === 'neighborhood' ? nearestActivity(item.lat, item.lng, activities, 0.8) : null
   const covered   = nearest && getIntensity(nearest.dateCompleted) !== 'stale'
   const intensity = nearest ? getIntensity(nearest.dateCompleted) : null
 
@@ -1115,7 +1125,7 @@ export default function MapTab() {
 
   // Covered counts
   const coveredNbh = neighborhoods.filter(n => {
-    const hit = nearestActivity(n.lat, n.lng, activities, 0.8)
+    const hit = nearestActivityForNeighborhood(n, activities)
     return hit && getIntensity(hit.dateCompleted) !== 'stale'
   }).length
   const coveredBiz = bizMapItems.filter(b => {
@@ -1224,7 +1234,7 @@ export default function MapTab() {
 
           {/* Neighborhood dashed circles (uncovered only) */}
           {neighborhoods.map(n => {
-            const hit     = nearestActivity(n.lat, n.lng, activities, 0.8)
+            const hit     = nearestActivityForNeighborhood(n, activities)
             const covered = hit && getIntensity(hit.dateCompleted) !== 'stale'
             if (covered) return null
             return (
@@ -1235,7 +1245,7 @@ export default function MapTab() {
 
           {/* Neighborhood diamond pins — always visible so you can see every named area */}
           {neighborhoods.map(n => {
-            const hit       = nearestActivity(n.lat, n.lng, activities, 0.8)
+            const hit       = nearestActivityForNeighborhood(n, activities)
             const covered   = hit && getIntensity(hit.dateCompleted) !== 'stale'
             const intensity = hit ? getIntensity(hit.dateCompleted) : null
             const color     = covered ? INTENSITY[intensity].color : '#E8611A'

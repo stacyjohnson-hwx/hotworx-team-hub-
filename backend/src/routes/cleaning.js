@@ -181,6 +181,102 @@ router.delete('/tasks/:id', authenticate, requireRole('owner', 'manager'), async
   res.status(204).end()
 })
 
+// ─── GET /api/cleaning/analytics?days=30 ─────────────────────────────────────
+// Returns completion stats per task and per staff member for the last N days.
+// Accessible to all authenticated roles.
+router.get('/analytics', authenticate, async (req, res) => {
+  const days = Math.min(Math.max(parseInt(req.query.days) || 30, 7), 90)
+  const db   = supabase()
+
+  // Build date range
+  const toDate   = new Date()
+  const fromDate = new Date(toDate)
+  fromDate.setDate(fromDate.getDate() - (days - 1))
+  const fromStr  = fromDate.toISOString().slice(0, 10)
+  const toStr    = toDate.toISOString().slice(0, 10)
+
+  // Build array of every date in range
+  const dateRange = []
+  for (let d = new Date(fromDate); d <= toDate; d.setDate(d.getDate() + 1)) {
+    dateRange.push(d.toISOString().slice(0, 10))
+  }
+
+  const [tasksRes, completionsRes, userMapRes] = await Promise.all([
+    db.from('cleaning_tasks').select('*').eq('active', true),
+    db.from('cleaning_completions')
+      .select('task_id, completed_by, completion_date')
+      .gte('completion_date', fromStr)
+      .lte('completion_date', toStr),
+    buildUserMap(db),
+  ])
+
+  if (tasksRes.error)       return res.status(500).json({ error: tasksRes.error.message })
+  if (completionsRes.error) return res.status(500).json({ error: completionsRes.error.message })
+
+  const tasks       = tasksRes.data || []
+  const completions = completionsRes.data || []
+  const userMap     = userMapRes
+
+  // ── Per-task stats ──────────────────────────────────────────────────────────
+  const taskStats = tasks.map(task => {
+    const scheduledDates = dateRange.filter(d => taskIsActiveOnDate(task, d))
+    const scheduledCount = scheduledDates.length
+    const taskCompletions = completions.filter(c => c.task_id === task.id)
+    const completedDates  = new Set(taskCompletions.map(c => c.completion_date))
+    const completedCount  = scheduledDates.filter(d => completedDates.has(d)).length
+
+    // Last completed date
+    const sorted = taskCompletions.slice().sort((a, b) => b.completion_date.localeCompare(a.completion_date))
+    const last   = sorted[0] || null
+
+    // Days since last completed
+    const daysSinceLast = last
+      ? Math.floor((toDate - new Date(last.completion_date)) / 86400000)
+      : null
+
+    return {
+      id:             task.id,
+      title:          task.title,
+      task_type:      task.task_type,
+      frequency:      task.frequency,
+      area:           task.area,
+      scheduledCount,
+      completedCount,
+      completionRate: scheduledCount > 0 ? completedCount / scheduledCount : null,
+      lastCompletedDate:   last?.completion_date || null,
+      lastCompletedBy:     last ? (userMap[last.completed_by] || 'Team Member') : null,
+      daysSinceLast,
+      // Missed = scheduled but no completion that day
+      missedCount: scheduledCount - completedCount,
+    }
+  }).filter(t => t.scheduledCount > 0) // only tasks that appeared during this period
+
+  // ── Per-user stats ──────────────────────────────────────────────────────────
+  const userTotals = {}
+  for (const c of completions) {
+    const uid = c.completed_by
+    if (!userTotals[uid]) userTotals[uid] = { userId: uid, name: userMap[uid] || 'Team Member', count: 0, taskSet: new Set() }
+    userTotals[uid].count++
+    userTotals[uid].taskSet.add(c.task_id)
+  }
+  const userStats = Object.values(userTotals)
+    .map(u => ({ userId: u.userId, name: u.name, count: u.count, uniqueTasks: u.taskSet.size }))
+    .sort((a, b) => b.count - a.count)
+
+  // ── Totals ──────────────────────────────────────────────────────────────────
+  const totalScheduled = taskStats.reduce((s, t) => s + t.scheduledCount, 0)
+  const totalCompleted = taskStats.reduce((s, t) => s + t.completedCount, 0)
+
+  res.json({
+    period: { from: fromStr, to: toStr, days },
+    taskStats,
+    userStats,
+    totalScheduled,
+    totalCompleted,
+    overallRate: totalScheduled > 0 ? totalCompleted / totalScheduled : 0,
+  })
+})
+
 // ─── POST /api/cleaning/complete ─────────────────────────────────────────────
 // TSA marks a task done
 router.post('/complete', authenticate, async (req, res) => {

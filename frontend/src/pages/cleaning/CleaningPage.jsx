@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useRole } from '@/hooks/useRole'
 import TaskList from './TaskList'
 import TaskLibrary from './TaskLibrary'
+import CleaningAnalytics from './CleaningAnalytics'
 
 export default function CleaningPage() {
   const { isOwnerOrManager } = useRole()
@@ -16,19 +17,23 @@ export default function CleaningPage() {
         </div>
       </div>
 
-      {/* Tabs — only show Library tab if owner or manager */}
-      {isOwnerOrManager && (
-        <div className="flex gap-1 mb-6 border-b border-gray-200">
-          <TabButton active={tab === 'today'} onClick={() => setTab('today')}>
-            Today's Tasks
-          </TabButton>
+      <div className="flex gap-1 mb-6 border-b border-gray-200">
+        <TabButton active={tab === 'today'} onClick={() => setTab('today')}>
+          Today's Tasks
+        </TabButton>
+        <TabButton active={tab === 'analytics'} onClick={() => setTab('analytics')}>
+          Analytics
+        </TabButton>
+        {isOwnerOrManager && (
           <TabButton active={tab === 'library'} onClick={() => setTab('library')}>
             Task Library
           </TabButton>
-        </div>
-      )}
+        )}
+      </div>
 
-      {tab === 'today' ? <TaskList /> : <TaskLibrary />}
+      {tab === 'today'     && <TaskList />}
+      {tab === 'analytics' && <CleaningAnalytics />}
+      {tab === 'library'   && <TaskLibrary />}
     </div>
   )
 }

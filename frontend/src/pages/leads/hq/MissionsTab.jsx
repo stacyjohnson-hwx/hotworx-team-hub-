@@ -756,7 +756,7 @@ export default function MissionsTab({ employee, onPointsEarned, onStreakUpdate }
 
     setMissionsState(prev => {
       const empData  = { ...(prev[empId] || {}) }
-      empData[mission.id] = [...(empData[mission.id] || []), { date: today, note }]
+      empData[mission.id] = [...(empData[mission.id] || []), { date: today, note, title: mission.title }]
       return { ...prev, [empId]: empData }
     })
     onPointsEarned(empId, mission.points)

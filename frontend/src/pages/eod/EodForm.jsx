@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react'
 import { CheckCircle, ExternalLink, AlertTriangle, Phone, MessageSquare, Sparkles, ClipboardCheck } from 'lucide-react'
-import { apiPost } from '@/hooks/useApi'
+import { apiGet, apiPost } from '@/hooks/useApi'
 import { useAuth } from '@/contexts/AuthContext'
-import { STANDING_MISSIONS } from '../leads/data/mockData'
 
 const VARIANCE_THRESHOLD = 5
 
@@ -112,9 +111,52 @@ function ShiftAtAGlance() {
   const totalCalls  = outreach?.totalCalls  || 0
   const totalTexts  = outreach?.totalTexts  || 0
   const activeTiles = (outreach?.byTile || []).filter(t => (t.calls_made || 0) + (t.texts_made || 0) > 0)
-  const allTasks    = cleaning?.tasks || []
-  const doneTasks   = allTasks.filter(t => t.completed)
-  const pendingTasks = allTasks.filter(t => !t.completed)
+  const allTasks         = cleaning?.tasks || []
+  const cleaningTasks    = allTasks.filter(t => t.task_type !== 'Operations')
+  const operationsTasks  = allTasks.filter(t => t.task_type === 'Operations')
+
+  const doneClean    = cleaningTasks.filter(t => t.completed)
+  const pendingClean = cleaningTasks.filter(t => !t.completed)
+  const doneOps      = operationsTasks.filter(t => t.completed)
+  const pendingOps   = operationsTasks.filter(t => !t.completed)
+
+  function TaskGroup({ tasks, done, pending, label, doneColor, doneIcon: DoneIcon }) {
+    if (tasks.length === 0) return null
+    return (
+      <div>
+        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+          <span>{label}</span>
+          {done.length > 0 && (
+            <span className={`${doneColor} text-[9px] font-bold px-1.5 py-0.5 rounded-full`}>
+              {done.length}/{tasks.length} done
+            </span>
+          )}
+        </p>
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          {done.map((task, i) => (
+            <div key={task.id}
+              className={`flex items-center gap-2.5 px-3 py-2 text-xs ${i < tasks.length - 1 ? 'border-b border-gray-100' : ''}`}>
+              <div className={`w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 ${label === 'Operations' ? 'bg-indigo-100' : 'bg-green-100'}`}>
+                <ClipboardCheck size={10} className={label === 'Operations' ? 'text-indigo-600' : 'text-green-600'} />
+              </div>
+              <span className="text-gray-700 font-medium truncate">{task.title}</span>
+              <span className="ml-auto text-gray-300 text-[10px] flex-shrink-0 capitalize">{task.frequency}</span>
+            </div>
+          ))}
+          {pending.map((task, i) => (
+            <div key={task.id}
+              className={`flex items-center gap-2.5 px-3 py-2 text-xs ${done.length + i < tasks.length - 1 ? 'border-b border-gray-100' : ''}`}>
+              <div className="w-4 h-4 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
+                <div className="w-2 h-2 rounded-full bg-gray-300" />
+              </div>
+              <span className="text-gray-400 truncate">{task.title}</span>
+              <span className="ml-auto text-gray-300 text-[10px] flex-shrink-0 capitalize">{task.frequency}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="rounded-xl overflow-hidden border border-gray-200 shadow-sm">
@@ -163,42 +205,26 @@ function ShiftAtAGlance() {
             </div>
 
             {/* ── Cleaning ── */}
-            <div>
-              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
-                <span>Cleaning</span>
-                {doneTasks.length > 0 && (
-                  <span className="bg-green-100 text-green-700 text-[9px] font-bold px-1.5 py-0.5 rounded-full">
-                    {doneTasks.length}/{allTasks.length} done
-                  </span>
-                )}
-              </p>
-              {allTasks.length === 0 ? (
-                <p className="text-xs text-gray-400 italic">No cleaning tasks for today.</p>
-              ) : (
-                <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-                  {doneTasks.map((task, i) => (
-                    <div key={task.id}
-                      className={`flex items-center gap-2.5 px-3 py-2 text-xs ${i < allTasks.length - 1 ? 'border-b border-gray-100' : ''}`}>
-                      <div className="w-4 h-4 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
-                        <ClipboardCheck size={10} className="text-green-600" />
-                      </div>
-                      <span className="text-gray-700 font-medium truncate">{task.title}</span>
-                      <span className="ml-auto text-gray-300 text-[10px] flex-shrink-0 capitalize">{task.frequency}</span>
-                    </div>
-                  ))}
-                  {pendingTasks.map((task, i) => (
-                    <div key={task.id}
-                      className={`flex items-center gap-2.5 px-3 py-2 text-xs ${doneTasks.length + i < allTasks.length - 1 ? 'border-b border-gray-100' : ''}`}>
-                      <div className="w-4 h-4 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
-                        <div className="w-2 h-2 rounded-full bg-gray-300" />
-                      </div>
-                      <span className="text-gray-400 truncate">{task.title}</span>
-                      <span className="ml-auto text-gray-300 text-[10px] flex-shrink-0 capitalize">{task.frequency}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            <TaskGroup
+              tasks={cleaningTasks}
+              done={doneClean}
+              pending={pendingClean}
+              label="Cleaning"
+              doneColor="bg-green-100 text-green-700"
+            />
+
+            {/* ── Operations ── */}
+            <TaskGroup
+              tasks={operationsTasks}
+              done={doneOps}
+              pending={pendingOps}
+              label="Operations"
+              doneColor="bg-indigo-100 text-indigo-700"
+            />
+
+            {allTasks.length === 0 && (
+              <p className="text-xs text-gray-400 italic">No tasks for today.</p>
+            )}
           </>
         )}
       </div>
@@ -224,28 +250,37 @@ export default function EodForm({ submittedShifts, onSubmitted }) {
   // Auto-read today's mission completions from Growth HQ (localStorage)
   const [missionTitles, setMissionTitles] = useState([])
 
-  useEffect(() => {
+  // Read missions fresh from localStorage — always pull at the moment of call
+  function readMissionsFromStorage(profileArg) {
     try {
-      const todayStr = new Date().toLocaleDateString('en-CA')
-      const state = JSON.parse(localStorage.getItem('leadgenhq_missions') || '{}')
-      // Employee ID is derived from first name (matches LeadGenHQ logic)
-      const firstName = profile?.name?.trim().split(' ')[0]?.toLowerCase() || ''
-      const empData = state[firstName] || {}
+      const todayStr  = new Date().toLocaleDateString('en-CA')
+      const state     = JSON.parse(localStorage.getItem('leadgenhq_missions') || '{}')
+      const firstName = (profileArg ?? profile)?.name?.trim().split(' ')[0]?.toLowerCase() || ''
+      const empData   = state[firstName] || {}
+      const titles    = []
+      for (const completions of Object.values(empData)) {
+        const todayComp = completions.find(c => c.date === todayStr && c.title)
+        if (todayComp && !titles.includes(todayComp.title)) titles.push(todayComp.title)
+      }
+      return titles
+    } catch { return [] }
+  }
 
-      // Gather all mission definitions (standing + custom from localStorage)
-      const customMissions = JSON.parse(localStorage.getItem('leadgenhq_custom_missions') || '[]')
-      const allDefs = [...STANDING_MISSIONS, ...customMissions]
+  // Re-read on mount, on profile load, and whenever the user returns to this tab/window
+  useEffect(() => {
+    if (!profile) return
+    setMissionTitles(readMissionsFromStorage(profile))
 
-      // Find missions completed today
-      const completedIds = Object.keys(empData).filter(mId =>
-        empData[mId]?.some(c => c.date === todayStr)
-      )
-      const titles = completedIds
-        .map(id => allDefs.find(m => m.id === id)?.title)
-        .filter(Boolean)
-
-      setMissionTitles(titles)
-    } catch { /* graceful — missions section just stays empty */ }
+    function onVisible() {
+      if (document.visibilityState === 'visible') setMissionTitles(readMissionsFromStorage(profile))
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onVisible)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onVisible)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile])
 
   function toggleMissionTitle(title) {
@@ -270,6 +305,15 @@ export default function EodForm({ submittedShifts, onSubmitted }) {
     setSaving(true)
     setError(null)
     try {
+      // Always read missions fresh from localStorage at submit time — catches any missions
+      // completed after the form was opened (e.g. user went to Growth HQ then came back)
+      const freshMissions = readMissionsFromStorage()
+      // Merge: keep any manual removals the user made in the UI, but also include any
+      // new missions completed since the form opened
+      const finalMissions = [
+        ...missionTitles,
+        ...freshMissions.filter(t => !missionTitles.includes(t)),
+      ]
       const payload = {
         ...form,
         drawer_start: parseFloat(form.drawer_start) || 0,
@@ -283,7 +327,7 @@ export default function EodForm({ submittedShifts, onSubmitted }) {
         phone_calls: parseInt(form.phone_calls) || 0,
         sms_sent: parseInt(form.sms_sent) || 0,
         red_appt_scheduled: parseInt(form.red_appt_scheduled) || 0,
-        mission_titles: missionTitles,
+        mission_titles: finalMissions,
       }
       await apiPost('/api/eod', payload)
       setSuccess(true)
