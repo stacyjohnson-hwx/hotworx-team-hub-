@@ -105,9 +105,14 @@ function buildShiftBlock(row_data, outreachSummary, cleaningItems) {
 
         ${sectionHeader('Lead Generation')}
         ${row('Red Appointments Scheduled', row_data.red_appt_scheduled ?? 0)}
-        <tr><td colspan="2" style="padding:4px 0;font-size:13px;">${check(row_data.notes_added_missed)} Notes added to all missed guests</td></tr>
-        <tr><td colspan="2" style="padding:4px 0;font-size:13px;">${check(row_data.followed_up_missed)} Followed up with missed guests from yesterday</td></tr>
-        <tr><td colspan="2" style="padding:4px 0;font-size:13px;">${check(row_data.survey_sent_red_appts)} Survey sent to tomorrow's red appointments</td></tr>
+        ${(() => {
+          const done = [
+            row_data.notes_added_missed    && 'Notes added to all missed guests',
+            row_data.followed_up_missed    && 'Followed up with missed guests from yesterday',
+            row_data.survey_sent_red_appts && 'Survey sent to tomorrow\'s red appointments',
+          ].filter(Boolean)
+          return done.map(label => `<tr><td colspan="2" style="padding:2px 0;font-size:13px;">✅ ${label}</td></tr>`).join('')
+        })()}
         ${row_data.leads_notes ? `<tr><td colspan="2" style="padding:4px 0;color:#6b7280;font-size:12px;font-style:italic;">${row_data.leads_notes}</td></tr>` : ''}
 
         ${sectionHeader('Sales')}
@@ -125,9 +130,16 @@ function buildShiftBlock(row_data, outreachSummary, cleaningItems) {
         ${cleaningRows}
 
         ${sectionHeader('Sales Training')}
-        <tr><td colspan="2" style="padding:4px 0;font-size:13px;">${check(row_data.watched_training_video)} Watched training video</td></tr>
-        <tr><td colspan="2" style="padding:4px 0;font-size:13px;">${check(row_data.role_played_script)} Role played / practiced script</td></tr>
-        <tr><td colspan="2" style="padding:4px 0;font-size:13px;">${check(row_data.used_sales_gpt)} Used Sales GPT</td></tr>
+        ${(() => {
+          const done = [
+            row_data.watched_training_video && 'Watched training video',
+            row_data.role_played_script     && 'Role played / practiced script',
+            row_data.used_sales_gpt         && 'Practiced with Sales GPT',
+          ].filter(Boolean)
+          return done.length
+            ? done.map(label => `<tr><td colspan="2" style="padding:2px 0;font-size:13px;">✅ ${label}</td></tr>`).join('')
+            : `<tr><td colspan="2" style="padding:5px 0;font-size:13px;color:#9ca3af;">None completed.</td></tr>`
+        })()}
       </table>
 
       ${row_data.orders_needed ? `
