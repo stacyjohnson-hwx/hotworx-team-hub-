@@ -283,15 +283,18 @@ function LogInteractionModal({ contact, existingInteraction, onSave, onClose }) 
       : new Date().toLocaleDateString('en-CA')
   )
   const [saving, setSaving] = useState(false)
+  const [saveErr, setSaveErr] = useState('')
 
   const handleSubmit = async (e) => {
-    e.preventDefault(); setSaving(true)
+    e.preventDefault(); setSaving(true); setSaveErr('')
     try {
       const logged_at = new Date(date + 'T12:00:00').toISOString()
       const saved = isEdit
         ? await apiPut(`/api/b2b/interactions/${existingInteraction.id}`, { type, notes, logged_at })
         : await apiPost(`/api/b2b/contacts/${contact.id}/interactions`, { type, notes, logged_at })
       onSave(saved, isEdit)
+    } catch (err) {
+      setSaveErr(err.message || 'Save failed — please try again')
     } finally { setSaving(false) }
   }
 
@@ -329,6 +332,11 @@ function LogInteractionModal({ contact, existingInteraction, onSave, onClose }) 
             <textarea rows={3} className={`${inputCls} resize-none`} value={notes} onChange={e => setNotes(e.target.value)} placeholder="What happened? Any next steps?" />
           </div>
         </div>
+        {saveErr && (
+          <div className="mx-5 mb-2 bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg px-3 py-2">
+            ⚠️ {saveErr}
+          </div>
+        )}
         <div className="flex justify-end gap-3 px-5 py-4 border-t border-gray-200">
           <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 font-medium">Cancel</button>
           <button type="submit" disabled={saving} className="px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-bold rounded-lg disabled:opacity-50">
