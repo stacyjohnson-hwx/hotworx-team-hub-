@@ -610,6 +610,7 @@ function MissionCard({ mission, completions, onComplete, isPlayMission, canDrag,
                 entityId={mission.id}
                 entityLabel={mission.title}
                 initialUp={signal?.up ?? 0}
+                initialNeutral={signal?.neutral ?? 0}
                 initialDown={signal?.down ?? 0}
                 initialMine={signal?.mine ?? null}
               />

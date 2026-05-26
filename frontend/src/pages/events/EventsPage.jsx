@@ -182,6 +182,7 @@ function EventCard({ event, canEdit, onEdit, onDelete, rating, onRate, signal })
               entityId={event.id}
               entityLabel={event.title}
               initialUp={signal?.up ?? 0}
+              initialNeutral={signal?.neutral ?? 0}
               initialDown={signal?.down ?? 0}
               initialMine={signal?.mine ?? null}
             />
@@ -645,6 +646,7 @@ function PromoCard({ promo, canEdit, onEdit, onDelete, rating, onRate, signal })
               entityId={promo.id}
               entityLabel={promo.title}
               initialUp={signal?.up ?? 0}
+              initialNeutral={signal?.neutral ?? 0}
               initialDown={signal?.down ?? 0}
               initialMine={signal?.mine ?? null}
             />

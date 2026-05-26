@@ -522,6 +522,7 @@ function ContactCard({ contact, users, isOwnerOrManager, onEdit, onDelete, onLog
             entityId={contact.id}
             entityLabel={contact.business_name}
             initialUp={signal?.up ?? 0}
+            initialNeutral={signal?.neutral ?? 0}
             initialDown={signal?.down ?? 0}
             initialMine={signal?.mine ?? null}
             className="ml-auto"
@@ -702,6 +703,7 @@ function PipelineRow({ contact, users, isOwnerOrManager, onEdit, onDelete, onLog
           entityId={contact.id}
           entityLabel={contact.business_name}
           initialUp={signal?.up ?? 0}
+          initialNeutral={signal?.neutral ?? 0}
           initialDown={signal?.down ?? 0}
           initialMine={signal?.mine ?? null}
           className="flex-shrink-0"
@@ -962,6 +964,7 @@ function ActivePartnerCard({ contact, users, isOwnerOrManager, onEdit, onLog, si
             entityId={contact.id}
             entityLabel={contact.business_name}
             initialUp={signal?.up ?? 0}
+            initialNeutral={signal?.neutral ?? 0}
             initialDown={signal?.down ?? 0}
             initialMine={signal?.mine ?? null}
             className="ml-auto"
@@ -1060,6 +1063,7 @@ function ActivePartnerRow({ contact, isOwnerOrManager, onEdit, onLog, signal }) 
             entityId={contact.id}
             entityLabel={contact.business_name}
             initialUp={signal?.up ?? 0}
+            initialNeutral={signal?.neutral ?? 0}
             initialDown={signal?.down ?? 0}
             initialMine={signal?.mine ?? null}
           />

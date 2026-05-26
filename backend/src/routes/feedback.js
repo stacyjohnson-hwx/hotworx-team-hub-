@@ -64,8 +64,8 @@ router.get('/', authenticate, async (req, res) => {
 // POST /api/feedback/signal — cast or flip a thumbs signal
 router.post('/signal', authenticate, async (req, res) => {
   const { entity_type, entity_id, entity_label, signal, note } = req.body
-  if (!entity_type || !entity_id || ![1, -1].includes(Number(signal))) {
-    return res.status(400).json({ error: 'entity_type, entity_id, and signal (1 or -1) are required' })
+  if (!entity_type || !entity_id || ![1, 0, -1].includes(Number(signal))) {
+    return res.status(400).json({ error: 'entity_type, entity_id, and signal (1, 0, or -1) are required' })
   }
   try {
     const { data, error } = await supabase()
@@ -122,11 +122,12 @@ router.get('/signals', authenticate, async (req, res) => {
     const { data, error } = await q
     if (error) throw error
 
-    // Summarise into { [entity_id]: { up, down, mine } }
+    // Summarise into { [entity_id]: { up, neutral, down, mine } }
     const summary = {}
     for (const row of data || []) {
-      if (!summary[row.entity_id]) summary[row.entity_id] = { up: 0, down: 0, mine: null }
+      if (!summary[row.entity_id]) summary[row.entity_id] = { up: 0, neutral: 0, down: 0, mine: null }
       if (row.signal === 1)  summary[row.entity_id].up++
+      if (row.signal === 0)  summary[row.entity_id].neutral++
       if (row.signal === -1) summary[row.entity_id].down++
       if (row.rated_by === req.user.id) summary[row.entity_id].mine = row.signal
     }

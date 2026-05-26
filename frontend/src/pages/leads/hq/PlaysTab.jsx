@@ -532,6 +532,7 @@ function PlayCard({ play, onView, signal }) {
               entityId={play.id}
               entityLabel={play.name}
               initialUp={signal?.up ?? 0}
+              initialNeutral={signal?.neutral ?? 0}
               initialDown={signal?.down ?? 0}
               initialMine={signal?.mine ?? null}
             />
