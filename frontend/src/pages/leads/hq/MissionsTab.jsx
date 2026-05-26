@@ -4,6 +4,7 @@ import { CheckCircle2, Circle, Zap, Clock, RotateCcw, ChevronDown, ChevronUp,
 import { STANDING_MISSIONS, GROWTH_PLAYS, WEEKLY_CHALLENGE, AI_RECOMMENDATIONS, getRank, RANKS } from '../data/mockData'
 import { useAuth } from '@/contexts/AuthContext'
 import RatingModal from '@/components/RatingModal'
+import ThumbsWidget, { useFeedbackSignals } from '@/components/ThumbsWidget'
 
 // ─── localStorage helpers ─────────────────────────────────────────────────────
 const MISSIONS_KEY        = 'leadgenhq_missions'
@@ -508,7 +509,7 @@ function ManageMissionsModal({ customMissions, hiddenMissions, overrides, onClos
 
 // ─── Mission Card ─────────────────────────────────────────────────────────────
 function MissionCard({ mission, completions, onComplete, isPlayMission, canDrag,
-                       onDragStart, onDragOver, onDrop, onDragEnd, isDragOver }) {
+                       onDragStart, onDragOver, onDrop, onDragEnd, isDragOver, signal }) {
   const [expanded,    setExpanded]    = useState(false)
   const [showProof,   setShowProof]   = useState(false)
   const [showRating,  setShowRating]  = useState(false)
@@ -604,6 +605,14 @@ function MissionCard({ mission, completions, onComplete, isPlayMission, canDrag,
               <span className="flex items-center gap-0.5 text-xs font-bold text-[#E8611A] bg-orange-50 border border-orange-200 px-1.5 py-0.5 rounded-md">
                 <Zap size={10} fill="#E8611A" />{mission.points}
               </span>
+              <ThumbsWidget
+                entityType="mission"
+                entityId={mission.id}
+                entityLabel={mission.title}
+                initialUp={signal?.up ?? 0}
+                initialDown={signal?.down ?? 0}
+                initialMine={signal?.mine ?? null}
+              />
               <button onClick={() => setExpanded(e => !e)} className="text-gray-300 hover:text-gray-500 transition-colors">
                 {expanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
               </button>
@@ -775,6 +784,10 @@ export default function MissionsTab({ employee, onPointsEarned, onStreakUpdate }
   function handleEditBuiltIn(id, form)       { setOverrides(prev => ({ ...prev, [id]: form })) }
   function handleResetBuiltIn(id)            { setOverrides(prev => { const n = { ...prev }; delete n[id]; return n }) }
 
+  // Feedback signals for missions
+  const missionIds      = allMissions.map(m => String(m.id))
+  const missionSignals  = useFeedbackSignals('mission', missionIds)
+
   // Next rank
   const currentRank    = getRank(employee.points)
   const currentRankIdx = RANKS.findIndex(r => r.name === currentRank.name)
@@ -890,6 +903,7 @@ export default function MissionsTab({ employee, onPointsEarned, onStreakUpdate }
                 onDrop={handleDrop}
                 onDragEnd={handleDragEnd}
                 isDragOver={dragOverId === m.id}
+                signal={missionSignals[String(m.id)] ?? null}
               />
             ))}
           </>
@@ -906,6 +920,7 @@ export default function MissionsTab({ employee, onPointsEarned, onStreakUpdate }
                 onDrop={handleDrop}
                 onDragEnd={handleDragEnd}
                 isDragOver={dragOverId === m.id}
+                signal={missionSignals[String(m.id)] ?? null}
               />
             ))}
           </>

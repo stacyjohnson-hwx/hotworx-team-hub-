@@ -59,4 +59,82 @@ router.get('/', authenticate, async (req, res) => {
   }
 })
 
+// ─── Signal endpoints (thumbs up/down for AI advisor) ────────────────────────
+
+// POST /api/feedback/signal — cast or flip a thumbs signal
+router.post('/signal', authenticate, async (req, res) => {
+  const { entity_type, entity_id, entity_label, signal, note } = req.body
+  if (!entity_type || !entity_id || ![1, -1].includes(Number(signal))) {
+    return res.status(400).json({ error: 'entity_type, entity_id, and signal (1 or -1) are required' })
+  }
+  try {
+    const { data, error } = await supabase()
+      .from('feedback_signals')
+      .upsert({
+        entity_type,
+        entity_id:    String(entity_id),
+        entity_label: entity_label || null,
+        signal:       Number(signal),
+        note:         note || null,
+        rated_by:     req.user.id,
+      }, { onConflict: 'entity_type,entity_id,rated_by' })
+      .select()
+      .single()
+    if (error) throw error
+    res.status(201).json(data)
+  } catch (err) {
+    console.error('POST /feedback/signal', err)
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// DELETE /api/feedback/signal — remove your signal (neutral)
+router.delete('/signal', authenticate, async (req, res) => {
+  const { entity_type, entity_id } = req.body
+  try {
+    const { error } = await supabase()
+      .from('feedback_signals')
+      .delete()
+      .eq('entity_type', entity_type)
+      .eq('entity_id', String(entity_id))
+      .eq('rated_by', req.user.id)
+    if (error) throw error
+    res.status(204).end()
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// GET /api/feedback/signals?entity_type=event&ids=id1,id2,id3
+// Returns summary { entity_id: { up, down, mine } } for a batch of IDs
+router.get('/signals', authenticate, async (req, res) => {
+  const { entity_type, ids } = req.query
+  if (!entity_type) return res.status(400).json({ error: 'entity_type required' })
+
+  try {
+    let q = supabase()
+      .from('feedback_signals')
+      .select('entity_id, signal, rated_by')
+      .eq('entity_type', entity_type)
+
+    if (ids) q = q.in('entity_id', ids.split(',').map(s => s.trim()))
+
+    const { data, error } = await q
+    if (error) throw error
+
+    // Summarise into { [entity_id]: { up, down, mine } }
+    const summary = {}
+    for (const row of data || []) {
+      if (!summary[row.entity_id]) summary[row.entity_id] = { up: 0, down: 0, mine: null }
+      if (row.signal === 1)  summary[row.entity_id].up++
+      if (row.signal === -1) summary[row.entity_id].down++
+      if (row.rated_by === req.user.id) summary[row.entity_id].mine = row.signal
+    }
+    res.json(summary)
+  } catch (err) {
+    console.error('GET /feedback/signals', err)
+    res.status(500).json({ error: err.message })
+  }
+})
+
 module.exports = router

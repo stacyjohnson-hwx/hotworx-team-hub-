@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRole } from '@/hooks/useRole'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
 import { supabase } from '@/lib/supabase'
+import ThumbsWidget, { useFeedbackSignals } from '@/components/ThumbsWidget'
 import {
   Plus, X, Phone, Mail, MapPin, Building2, Tag,
   MessageSquare, ChevronDown, ChevronUp, Edit2, Trash2, Clock,
@@ -433,7 +434,7 @@ function InteractionRow({ interaction, contact, isOwnerOrManager, onUpdated, onD
 }
 
 // ─── Contact Card ─────────────────────────────────────────────────────────────
-function ContactCard({ contact, users, isOwnerOrManager, onEdit, onDelete, onLogInteraction }) {
+function ContactCard({ contact, users, isOwnerOrManager, onEdit, onDelete, onLogInteraction, signal }) {
   const [expanded, setExpanded] = useState(false)
   const [interactions, setInteractions] = useState(null)
   const [linkedEvents, setLinkedEvents] = useState(null)
@@ -508,7 +509,7 @@ function ContactCard({ contact, users, isOwnerOrManager, onEdit, onDelete, onLog
           )}
         </div>
 
-        {/* Status + partner badge */}
+        {/* Status + partner badge + thumbs */}
         <div className="flex items-center gap-2 flex-wrap mt-3">
           <StatusBadge status={contact.status} />
           {contact.discount_ongoing && (
@@ -516,6 +517,15 @@ function ContactCard({ contact, users, isOwnerOrManager, onEdit, onDelete, onLog
               <Gift size={10} /> Partner
             </span>
           )}
+          <ThumbsWidget
+            entityType="b2b"
+            entityId={contact.id}
+            entityLabel={contact.business_name}
+            initialUp={signal?.up ?? 0}
+            initialDown={signal?.down ?? 0}
+            initialMine={signal?.mine ?? null}
+            className="ml-auto"
+          />
         </div>
 
         {/* Contact details */}
@@ -626,7 +636,7 @@ const NEXT_STAGE = {
 }
 
 // ─── Pipeline row (compact, action-focused) ────────────────────────────────────
-function PipelineRow({ contact, users, isOwnerOrManager, onEdit, onDelete, onLog, onStatusChange }) {
+function PipelineRow({ contact, users, isOwnerOrManager, onEdit, onDelete, onLog, onStatusChange, signal }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [interactions,  setInteractions]  = useState(null)
   const [loadingHist,   setLoadingHist]   = useState(false)
@@ -685,6 +695,17 @@ function PipelineRow({ contact, users, isOwnerOrManager, onEdit, onDelete, onLog
             </p>
           )}
         </div>
+
+        {/* Thumbs signal */}
+        <ThumbsWidget
+          entityType="b2b"
+          entityId={contact.id}
+          entityLabel={contact.business_name}
+          initialUp={signal?.up ?? 0}
+          initialDown={signal?.down ?? 0}
+          initialMine={signal?.mine ?? null}
+          className="flex-shrink-0"
+        />
 
         {/* Quick action buttons */}
         {isOwnerOrManager && (
@@ -765,7 +786,7 @@ function PipelineRow({ contact, users, isOwnerOrManager, onEdit, onDelete, onLog
 }
 
 // ─── Pipeline Tab ─────────────────────────────────────────────────────────────
-function PipelineTab({ contacts, users, isOwnerOrManager, onEdit, onDelete, onStatusChange }) {
+function PipelineTab({ contacts, users, isOwnerOrManager, onEdit, onDelete, onStatusChange, b2bSignals = {} }) {
   const [logTarget, setLogTarget] = useState(null)
   const handleInteractionSaved = i => { logTarget?.callback?.(i); setLogTarget(null) }
 
@@ -829,6 +850,7 @@ function PipelineTab({ contacts, users, isOwnerOrManager, onEdit, onDelete, onSt
                     onDelete={onDelete}
                     onLog={cb => setLogTarget({ contact: c, callback: cb })}
                     onStatusChange={onStatusChange}
+                    signal={b2bSignals[String(c.id)] ?? null}
                   />
                 ))}
               </div>
@@ -849,7 +871,7 @@ function PipelineTab({ contacts, users, isOwnerOrManager, onEdit, onDelete, onSt
 }
 
 // ─── Active Partner card ───────────────────────────────────────────────────────
-function ActivePartnerCard({ contact, users, isOwnerOrManager, onEdit, onLog }) {
+function ActivePartnerCard({ contact, users, isOwnerOrManager, onEdit, onLog, signal }) {
   const [interactions,  setInteractions]  = useState(null)
   const [loadingHist,   setLoadingHist]   = useState(false)
   const [expanded,      setExpanded]      = useState(false)
@@ -935,6 +957,15 @@ function ActivePartnerCard({ contact, users, isOwnerOrManager, onEdit, onLog }) 
               <MessageSquare size={11} /> Log
             </button>
           )}
+          <ThumbsWidget
+            entityType="b2b"
+            entityId={contact.id}
+            entityLabel={contact.business_name}
+            initialUp={signal?.up ?? 0}
+            initialDown={signal?.down ?? 0}
+            initialMine={signal?.mine ?? null}
+            className="ml-auto"
+          />
         </div>
       </div>
 
@@ -976,7 +1007,7 @@ function ActivePartnerCard({ contact, users, isOwnerOrManager, onEdit, onLog }) 
 }
 
 // ─── Active Partners Tab ──────────────────────────────────────────────────────
-function ActivePartnerRow({ contact, isOwnerOrManager, onEdit, onLog }) {
+function ActivePartnerRow({ contact, isOwnerOrManager, onEdit, onLog, signal }) {
   const [expanded,     setExpanded]     = useState(false)
   const [interactions, setInteractions] = useState(null)
   const [loadingHist,  setLoadingHist]  = useState(false)
@@ -1024,6 +1055,14 @@ function ActivePartnerRow({ contact, isOwnerOrManager, onEdit, onLog }) {
             </span>
           )}
           {!lastContact && <span className="text-xs text-gray-300 italic">No contact yet</span>}
+          <ThumbsWidget
+            entityType="b2b"
+            entityId={contact.id}
+            entityLabel={contact.business_name}
+            initialUp={signal?.up ?? 0}
+            initialDown={signal?.down ?? 0}
+            initialMine={signal?.mine ?? null}
+          />
           {isOwnerOrManager && (
             <div className="flex items-center gap-0.5">
               {contact.phone && <a href={`tel:${contact.phone}`} className="p-1.5 text-gray-300 hover:text-orange-500 rounded"><Phone size={13} /></a>}
@@ -1066,7 +1105,7 @@ function ActivePartnerRow({ contact, isOwnerOrManager, onEdit, onLog }) {
   )
 }
 
-function ActivePartnersTab({ contacts, users, isOwnerOrManager, onEdit }) {
+function ActivePartnersTab({ contacts, users, isOwnerOrManager, onEdit, b2bSignals = {} }) {
   const [logTarget, setLogTarget] = useState(null)
   const [viewMode, setViewMode]   = useState('list') // 'card' | 'list'
   const handleInteractionSaved = i => { logTarget?.callback?.(i); setLogTarget(null) }
@@ -1109,6 +1148,7 @@ function ActivePartnersTab({ contacts, users, isOwnerOrManager, onEdit }) {
                   isOwnerOrManager={isOwnerOrManager}
                   onEdit={onEdit}
                   onLog={cb => setLogTarget({ contact: c, callback: cb })}
+                  signal={b2bSignals[String(c.id)] ?? null}
                 />
               ))}
             </div>
@@ -1121,6 +1161,7 @@ function ActivePartnersTab({ contacts, users, isOwnerOrManager, onEdit }) {
                   isOwnerOrManager={isOwnerOrManager}
                   onEdit={onEdit}
                   onLog={() => setLogTarget({ contact: c, callback: i => {} })}
+                  signal={b2bSignals[String(c.id)] ?? null}
                 />
               ))}
             </div>
@@ -1163,6 +1204,9 @@ export default function B2bPage() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  const contactIds = contacts.map(c => String(c.id))
+  const b2bSignals = useFeedbackSignals('b2b', contactIds)
 
   const handleSave = (saved) => {
     setContacts(prev => {
@@ -1268,8 +1312,8 @@ export default function B2bPage() {
       </div>
 
       {tab === 'pipeline'
-        ? <PipelineTab contacts={filtered} users={users} isOwnerOrManager={isOwnerOrManager} onEdit={setModalContact} onDelete={handleDelete} onStatusChange={handleStatusChange} />
-        : <ActivePartnersTab contacts={filteredPartners} users={users} isOwnerOrManager={isOwnerOrManager} onEdit={setModalContact} />
+        ? <PipelineTab contacts={filtered} users={users} isOwnerOrManager={isOwnerOrManager} onEdit={setModalContact} onDelete={handleDelete} onStatusChange={handleStatusChange} b2bSignals={b2bSignals} />
+        : <ActivePartnersTab contacts={filteredPartners} users={users} isOwnerOrManager={isOwnerOrManager} onEdit={setModalContact} b2bSignals={b2bSignals} />
       }
 
       {modalContact !== null && (

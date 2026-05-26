@@ -8,6 +8,7 @@ import {
   AlertCircle, Loader2, Building2, Phone, Mail, Search, Star,
 } from 'lucide-react'
 import RatingModal, { StarDisplay } from '@/components/RatingModal'
+import ThumbsWidget, { useFeedbackSignals } from '@/components/ThumbsWidget'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -124,7 +125,7 @@ const inputCls = 'w-full rounded-lg border border-gray-300 bg-white text-gray-90
 
 // ─── Events Tab ──────────────────────────────────────────────────────────────
 
-function EventCard({ event, canEdit, onEdit, onDelete, rating, onRate }) {
+function EventCard({ event, canEdit, onEdit, onDelete, rating, onRate, signal }) {
   const [expanded, setExpanded] = useState(false)
   const meta = eventTypeMeta(event.event_type)
   const past = isExpired(event.end_date || event.start_date)
@@ -176,6 +177,14 @@ function EventCard({ event, canEdit, onEdit, onDelete, rating, onRate }) {
           </div>
 
           <div className="flex items-center gap-1 flex-shrink-0">
+            <ThumbsWidget
+              entityType="event"
+              entityId={event.id}
+              entityLabel={event.title}
+              initialUp={signal?.up ?? 0}
+              initialDown={signal?.down ?? 0}
+              initialMine={signal?.mine ?? null}
+            />
             {past && (
               <button
                 onClick={() => onRate(event)}
@@ -434,6 +443,9 @@ function EventsTab({ month, year, canEdit }) {
     }
   }, [month, year])
 
+  const eventIds = events.map(e => String(e.id))
+  const eventSignals = useFeedbackSignals('event', eventIds)
+
   useEffect(() => { load() }, [load])
 
   function handleSave(result, isEdit) {
@@ -534,6 +546,7 @@ function EventsTab({ month, year, canEdit }) {
               onDelete={handleDelete}
               rating={ratings[e.id] || null}
               onRate={ev => setRatingTarget(ev)}
+              signal={eventSignals[String(e.id)] ?? null}
             />
           ))}
         </div>
@@ -567,7 +580,7 @@ function EventsTab({ month, year, canEdit }) {
 
 // ─── Promotions Tab ───────────────────────────────────────────────────────────
 
-function PromoCard({ promo, canEdit, onEdit, onDelete, rating, onRate }) {
+function PromoCard({ promo, canEdit, onEdit, onDelete, rating, onRate, signal }) {
   function formatDiscount() {
     if (!promo.discount_value && promo.discount_unit !== 'free') return null
     if (promo.discount_unit === 'free') return 'Free'
@@ -627,6 +640,14 @@ function PromoCard({ promo, canEdit, onEdit, onDelete, rating, onRate }) {
           </div>
 
           <div className="flex items-center gap-1 flex-shrink-0">
+            <ThumbsWidget
+              entityType="promo"
+              entityId={promo.id}
+              entityLabel={promo.title}
+              initialUp={signal?.up ?? 0}
+              initialDown={signal?.down ?? 0}
+              initialMine={signal?.mine ?? null}
+            />
             {expired && (
               <button
                 onClick={() => onRate(promo)}
@@ -797,6 +818,9 @@ function PromosTab({ month, year, canEdit }) {
 
   useEffect(() => { load() }, [load])
 
+  const promoIds = promos.map(p => String(p.id))
+  const promoSignals = useFeedbackSignals('promo', promoIds)
+
   function handleSave(result, isEdit) {
     setPromos(prev => isEdit
       ? prev.map(p => p.id === result.id ? result : p)
@@ -867,6 +891,7 @@ function PromosTab({ month, year, canEdit }) {
               onDelete={handleDelete}
               rating={ratings[p.id] || null}
               onRate={pr => setRatingTarget(pr)}
+              signal={promoSignals[String(p.id)] ?? null}
             />
           ))}
         </div>

@@ -5,6 +5,7 @@ import { GROWTH_PLAYS } from '../data/mockData'
 import { useAuth } from '@/contexts/AuthContext'
 import RatingModal, { StarDisplay } from '@/components/RatingModal'
 import { apiGet } from '@/hooks/useApi'
+import ThumbsWidget, { useFeedbackSignals } from '@/components/ThumbsWidget'
 
 // ─── localStorage helpers ─────────────────────────────────────────────────────
 const PLAYS_KEY = 'leadgenhq_plays'
@@ -485,7 +486,7 @@ function PlayDetailModal({ play, onClose, rating, onRate }) {
 }
 
 // ─── Play Card ────────────────────────────────────────────────────────────────
-function PlayCard({ play, onView }) {
+function PlayCard({ play, onView, signal }) {
   return (
     <div
       className={`border rounded-xl overflow-hidden cursor-pointer hover:shadow-md transition-all ${
@@ -526,6 +527,14 @@ function PlayCard({ play, onView }) {
               <Zap size={11} fill="#E8611A" />
               {play.points}
             </span>
+            <ThumbsWidget
+              entityType="play"
+              entityId={play.id}
+              entityLabel={play.name}
+              initialUp={signal?.up ?? 0}
+              initialDown={signal?.down ?? 0}
+              initialMine={signal?.mine ?? null}
+            />
           </div>
         </div>
 
@@ -555,6 +564,9 @@ export default function PlaysTab() {
   const [showManage,  setShowManage]  = useState(false)
   const [ratings,     setRatings]     = useState({})   // keyed by play.id
   const [ratingPlay,  setRatingPlay]  = useState(null) // play being rated
+
+  const playIds     = plays.map(p => String(p.id))
+  const playSignals = useFeedbackSignals('play', playIds)
 
   useEffect(() => {
     apiGet('/api/feedback?item_type=play')
@@ -680,7 +692,7 @@ export default function PlaysTab() {
               ▶ Active Plays ({filteredActive.length})
             </p>
             {filteredActive.map(p => (
-              <PlayCard key={p.id} play={p} onView={setDetailPlay} />
+              <PlayCard key={p.id} play={p} onView={setDetailPlay} signal={playSignals[String(p.id)] ?? null} />
             ))}
           </>
         )}
@@ -691,7 +703,7 @@ export default function PlaysTab() {
               Playbook ({filteredInactive.length})
             </p>
             {filteredInactive.map(p => (
-              <PlayCard key={p.id} play={p} onView={setDetailPlay} />
+              <PlayCard key={p.id} play={p} onView={setDetailPlay} signal={playSignals[String(p.id)] ?? null} />
             ))}
           </>
         )}
