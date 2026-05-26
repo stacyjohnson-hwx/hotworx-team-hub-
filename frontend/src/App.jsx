@@ -22,6 +22,7 @@ import CoachingPage from '@/pages/coaching/CoachingPage'
 import UsersPage from '@/pages/users/UsersPage'
 import ProfilePage from '@/pages/profile/ProfilePage'
 import OnboardingPage from '@/pages/onboarding/OnboardingPage'
+import ResetPasswordPage from '@/pages/auth/ResetPasswordPage'
 
 function ProtectedRoute({ children }) {
   const { session, loading, profile } = useAuth()
@@ -132,6 +133,9 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
+
+      {/* Password reset — must be outside ProtectedRoute so logged-out users can reach it */}
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
 
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>

@@ -223,7 +223,7 @@ function ResetPasswordModal({ user, onClose }) {
             <div className="space-y-3">
               <div className="flex items-start gap-3 bg-teal-50 border border-teal-200 rounded-lg px-4 py-3">
                 <Check size={18} className="text-teal-600 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-teal-800">Link generated for <strong>{user.name}</strong>. Copy it and send directly — no email needed. <span className="font-semibold">Expires in 1 hour.</span></p>
+                <p className="text-sm text-teal-800">Reset email sent to <strong>{user.email}</strong>. If it doesn't arrive, use the backup link below. <span className="font-semibold">Expires in 1 hour.</span></p>
               </div>
               <div>
                 <p className="text-xs font-semibold text-gray-500 mb-1">Reset Link</p>
@@ -240,12 +240,12 @@ function ResetPasswordModal({ user, onClose }) {
             </div>
           ) : (
             <>
-              <p className="text-sm text-gray-700">Generate a password reset link for <strong>{user.name}</strong>. You can copy it and send it to them directly.</p>
+              <p className="text-sm text-gray-700">Send a password reset email to <strong>{user.name}</strong> at <span className="text-gray-500">{user.email}</span>. A backup link will also appear here in case the email goes to spam.</p>
               {error && <div className="bg-red-50 border border-red-300 text-red-700 text-sm rounded-lg px-3 py-2">{error}</div>}
               <button onClick={handleReset} disabled={loading}
                 className="flex items-center gap-2 px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-bold rounded-lg disabled:opacity-50">
                 <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-                {loading ? 'Generating…' : 'Generate Reset Link'}
+                {loading ? 'Sending…' : 'Send Reset Email'}
               </button>
             </>
           )}
