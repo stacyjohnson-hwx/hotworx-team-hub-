@@ -18,7 +18,6 @@ const TSA_TABS = [
 
 const ALL_TABS = [
   ...TSA_TABS,
-  { id: 'map',         label: 'Map',         icon: Map,    shortLabel: 'Map'   },
   { id: 'leaderboard', label: 'Leaderboard', icon: Trophy, shortLabel: 'Board' },
 ]
 
