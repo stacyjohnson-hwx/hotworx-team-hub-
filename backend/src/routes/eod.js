@@ -26,7 +26,45 @@ router.get('/', authenticate, async (req, res) => {
 
   const { data, error } = await query
   if (error) return res.status(500).json({ error: error.message })
-  res.json(data)
+
+  // Attach completed tasks (cleaning + operations/missions) for each submitter
+  const submissions = data || []
+  if (submissions.length > 0) {
+    const userIds = [...new Set(submissions.map(s => s.submitted_by))]
+    const { data: completions } = await db()
+      .from('cleaning_completions')
+      .select('task_id, completed_by')
+      .eq('completion_date', date)
+      .in('completed_by', userIds)
+
+    if (completions && completions.length > 0) {
+      const taskIds = [...new Set(completions.map(c => c.task_id))]
+      const { data: tasks } = await db()
+        .from('cleaning_tasks')
+        .select('id, title, task_type')
+        .in('id', taskIds)
+
+      const taskMap = {}
+      for (const t of tasks || []) taskMap[t.id] = t
+
+      const tasksByUser = {}
+      for (const c of completions) {
+        const t = taskMap[c.task_id]
+        if (!t) continue
+        if (!tasksByUser[c.completed_by]) tasksByUser[c.completed_by] = { cleaning: [], missions: [] }
+        if (t.task_type === 'Operations') tasksByUser[c.completed_by].missions.push(t.title)
+        else tasksByUser[c.completed_by].cleaning.push(t.title)
+      }
+
+      return res.json(submissions.map(s => ({
+        ...s,
+        completed_cleaning: tasksByUser[s.submitted_by]?.cleaning  || [],
+        completed_missions: tasksByUser[s.submitted_by]?.missions  || [],
+      })))
+    }
+  }
+
+  res.json(submissions.map(s => ({ ...s, completed_cleaning: [], completed_missions: [] })))
 })
 
 // ─── GET /api/eod/mine ────────────────────────────────────────────────────────

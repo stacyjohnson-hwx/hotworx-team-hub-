@@ -143,54 +143,84 @@ export default function EodHistory({ selectedDate, onDateChange }) {
                   </button>
                 </div>
 
-                <div className="p-4 grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                  {/* Drawer */}
-                  <div>
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Drawer</p>
-                    <p className="text-gray-700">Start: {fmt(sub.drawer_start)}</p>
-                    <p className="text-gray-700">Cash: {fmt(sub.cash_collected)}</p>
-                    <p className="text-gray-700">Credit: {fmt(sub.credit_collected)}</p>
-                    <p className="text-gray-700">End: {fmt(sub.drawer_end)}</p>
-                    <p className={`font-semibold mt-1 flex items-center gap-1 ${varAlert ? 'text-red-600' : 'text-green-600'}`}>
-                      {varAlert ? <AlertTriangle className="w-3.5 h-3.5" /> : <CheckCircle className="w-3.5 h-3.5" />}
-                      Variance: {v >= 0 ? '+' : ''}{fmt(v)}
-                    </p>
+                <div className="p-4 space-y-4 text-sm">
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    {/* Drawer */}
+                    <div>
+                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Drawer</p>
+                      <p className="text-gray-700">Start: {fmt(sub.drawer_start)}</p>
+                      <p className="text-gray-700">Cash: {fmt(sub.cash_collected)}</p>
+                      <p className="text-gray-700">Credit: {fmt(sub.credit_collected)}</p>
+                      <p className="text-gray-700">End: {fmt(sub.drawer_end)}</p>
+                      <p className={`font-semibold mt-1 flex items-center gap-1 ${varAlert ? 'text-red-600' : 'text-green-600'}`}>
+                        {varAlert ? <AlertTriangle className="w-3.5 h-3.5" /> : <CheckCircle className="w-3.5 h-3.5" />}
+                        Variance: {v >= 0 ? '+' : ''}{fmt(v)}
+                      </p>
+                    </div>
+
+                    {/* Sales */}
+                    <div>
+                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Sales</p>
+                      <p className="text-gray-700">Sweat Basic: {sub.sweat_basic ?? 0}</p>
+                      <p className="text-gray-700">Sweat Elite: {sub.sweat_elite ?? 0}</p>
+                      <p className="text-gray-700">Cancellations: {sub.cancellations_count ?? 0}</p>
+                      <p className="text-gray-700">Retail: {fmt(sub.retail_amount)}</p>
+                      <p className="text-gray-700">Red Appts: {sub.red_appt_scheduled ?? 0}</p>
+                    </div>
+
+                    {/* Sales Training */}
+                    <div>
+                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Sales Training</p>
+                      {sub.watched_training_video && <p className="text-green-600">✅ Training video</p>}
+                      {sub.role_played_script     && <p className="text-green-600">✅ Role played script</p>}
+                      {sub.used_sales_gpt         && <p className="text-green-600">✅ Sales GPT</p>}
+                      {!sub.watched_training_video && !sub.role_played_script && !sub.used_sales_gpt && (
+                        <p className="text-gray-400 text-xs italic">None completed</p>
+                      )}
+                      {sub.orders_needed && (
+                        <div className="mt-2">
+                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-0.5">Orders Needed</p>
+                          <p className="text-gray-700 text-xs">{sub.orders_needed}</p>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
-                  {/* Leads + Sales */}
-                  <div>
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Leads & Sales</p>
-                    <p className="text-gray-700">Leads: {sub.leads_count}</p>
-                    <p className="text-gray-700">Memberships: {sub.new_memberships}</p>
-                    <p className="text-gray-700">EFT: {fmt(sub.eft_amount)}</p>
-                    <p className="text-gray-700">Retail: {fmt(sub.retail_amount)}</p>
-                  </div>
+                  {/* Completed Cleaning Tasks */}
+                  {(sub.completed_cleaning?.length > 0) && (
+                    <div>
+                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Cleaning Completed</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {sub.completed_cleaning.map((t, i) => (
+                          <span key={i} className="inline-flex items-center gap-1 bg-green-50 text-green-700 text-xs font-medium px-2 py-0.5 rounded-full border border-green-200">
+                            ✅ {t}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
-                  {/* Training + Notes */}
-                  <div className="col-span-2 md:col-span-1">
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Training</p>
-                    <p className={sub.watched_training_video ? 'text-green-600' : 'text-gray-400'}>
-                      {sub.watched_training_video ? '✓' : '✗'} Training video
-                    </p>
-                    <p className={sub.used_sales_gpt ? 'text-green-600' : 'text-gray-400'}>
-                      {sub.used_sales_gpt ? '✓' : '✗'} Sales GPT
-                    </p>
-                    <p className={sub.called_leads ? 'text-green-600' : 'text-gray-400'}>
-                      {sub.called_leads ? '✓' : '✗'} Called leads
-                    </p>
-                    {sub.orders_needed && (
-                      <div className="mt-2">
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-0.5">Orders</p>
-                        <p className="text-gray-700 text-xs">{sub.orders_needed}</p>
+                  {/* Completed Missions / Operations */}
+                  {(sub.completed_missions?.length > 0) && (
+                    <div>
+                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Missions Completed</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {sub.completed_missions.map((t, i) => (
+                          <span key={i} className="inline-flex items-center gap-1 bg-orange-50 text-orange-700 text-xs font-medium px-2 py-0.5 rounded-full border border-orange-200">
+                            ✅ {t}
+                          </span>
+                        ))}
                       </div>
-                    )}
-                    {sub.general_notes && (
-                      <div className="mt-2">
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-0.5">Notes</p>
-                        <p className="text-gray-700 text-xs">{sub.general_notes}</p>
-                      </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
+
+                  {/* Notes */}
+                  {sub.general_notes && (
+                    <div>
+                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-0.5">Notes</p>
+                      <p className="text-gray-700 text-xs">{sub.general_notes}</p>
+                    </div>
+                  )}
                 </div>
               </div>
             )
