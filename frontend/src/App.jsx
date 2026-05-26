@@ -23,6 +23,7 @@ import UsersPage from '@/pages/users/UsersPage'
 import ProfilePage from '@/pages/profile/ProfilePage'
 import OnboardingPage from '@/pages/onboarding/OnboardingPage'
 import ResetPasswordPage from '@/pages/auth/ResetPasswordPage'
+import AdvisorPage from '@/pages/advisor/AdvisorPage'
 
 function ProtectedRoute({ children }) {
   const { session, loading, profile } = useAuth()
@@ -92,6 +93,16 @@ function AppRoutes() {
         <Route path="/timeoff"   element={<TimeOffPage />} />
         <Route path="/sops"      element={<SopsPage />} />
         <Route path="/training"  element={<TrainingPage />} />
+
+        {/* AI Advisor — Owner + Manager only */}
+        <Route
+          path="/advisor"
+          element={
+            <RoleGuard allowedRoles={['owner', 'manager']}>
+              <AdvisorPage />
+            </RoleGuard>
+          }
+        />
 
         {/* Owner + Manager only */}
         <Route

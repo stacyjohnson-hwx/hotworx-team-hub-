@@ -23,6 +23,7 @@ import {
   Camera,
   Users,
   UserCircle,
+  Sparkles,
 } from 'lucide-react'
 
 const allNavItems = [
@@ -32,6 +33,7 @@ const allNavItems = [
   { to: '/leads',          label: 'Growth',           icon: TrendingUp,      roles: ['owner', 'manager', 'tsa'] },
   { to: '/cleaning',       label: 'Tasks',            icon: CheckSquare,     roles: ['owner', 'manager', 'tsa'] },
   { to: '/studio-trends',  label: 'Studio Trends',    icon: BarChart2,       roles: ['owner', 'manager'] },
+  { to: '/advisor',        label: 'AI Advisor',       icon: Sparkles,        roles: ['owner', 'manager'] },
   { to: '/events',         label: 'Events & Promos',  icon: Megaphone,       roles: ['owner', 'manager', 'tsa'] },
   { to: '/b2b',            label: 'B2B Outreach',     icon: Building2,       roles: ['owner', 'manager', 'tsa'] },
   { to: '/orders',         label: 'Orders',           icon: ShoppingCart,    roles: ['owner', 'manager', 'tsa'] },
