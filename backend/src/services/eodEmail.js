@@ -45,8 +45,10 @@ function sectionHeader(title) {
 }
 
 // outreachSummary: { totalCalls, totalTexts, tiles: [{title, calls, texts}] }
-// cleaningItems: string[] of task labels completed today by this user
-function buildShiftBlock(row_data, outreachSummary, cleaningItems) {
+// tasksByUser: { cleaning: string[], operations: string[] }
+function buildShiftBlock(row_data, outreachSummary, tasksByUser) {
+  const cleaningItems   = tasksByUser?.cleaning   || []
+  const operationsItems = tasksByUser?.operations || []
   const v = variance(row_data)
   const varAbs = Math.abs(v)
   const varColor = varAbs > THRESHOLD ? '#C8102E' : '#16a34a'
@@ -76,14 +78,14 @@ function buildShiftBlock(row_data, outreachSummary, cleaningItems) {
   })()
 
   // Cleaning section HTML
-  const cleaningRows = (() => {
-    if (!cleaningItems || cleaningItems.length === 0) {
-      return `<tr><td colspan="2" style="padding:5px 0;font-size:13px;color:#9ca3af;">No cleaning tasks logged today.</td></tr>`
-    }
-    return cleaningItems.map(label =>
-      `<tr><td colspan="2" style="padding:2px 0;font-size:12px;color:#374151;">✅ ${label}</td></tr>`
-    ).join('')
-  })()
+  const cleaningRows = cleaningItems.length
+    ? cleaningItems.map(label => `<tr><td colspan="2" style="padding:2px 0;font-size:12px;color:#374151;">✅ ${label}</td></tr>`).join('')
+    : `<tr><td colspan="2" style="padding:5px 0;font-size:13px;color:#9ca3af;">No cleaning tasks logged today.</td></tr>`
+
+  // Operations / Missions section HTML
+  const operationsRows = operationsItems.length
+    ? operationsItems.map(label => `<tr><td colspan="2" style="padding:2px 0;font-size:12px;color:#374151;">✅ ${label}</td></tr>`).join('')
+    : `<tr><td colspan="2" style="padding:5px 0;font-size:13px;color:#9ca3af;">No operations tasks logged today.</td></tr>`
 
   return `
   <div style="margin-bottom:24px;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
@@ -129,6 +131,9 @@ function buildShiftBlock(row_data, outreachSummary, cleaningItems) {
         ${sectionHeader('Cleaning Completed')}
         ${cleaningRows}
 
+        ${sectionHeader('Missions / Operations Completed')}
+        ${operationsRows}
+
         ${sectionHeader('Sales Training')}
         ${(() => {
           const done = [
@@ -157,7 +162,7 @@ function buildShiftBlock(row_data, outreachSummary, cleaningItems) {
   </div>`
 }
 
-function buildHtml(dateStr, submissions, outreachByUser, cleaningByUser) {
+function buildHtml(dateStr, submissions, outreachByUser, tasksByUser) {
   const dateLabel = new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
   })
@@ -177,7 +182,7 @@ function buildHtml(dateStr, submissions, outreachByUser, cleaningByUser) {
         : submissions.map(s => buildShiftBlock(
             s,
             outreachByUser[s.submitted_by] || null,
-            cleaningByUser[s.submitted_by] || []
+            tasksByUser[s.submitted_by]    || { cleaning: [], operations: [] }
           )).join('')}
       <div style="margin-top:16px;padding-top:16px;border-top:1px solid #f3f4f6;font-size:12px;color:#9ca3af;text-align:center;">
         ${process.env.STUDIO_NAME} · ${process.env.STUDIO_ADDRESS} · Internal use only
@@ -229,23 +234,43 @@ async function fetchSubmissionsForDate(dateStr) {
     outreachByUser[uid] = { totalCalls, totalTexts, tiles }
   }
 
-  // Fetch cleaning completions for all submitters on this date
+  // Fetch cleaning completions for all submitters on this date (two-step — avoids relational join issues)
   const { data: cleaningCompletions } = await db
     .from('cleaning_completions')
-    .select('completed_by, cleaning_tasks(title)')
+    .select('task_id, completed_by')
     .eq('completion_date', dateStr)
     .in('completed_by', userIds)
 
-  // Build cleaning list keyed by user id
-  const cleaningByUser = {}
+  // Fetch the task metadata for those task_ids
+  const tasksByUser = {}
+  if (cleaningCompletions && cleaningCompletions.length > 0) {
+    const taskIds = [...new Set(cleaningCompletions.map(c => c.task_id))]
+    const { data: taskRows } = await db
+      .from('cleaning_tasks')
+      .select('id, title, task_type')
+      .in('id', taskIds)
+
+    const taskMap = {}
+    for (const t of taskRows || []) taskMap[t.id] = t
+
+    for (const uid of userIds) {
+      const cleaning   = []
+      const operations = []
+      for (const c of cleaningCompletions.filter(c => c.completed_by === uid)) {
+        const t = taskMap[c.task_id]
+        if (!t) continue
+        if (t.task_type === 'Operations') operations.push(t.title)
+        else cleaning.push(t.title)
+      }
+      tasksByUser[uid] = { cleaning, operations }
+    }
+  }
   for (const uid of userIds) {
-    cleaningByUser[uid] = (cleaningCompletions || [])
-      .filter(c => c.completed_by === uid)
-      .map(c => c.cleaning_tasks?.title || 'Task')
+    if (!tasksByUser[uid]) tasksByUser[uid] = { cleaning: [], operations: [] }
   }
 
   const enrichedSubmissions = submissions.map(s => ({ ...s, submitter_name: nameMap[s.submitted_by] || 'Team Member' }))
-  return { submissions: enrichedSubmissions, outreachByUser, cleaningByUser }
+  return { submissions: enrichedSubmissions, outreachByUser, tasksByUser }
 }
 
 async function sendEodEmail(dateStr) {
@@ -254,8 +279,8 @@ async function sendEodEmail(dateStr) {
     return
   }
 
-  const { submissions, outreachByUser, cleaningByUser } = await fetchSubmissionsForDate(dateStr)
-  const html = buildHtml(dateStr, submissions, outreachByUser, cleaningByUser)
+  const { submissions, outreachByUser, tasksByUser } = await fetchSubmissionsForDate(dateStr)
+  const html = buildHtml(dateStr, submissions, outreachByUser, tasksByUser)
   const recipients = [process.env.OWNER_EMAIL, process.env.MANAGER_EMAIL].filter(Boolean)
 
   const dateLabel = new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', {
