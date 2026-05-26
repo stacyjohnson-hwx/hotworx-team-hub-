@@ -75,7 +75,9 @@ function UserModal({ user, currentRole, onSave, onClose }) {
         role:      form.role,
         phone:     form.phone || null,
         birthday:  form.birthday || null,
-        email:     form.email || undefined,
+        // Only send email when editing and it actually changed
+        ...(isEdit && form.email && form.email !== user.email ? { email: form.email } : {}),
+        ...(!isEdit ? { email: form.email } : {}),
       }
       const saved = isEdit
         ? await apiPut(`/api/users/${user.id}`, payload)

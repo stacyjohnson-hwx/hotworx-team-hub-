@@ -189,8 +189,18 @@ router.put('/:id', authenticate, requireRole('owner', 'manager'), async (req, re
       birthday:  birthday  || existing.birthday  || null,
     }, { onConflict: 'id' })
 
+    // Fetch the updated user to get current email
+    const { data: { user: updatedUser } } = await supabase.auth.admin.getUserById(id)
     const p = await getProfile(supabase, id)
-    res.json({ id, name: p.full_name, role: role || existing.role, phone: p.phone, birthday: p.birthday, is_active: p.is_active })
+    res.json({
+      id,
+      email:    updatedUser?.email || null,
+      name:     p.full_name,
+      role:     role || updatedUser?.app_metadata?.role || 'tsa',
+      phone:    p.phone,
+      birthday: p.birthday,
+      is_active: p.is_active,
+    })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
