@@ -232,7 +232,7 @@ async function fetchSubmissionsForDate(dateStr) {
   // Fetch cleaning completions for all submitters on this date
   const { data: cleaningCompletions } = await db
     .from('cleaning_completions')
-    .select('completed_by, cleaning_tasks(task_name)')
+    .select('completed_by, cleaning_tasks(title)')
     .eq('completion_date', dateStr)
     .in('completed_by', userIds)
 
@@ -241,7 +241,7 @@ async function fetchSubmissionsForDate(dateStr) {
   for (const uid of userIds) {
     cleaningByUser[uid] = (cleaningCompletions || [])
       .filter(c => c.completed_by === uid)
-      .map(c => c.cleaning_tasks?.task_name || 'Task')
+      .map(c => c.cleaning_tasks?.title || 'Task')
   }
 
   const enrichedSubmissions = submissions.map(s => ({ ...s, submitter_name: nameMap[s.submitted_by] || 'Team Member' }))
