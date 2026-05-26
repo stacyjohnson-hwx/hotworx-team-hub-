@@ -12,7 +12,6 @@ export default function EodPage() {
   const { isOwnerOrManager } = useRole()
   const [tab, setTab] = useState('submit')
   const [submittedShifts, setSubmittedShifts] = useState([])
-  const [selectedDate, setSelectedDate] = useState(todayLocal())
 
   const loadMyShifts = useCallback(async () => {
     try {
@@ -45,10 +44,7 @@ export default function EodPage() {
           onSubmitted={loadMyShifts}
         />
       ) : (
-        <EodHistory
-          selectedDate={selectedDate}
-          onDateChange={setSelectedDate}
-        />
+        <EodHistory />
       )}
     </div>
   )

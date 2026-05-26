@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
-import { RefreshCw, Trash2, AlertTriangle, CheckCircle, Send } from 'lucide-react'
+import { RefreshCw, Trash2, AlertTriangle, CheckCircle, Send, ChevronLeft, ChevronRight } from 'lucide-react'
 import { apiGet, apiDelete, apiPost } from '@/hooks/useApi'
-import { useMonth } from '@/contexts/MonthContext'
 
 const VARIANCE_THRESHOLD = 5
 
@@ -25,7 +24,58 @@ function shiftColor(type) {
   }[type] || 'bg-gray-100 text-gray-700'
 }
 
-export default function EodHistory({ selectedDate, onDateChange }) {
+// Returns YYYY-MM-DD for a Date object using Chicago timezone
+function toChicagoDateStr(date) {
+  return date.toLocaleDateString('en-CA', { timeZone: 'America/Chicago' })
+}
+
+// Returns YYYY-MM-DD for today in Chicago timezone
+function todayChicago() {
+  return toChicagoDateStr(new Date())
+}
+
+// Returns YYYY-MM-DD for the Monday of the week containing `dateStr` (Chicago)
+function mondayOfWeek(dateStr) {
+  // Parse as noon UTC to avoid DST edge cases
+  const d = new Date(dateStr + 'T12:00:00')
+  const day = d.getDay() // 0=Sun, 1=Mon, ...
+  const diff = day === 0 ? -6 : 1 - day // adjust so Monday=0
+  d.setDate(d.getDate() + diff)
+  return toChicagoDateStr(d)
+}
+
+// Returns YYYY-MM-DD for the Sunday of the week (or today if in current week)
+function sundayOfWeek(dateStr) {
+  const d = new Date(dateStr + 'T12:00:00')
+  const day = d.getDay()
+  const diff = day === 0 ? 0 : 7 - day
+  d.setDate(d.getDate() + diff)
+  return toChicagoDateStr(d)
+}
+
+// Add N days to a YYYY-MM-DD string
+function addDays(dateStr, n) {
+  const d = new Date(dateStr + 'T12:00:00')
+  d.setDate(d.getDate() + n)
+  return toChicagoDateStr(d)
+}
+
+// Format date for display: "Monday, May 26"
+function formatDateLabel(dateStr) {
+  return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', {
+    weekday: 'long', month: 'long', day: 'numeric',
+  })
+}
+
+export default function EodHistory() {
+  const today = todayChicago()
+  const [weekStart, setWeekStart] = useState(() => mondayOfWeek(today))
+  const weekEnd = sundayOfWeek(weekStart)
+  // Cap weekEnd at today for the current week
+  const effectiveEnd = weekEnd > today ? today : weekEnd
+
+  const isCurrentWeek = weekStart === mondayOfWeek(today)
+
   const [submissions, setSubmissions] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -36,16 +86,28 @@ export default function EodHistory({ selectedDate, onDateChange }) {
     setLoading(true)
     setError(null)
     try {
-      const data = await apiGet(`/api/eod?date=${selectedDate}`)
+      const data = await apiGet(`/api/eod?from=${weekStart}&to=${effectiveEnd}`)
       setSubmissions(data)
     } catch (e) {
       setError(e.message)
     } finally {
       setLoading(false)
     }
-  }, [selectedDate])
+  }, [weekStart, effectiveEnd])
 
   useEffect(() => { load() }, [load])
+
+  function prevWeek() {
+    setWeekStart(prev => addDays(prev, -7))
+    setSendMsg(null)
+  }
+
+  function nextWeek() {
+    if (!isCurrentWeek) {
+      setWeekStart(prev => addDays(prev, 7))
+      setSendMsg(null)
+    }
+  }
 
   async function deleteSubmission(id) {
     if (!confirm('Delete this EOD submission?')) return
@@ -61,7 +123,7 @@ export default function EodHistory({ selectedDate, onDateChange }) {
     setSending(true)
     setSendMsg(null)
     try {
-      await apiPost('/api/eod/send-digest', { date: selectedDate })
+      await apiPost('/api/eod/send-digest', { date: today })
       setSendMsg('Email digest sent!')
     } catch (e) {
       setSendMsg(`Error: ${e.message}`)
@@ -70,19 +132,42 @@ export default function EodHistory({ selectedDate, onDateChange }) {
     }
   }
 
+  // Group submissions by shift_date, newest date first
+  const byDate = submissions.reduce((acc, s) => {
+    if (!acc[s.shift_date]) acc[s.shift_date] = []
+    acc[s.shift_date].push(s)
+    return acc
+  }, {})
+  const sortedDates = Object.keys(byDate).sort((a, b) => b.localeCompare(a))
+
+  // Week label
+  const weekLabel = isCurrentWeek
+    ? 'This week'
+    : `${new Date(weekStart + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${new Date(weekEnd + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+
   return (
     <div>
-      {/* Date picker + actions */}
+      {/* Week navigator + actions */}
       <div className="flex items-center gap-3 mb-5 flex-wrap">
-        <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Viewing date</label>
-          <input
-            type="date"
-            value={selectedDate}
-            onChange={e => onDateChange(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-600/40 focus:border-red-600"
-          />
+        <div className="flex items-center gap-1">
+          <button
+            onClick={prevWeek}
+            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition-colors"
+            title="Previous week"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <span className="text-sm font-medium text-gray-700 min-w-[120px] text-center">{weekLabel}</span>
+          <button
+            onClick={nextWeek}
+            disabled={isCurrentWeek}
+            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            title="Next week"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
         </div>
+
         <div className="flex items-center gap-2 ml-auto flex-wrap">
           {sendMsg && (
             <span className={`text-xs ${sendMsg.startsWith('Error') ? 'text-red-600' : 'text-green-600'}`}>
@@ -115,118 +200,128 @@ export default function EodHistory({ selectedDate, onDateChange }) {
 
       {!loading && submissions.length === 0 && (
         <div className="text-center py-16 text-gray-400">
-          <p className="text-sm">No EOD submissions for {selectedDate}.</p>
+          <p className="text-sm">No EOD submissions for {weekLabel.toLowerCase()}.</p>
         </div>
       )}
 
-      {!loading && submissions.length > 0 && (
-        <div className="space-y-4">
-          {submissions.map(sub => {
-            const v = variance(sub)
-            const varAlert = Math.abs(v) > VARIANCE_THRESHOLD
-            return (
-              <div key={sub.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                {/* Header */}
-                <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-b border-gray-200">
-                  <div className="flex items-center gap-2">
-                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${shiftColor(sub.shift_type)}`}>
-                      {shiftLabel(sub.shift_type)}
-                    </span>
-                    <span className="text-xs text-gray-500">
-                      {new Date(sub.submitted_at).toLocaleTimeString('en-US', {
-                        hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago',
-                      })}
-                    </span>
+      {!loading && sortedDates.map(date => (
+        <div key={date} className="mb-6">
+          {/* Date header */}
+          <div className="flex items-center gap-2 mb-3">
+            <h3 className="text-sm font-semibold text-gray-700">{formatDateLabel(date)}</h3>
+            {date === today && (
+              <span className="text-xs bg-red-100 text-red-700 font-semibold px-2 py-0.5 rounded-full">Today</span>
+            )}
+          </div>
+
+          <div className="space-y-4">
+            {byDate[date].map(sub => {
+              const v = variance(sub)
+              const varAlert = Math.abs(v) > VARIANCE_THRESHOLD
+              return (
+                <div key={sub.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                  {/* Header */}
+                  <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-b border-gray-200">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${shiftColor(sub.shift_type)}`}>
+                        {shiftLabel(sub.shift_type)}
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        {new Date(sub.submitted_at).toLocaleTimeString('en-US', {
+                          hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago',
+                        })}
+                      </span>
+                    </div>
+                    <button onClick={() => deleteSubmission(sub.id)} className="text-gray-400 hover:text-red-600 p-1">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
-                  <button onClick={() => deleteSubmission(sub.id)} className="text-gray-400 hover:text-red-600 p-1">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
 
-                <div className="p-4 space-y-4 text-sm">
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                    {/* Drawer */}
-                    <div>
-                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Drawer</p>
-                      <p className="text-gray-700">Start: {fmt(sub.drawer_start)}</p>
-                      <p className="text-gray-700">Cash: {fmt(sub.cash_collected)}</p>
-                      <p className="text-gray-700">Credit: {fmt(sub.credit_collected)}</p>
-                      <p className="text-gray-700">End: {fmt(sub.drawer_end)}</p>
-                      <p className={`font-semibold mt-1 flex items-center gap-1 ${varAlert ? 'text-red-600' : 'text-green-600'}`}>
-                        {varAlert ? <AlertTriangle className="w-3.5 h-3.5" /> : <CheckCircle className="w-3.5 h-3.5" />}
-                        Variance: {v >= 0 ? '+' : ''}{fmt(v)}
-                      </p>
+                  <div className="p-4 space-y-4 text-sm">
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                      {/* Drawer */}
+                      <div>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Drawer</p>
+                        <p className="text-gray-700">Start: {fmt(sub.drawer_start)}</p>
+                        <p className="text-gray-700">Cash: {fmt(sub.cash_collected)}</p>
+                        <p className="text-gray-700">Credit: {fmt(sub.credit_collected)}</p>
+                        <p className="text-gray-700">End: {fmt(sub.drawer_end)}</p>
+                        <p className={`font-semibold mt-1 flex items-center gap-1 ${varAlert ? 'text-red-600' : 'text-green-600'}`}>
+                          {varAlert ? <AlertTriangle className="w-3.5 h-3.5" /> : <CheckCircle className="w-3.5 h-3.5" />}
+                          Variance: {v >= 0 ? '+' : ''}{fmt(v)}
+                        </p>
+                      </div>
+
+                      {/* Sales */}
+                      <div>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Sales</p>
+                        <p className="text-gray-700">Sweat Basic: {sub.sweat_basic ?? 0}</p>
+                        <p className="text-gray-700">Sweat Elite: {sub.sweat_elite ?? 0}</p>
+                        <p className="text-gray-700">Cancellations: {sub.cancellations_count ?? 0}</p>
+                        <p className="text-gray-700">Retail: {fmt(sub.retail_amount)}</p>
+                        <p className="text-gray-700">Red Appts: {sub.red_appt_scheduled ?? 0}</p>
+                      </div>
+
+                      {/* Sales Training */}
+                      <div>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Sales Training</p>
+                        {sub.watched_training_video && <p className="text-green-600">✅ Training video</p>}
+                        {sub.role_played_script     && <p className="text-green-600">✅ Role played script</p>}
+                        {sub.used_sales_gpt         && <p className="text-green-600">✅ Sales GPT</p>}
+                        {!sub.watched_training_video && !sub.role_played_script && !sub.used_sales_gpt && (
+                          <p className="text-gray-400 text-xs italic">None completed</p>
+                        )}
+                        {sub.orders_needed && (
+                          <div className="mt-2">
+                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-0.5">Orders Needed</p>
+                            <p className="text-gray-700 text-xs">{sub.orders_needed}</p>
+                          </div>
+                        )}
+                      </div>
                     </div>
 
-                    {/* Sales */}
-                    <div>
-                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Sales</p>
-                      <p className="text-gray-700">Sweat Basic: {sub.sweat_basic ?? 0}</p>
-                      <p className="text-gray-700">Sweat Elite: {sub.sweat_elite ?? 0}</p>
-                      <p className="text-gray-700">Cancellations: {sub.cancellations_count ?? 0}</p>
-                      <p className="text-gray-700">Retail: {fmt(sub.retail_amount)}</p>
-                      <p className="text-gray-700">Red Appts: {sub.red_appt_scheduled ?? 0}</p>
-                    </div>
-
-                    {/* Sales Training */}
-                    <div>
-                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Sales Training</p>
-                      {sub.watched_training_video && <p className="text-green-600">✅ Training video</p>}
-                      {sub.role_played_script     && <p className="text-green-600">✅ Role played script</p>}
-                      {sub.used_sales_gpt         && <p className="text-green-600">✅ Sales GPT</p>}
-                      {!sub.watched_training_video && !sub.role_played_script && !sub.used_sales_gpt && (
-                        <p className="text-gray-400 text-xs italic">None completed</p>
-                      )}
-                      {sub.orders_needed && (
-                        <div className="mt-2">
-                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-0.5">Orders Needed</p>
-                          <p className="text-gray-700 text-xs">{sub.orders_needed}</p>
+                    {/* Completed Cleaning Tasks */}
+                    {(sub.completed_cleaning?.length > 0) && (
+                      <div>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Cleaning Completed</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {sub.completed_cleaning.map((t, i) => (
+                            <span key={i} className="inline-flex items-center gap-1 bg-green-50 text-green-700 text-xs font-medium px-2 py-0.5 rounded-full border border-green-200">
+                              ✅ {t}
+                            </span>
+                          ))}
                         </div>
-                      )}
-                    </div>
+                      </div>
+                    )}
+
+                    {/* Completed Missions / Operations */}
+                    {(sub.completed_missions?.length > 0) && (
+                      <div>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Missions Completed</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {sub.completed_missions.map((t, i) => (
+                            <span key={i} className="inline-flex items-center gap-1 bg-orange-50 text-orange-700 text-xs font-medium px-2 py-0.5 rounded-full border border-orange-200">
+                              ✅ {t}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Notes */}
+                    {sub.general_notes && (
+                      <div>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-0.5">Notes</p>
+                        <p className="text-gray-700 text-xs">{sub.general_notes}</p>
+                      </div>
+                    )}
                   </div>
-
-                  {/* Completed Cleaning Tasks */}
-                  {(sub.completed_cleaning?.length > 0) && (
-                    <div>
-                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Cleaning Completed</p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {sub.completed_cleaning.map((t, i) => (
-                          <span key={i} className="inline-flex items-center gap-1 bg-green-50 text-green-700 text-xs font-medium px-2 py-0.5 rounded-full border border-green-200">
-                            ✅ {t}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Completed Missions / Operations */}
-                  {(sub.completed_missions?.length > 0) && (
-                    <div>
-                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Missions Completed</p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {sub.completed_missions.map((t, i) => (
-                          <span key={i} className="inline-flex items-center gap-1 bg-orange-50 text-orange-700 text-xs font-medium px-2 py-0.5 rounded-full border border-orange-200">
-                            ✅ {t}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Notes */}
-                  {sub.general_notes && (
-                    <div>
-                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-0.5">Notes</p>
-                      <p className="text-gray-700 text-xs">{sub.general_notes}</p>
-                    </div>
-                  )}
                 </div>
-              </div>
-            )
-          })}
+              )
+            })}
+          </div>
         </div>
-      )}
+      ))}
     </div>
   )
 }
