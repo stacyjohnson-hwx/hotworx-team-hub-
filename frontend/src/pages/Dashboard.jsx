@@ -4,7 +4,7 @@ import { useRole } from '@/hooks/useRole'
 import { useMonth } from '@/contexts/MonthContext'
 import { formatMonthYear } from '@/lib/utils'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
-import { Plus, Pencil, Trash2, ExternalLink, Lock, X, Link as LinkIcon, Loader2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, ExternalLink, Lock, X, Link as LinkIcon, Loader2, Image } from 'lucide-react'
 
 // ─── Extract domain for favicon fallback ──────────────────────────────────────
 function getDomain(url) {
