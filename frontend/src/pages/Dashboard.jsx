@@ -230,13 +230,44 @@ function ImportantLinks({ role }) {
 
   const canEdit = role === 'owner' || role === 'manager'
 
-  // Fetch from API — backend already filters manager_only links for TSAs
+  // Fetch from API — backend already filters manager_only links for TSAs.
+  // One-time migration: if DB is empty, check for links saved in the old
+  // localStorage format and save them to the database automatically.
   useEffect(() => {
-    apiGet('/api/dashboard-links')
-      .then(data => setLinks(Array.isArray(data) ? data : []))
-      .catch(() => setLinks([]))
-      .finally(() => setLoading(false))
-  }, [])
+    apiGet('/api/dashboard-links').then(async data => {
+      const dbLinks = Array.isArray(data) ? data : []
+      if (dbLinks.length === 0 && canEdit) {
+        // Check old localStorage format
+        try {
+          const raw = localStorage.getItem('dashboard_important_links')
+          const old = raw ? JSON.parse(raw) : []
+          if (old.length > 0) {
+            const saved = []
+            for (let i = 0; i < old.length; i++) {
+              const l = old[i]
+              try {
+                const result = await apiPost('/api/dashboard-links', {
+                  title:        l.title || '',
+                  url:          l.url   || '',
+                  description:  l.description  || null,
+                  image_url:    l.imageUrl      || null,
+                  manager_only: !!l.managerOnly,
+                  sort_order:   i,
+                })
+                saved.push(result)
+              } catch { /* skip invalid entries */ }
+            }
+            if (saved.length > 0) {
+              localStorage.removeItem('dashboard_important_links')
+              setLinks(saved)
+              return
+            }
+          }
+        } catch { /* ignore localStorage errors */ }
+      }
+      setLinks(dbLinks)
+    }).catch(() => setLinks([])).finally(() => setLoading(false))
+  }, [canEdit])
 
   async function handleSave(data) {
     try {
