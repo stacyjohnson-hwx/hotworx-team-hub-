@@ -3,17 +3,8 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useRole } from '@/hooks/useRole'
 import { useMonth } from '@/contexts/MonthContext'
 import { formatMonthYear } from '@/lib/utils'
-import { Plus, Pencil, Trash2, ExternalLink, Lock, X, Link as LinkIcon, Image } from 'lucide-react'
-
-// ─── localStorage helpers ─────────────────────────────────────────────────────
-const LINKS_KEY = 'dashboard_important_links'
-function loadLinks() {
-  try { return JSON.parse(localStorage.getItem(LINKS_KEY) || '[]') } catch { return [] }
-}
-function saveLinks(links) {
-  try { localStorage.setItem(LINKS_KEY, JSON.stringify(links)) } catch {}
-}
-function newLinkId() { return `link-${Date.now()}-${Math.random().toString(36).slice(2,6)}` }
+import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
+import { Plus, Pencil, Trash2, ExternalLink, Lock, X, Link as LinkIcon, Loader2 } from 'lucide-react'
 
 // ─── Extract domain for favicon fallback ──────────────────────────────────────
 function getDomain(url) {
@@ -24,11 +15,11 @@ function getDomain(url) {
 function LinkModal({ link, onSave, onClose }) {
   const isNew = !link
   const [form, setForm] = useState({
-    title:       link?.title       ?? '',
-    url:         link?.url         ?? '',
-    description: link?.description ?? '',
-    imageUrl:    link?.imageUrl    ?? '',
-    managerOnly: link?.managerOnly ?? false,
+    title:        link?.title        ?? '',
+    url:          link?.url          ?? '',
+    description:  link?.description  ?? '',
+    image_url:    link?.image_url    ?? '',
+    manager_only: link?.manager_only ?? false,
   })
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -110,17 +101,17 @@ function LinkModal({ link, onSave, onClose }) {
               <div className="relative flex-1">
                 <Image size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input
-                  value={form.imageUrl}
-                  onChange={e => set('imageUrl', e.target.value)}
+                  value={form.image_url}
+                  onChange={e => set('image_url', e.target.value)}
                   placeholder="https://example.com/logo.png"
                   className="w-full pl-8 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-[#E8611A]"
                 />
               </div>
               {/* Preview */}
-              {(form.imageUrl || form.url) && (
+              {(form.image_url || form.url) && (
                 <div className="w-10 h-10 rounded-lg border border-gray-100 flex-shrink-0 overflow-hidden bg-gray-50 flex items-center justify-center">
                   <img
-                    src={form.imageUrl || `https://www.google.com/s2/favicons?domain=${getDomain(form.url)}&sz=64`}
+                    src={form.image_url || `https://www.google.com/s2/favicons?domain=${getDomain(form.url)}&sz=64`}
                     alt=""
                     className="w-8 h-8 object-contain"
                     onError={e => { e.target.style.display = 'none' }}
@@ -135,12 +126,12 @@ function LinkModal({ link, onSave, onClose }) {
             <div className="relative mt-0.5">
               <input
                 type="checkbox"
-                checked={form.managerOnly}
-                onChange={e => set('managerOnly', e.target.checked)}
+                checked={form.manager_only}
+                onChange={e => set('manager_only', e.target.checked)}
                 className="sr-only"
               />
-              <div className={`w-9 h-5 rounded-full transition-colors ${form.managerOnly ? 'bg-[#E8611A]' : 'bg-gray-200'}`} />
-              <div className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${form.managerOnly ? 'translate-x-4' : ''}`} />
+              <div className={`w-9 h-5 rounded-full transition-colors ${form.manager_only ? 'bg-[#E8611A]' : 'bg-gray-200'}`} />
+              <div className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${form.manager_only ? 'translate-x-4' : ''}`} />
             </div>
             <div>
               <p className="text-sm font-semibold text-gray-800 flex items-center gap-1.5">
@@ -174,7 +165,7 @@ function LinkModal({ link, onSave, onClose }) {
 // ─── Single link card ─────────────────────────────────────────────────────────
 function LinkCard({ link, canEdit, onEdit, onDelete }) {
   const domain   = getDomain(link.url)
-  const imgSrc   = link.imageUrl || (domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=64` : null)
+  const imgSrc   = link.image_url || (domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=64` : null)
   const [imgErr, setImgErr] = useState(false)
 
   return (
@@ -191,7 +182,7 @@ function LinkCard({ link, canEdit, onEdit, onDelete }) {
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <p className="text-sm font-bold text-gray-900 leading-tight">{link.title}</p>
-          {link.managerOnly && (
+          {link.manager_only && (
             <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-amber-50 text-amber-600 border border-amber-200 rounded-full px-2 py-0.5">
               <Lock size={9} /> Manager+
             </span>
@@ -233,30 +224,50 @@ function LinkCard({ link, canEdit, onEdit, onDelete }) {
 
 // ─── Important Links section ──────────────────────────────────────────────────
 function ImportantLinks({ role }) {
-  const [links,   setLinks]   = useState(() => loadLinks())
+  const [links,   setLinks]   = useState([])
+  const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(null) // null | 'new' | link object
 
-  const canEdit       = role === 'owner' || role === 'manager'
-  const visibleLinks  = links.filter(l => !l.managerOnly || canEdit)
+  const canEdit = role === 'owner' || role === 'manager'
 
-  useEffect(() => { saveLinks(links) }, [links])
+  // Fetch from API — backend already filters manager_only links for TSAs
+  useEffect(() => {
+    apiGet('/api/dashboard-links')
+      .then(data => setLinks(Array.isArray(data) ? data : []))
+      .catch(() => setLinks([]))
+      .finally(() => setLoading(false))
+  }, [])
 
-  function handleSave(data) {
-    if (editing === 'new') {
-      setLinks(prev => [...prev, { ...data, id: newLinkId() }])
-    } else {
-      setLinks(prev => prev.map(l => l.id === editing.id ? { ...l, ...data } : l))
-    }
+  async function handleSave(data) {
+    try {
+      if (editing === 'new') {
+        const saved = await apiPost('/api/dashboard-links', data)
+        setLinks(prev => [...prev, saved])
+      } else {
+        const saved = await apiPut(`/api/dashboard-links/${editing.id}`, data)
+        setLinks(prev => prev.map(l => l.id === editing.id ? saved : l))
+      }
+    } catch (err) { alert('Save failed: ' + err.message) }
     setEditing(null)
   }
 
-  function handleDelete(id) {
+  async function handleDelete(id) {
     if (!window.confirm('Remove this link?')) return
-    setLinks(prev => prev.filter(l => l.id !== id))
+    try {
+      await apiDelete(`/api/dashboard-links/${id}`)
+      setLinks(prev => prev.filter(l => l.id !== id))
+    } catch (err) { alert('Delete failed: ' + err.message) }
   }
 
-  // Hide the whole section from TSAs if there are no visible links
-  if (!canEdit && visibleLinks.length === 0) return null
+  if (loading) return (
+    <div className="mt-8 flex items-center gap-2 text-gray-400">
+      <Loader2 size={14} className="animate-spin" />
+      <span className="text-sm">Loading links…</span>
+    </div>
+  )
+
+  // Hide section from TSAs only when there are genuinely no links for them
+  if (!canEdit && links.length === 0) return null
 
   return (
     <div className="mt-8">
@@ -279,7 +290,7 @@ function ImportantLinks({ role }) {
         )}
       </div>
 
-      {visibleLinks.length === 0 ? (
+      {links.length === 0 ? (
         <div className="rounded-xl border border-dashed border-gray-200 p-6 text-center">
           <LinkIcon size={22} className="mx-auto text-gray-300 mb-2" />
           <p className="text-sm text-gray-400 font-medium">No links yet</p>
@@ -287,7 +298,7 @@ function ImportantLinks({ role }) {
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {visibleLinks.map(link => (
+          {links.map(link => (
             <LinkCard
               key={link.id}
               link={link}
