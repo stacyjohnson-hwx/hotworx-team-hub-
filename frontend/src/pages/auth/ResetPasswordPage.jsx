@@ -14,12 +14,22 @@ export default function ResetPasswordPage() {
   const [error,     setError]     = useState('')
 
   // Supabase fires PASSWORD_RECOVERY when the recovery token in the URL is valid.
-  // We must wait for this event before allowing the password update.
+  // We listen for it AND do an immediate session check, because the event can fire
+  // before the component mounts (especially if AuthContext initialises first).
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') {
+    const hash = window.location.hash
+
+    // Immediate check: if Supabase already processed the hash and we have a session, unlock now
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session && hash.includes('type=recovery')) {
         setReady(true)
       }
+    })
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') setReady(true)
+      // Fallback: SIGNED_IN fires first in some Supabase versions when type=recovery
+      if (event === 'SIGNED_IN' && hash.includes('type=recovery')) setReady(true)
     })
     return () => subscription.unsubscribe()
   }, [])
