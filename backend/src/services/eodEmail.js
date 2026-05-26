@@ -45,11 +45,11 @@ function sectionHeader(title) {
 }
 
 // outreachSummary: { totalCalls, totalTexts, tiles: [{title, calls, texts}] }
-// tasksByUser: { cleaning: string[], operations: string[], missions: string[] }
+// tasksByUser: { cleaning: string[], operations: string[] }
 function buildShiftBlock(row_data, outreachSummary, tasksByUser) {
   const cleaningItems   = tasksByUser?.cleaning   || []
   const operationsItems = tasksByUser?.operations || []
-  const missionItems    = tasksByUser?.missions   || []
+  const missionItems    = row_data.growth_missions || []
   const v = variance(row_data)
   const varAbs = Math.abs(v)
   const varColor = varAbs > THRESHOLD ? '#C8102E' : '#16a34a'
@@ -191,7 +191,7 @@ function buildHtml(dateStr, submissions, outreachByUser, tasksByUser) {
         : submissions.map(s => buildShiftBlock(
             s,
             outreachByUser[s.submitted_by] || null,
-            tasksByUser[s.submitted_by]    || { cleaning: [], operations: [], missions: [] }
+            tasksByUser[s.submitted_by]    || { cleaning: [], operations: [] }
           )).join('')}
       <div style="margin-top:16px;padding-top:16px;border-top:1px solid #f3f4f6;font-size:12px;color:#9ca3af;text-align:center;">
         ${process.env.STUDIO_NAME} · ${process.env.STUDIO_ADDRESS} · Internal use only
@@ -265,22 +265,38 @@ async function fetchSubmissionsForDate(dateStr) {
     for (const uid of userIds) {
       const cleaning   = []
       const operations = []
-      const missions   = []
       for (const c of cleaningCompletions.filter(c => c.completed_by === uid)) {
         const t = taskMap[c.task_id]
         if (!t) continue
         if (t.task_type === 'Operations') operations.push(t.title)
-        else if (t.task_type === 'Mission') missions.push(t.title)
         else cleaning.push(t.title)
       }
-      tasksByUser[uid] = { cleaning, operations, missions }
+      tasksByUser[uid] = { cleaning, operations }
     }
   }
   for (const uid of userIds) {
-    if (!tasksByUser[uid]) tasksByUser[uid] = { cleaning: [], operations: [], missions: [] }
+    if (!tasksByUser[uid]) tasksByUser[uid] = { cleaning: [], operations: [] }
   }
 
-  const enrichedSubmissions = submissions.map(s => ({ ...s, submitter_name: nameMap[s.submitted_by] || 'Team Member' }))
+  // Fetch Growth HQ mission completions for these submissions
+  const submissionIds = submissions.map(s => s.id)
+  const missionsBySubmission = {}
+  if (submissionIds.length > 0) {
+    const { data: missionRows } = await db
+      .from('eod_mission_completions')
+      .select('eod_submission_id, missions(title)')
+      .in('eod_submission_id', submissionIds)
+    for (const mc of missionRows || []) {
+      if (!missionsBySubmission[mc.eod_submission_id]) missionsBySubmission[mc.eod_submission_id] = []
+      missionsBySubmission[mc.eod_submission_id].push(mc.missions?.title || '')
+    }
+  }
+
+  const enrichedSubmissions = submissions.map(s => ({
+    ...s,
+    submitter_name: nameMap[s.submitted_by] || 'Team Member',
+    growth_missions: missionsBySubmission[s.id] || [],
+  }))
   return { submissions: enrichedSubmissions, outreachByUser, tasksByUser }
 }
 

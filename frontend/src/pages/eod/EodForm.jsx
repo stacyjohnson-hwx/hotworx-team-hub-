@@ -218,6 +218,20 @@ export default function EodForm({ submittedShifts, onSubmitted }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(false)
+  const [missions, setMissions] = useState([])
+  const [checkedMissions, setCheckedMissions] = useState(new Set())
+
+  useEffect(() => {
+    apiGet('/api/missions').then(setMissions).catch(() => {})
+  }, [])
+
+  function toggleMission(id) {
+    setCheckedMissions(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
 
   function set(field, value) {
     setForm(prev => ({ ...prev, [field]: value }))
@@ -248,9 +262,11 @@ export default function EodForm({ submittedShifts, onSubmitted }) {
         phone_calls: parseInt(form.phone_calls) || 0,
         sms_sent: parseInt(form.sms_sent) || 0,
         red_appt_scheduled: parseInt(form.red_appt_scheduled) || 0,
+        mission_ids: [...checkedMissions],
       }
       await apiPost('/api/eod', payload)
       setSuccess(true)
+      setCheckedMissions(new Set())
       onSubmitted()
     } catch (e) {
       setError(e.message)
@@ -359,6 +375,36 @@ export default function EodForm({ submittedShifts, onSubmitted }) {
             <CheckRow label="Role played / practiced script" checked={form.role_played_script} onChange={v => set('role_played_script', v)} />
             <CheckRow label="Practiced with Sales GPT" checked={form.used_sales_gpt} onChange={v => set('used_sales_gpt', v)} href={import.meta.env.VITE_SALES_GPT_URL} />
           </Section>
+
+          {/* Missions (Growth HQ) */}
+          {missions.length > 0 && (
+            <Section title="Missions Completed" badge={checkedMissions.size > 0 ? `${checkedMissions.size}` : null}>
+              <p className="text-xs text-gray-400 -mt-1 mb-2">Check off the Growth HQ missions you completed this shift.</p>
+              <div className="space-y-1">
+                {missions.map(m => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => toggleMission(m.id)}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-left transition-colors border ${
+                      checkedMissions.has(m.id)
+                        ? 'bg-orange-50 border-orange-200 text-orange-800'
+                        : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    <span className={`flex-shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center text-xs transition-colors ${
+                      checkedMissions.has(m.id)
+                        ? 'border-orange-500 bg-orange-500 text-white'
+                        : 'border-gray-300'
+                    }`}>
+                      {checkedMissions.has(m.id) && '✓'}
+                    </span>
+                    <span className={checkedMissions.has(m.id) ? 'font-medium' : ''}>{m.title}</span>
+                  </button>
+                ))}
+              </div>
+            </Section>
+          )}
 
           {/* Shift at a Glance */}
           <ShiftAtAGlance />

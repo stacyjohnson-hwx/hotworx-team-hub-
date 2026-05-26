@@ -22,7 +22,6 @@ const FREQ_COLORS = {
 const TYPE_COLORS = {
   Cleaning: 'bg-green-100 text-green-700',
   Operations: 'bg-indigo-100 text-indigo-700',
-  Mission: 'bg-orange-100 text-orange-700',
 }
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
