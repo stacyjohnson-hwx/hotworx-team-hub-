@@ -49,7 +49,7 @@ function sectionHeader(title) {
 function buildShiftBlock(row_data, outreachSummary, tasksByUser) {
   const cleaningItems   = tasksByUser?.cleaning   || []
   const operationsItems = tasksByUser?.operations || []
-  const missionItems    = row_data.growth_missions || []
+  const missionItems    = row_data.mission_titles || []
   const v = variance(row_data)
   const varAbs = Math.abs(v)
   const varColor = varAbs > THRESHOLD ? '#C8102E' : '#16a34a'
@@ -278,24 +278,9 @@ async function fetchSubmissionsForDate(dateStr) {
     if (!tasksByUser[uid]) tasksByUser[uid] = { cleaning: [], operations: [] }
   }
 
-  // Fetch Growth HQ mission completions for these submissions
-  const submissionIds = submissions.map(s => s.id)
-  const missionsBySubmission = {}
-  if (submissionIds.length > 0) {
-    const { data: missionRows } = await db
-      .from('eod_mission_completions')
-      .select('eod_submission_id, missions(title)')
-      .in('eod_submission_id', submissionIds)
-    for (const mc of missionRows || []) {
-      if (!missionsBySubmission[mc.eod_submission_id]) missionsBySubmission[mc.eod_submission_id] = []
-      missionsBySubmission[mc.eod_submission_id].push(mc.missions?.title || '')
-    }
-  }
-
   const enrichedSubmissions = submissions.map(s => ({
     ...s,
     submitter_name: nameMap[s.submitted_by] || 'Team Member',
-    growth_missions: missionsBySubmission[s.id] || [],
   }))
   return { submissions: enrichedSubmissions, outreachByUser, tasksByUser }
 }

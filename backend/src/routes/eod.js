@@ -58,26 +58,13 @@ router.get('/', authenticate, async (req, res) => {
     else tasksByKey[key].cleaning.push(t.title)
   }
 
-  // Attach mission completions (Growth HQ missions checked off in EOD form)
-  const submissionIds = submissions.map(s => s.id)
-  const { data: missionCompletions } = await db()
-    .from('eod_mission_completions')
-    .select('eod_submission_id, missions(title)')
-    .in('eod_submission_id', submissionIds)
-
-  const missionsBySubmission = {}
-  for (const mc of missionCompletions || []) {
-    if (!missionsBySubmission[mc.eod_submission_id]) missionsBySubmission[mc.eod_submission_id] = []
-    missionsBySubmission[mc.eod_submission_id].push(mc.missions?.title || '')
-  }
-
   res.json(submissions.map(s => {
     const key = `${s.submitted_by}:${s.shift_date}`
     return {
       ...s,
       completed_cleaning: tasksByKey[key]?.cleaning || [],
       completed_operations: tasksByKey[key]?.operations || [],
-      completed_missions: missionsBySubmission[s.id] || [],
+      completed_missions: s.mission_titles || [],
     }
   }))
 })
@@ -117,8 +104,8 @@ router.post('/', authenticate, async (req, res) => {
     watched_training_video, used_sales_gpt, role_played_script,
     // Other
     orders_needed, general_notes,
-    // Missions (Growth HQ)
-    mission_ids,
+    // Missions (Growth HQ) — array of title strings
+    mission_titles,
   } = req.body
 
   if (!shift_type) return res.status(400).json({ error: 'shift_type is required' })
@@ -165,6 +152,7 @@ router.post('/', authenticate, async (req, res) => {
       role_played_script: !!role_played_script,
       orders_needed: orders_needed || null,
       general_notes: general_notes || null,
+      mission_titles: Array.isArray(mission_titles) && mission_titles.length > 0 ? mission_titles : [],
     })
     .select()
     .single()
@@ -174,16 +162,6 @@ router.post('/', authenticate, async (req, res) => {
       return res.status(409).json({ error: `You already submitted an EOD for the ${shift_type} shift today.` })
     }
     return res.status(500).json({ error: error.message })
-  }
-
-  // Save mission completions
-  if (Array.isArray(mission_ids) && mission_ids.length > 0) {
-    db()
-      .from('eod_mission_completions')
-      .insert(mission_ids.map(mid => ({ eod_submission_id: data.id, mission_id: mid })))
-      .then(({ error: mErr }) => {
-        if (mErr) console.error('[EOD] Mission completions error:', mErr.message)
-      })
   }
 
   // Auto-draft a pending order if TSA listed items needed

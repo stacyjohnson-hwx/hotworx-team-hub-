@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { CheckCircle, ExternalLink, AlertTriangle, Phone, MessageSquare, Sparkles, ClipboardCheck } from 'lucide-react'
-import { apiPost, apiGet } from '@/hooks/useApi'
+import { apiPost } from '@/hooks/useApi'
+import { useAuth } from '@/contexts/AuthContext'
+import { STANDING_MISSIONS } from '../leads/data/mockData'
 
 const VARIANCE_THRESHOLD = 5
 
@@ -214,23 +216,42 @@ const INITIAL_FORM = {
 }
 
 export default function EodForm({ submittedShifts, onSubmitted }) {
+  const { profile } = useAuth()
   const [form, setForm] = useState(INITIAL_FORM)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(false)
-  const [missions, setMissions] = useState([])
-  const [checkedMissions, setCheckedMissions] = useState(new Set())
+  // Auto-read today's mission completions from Growth HQ (localStorage)
+  const [missionTitles, setMissionTitles] = useState([])
 
   useEffect(() => {
-    apiGet('/api/missions').then(setMissions).catch(() => {})
-  }, [])
+    try {
+      const todayStr = new Date().toLocaleDateString('en-CA')
+      const state = JSON.parse(localStorage.getItem('leadgenhq_missions') || '{}')
+      // Employee ID is derived from first name (matches LeadGenHQ logic)
+      const firstName = profile?.name?.trim().split(' ')[0]?.toLowerCase() || ''
+      const empData = state[firstName] || {}
 
-  function toggleMission(id) {
-    setCheckedMissions(prev => {
-      const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
-      return next
-    })
+      // Gather all mission definitions (standing + custom from localStorage)
+      const customMissions = JSON.parse(localStorage.getItem('leadgenhq_custom_missions') || '[]')
+      const allDefs = [...STANDING_MISSIONS, ...customMissions]
+
+      // Find missions completed today
+      const completedIds = Object.keys(empData).filter(mId =>
+        empData[mId]?.some(c => c.date === todayStr)
+      )
+      const titles = completedIds
+        .map(id => allDefs.find(m => m.id === id)?.title)
+        .filter(Boolean)
+
+      setMissionTitles(titles)
+    } catch { /* graceful — missions section just stays empty */ }
+  }, [profile])
+
+  function toggleMissionTitle(title) {
+    setMissionTitles(prev =>
+      prev.includes(title) ? prev.filter(t => t !== title) : [...prev, title]
+    )
   }
 
   function set(field, value) {
@@ -262,11 +283,11 @@ export default function EodForm({ submittedShifts, onSubmitted }) {
         phone_calls: parseInt(form.phone_calls) || 0,
         sms_sent: parseInt(form.sms_sent) || 0,
         red_appt_scheduled: parseInt(form.red_appt_scheduled) || 0,
-        mission_ids: [...checkedMissions],
+        mission_titles: missionTitles,
       }
       await apiPost('/api/eod', payload)
       setSuccess(true)
-      setCheckedMissions(new Set())
+      setMissionTitles([])
       onSubmitted()
     } catch (e) {
       setError(e.message)
@@ -376,35 +397,32 @@ export default function EodForm({ submittedShifts, onSubmitted }) {
             <CheckRow label="Practiced with Sales GPT" checked={form.used_sales_gpt} onChange={v => set('used_sales_gpt', v)} href={import.meta.env.VITE_SALES_GPT_URL} />
           </Section>
 
-          {/* Missions (Growth HQ) */}
-          {missions.length > 0 && (
-            <Section title="Missions Completed" badge={checkedMissions.size > 0 ? `${checkedMissions.size}` : null}>
-              <p className="text-xs text-gray-400 -mt-1 mb-2">Check off the Growth HQ missions you completed this shift.</p>
-              <div className="space-y-1">
-                {missions.map(m => (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => toggleMission(m.id)}
-                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-left transition-colors border ${
-                      checkedMissions.has(m.id)
-                        ? 'bg-orange-50 border-orange-200 text-orange-800'
-                        : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
-                    }`}
-                  >
-                    <span className={`flex-shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center text-xs transition-colors ${
-                      checkedMissions.has(m.id)
-                        ? 'border-orange-500 bg-orange-500 text-white'
-                        : 'border-gray-300'
-                    }`}>
-                      {checkedMissions.has(m.id) && '✓'}
-                    </span>
-                    <span className={checkedMissions.has(m.id) ? 'font-medium' : ''}>{m.title}</span>
-                  </button>
-                ))}
-              </div>
-            </Section>
-          )}
+          {/* Missions (Growth HQ) — auto-populated from Growth HQ Missions tab */}
+          <Section title="Missions Completed" badge={missionTitles.length > 0 ? `${missionTitles.length}` : null}>
+            {missionTitles.length === 0 ? (
+              <p className="text-xs text-gray-400">
+                No missions completed yet today in Growth HQ. Complete missions in the <strong>Growth → Missions</strong> tab and they'll appear here automatically.
+              </p>
+            ) : (
+              <>
+                <p className="text-xs text-gray-400 -mt-1 mb-2">Auto-filled from Growth HQ. Tap to remove any that don't apply to this shift.</p>
+                <div className="space-y-1">
+                  {missionTitles.map((title, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => toggleMissionTitle(title)}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-left bg-orange-50 border border-orange-200 text-orange-800 hover:bg-orange-100 transition-colors"
+                    >
+                      <span className="flex-shrink-0 w-5 h-5 rounded-full border-2 border-orange-500 bg-orange-500 text-white flex items-center justify-center text-xs">✓</span>
+                      <span className="font-medium flex-1">{title}</span>
+                      <span className="text-orange-400 text-xs">tap to remove</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </Section>
 
           {/* Shift at a Glance */}
           <ShiftAtAGlance />
