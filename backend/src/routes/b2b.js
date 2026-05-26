@@ -8,21 +8,14 @@ const supabase = () =>
   createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 
 // ─── GET /api/b2b/contacts ───────────────────────────────────────────────────
-// Owner/manager: all contacts. TSA: only contacts assigned to them.
+// All roles: full contact list
 router.get('/contacts', authenticate, async (req, res) => {
   const db = supabase()
-  const role = req.user.app_metadata?.role
 
-  let query = db
+  const { data, error } = await db
     .from('b2b_contacts')
     .select('*')
     .order('created_at', { ascending: false })
-
-  if (role === 'tsa') {
-    query = query.eq('assigned_to', req.user.id)
-  }
-
-  const { data, error } = await query
   if (error) return res.status(500).json({ error: error.message })
 
   // Attach last_interacted_at from interactions table
@@ -42,7 +35,7 @@ router.get('/contacts', authenticate, async (req, res) => {
 })
 
 // ─── POST /api/b2b/contacts ──────────────────────────────────────────────────
-router.post('/contacts', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.post('/contacts', authenticate, async (req, res) => {
   const {
     business_name, contact_name, phone, email, address, industry,
     website, social_handle, logo_url,
@@ -83,7 +76,7 @@ router.post('/contacts', authenticate, requireRole('owner', 'manager'), async (r
 })
 
 // ─── PUT /api/b2b/contacts/:id ───────────────────────────────────────────────
-router.put('/contacts/:id', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.put('/contacts/:id', authenticate, async (req, res) => {
   const {
     business_name, contact_name, phone, email, address, industry,
     website, social_handle, logo_url,
