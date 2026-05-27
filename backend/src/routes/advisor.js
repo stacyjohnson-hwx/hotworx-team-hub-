@@ -67,9 +67,7 @@ router.post('/generate', authenticate, requireRole('owner', 'manager'), async (r
     const raw = message.content[0]?.text || ''
     let recommendations
     try {
-      // Claude should return JSON — extract it robustly
-      const jsonMatch = raw.match(/```json\s*([\s\S]*?)```/) || raw.match(/(\{[\s\S]*\})/)
-      recommendations = JSON.parse(jsonMatch ? jsonMatch[1] : raw)
+      recommendations = parseJsonResponse(raw)
     } catch {
       // Fallback: wrap the raw text as a single insight
       recommendations = {
@@ -77,8 +75,8 @@ router.post('/generate', authenticate, requireRole('owner', 'manager'), async (r
           id: 'insights',
           title: 'AI Insights',
           icon: 'Sparkles',
-          summary: raw,
-          items: [],
+          summary: 'The AI returned an unstructured response. Try regenerating recommendations.',
+          items: [{ label: 'Raw response', reason: raw.slice(0, 400), priority: 'medium', action: 'Regenerate recommendations to get structured results.' }],
         }],
       }
     }
@@ -103,6 +101,32 @@ router.post('/generate', authenticate, requireRole('owner', 'manager'), async (r
     res.status(500).json({ error: err.message })
   }
 })
+
+// ─── JSON parsing helper ──────────────────────────────────────────────────────
+// Claude sometimes wraps JSON in markdown fences or adds preamble text.
+// This function strips that and extracts the outermost JSON object.
+
+function parseJsonResponse(text) {
+  if (!text) throw new Error('empty response')
+
+  // 1. Try the whole text first (ideal case: pure JSON)
+  try { return JSON.parse(text) } catch {}
+
+  // 2. Strip markdown code fence (```json ... ``` or ``` ... ```)
+  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/)
+  if (fenceMatch) {
+    try { return JSON.parse(fenceMatch[1].trim()) } catch {}
+  }
+
+  // 3. Find the first { and last } to extract the outermost object
+  const firstBrace = text.indexOf('{')
+  const lastBrace  = text.lastIndexOf('}')
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    try { return JSON.parse(text.slice(firstBrace, lastBrace + 1)) } catch {}
+  }
+
+  throw new Error('could not extract JSON from response')
+}
 
 // ─── Data aggregation ─────────────────────────────────────────────────────────
 

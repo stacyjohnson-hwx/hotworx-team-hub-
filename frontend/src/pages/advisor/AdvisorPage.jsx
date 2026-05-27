@@ -427,7 +427,7 @@ function ChatPanel({ month, year }) {
 // ─── Main page ─────────────────────────────────────────────────────────────────
 
 export default function AdvisorPage() {
-  const { month, year } = useMonth()
+  const { selectedMonth: { month, year } } = useMonth()
   const [activeTab, setActiveTab] = useState('recommendations')
   const [cache, setCache]         = useState(null)
   const [loading, setLoading]     = useState(true)
