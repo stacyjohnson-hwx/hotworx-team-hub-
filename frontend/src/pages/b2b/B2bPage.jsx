@@ -440,6 +440,7 @@ function ContactCard({ contact, users, isOwnerOrManager, onEdit, onDelete, onLog
   const [expanded, setExpanded] = useState(false)
   const [interactions, setInteractions] = useState(null)
   const [linkedEvents, setLinkedEvents] = useState(null)
+  const [linkedEventsError, setLinkedEventsError] = useState(null)
   const [loadingHistory, setLoadingHistory] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
@@ -449,25 +450,19 @@ function ContactCard({ contact, users, isOwnerOrManager, onEdit, onDelete, onLog
   const loadInteractions = useCallback(async () => {
     if (interactions !== null) return
     setLoadingHistory(true)
+    setLinkedEventsError(null)
     try {
-      // Fetch interactions via backend
+      // Fetch interactions via backend (service role key)
       const iData = await apiGet(`/api/b2b/contacts/${contact.id}/interactions`)
       setInteractions(iData)
 
-      // Fetch linked events directly from Supabase (two-step: get IDs, then events)
-      const { data: links } = await supabase
-        .from('event_b2b_contacts')
-        .select('event_id')
-        .eq('b2b_contact_id', contact.id)
-
-      if (links && links.length > 0) {
-        const { data: evts } = await supabase
-          .from('events')
-          .select('id, title, event_type, start_date, end_date, start_time, location')
-          .in('id', links.map(l => l.event_id))
-          .order('start_date', { ascending: false })
-        setLinkedEvents(evts || [])
-      } else {
+      // Fetch linked events via backend (service role key bypasses RLS)
+      try {
+        const evts = await apiGet(`/api/b2b/contacts/${contact.id}/events`)
+        setLinkedEvents(Array.isArray(evts) ? evts : [])
+      } catch (evtErr) {
+        console.error('linked events fetch error:', evtErr)
+        setLinkedEventsError(evtErr?.message || 'Failed to load linked events')
         setLinkedEvents([])
       }
     } catch (err) {
@@ -621,6 +616,11 @@ function ContactCard({ contact, users, isOwnerOrManager, onEdit, onDelete, onLog
           )}
 
           {/* Linked events */}
+          {linkedEventsError && (
+            <div className="pt-3 mt-1 border-t border-gray-200">
+              <p className="text-xs text-red-500">Events error: {linkedEventsError}</p>
+            </div>
+          )}
           {linkedEvents?.length > 0 && (
             <div className="pt-3 mt-1 border-t border-gray-200">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Linked Events</p>

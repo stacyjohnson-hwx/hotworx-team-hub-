@@ -200,26 +200,12 @@ router.get('/contacts/:id/events', authenticate, async (req, res) => {
   try {
     const db = supabase()
 
-    // Step 1: get event_ids linked to this contact
-    const { data: links, error: linkErr } = await db
-      .from('event_b2b_contacts')
-      .select('event_id')
-      .eq('b2b_contact_id', req.params.id)
+    // Use a SECURITY DEFINER function to bypass any PostgREST table-access issues
+    const { data, error } = await db
+      .rpc('get_contact_linked_events', { p_contact_id: req.params.id })
 
-    if (linkErr) throw new Error(linkErr.message)
-    if (!links || links.length === 0) return res.json([])
-
-    const eventIds = links.map(l => l.event_id)
-
-    // Step 2: fetch those events
-    const { data: events, error: evtErr } = await db
-      .from('events')
-      .select('id, title, event_type, start_date, end_date, start_time, location')
-      .in('id', eventIds)
-      .order('start_date', { ascending: false })
-
-    if (evtErr) throw new Error(evtErr.message)
-    res.json(events || [])
+    if (error) throw new Error(error.message)
+    res.json(data || [])
   } catch (err) {
     console.error('GET /b2b/contacts/:id/events', err.message)
     res.status(500).json({ error: err.message })
