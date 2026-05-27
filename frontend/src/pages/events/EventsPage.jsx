@@ -889,7 +889,8 @@ function PromosTab({ month, year, canEdit }) {
   const filtered = base.filter(p => {
     const d = p.start_date || p.created_at
     if (!d) return true
-    const date = new Date(d)
+    // Use T12:00:00 to avoid UTC-to-local date shift on date-only strings
+    const date = new Date(d.length === 10 ? d + 'T12:00:00' : d)
     if (filterMonth !== 'all' && date.getMonth() + 1 !== Number(filterMonth)) return false
     if (filterYear !== 'all' && date.getFullYear() !== Number(filterYear)) return false
     return true
