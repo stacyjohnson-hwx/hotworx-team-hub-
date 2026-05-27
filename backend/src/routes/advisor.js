@@ -61,10 +61,13 @@ router.post('/generate', authenticate, requireRole('owner', 'manager'), async (r
     const message = await client.messages.create({
       model: 'claude-opus-4-7',
       max_tokens: 2048,
+      system: 'You are a studio performance advisor. Respond ONLY with a valid JSON object — no markdown fences, no explanation, no preamble. Start your response with { and end it with }.',
       messages: [{ role: 'user', content: prompt }],
     })
 
-    const raw = message.content[0]?.text || ''
+    // claude-opus-4-7 can produce thinking blocks before the text block — find the text block
+    const textBlock = message.content.find(b => b.type === 'text')
+    const raw = textBlock?.text || ''
     let recommendations
     try {
       recommendations = parseJsonResponse(raw)
