@@ -60,7 +60,7 @@ router.post('/generate', authenticate, requireRole('owner', 'manager'), async (r
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
     const message = await client.messages.create({
       model: 'claude-opus-4-7',
-      max_tokens: 2048,
+      max_tokens: 8192,
       system: 'You are a studio performance advisor. Respond ONLY with a valid JSON object — no markdown fences, no explanation, no preamble. Start your response with { and end it with }.',
       messages: [{ role: 'user', content: prompt }],
     })
