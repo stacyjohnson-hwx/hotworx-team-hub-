@@ -3,6 +3,7 @@ const router = express.Router()
 const { createClient } = require('@supabase/supabase-js')
 const { requireRole } = require('../middleware/roleGuard')
 const authenticate = require('../middleware/authMiddleware')
+const pool = require('../db/db')
 
 const supabase = () =>
   createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
@@ -197,9 +198,8 @@ router.delete('/interactions/:id', authenticate, requireRole('owner', 'manager')
 
 // GET /api/b2b/contacts/:id/events
 router.get('/contacts/:id/events', authenticate, async (req, res) => {
-  const db = require('../db/db')
   try {
-    const { rows } = await db.query(
+    const { rows } = await pool.query(
       `SELECT e.id, e.title, e.event_type, e.start_date, e.end_date, e.start_time, e.location
        FROM event_b2b_contacts ebc
        JOIN events e ON e.id = ebc.event_id

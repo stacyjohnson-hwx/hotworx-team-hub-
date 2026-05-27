@@ -452,10 +452,14 @@ function ContactCard({ contact, users, isOwnerOrManager, onEdit, onDelete, onLog
     try {
       const [iData, eData] = await Promise.all([
         apiGet(`/api/b2b/contacts/${contact.id}/interactions`),
-        apiGet(`/api/b2b/contacts/${contact.id}/events`),
+        apiGet(`/api/b2b/contacts/${contact.id}/events`).catch(() => []),
       ])
       setInteractions(iData)
       setLinkedEvents(eData)
+    } catch (err) {
+      console.error('loadInteractions', err)
+      setInteractions([])
+      setLinkedEvents([])
     } finally { setLoadingHistory(false) }
   }, [contact.id, interactions])
 
