@@ -450,15 +450,29 @@ function ContactCard({ contact, users, isOwnerOrManager, onEdit, onDelete, onLog
     if (interactions !== null) return
     setLoadingHistory(true)
     try {
-      const [iData, eData] = await Promise.all([
-        apiGet(`/api/b2b/contacts/${contact.id}/interactions`),
-        apiGet(`/api/b2b/contacts/${contact.id}/events`).catch(() => []),
-      ])
+      // Fetch interactions via backend
+      const iData = await apiGet(`/api/b2b/contacts/${contact.id}/interactions`)
       setInteractions(iData)
-      setLinkedEvents(eData)
+
+      // Fetch linked events directly from Supabase (two-step: get IDs, then events)
+      const { data: links } = await supabase
+        .from('event_b2b_contacts')
+        .select('event_id')
+        .eq('b2b_contact_id', contact.id)
+
+      if (links && links.length > 0) {
+        const { data: evts } = await supabase
+          .from('events')
+          .select('id, title, event_type, start_date, end_date, start_time, location')
+          .in('id', links.map(l => l.event_id))
+          .order('start_date', { ascending: false })
+        setLinkedEvents(evts || [])
+      } else {
+        setLinkedEvents([])
+      }
     } catch (err) {
       console.error('loadInteractions', err)
-      setInteractions([])
+      setInteractions(prev => prev ?? [])
       setLinkedEvents([])
     } finally { setLoadingHistory(false) }
   }, [contact.id, interactions])
