@@ -1,14 +1,8 @@
-const nodemailer = require('nodemailer')
+const { Resend } = require('resend')
 const { createClient } = require('@supabase/supabase-js')
 
-function createTransport() {
-  return nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS,
-    },
-  })
+function getResend() {
+  return new Resend(process.env.RESEND_API_KEY)
 }
 
 const THRESHOLD = parseFloat(process.env.DRAWER_VARIANCE_THRESHOLD || '5')
@@ -292,8 +286,8 @@ async function fetchSubmissionsForDate(dateStr) {
 }
 
 async function sendEodEmail(dateStr) {
-  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-    console.log('[EOD Email] EMAIL_USER/EMAIL_PASS not set — skipping email')
+  if (!process.env.RESEND_API_KEY) {
+    console.log('[EOD Email] RESEND_API_KEY not set — skipping email')
     return
   }
 
@@ -306,13 +300,14 @@ async function sendEodEmail(dateStr) {
   })
 
   try {
-    const transporter = createTransport()
-    await transporter.sendMail({
-      from: `HOTWORX Pewaukee <${process.env.EMAIL_USER}>`,
-      to: recipients.join(', '),
+    const resend = getResend()
+    const { error } = await resend.emails.send({
+      from: 'HOTWORX Pewaukee <onboarding@resend.dev>',
+      to: recipients,
       subject: `${process.env.STUDIO_NAME || 'HOTWORX Pewaukee'} — EOD Report ${dateLabel}`,
       html,
     })
+    if (error) throw new Error(error.message)
     console.log(`[EOD Email] Sent for ${dateStr} to ${recipients.join(', ')}`)
   } catch (err) {
     console.error('[EOD Email] Send failed:', err.message)
@@ -320,17 +315,18 @@ async function sendEodEmail(dateStr) {
 }
 
 async function sendEmail({ to, subject, html }) {
-  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-    console.log('[Email] EMAIL_USER/EMAIL_PASS not set — skipping')
+  if (!process.env.RESEND_API_KEY) {
+    console.log('[Email] RESEND_API_KEY not set — skipping')
     return
   }
-  const transporter = createTransport()
-  await transporter.sendMail({
-    from: `HOTWORX Pewaukee <${process.env.EMAIL_USER}>`,
-    to,
+  const resend = getResend()
+  const { error } = await resend.emails.send({
+    from: 'HOTWORX Pewaukee <onboarding@resend.dev>',
+    to: Array.isArray(to) ? to : [to],
     subject,
     html,
   })
+  if (error) throw new Error(error.message)
 }
 
 module.exports = { sendEodEmail, sendEmail }
