@@ -352,4 +352,135 @@ router.get('/leaderboard', authenticate, async (req, res) => {
   res.json(result)
 })
 
+// ─── POST /api/goals/suggest ──────────────────────────────────────────────────
+// Analyzes last 3 months of actuals and returns AI-suggested targets.
+// Owner + Manager only.
+router.post('/suggest', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+  const { month, year } = req.body
+  const m = parseInt(month) || new Date().getMonth() + 1
+  const y = parseInt(year)  || new Date().getFullYear()
+
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return res.status(503).json({ error: 'ANTHROPIC_API_KEY is not configured.' })
+  }
+
+  try {
+    const Anthropic = require('@anthropic-ai/sdk')
+    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+
+    // Gather last 3 months of studio_goals + studio_trends
+    const periods = []
+    for (let i = 1; i <= 3; i++) {
+      let pm = m - i, py = y
+      if (pm <= 0) { pm += 12; py-- }
+      periods.push({ month: pm, year: py })
+    }
+
+    const monthInts = [...new Set(periods.map(p => p.month))]
+    const yearInts  = [...new Set(periods.map(p => p.year))]
+
+    const [goalsRes, trendsRes, leadsRes] = await Promise.all([
+      db().from('studio_goals')
+        .select('month,year,eft_target,eft_actual,memberships_target,memberships_actual,retail_target,retail_actual,in_the_bank_target,total_leads_target,conversion_rate_target,conversion_rate_actual,checkin_show_rate_target,checkin_show_rate_actual,close_rate_target,close_rate_actual')
+        .in('month', monthInts).in('year', yearInts),
+      db().from('studio_trends')
+        .select('month,year,eft_increase,new_members,retail,in_the_bank,leads,cancellations,total_member_count')
+        .in('month', monthInts).in('year', yearInts),
+      db().from('leads')
+        .select('lead_date,count')
+        .gte('lead_date', `${periods[periods.length - 1].year}-${String(periods[periods.length - 1].month).padStart(2, '0')}-01`),
+    ])
+
+    const goalsMap  = {}
+    for (const g of (goalsRes.data || []))  goalsMap[`${g.year}-${g.month}`]  = g
+    const trendsMap = {}
+    for (const t of (trendsRes.data || [])) trendsMap[`${t.year}-${t.month}`] = t
+
+    const monthName = (mo, yr) => new Date(yr, mo - 1, 1).toLocaleString('default', { month: 'long' })
+
+    const historyLines = periods.map(p => {
+      const g = goalsMap[`${p.year}-${p.month}`]  || {}
+      const t = trendsMap[`${p.year}-${p.month}`] || {}
+      return `${monthName(p.month, p.year)} ${p.year}:
+  EFT increase: actual $${t.eft_increase ?? g.eft_actual ?? 'n/a'} (target was $${g.eft_target ?? 'not set'})
+  New memberships: actual ${t.new_members ?? g.memberships_actual ?? 'n/a'} (target was ${g.memberships_target ?? 'not set'})
+  Retail: actual $${t.retail ?? g.retail_actual ?? 'n/a'} (target was $${g.retail_target ?? 'not set'})
+  In the Bank: $${t.in_the_bank ?? 'n/a'} (goal was $${g.in_the_bank_target ?? 'not set'})
+  Leads: ${t.leads ?? 'n/a'} (goal was ${g.total_leads_target ?? 145})
+  Cancellations: ${t.cancellations ?? 'n/a'}
+  Total members: ${t.total_member_count ?? 'n/a'}
+  Conversion rate: ${g.conversion_rate_actual ?? 'n/a'}% (target ${g.conversion_rate_target ?? 35}%)
+  Check-in show rate: ${g.checkin_show_rate_actual ?? 'n/a'}% (target ${g.checkin_show_rate_target ?? 80}%)
+  Close rate: ${g.close_rate_actual ?? 'n/a'}% (target ${g.close_rate_target ?? 50}%)`
+    }).join('\n\n')
+
+    const targetMonth = monthName(m, y)
+
+    const prompt = `You are an AI advisor for HOTWORX Pewaukee, a boutique infrared sauna fitness studio. The owner needs suggested monthly goal targets for ${targetMonth} ${y}.
+
+Here is the studio's performance over the last 3 months:
+
+${historyLines}
+
+Studio context:
+- EFT (Electronic Funds Transfer) increase is the primary revenue driver — monthly quota for commission is $500 for TSAs, $750 for the manager
+- Lead generation goal is typically 145/month (5/day)
+- Conversion rate = percentage of leads who book a trial appointment
+- Check-in show rate = percentage of trial appointments who actually show up
+- Studio close rate = percentage of shows who purchase a membership
+- "In the Bank" is the total EFT base (cumulative memberships × dues)
+
+Based on the last 3 months of performance, suggest realistic but motivating targets for ${targetMonth} ${y}. If the studio consistently hit or missed targets, adjust accordingly. If there is no historical data, use the typical studio defaults.
+
+Respond with ONLY valid JSON in this exact format:
+{
+  "eft_target": <number>,
+  "memberships_target": <number>,
+  "retail_target": <number>,
+  "in_the_bank_target": <number or null>,
+  "total_leads_target": <number>,
+  "conversion_rate_target": <number>,
+  "checkin_show_rate_target": <number>,
+  "close_rate_target": <number>,
+  "summary": "<1-2 sentences explaining the overall approach>",
+  "reasoning": {
+    "eft_target": "<one short sentence>",
+    "memberships_target": "<one short sentence>",
+    "retail_target": "<one short sentence>",
+    "in_the_bank_target": "<one short sentence>",
+    "total_leads_target": "<one short sentence>",
+    "conversion_rate_target": "<one short sentence>",
+    "checkin_show_rate_target": "<one short sentence>",
+    "close_rate_target": "<one short sentence>"
+  }
+}`
+
+    const message = await client.messages.create({
+      model: 'claude-opus-4-7',
+      max_tokens: 1024,
+      messages: [{ role: 'user', content: prompt }],
+    })
+
+    const raw = message.content[0]?.text || ''
+
+    // Robust JSON extraction
+    let suggestion
+    try { suggestion = JSON.parse(raw) } catch {}
+    if (!suggestion) {
+      const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/)
+      if (fenceMatch) try { suggestion = JSON.parse(fenceMatch[1].trim()) } catch {}
+    }
+    if (!suggestion) {
+      const braces = raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1)
+      try { suggestion = JSON.parse(braces) } catch {}
+    }
+    if (!suggestion) return res.status(500).json({ error: 'AI returned an unparseable response. Try again.' })
+
+    res.json(suggestion)
+  } catch (err) {
+    console.error('POST /goals/suggest', err)
+    res.status(500).json({ error: err.message })
+  }
+})
+
 module.exports = router

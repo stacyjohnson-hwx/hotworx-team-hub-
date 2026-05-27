@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
-import { RefreshCw, Pencil, X, TrendingUp, DollarSign, Users, Phone, MessageSquare, Trophy } from 'lucide-react'
-import { apiGet, apiPut } from '@/hooks/useApi'
+import { RefreshCw, Pencil, X, TrendingUp, DollarSign, Users, Phone, MessageSquare, Trophy, Sparkles, ChevronDown, ChevronUp, Check } from 'lucide-react'
+import { apiGet, apiPut, apiPost } from '@/hooks/useApi'
 import { useRole } from '@/hooks/useRole'
 import { useMonth } from '@/contexts/MonthContext'
 import { supabase } from '@/lib/supabase'
@@ -246,12 +246,18 @@ export default function GoalsPage() {
 // ─── Studio Goals ─────────────────────────────────────────────────────────────
 
 function StudioGoals({ month, year }) {
-  const [goals, setGoals]     = useState(null)
-  const [editing, setEditing] = useState(false)
-  const [form, setForm]       = useState({})
-  const [saving, setSaving]   = useState(false)
-  const [loading, setLoading] = useState(true)
-  const [error, setError]     = useState(null)
+  const [goals, setGoals]         = useState(null)
+  const [editing, setEditing]     = useState(false)
+  const [form, setForm]           = useState({})
+  const [saving, setSaving]       = useState(false)
+  const [loading, setLoading]     = useState(true)
+  const [error, setError]         = useState(null)
+  // AI suggestion state
+  const [suggestion, setSuggestion]   = useState(null)
+  const [suggesting, setSuggesting]   = useState(false)
+  const [suggestError, setSuggestError] = useState(null)
+  const [showSuggestion, setShowSuggestion] = useState(false)
+  const [applied, setApplied]     = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true); setError(null)
@@ -261,6 +267,8 @@ function StudioGoals({ month, year }) {
   }, [month, year])
 
   useEffect(() => { load() }, [load])
+  // Reset suggestion state when month changes
+  useEffect(() => { setSuggestion(null); setShowSuggestion(false); setApplied(false); setSuggestError(null) }, [month, year])
 
   async function save() {
     setSaving(true); setError(null)
@@ -271,12 +279,126 @@ function StudioGoals({ month, year }) {
 
   function setF(k, v) { setForm(p => ({ ...p, [k]: v })) }
 
+  async function fetchSuggestion() {
+    setSuggesting(true); setSuggestError(null)
+    try {
+      const data = await apiPost('/api/goals/suggest', { month, year })
+      setSuggestion(data)
+      setShowSuggestion(true)
+    } catch (e) {
+      setSuggestError(e.message || 'Failed to generate suggestions.')
+    } finally {
+      setSuggesting(false)
+    }
+  }
+
+  function applySuggestion() {
+    if (!suggestion) return
+    setForm(prev => ({
+      ...prev,
+      eft_target:               suggestion.eft_target               ?? prev.eft_target,
+      memberships_target:       suggestion.memberships_target       ?? prev.memberships_target,
+      retail_target:            suggestion.retail_target            ?? prev.retail_target,
+      in_the_bank_target:       suggestion.in_the_bank_target       ?? prev.in_the_bank_target,
+      total_leads_target:       suggestion.total_leads_target       ?? prev.total_leads_target,
+      conversion_rate_target:   suggestion.conversion_rate_target   ?? prev.conversion_rate_target,
+      checkin_show_rate_target: suggestion.checkin_show_rate_target ?? prev.checkin_show_rate_target,
+      close_rate_target:        suggestion.close_rate_target        ?? prev.close_rate_target,
+    }))
+    setApplied(true)
+    setEditing(true)
+    setShowSuggestion(false)
+  }
+
   if (loading) return <Spinner />
   const g = goals || {}
+  const goalsNotSet = !g.id  // no DB row yet — this month has no saved targets
 
   return (
     <div>
       {error && <ErrorBox>{error}</ErrorBox>}
+
+      {/* ── AI Suggestion Banner ── */}
+      {goalsNotSet && !editing && (
+        <div className="mb-4 rounded-xl border border-purple-200 bg-purple-50 px-4 py-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <Sparkles size={15} className="text-purple-600" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-purple-900">No goals set for this month yet</p>
+                <p className="text-xs text-purple-700 mt-0.5 leading-relaxed">
+                  Let AI suggest targets based on your last 3 months of actuals.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {suggestion && (
+                <button
+                  onClick={() => setShowSuggestion(s => !s)}
+                  className="flex items-center gap-1.5 text-xs text-purple-600 hover:text-purple-800 font-medium"
+                >
+                  {showSuggestion ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                  {showSuggestion ? 'Hide' : 'View'}
+                </button>
+              )}
+              <button
+                onClick={fetchSuggestion}
+                disabled={suggesting}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-60 disabled:cursor-wait"
+              >
+                {suggesting
+                  ? <><RefreshCw size={12} className="animate-spin" /> Analyzing…</>
+                  : <><Sparkles size={12} /> {suggestion ? 'Re-suggest' : 'Suggest Goals'}</>
+                }
+              </button>
+            </div>
+          </div>
+
+          {suggestError && (
+            <p className="mt-2 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{suggestError}</p>
+          )}
+
+          {/* Suggestion preview */}
+          {showSuggestion && suggestion && (
+            <div className="mt-3 border-t border-purple-200 pt-3 space-y-1.5">
+              <p className="text-xs text-purple-800 font-medium mb-2 italic leading-relaxed">{suggestion.summary}</p>
+              {[
+                { key: 'eft_target',               label: 'EFT Increase',         prefix: '$', suffix: '' },
+                { key: 'memberships_target',        label: 'New Memberships',      prefix: '',  suffix: '' },
+                { key: 'retail_target',             label: 'Retail',               prefix: '$', suffix: '' },
+                { key: 'in_the_bank_target',        label: 'In the Bank',          prefix: '$', suffix: '' },
+                { key: 'total_leads_target',        label: 'Leads',                prefix: '',  suffix: '/mo' },
+                { key: 'conversion_rate_target',    label: 'Conversion Rate',      prefix: '',  suffix: '%' },
+                { key: 'checkin_show_rate_target',  label: 'Check-in Show Rate',   prefix: '',  suffix: '%' },
+                { key: 'close_rate_target',         label: 'Close Rate',           prefix: '',  suffix: '%' },
+              ].filter(f => suggestion[f.key] != null).map(({ key, label, prefix, suffix }) => (
+                <div key={key} className="flex items-baseline justify-between gap-2 text-xs">
+                  <span className="text-purple-700 font-medium min-w-[120px]">{label}</span>
+                  <span className="font-bold text-purple-900">{prefix}{Number(suggestion[key]).toLocaleString()}{suffix}</span>
+                  <span className="text-purple-600 flex-1 text-right leading-snug">{suggestion.reasoning?.[key]}</span>
+                </div>
+              ))}
+              <div className="flex justify-end pt-2">
+                <button
+                  onClick={applySuggestion}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold rounded-lg transition-colors"
+                >
+                  <Check size={12} /> Apply & Review
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {applied && editing && (
+        <div className="mb-3 flex items-center gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+          <Check size={12} /> AI suggestions applied — review and save when ready.
+        </div>
+      )}
+
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-sm font-semibold text-gray-700">Monthly KPIs</h2>
         {!editing ? (
@@ -286,7 +408,7 @@ function StudioGoals({ month, year }) {
           </button>
         ) : (
           <div className="flex gap-2">
-            <button onClick={() => setEditing(false)} className="text-sm text-gray-500 border border-gray-300 px-3 py-1.5 rounded-lg hover:bg-gray-50">Cancel</button>
+            <button onClick={() => { setEditing(false); setApplied(false) }} className="text-sm text-gray-500 border border-gray-300 px-3 py-1.5 rounded-lg hover:bg-gray-50">Cancel</button>
             <button onClick={save} disabled={saving} className="text-sm bg-red-600 text-white px-3 py-1.5 rounded-lg hover:bg-red-600-hover disabled:opacity-60">
               {saving ? 'Saving…' : 'Save'}
             </button>
