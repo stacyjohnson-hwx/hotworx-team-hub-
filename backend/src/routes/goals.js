@@ -141,9 +141,20 @@ router.put('/studio', authenticate, requireRole('owner', 'manager'), async (req,
   const { month, year, ...fields } = req.body
   if (!month || !year) return res.status(400).json({ error: 'month and year required' })
 
+  // Strip read-only fields that come from studio_trends (not stored in studio_goals)
+  const READ_ONLY_FIELDS = [
+    'eft_actual', 'memberships_actual', 'retail_actual',
+    'total_leads_actual', 'cancellations_actual', 'total_members_actual',
+    'new_members_actual', 'membership_cash', 'net_eft', 'eft_decrease_actual',
+    'in_the_bank_actual', 'itb_goal',
+  ]
+  const safeFields = Object.fromEntries(
+    Object.entries(fields).filter(([k]) => !READ_ONLY_FIELDS.includes(k))
+  )
+
   const { data, error } = await db()
     .from('studio_goals')
-    .upsert({ month, year, ...fields, updated_by: req.user.id, updated_at: new Date().toISOString() },
+    .upsert({ month, year, ...safeFields, updated_by: req.user.id, updated_at: new Date().toISOString() },
       { onConflict: 'month,year' })
     .select()
     .single()
