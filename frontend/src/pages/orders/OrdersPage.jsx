@@ -69,7 +69,7 @@ const blankForm = {
   item_name: '', quantity: '1', category: 'supplies', notes: '', vendor: '', est_cost: '',
 }
 
-function OrderModal({ order, onSave, onClose, isOwnerOrManager }) {
+function OrderModal({ order, onSave, onClose, isOwnerOrManager, vendorOptions = [] }) {
   const [form, setForm] = useState(order ? {
     item_name: order.item_name || '',
     quantity: String(order.quantity || 1),
@@ -167,11 +167,16 @@ function OrderModal({ order, onSave, onClose, isOwnerOrManager }) {
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Vendor / Source</label>
                 <input
+                  list="vendor-options"
                   className={inputCls}
                   value={form.vendor}
                   onChange={e => set('vendor', e.target.value)}
-                  placeholder="Amazon, Costco…"
+                  placeholder="Search or type a vendor…"
+                  autoComplete="off"
                 />
+                <datalist id="vendor-options">
+                  {vendorOptions.map(v => <option key={v} value={v} />)}
+                </datalist>
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Est. Cost</label>
@@ -668,6 +673,7 @@ export default function OrdersPage() {
         <OrderModal
           order={modal || null}
           isOwnerOrManager={isOwnerOrManager}
+          vendorOptions={vendorOptions}
           onSave={handleSave}
           onClose={() => setModal(null)}
         />
