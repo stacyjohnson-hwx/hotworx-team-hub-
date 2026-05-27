@@ -472,12 +472,10 @@ function EventsTab({ month, year, canEdit }) {
     setEvents(prev => prev.filter(e => e.id !== id))
   }
 
-  // Sort soonest-first for future/upcoming; newest-first for past/all
-  const today = new Date(); today.setHours(0, 0, 0, 0)
+  // Sort soonest-first for this-month/upcoming; newest-first for past/all
   const sortedAsc  = [...events].sort((a, b) => new Date(a.start_date) - new Date(b.start_date))
   const sortedDesc = [...events].sort((a, b) => new Date(b.start_date) - new Date(a.start_date))
 
-  const future   = sortedAsc.filter(e => new Date(e.start_date + 'T00:00:00') >= today)
   const upcoming = sortedAsc.filter(e => !isExpired(e.end_date || e.start_date))
   const past     = sortedDesc.filter(e => isExpired(e.end_date || e.start_date))
 
@@ -493,7 +491,8 @@ function EventsTab({ month, year, canEdit }) {
     })
   }
 
-  const base = filter === 'future' ? future : filter === 'upcoming' ? upcoming : filter === 'past' ? past : sortedDesc
+  // "This Month" uses the full list — the month filter (pre-set to current month) does the scoping
+  const base = filter === 'future' ? sortedAsc : filter === 'upcoming' ? upcoming : filter === 'past' ? past : sortedDesc
   const filtered = applyDateFilters(base)
 
   return (
@@ -863,15 +862,14 @@ function PromosTab({ month, year, canEdit }) {
     const db = b.start_date || b.created_at || ''
     return new Date(db) - new Date(da)
   })
-  const promoToday = new Date(); promoToday.setHours(0, 0, 0, 0)
   const sortedAsc  = [...promos].sort((a, b) => new Date(a.start_date || a.created_at) - new Date(b.start_date || b.created_at))
   const sortedDesc = [...promos].sort((a, b) => new Date(b.start_date || b.created_at) - new Date(a.start_date || a.created_at))
 
-  const futurePromos   = sortedAsc.filter(p => p.start_date && new Date(p.start_date + 'T00:00:00') >= promoToday)
   const activePromos   = sortedDesc.filter(p => p.active && !isExpired(p.end_date))
   const inactivePromos = sortedDesc.filter(p => !p.active || isExpired(p.end_date))
 
-  const base = filter === 'future' ? futurePromos
+  // "This Month" uses the full list — the month filter (pre-set to current month) does the scoping
+  const base = filter === 'future' ? sortedAsc
     : filter === 'active' ? activePromos
     : filter === 'inactive' ? inactivePromos
     : sortedDesc
