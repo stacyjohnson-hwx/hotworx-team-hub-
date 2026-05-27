@@ -429,8 +429,10 @@ function EventsTab({ month, year, canEdit }) {
   const load = useCallback(async () => {
     setLoading(true)
     try {
+      // Fetch ALL events (no month/year filter) so Past and All tabs show full history.
+      // The month/year from context is only used when creating a new event.
       const [data, feedbackData] = await Promise.all([
-        apiGet(`/api/events?month=${month}&year=${year}`),
+        apiGet('/api/events'),
         apiGet('/api/feedback?item_type=event').catch(() => []),
       ])
       setEvents(data)
@@ -442,7 +444,7 @@ function EventsTab({ month, year, canEdit }) {
     } finally {
       setLoading(false)
     }
-  }, [month, year])
+  }, [])
 
   const eventIds = events.map(e => String(e.id))
   const eventSignals = useFeedbackSignals('event', eventIds)
@@ -803,8 +805,10 @@ function PromosTab({ month, year, canEdit }) {
   const load = useCallback(async () => {
     setLoading(true)
     try {
+      // Fetch ALL promotions (no month/year filter) so inactive/past promos are visible.
+      // month/year from context is only used when creating a new promo.
       const [data, feedbackData] = await Promise.all([
-        apiGet(`/api/events/promotions?month=${month}&year=${year}`),
+        apiGet('/api/events/promotions'),
         apiGet('/api/feedback?item_type=promo').catch(() => []),
       ])
       setPromos(data)
@@ -816,7 +820,7 @@ function PromosTab({ month, year, canEdit }) {
     } finally {
       setLoading(false)
     }
-  }, [month, year])
+  }, [])
 
   useEffect(() => { load() }, [load])
 
