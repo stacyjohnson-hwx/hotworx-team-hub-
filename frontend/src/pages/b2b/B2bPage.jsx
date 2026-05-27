@@ -17,6 +17,7 @@ const STATUSES = [
   { value: 'meeting_scheduled', label: 'Meeting Scheduled', bg: 'bg-purple-100',        text: 'text-purple-800',        border: 'border-purple-300' },
   { value: 'active_partner',    label: 'Active Partner',    bg: 'bg-orange-100',        text: 'text-orange-800',        border: 'border-orange-300' },
   { value: 'follow_up',         label: 'Follow Up',         bg: 'bg-red-100',           text: 'text-red-800',           border: 'border-red-300' },
+  { value: 'past_partner',      label: 'Past Partner',      bg: 'bg-slate-100',         text: 'text-slate-600',         border: 'border-slate-300' },
   { value: 'not_interested',    label: 'Not Interested',    bg: 'bg-gray-100',          text: 'text-gray-600',          border: 'border-gray-300' },
 ]
 
