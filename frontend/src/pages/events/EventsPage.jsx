@@ -416,18 +416,21 @@ const MONTHS = [
 ]
 
 function EventsTab({ month, year, canEdit }) {
+  const nowMonth = new Date().getMonth() + 1
+  const nowYear  = new Date().getFullYear()
+
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState(null)
   const [filter, setFilter] = useState('future')
-  const [filterMonth, setFilterMonth] = useState(String(month))
-  const [filterYear, setFilterYear] = useState('all')
+  const [filterMonth, setFilterMonth] = useState(String(nowMonth))
+  const [filterYear, setFilterYear] = useState(String(nowYear))
 
   function switchTab(v) {
     setFilter(v)
-    setFilterMonth(v === 'future' ? String(month) : 'all')
-    setFilterYear('all')
+    setFilterMonth(v === 'future' ? String(nowMonth) : 'all')
+    setFilterYear(v === 'future' ? String(nowYear) : 'all')
   }
   const [ratings, setRatings] = useState({})          // keyed by event.id → feedback row
   const [ratingTarget, setRatingTarget] = useState(null)  // event being rated
@@ -800,18 +803,21 @@ function PromoForm({ promo, month, year, onSave, onClose }) {
 }
 
 function PromosTab({ month, year, canEdit }) {
+  const nowMonth = new Date().getMonth() + 1
+  const nowYear  = new Date().getFullYear()
+
   const [promos, setPromos] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState(null)
   const [filter, setFilter] = useState('future')
-  const [filterMonth, setFilterMonth] = useState(String(month))
-  const [filterYear, setFilterYear] = useState('all')
+  const [filterMonth, setFilterMonth] = useState(String(nowMonth))
+  const [filterYear, setFilterYear] = useState(String(nowYear))
 
   function switchTab(v) {
     setFilter(v)
-    setFilterMonth(v === 'future' ? String(month) : 'all')
-    setFilterYear('all')
+    setFilterMonth(v === 'future' ? String(nowMonth) : 'all')
+    setFilterYear(v === 'future' ? String(nowYear) : 'all')
   }
   const [ratings, setRatings] = useState({})
   const [ratingTarget, setRatingTarget] = useState(null)
