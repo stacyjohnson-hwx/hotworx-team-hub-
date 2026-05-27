@@ -197,14 +197,21 @@ router.delete('/interactions/:id', authenticate, requireRole('owner', 'manager')
 
 // GET /api/b2b/contacts/:id/events
 router.get('/contacts/:id/events', authenticate, async (req, res) => {
-  const { data, error } = await supabase()
-    .from('event_b2b_contacts')
-    .select('events(id, title, event_type, start_date, end_date, start_time, location)')
-    .eq('b2b_contact_id', req.params.id)
-  if (error) return res.status(500).json({ error: error.message })
-  const events = (data || []).map(r => r.events).filter(Boolean)
-  events.sort((a, b) => new Date(b.start_date) - new Date(a.start_date))
-  res.json(events)
+  const db = require('../db/db')
+  try {
+    const { rows } = await db.query(
+      `SELECT e.id, e.title, e.event_type, e.start_date, e.end_date, e.start_time, e.location
+       FROM event_b2b_contacts ebc
+       JOIN events e ON e.id = ebc.event_id
+       WHERE ebc.b2b_contact_id = $1
+       ORDER BY e.start_date DESC`,
+      [req.params.id]
+    )
+    res.json(rows)
+  } catch (err) {
+    console.error('GET /b2b/contacts/:id/events', err.message)
+    res.status(500).json({ error: err.message })
+  }
 })
 
 module.exports = router
