@@ -420,9 +420,15 @@ function EventsTab({ month, year, canEdit }) {
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState(null)
-  const [filter, setFilter] = useState('upcoming')
-  const [filterMonth, setFilterMonth] = useState('all')
+  const [filter, setFilter] = useState('future')
+  const [filterMonth, setFilterMonth] = useState(String(month))
   const [filterYear, setFilterYear] = useState('all')
+
+  function switchTab(v) {
+    setFilter(v)
+    setFilterMonth(v === 'future' ? String(month) : 'all')
+    setFilterYear('all')
+  }
   const [ratings, setRatings] = useState({})          // keyed by event.id → feedback row
   const [ratingTarget, setRatingTarget] = useState(null)  // event being rated
 
@@ -466,10 +472,14 @@ function EventsTab({ month, year, canEdit }) {
     setEvents(prev => prev.filter(e => e.id !== id))
   }
 
-  // Sort newest to oldest by start_date
-  const sorted = [...events].sort((a, b) => new Date(b.start_date) - new Date(a.start_date))
-  const upcoming = sorted.filter(e => !isExpired(e.end_date || e.start_date))
-  const past = sorted.filter(e => isExpired(e.end_date || e.start_date))
+  // Sort soonest-first for future/upcoming; newest-first for past/all
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const sortedAsc  = [...events].sort((a, b) => new Date(a.start_date) - new Date(b.start_date))
+  const sortedDesc = [...events].sort((a, b) => new Date(b.start_date) - new Date(a.start_date))
+
+  const future   = sortedAsc.filter(e => new Date(e.start_date + 'T00:00:00') >= today)
+  const upcoming = sortedAsc.filter(e => !isExpired(e.end_date || e.start_date))
+  const past     = sortedDesc.filter(e => isExpired(e.end_date || e.start_date))
 
   // Unique years from all events for the year dropdown
   const availableYears = [...new Set(events.map(e => new Date(e.start_date + 'T00:00:00').getFullYear()))].sort((a, b) => b - a)
@@ -483,15 +493,15 @@ function EventsTab({ month, year, canEdit }) {
     })
   }
 
-  const base = filter === 'upcoming' ? upcoming : filter === 'past' ? past : sorted
+  const base = filter === 'future' ? future : filter === 'upcoming' ? upcoming : filter === 'past' ? past : sortedDesc
   const filtered = applyDateFilters(base)
 
   return (
     <div>
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
-          {[['upcoming','Upcoming'], ['past','Past'], ['all','All']].map(([v, l]) => (
-            <button key={v} onClick={() => setFilter(v)}
+          {[['future','Future'], ['upcoming','Upcoming'], ['past','Past'], ['all','All']].map(([v, l]) => (
+            <button key={v} onClick={() => switchTab(v)}
               className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors ${filter === v ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>
               {l}
             </button>
@@ -537,7 +547,7 @@ function EventsTab({ month, year, canEdit }) {
           <Loader2 className="w-6 h-6 animate-spin text-orange-500" />
         </div>
       ) : filtered.length === 0 ? (
-        <EmptyState icon={Calendar} message={filter === 'past' ? 'No past events found.' : 'No events yet — add the first one!'} />
+        <EmptyState icon={Calendar} message={filter === 'past' ? 'No past events found.' : filter === 'future' ? 'No upcoming events this month.' : 'No events yet — add the first one!'} />
       ) : (
         <div className="space-y-3">
           {filtered.map(e => (
@@ -795,9 +805,15 @@ function PromosTab({ month, year, canEdit }) {
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState(null)
-  const [filter, setFilter] = useState('active')
-  const [filterMonth, setFilterMonth] = useState('all')
+  const [filter, setFilter] = useState('future')
+  const [filterMonth, setFilterMonth] = useState(String(month))
   const [filterYear, setFilterYear] = useState('all')
+
+  function switchTab(v) {
+    setFilter(v)
+    setFilterMonth(v === 'future' ? String(month) : 'all')
+    setFilterYear('all')
+  }
   const [ratings, setRatings] = useState({})
   const [ratingTarget, setRatingTarget] = useState(null)
 
@@ -847,15 +863,21 @@ function PromosTab({ month, year, canEdit }) {
     const db = b.start_date || b.created_at || ''
     return new Date(db) - new Date(da)
   })
-  const activePromos = sorted.filter(p => p.active && !isExpired(p.end_date))
-  const inactivePromos = sorted.filter(p => !p.active || isExpired(p.end_date))
+  const promoToday = new Date(); promoToday.setHours(0, 0, 0, 0)
+  const sortedAsc  = [...promos].sort((a, b) => new Date(a.start_date || a.created_at) - new Date(b.start_date || b.created_at))
+  const sortedDesc = [...promos].sort((a, b) => new Date(b.start_date || b.created_at) - new Date(a.start_date || a.created_at))
 
-  const base = filter === 'active' ? activePromos
+  const futurePromos   = sortedAsc.filter(p => p.start_date && new Date(p.start_date + 'T00:00:00') >= promoToday)
+  const activePromos   = sortedDesc.filter(p => p.active && !isExpired(p.end_date))
+  const inactivePromos = sortedDesc.filter(p => !p.active || isExpired(p.end_date))
+
+  const base = filter === 'future' ? futurePromos
+    : filter === 'active' ? activePromos
     : filter === 'inactive' ? inactivePromos
-    : sorted
+    : sortedDesc
 
   // Available years from all promos
-  const promoYears = [...new Set(sorted.map(p => {
+  const promoYears = [...new Set(sortedDesc.map(p => {
     const d = p.start_date || p.created_at
     return d ? new Date(d).getFullYear() : null
   }).filter(Boolean))].sort((a, b) => b - a)
@@ -882,8 +904,8 @@ function PromosTab({ month, year, canEdit }) {
 
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
-          {[['active','Active'], ['inactive','Inactive'], ['all','All']].map(([v, l]) => (
-            <button key={v} onClick={() => setFilter(v)}
+          {[['future','Future'], ['active','Active'], ['inactive','Inactive'], ['all','All']].map(([v, l]) => (
+            <button key={v} onClick={() => switchTab(v)}
               className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors ${filter === v ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>
               {l}
             </button>
@@ -929,7 +951,7 @@ function PromosTab({ month, year, canEdit }) {
           <Loader2 className="w-6 h-6 animate-spin text-orange-500" />
         </div>
       ) : filtered.length === 0 ? (
-        <EmptyState icon={Gift} message="No promotions here yet." />
+        <EmptyState icon={Gift} message={filter === 'future' ? 'No upcoming promotions this month.' : filter === 'inactive' ? 'No inactive promotions.' : 'No promotions here yet.'} />
       ) : (
         <div className="space-y-3">
           {filtered.map(p => (
