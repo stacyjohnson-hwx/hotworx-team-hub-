@@ -500,7 +500,7 @@ function EventsTab({ month, year, canEdit }) {
     <div>
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
-          {[['future','Future'], ['upcoming','Upcoming'], ['past','Past'], ['all','All']].map(([v, l]) => (
+          {[['future','This Month'], ['upcoming','Upcoming'], ['past','Past'], ['all','All']].map(([v, l]) => (
             <button key={v} onClick={() => switchTab(v)}
               className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors ${filter === v ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>
               {l}
@@ -904,7 +904,7 @@ function PromosTab({ month, year, canEdit }) {
 
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
-          {[['future','Future'], ['active','Active'], ['inactive','Inactive'], ['all','All']].map(([v, l]) => (
+          {[['future','This Month'], ['active','Active'], ['inactive','Inactive'], ['all','All']].map(([v, l]) => (
             <button key={v} onClick={() => switchTab(v)}
               className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors ${filter === v ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>
               {l}
