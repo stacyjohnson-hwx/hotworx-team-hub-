@@ -32,10 +32,11 @@ const INTERACTION_TYPES = [
 ]
 
 const INDUSTRIES = [
-  'Apartments', 'Chiropractic', 'Corporate / Office', 'Gym / Fitness', 'Healthcare',
+  'Apartments', 'Chiropractic', 'Club / Group', 'Coffee / Café', 'Community Org',
+  'Corporate / Office', 'Gym / Fitness', 'Healthcare',
   'Influencer', 'Massage', 'Municipal', 'Neighborhood / HOA', 'Networking Group',
-  'Nutrition / Wellness', 'Physical Therapy', 'Real Estate', 'Restaurant', 'Retail',
-  'Salon / Spa', 'School', 'Sports / Athletics', 'Yoga / Pilates', 'Other',
+  'Nutrition / Wellness', 'Physical Therapy', 'Real Estate', 'Restaurant / Bar',
+  'Retail', 'Salon / Spa', 'School', 'Sports / Athletics', 'Yoga / Pilates', 'Other',
 ]
 
 function statusMeta(val) {
@@ -1010,10 +1011,11 @@ function ActivePartnerCard({ contact, users, isOwnerOrManager, onEdit, onLog, si
 }
 
 // ─── Active Partners Tab ──────────────────────────────────────────────────────
-function ActivePartnerRow({ contact, isOwnerOrManager, onEdit, onLog, signal }) {
-  const [expanded,     setExpanded]     = useState(false)
-  const [interactions, setInteractions] = useState(null)
-  const [loadingHist,  setLoadingHist]  = useState(false)
+function ActivePartnerRow({ contact, isOwnerOrManager, onEdit, onLog, onDelete, signal }) {
+  const [expanded,      setExpanded]      = useState(false)
+  const [interactions,  setInteractions]  = useState(null)
+  const [loadingHist,   setLoadingHist]   = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   const lastContact = fmtLastContact(contact.last_interacted_at)
   const daysSince = contact.last_interacted_at
@@ -1073,6 +1075,14 @@ function ActivePartnerRow({ contact, isOwnerOrManager, onEdit, onLog, signal }) 
               {contact.email && <a href={`mailto:${contact.email}`} className="p-1.5 text-gray-300 hover:text-orange-500 rounded"><Mail size={13} /></a>}
               <button onClick={() => onLog(i => setInteractions(prev => prev ? [i, ...prev] : [i]))} className="p-1.5 text-gray-300 hover:text-orange-500 rounded"><MessageSquare size={13} /></button>
               <button onClick={() => onEdit(contact)} className="p-1.5 text-gray-300 hover:text-gray-600 rounded"><Edit2 size={13} /></button>
+              {confirmDelete ? (
+                <>
+                  <button onClick={() => onDelete(contact.id)} className="px-1.5 py-1 bg-red-600 text-white text-xs rounded font-semibold">Del</button>
+                  <button onClick={() => setConfirmDelete(false)} className="text-gray-400 text-xs px-1">✕</button>
+                </>
+              ) : (
+                <button onClick={() => setConfirmDelete(true)} title="Delete" className="p-1.5 text-gray-300 hover:text-red-500 rounded"><Trash2 size={13} /></button>
+              )}
             </div>
           )}
           <button onClick={handleExpand} className="p-1.5 text-gray-200 hover:text-gray-500 rounded transition-colors">
@@ -1109,7 +1119,7 @@ function ActivePartnerRow({ contact, isOwnerOrManager, onEdit, onLog, signal }) 
   )
 }
 
-function ActivePartnersTab({ contacts, users, isOwnerOrManager, onEdit, b2bSignals = {} }) {
+function ActivePartnersTab({ contacts, users, isOwnerOrManager, onEdit, onDelete, b2bSignals = {} }) {
   const [logTarget, setLogTarget] = useState(null)
   const [viewMode, setViewMode]   = useState('list') // 'card' | 'list'
   const handleInteractionSaved = i => { logTarget?.callback?.(i); setLogTarget(null) }
@@ -1164,6 +1174,7 @@ function ActivePartnersTab({ contacts, users, isOwnerOrManager, onEdit, b2bSigna
                   contact={c}
                   isOwnerOrManager={isOwnerOrManager}
                   onEdit={onEdit}
+                  onDelete={onDelete}
                   onLog={() => setLogTarget({ contact: c, callback: i => {} })}
                   signal={b2bSignals[String(c.id)] ?? null}
                 />
@@ -1317,7 +1328,7 @@ export default function B2bPage() {
 
       {tab === 'pipeline'
         ? <PipelineTab contacts={filtered} users={users} isOwnerOrManager={isOwnerOrManager} onEdit={setModalContact} onDelete={handleDelete} onStatusChange={handleStatusChange} b2bSignals={b2bSignals} />
-        : <ActivePartnersTab contacts={filteredPartners} users={users} isOwnerOrManager={isOwnerOrManager} onEdit={setModalContact} b2bSignals={b2bSignals} />
+        : <ActivePartnersTab contacts={filteredPartners} users={users} isOwnerOrManager={isOwnerOrManager} onEdit={setModalContact} onDelete={handleDelete} b2bSignals={b2bSignals} />
       }
 
       {modalContact !== null && (
