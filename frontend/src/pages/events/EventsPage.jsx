@@ -483,9 +483,8 @@ function EventsTab({ month, year, canEdit }) {
     })
   }
 
-  const showDateFilters = filter === 'past' || filter === 'all'
   const base = filter === 'upcoming' ? upcoming : filter === 'past' ? past : sorted
-  const filtered = showDateFilters ? applyDateFilters(base) : base
+  const filtered = applyDateFilters(base)
 
   return (
     <div>
@@ -506,34 +505,32 @@ function EventsTab({ month, year, canEdit }) {
         )}
       </div>
 
-      {showDateFilters && (
-        <div className="flex items-center gap-2 mb-4 flex-wrap">
-          <select
-            value={filterMonth}
-            onChange={e => setFilterMonth(e.target.value)}
-            className="rounded-lg border border-gray-300 bg-white text-gray-700 px-3 py-1.5 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-orange-500/40 focus:border-orange-500"
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
+        <select
+          value={filterMonth}
+          onChange={e => setFilterMonth(e.target.value)}
+          className="rounded-lg border border-gray-300 bg-white text-gray-700 px-3 py-1.5 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-orange-500/40 focus:border-orange-500"
+        >
+          <option value="all">All Months</option>
+          {MONTHS.map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
+        </select>
+        <select
+          value={filterYear}
+          onChange={e => setFilterYear(e.target.value)}
+          className="rounded-lg border border-gray-300 bg-white text-gray-700 px-3 py-1.5 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-orange-500/40 focus:border-orange-500"
+        >
+          <option value="all">All Years</option>
+          {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
+        </select>
+        {(filterMonth !== 'all' || filterYear !== 'all') && (
+          <button
+            onClick={() => { setFilterMonth('all'); setFilterYear('all') }}
+            className="text-xs text-gray-400 hover:text-gray-600 underline"
           >
-            <option value="all">All Months</option>
-            {MONTHS.map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
-          </select>
-          <select
-            value={filterYear}
-            onChange={e => setFilterYear(e.target.value)}
-            className="rounded-lg border border-gray-300 bg-white text-gray-700 px-3 py-1.5 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-orange-500/40 focus:border-orange-500"
-          >
-            <option value="all">All Years</option>
-            {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
-          </select>
-          {(filterMonth !== 'all' || filterYear !== 'all') && (
-            <button
-              onClick={() => { setFilterMonth('all'); setFilterYear('all') }}
-              className="text-xs text-gray-400 hover:text-gray-600 underline"
-            >
-              Clear
-            </button>
-          )}
-        </div>
-      )}
+            Clear
+          </button>
+        )}
+      </div>
 
       {loading ? (
         <div className="flex justify-center py-12">
@@ -799,6 +796,8 @@ function PromosTab({ month, year, canEdit }) {
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState(null)
   const [filter, setFilter] = useState('active')
+  const [filterMonth, setFilterMonth] = useState('all')
+  const [filterYear, setFilterYear] = useState('all')
   const [ratings, setRatings] = useState({})
   const [ratingTarget, setRatingTarget] = useState(null)
 
@@ -851,9 +850,24 @@ function PromosTab({ month, year, canEdit }) {
   const activePromos = sorted.filter(p => p.active && !isExpired(p.end_date))
   const inactivePromos = sorted.filter(p => !p.active || isExpired(p.end_date))
 
-  const filtered = filter === 'active' ? activePromos
+  const base = filter === 'active' ? activePromos
     : filter === 'inactive' ? inactivePromos
     : sorted
+
+  // Available years from all promos
+  const promoYears = [...new Set(sorted.map(p => {
+    const d = p.start_date || p.created_at
+    return d ? new Date(d).getFullYear() : null
+  }).filter(Boolean))].sort((a, b) => b - a)
+
+  const filtered = base.filter(p => {
+    const d = p.start_date || p.created_at
+    if (!d) return true
+    const date = new Date(d)
+    if (filterMonth !== 'all' && date.getMonth() + 1 !== Number(filterMonth)) return false
+    if (filterYear !== 'all' && date.getFullYear() !== Number(filterYear)) return false
+    return true
+  })
 
   const ongoingCount = promos.filter(p => p.ongoing && p.active).length
 
@@ -879,6 +893,33 @@ function PromosTab({ month, year, canEdit }) {
           <button onClick={() => { setEditing(null); setShowForm(true) }}
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-orange-500 text-white text-sm font-semibold hover:bg-orange-600 transition-colors">
             <Plus className="w-4 h-4" /> Add Promotion
+          </button>
+        )}
+      </div>
+
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
+        <select
+          value={filterMonth}
+          onChange={e => setFilterMonth(e.target.value)}
+          className="rounded-lg border border-gray-300 bg-white text-gray-700 px-3 py-1.5 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-orange-500/40 focus:border-orange-500"
+        >
+          <option value="all">All Months</option>
+          {MONTHS.map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
+        </select>
+        <select
+          value={filterYear}
+          onChange={e => setFilterYear(e.target.value)}
+          className="rounded-lg border border-gray-300 bg-white text-gray-700 px-3 py-1.5 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-orange-500/40 focus:border-orange-500"
+        >
+          <option value="all">All Years</option>
+          {promoYears.map(y => <option key={y} value={y}>{y}</option>)}
+        </select>
+        {(filterMonth !== 'all' || filterYear !== 'all') && (
+          <button
+            onClick={() => { setFilterMonth('all'); setFilterYear('all') }}
+            className="text-xs text-gray-400 hover:text-gray-600 underline"
+          >
+            Clear
           </button>
         )}
       </div>
