@@ -59,7 +59,7 @@ router.post('/generate', authenticate, requireRole('owner', 'manager'), async (r
     // ── 3. Call Claude ─────────────────────────────────────────────────────────
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
     const message = await client.messages.create({
-      model: 'claude-opus-4-5',
+      model: 'claude-opus-4-7',
       max_tokens: 2048,
       messages: [{ role: 'user', content: prompt }],
     })
@@ -371,6 +371,145 @@ Based on this data, provide recommendations in EXACTLY this JSON format (no mark
 }
 
 Be specific and grounded in the actual data above. Mention business names, event titles, and numbers where relevant. If there is very little data, acknowledge it and give general guidance for a studio in its early months.`
+}
+
+// ─── POST /api/advisor/chat ───────────────────────────────────────────────────
+// Streaming SSE chat endpoint — answers natural-language questions about the studio.
+// Body: { messages: [{role, content}], month, year }
+router.post('/chat', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+  const { messages = [], month, year } = req.body
+  const m = parseInt(month) || new Date().getMonth() + 1
+  const y = parseInt(year)  || new Date().getFullYear()
+
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return res.status(503).json({
+      error: 'ANTHROPIC_API_KEY is not configured.',
+    })
+  }
+
+  // Set SSE headers so the browser can read the stream chunk-by-chunk
+  res.setHeader('Content-Type', 'text/event-stream')
+  res.setHeader('Cache-Control', 'no-cache')
+  res.setHeader('Connection', 'keep-alive')
+  res.setHeader('X-Accel-Buffering', 'no')
+  res.flushHeaders()
+
+  const send = (event, data) => {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+  }
+
+  try {
+    // Gather studio context to ground the AI's answers
+    const context = await gatherContext(m, y)
+    const systemPrompt = buildChatSystemPrompt(m, y, context)
+
+    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+
+    // Validate and sanitize message history
+    const history = (messages || []).filter(
+      msg => msg && (msg.role === 'user' || msg.role === 'assistant') && msg.content
+    )
+
+    // Stream from Claude
+    const stream = await client.messages.stream({
+      model: 'claude-opus-4-7',
+      max_tokens: 1024,
+      system: systemPrompt,
+      messages: history,
+    })
+
+    for await (const chunk of stream) {
+      if (chunk.type === 'content_block_delta' && chunk.delta?.type === 'text_delta') {
+        send('delta', { text: chunk.delta.text })
+      }
+    }
+
+    send('done', { finished: true })
+    res.end()
+  } catch (err) {
+    console.error('POST /advisor/chat', err)
+    send('error', { message: err.message || 'Chat failed' })
+    res.end()
+  }
+})
+
+// ─── Chat system prompt ───────────────────────────────────────────────────────
+
+function buildChatSystemPrompt(month, year, ctx) {
+  const monthName = new Date(year, month - 1, 1).toLocaleString('default', { month: 'long' })
+
+  const signalText = (type) => {
+    const list = ctx.signalSummary[type] || []
+    if (!list.length) return '(none rated yet)'
+    return list.map(x => {
+      const tags = []
+      if (x.up > 0)      tags.push(`${x.up}👍`)
+      if (x.neutral > 0) tags.push(`${x.neutral}😐`)
+      if (x.down > 0)    tags.push(`${x.down}👎`)
+      return `"${x.label}": ${tags.join(' ')}`
+    }).join('; ')
+  }
+
+  const b2bText = ctx.b2bContacts.slice(0, 30).map(c => {
+    const daysSince = c.lastInteraction
+      ? Math.floor((Date.now() - new Date(c.lastInteraction.logged_at)) / 86400000)
+      : null
+    const overdue = c.next_action_date && new Date(c.next_action_date) < new Date() ? ' [OVERDUE]' : ''
+    return `${c.business_name} (${c.status}${overdue}${daysSince !== null ? `, last contact ${daysSince}d ago` : ', no contact logged'})`
+  }).join('; ')
+
+  const eventsText = ctx.events.length
+    ? ctx.events.map(e => `${e.title} (${e.event_type})`).join('; ')
+    : 'none'
+
+  const promosText = ctx.promos.length
+    ? ctx.promos.map(p => `${p.title} (${p.promo_type}${p.ongoing ? ', ongoing' : ''})`).join('; ')
+    : 'none'
+
+  const currentGoal = ctx.studioGoals.find(g => g.month === month && g.year === year)
+  const goalsText = currentGoal
+    ? `EFT $${currentGoal.eft_target || '?'} (actual $${currentGoal.eft_actual || 0}), Memberships ${currentGoal.memberships_target || '?'} (actual ${currentGoal.memberships_actual || 0}), Retail $${currentGoal.retail_target || '?'} (actual $${currentGoal.retail_actual || 0})`
+    : 'No goals set for this month'
+
+  const { total_shifts, total_new_members, total_cancellations, total_retail, total_calls, total_sms, total_red_appts, support_notes } = ctx.eodSummary
+  const supportText = support_notes.length
+    ? support_notes.map(n => `${n.date}: "${n.note}"`).join('; ')
+    : 'none'
+
+  return `You are the AI Advisor for HOTWORX Pewaukee, a boutique infrared sauna fitness studio in Pewaukee, Wisconsin. You help the owner (Stacy) and manager (Bailey) make smart, data-grounded decisions for their studio.
+
+Today is ${monthName} ${year}.
+
+## Live Studio Data
+
+**Feedback signals — Events:** ${signalText('event')}
+**Feedback signals — Promos:** ${signalText('promo')}
+**Feedback signals — B2B Partners:** ${signalText('b2b')}
+**Feedback signals — Growth Plays:** ${signalText('play')}
+**Feedback signals — Missions:** ${signalText('mission')}
+
+**B2B Pipeline (${ctx.b2bContacts.length} contacts):** ${b2bText || 'none'}
+
+**Recent Events:** ${eventsText}
+**Recent Promotions:** ${promosText}
+
+**Current Month Goals:** ${goalsText}
+**Leads this month:** ${ctx.currentLeads} (goal: ${ctx.leadGoal})
+
+**EOD Performance (last 60 days, ${total_shifts} shifts):**
+- New members: ${total_new_members}, Cancellations: ${total_cancellations}
+- Retail: $${total_retail.toFixed(0)}, Phone calls: ${total_calls}, SMS: ${total_sms}, Red appts: ${total_red_appts}
+- Support notes: ${supportText}
+
+## How to respond
+
+- Be concise and friendly — this is a conversation, not a report
+- Always ground your answers in the data above when relevant
+- If you don't have enough data to answer precisely, say so and give your best guidance
+- Use bullet points for lists; keep answers under ~200 words unless a deep dive is requested
+- You can ask clarifying questions if a question is vague
+- You are talking to the owner or manager, not a TSA — you can be direct and strategic
+- Don't repeat the data back verbatim; synthesize and interpret it`
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
