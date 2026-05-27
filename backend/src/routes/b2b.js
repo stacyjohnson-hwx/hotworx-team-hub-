@@ -3,7 +3,6 @@ const router = express.Router()
 const { createClient } = require('@supabase/supabase-js')
 const { requireRole } = require('../middleware/roleGuard')
 const authenticate = require('../middleware/authMiddleware')
-const pool = require('../db/db')
 
 const supabase = () =>
   createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
@@ -199,15 +198,28 @@ router.delete('/interactions/:id', authenticate, requireRole('owner', 'manager')
 // GET /api/b2b/contacts/:id/events
 router.get('/contacts/:id/events', authenticate, async (req, res) => {
   try {
-    const { rows } = await pool.query(
-      `SELECT e.id, e.title, e.event_type, e.start_date, e.end_date, e.start_time, e.location
-       FROM event_b2b_contacts ebc
-       JOIN events e ON e.id = ebc.event_id
-       WHERE ebc.b2b_contact_id = $1
-       ORDER BY e.start_date DESC`,
-      [req.params.id]
-    )
-    res.json(rows)
+    const db = supabase()
+
+    // Step 1: get event_ids linked to this contact
+    const { data: links, error: linkErr } = await db
+      .from('event_b2b_contacts')
+      .select('event_id')
+      .eq('b2b_contact_id', req.params.id)
+
+    if (linkErr) throw new Error(linkErr.message)
+    if (!links || links.length === 0) return res.json([])
+
+    const eventIds = links.map(l => l.event_id)
+
+    // Step 2: fetch those events
+    const { data: events, error: evtErr } = await db
+      .from('events')
+      .select('id, title, event_type, start_date, end_date, start_time, location')
+      .in('id', eventIds)
+      .order('start_date', { ascending: false })
+
+    if (evtErr) throw new Error(evtErr.message)
+    res.json(events || [])
   } catch (err) {
     console.error('GET /b2b/contacts/:id/events', err.message)
     res.status(500).json({ error: err.message })
