@@ -113,12 +113,14 @@ router.post('/', authenticate, async (req, res) => {
 })
 
 // ─── PUT /api/orders/:id ─────────────────────────────────────────────────────
-// Update order details (owner/manager only for status changes)
-router.put('/:id', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+// Owner/manager: full update. TSA: may only mark ordered → received.
+router.put('/:id', authenticate, async (req, res) => {
   const { item_name, quantity, category, notes, vendor, est_cost, status } = req.body
+  const role = req.user?.app_metadata?.role || req.user?.role
+  const isOwnerOrManager = role === 'owner' || role === 'manager'
   const db = supabase()
 
-  // Fetch current order to handle timestamp logic
+  // Fetch current order to validate transition and set timestamps
   const { data: current, error: fetchErr } = await db
     .from('orders')
     .select('status')
@@ -127,6 +129,27 @@ router.put('/:id', authenticate, requireRole('owner', 'manager'), async (req, re
 
   if (fetchErr) return res.status(404).json({ error: 'Order not found' })
 
+  // TSA: only allowed to mark an ordered item as received
+  if (!isOwnerOrManager) {
+    if (status !== 'received' || current.status !== 'ordered') {
+      return res.status(403).json({ error: 'TSA can only mark ordered items as received' })
+    }
+    const { data, error } = await db
+      .from('orders')
+      .update({ status: 'received', received_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+      .select()
+      .single()
+    if (error) return res.status(500).json({ error: error.message })
+    const userMap = await buildUserMap(db)
+    return res.json({
+      ...data,
+      requested_by_name: userMap[data.requested_by] || 'Team Member',
+      approved_by_name: data.approved_by ? (userMap[data.approved_by] || 'Team Member') : null,
+    })
+  }
+
+  // Owner/manager: full update
   const updates = {
     item_name, quantity, category, notes, vendor, est_cost,
     updated_at: new Date().toISOString(),
@@ -154,7 +177,6 @@ router.put('/:id', authenticate, requireRole('owner', 'manager'), async (req, re
 
   if (error) return res.status(500).json({ error: error.message })
 
-  // Enrich with user names so the frontend stays in sync without a reload
   const userMap = await buildUserMap(db)
   res.json({
     ...data,

@@ -349,6 +349,22 @@ function OrderRow({ order, isOwnerOrManager, showSensitive, onStatusChange, onEd
                 </button>
               ))}
 
+              {/* TSA: can mark ordered items as received */}
+              {!isOwnerOrManager && order.status === 'ordered' && (
+                <button
+                  onClick={() => handleStatus('received')}
+                  disabled={!!updatingStatus}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border bg-red-600 border-red-600 text-white hover:bg-red-700 transition-colors disabled:opacity-50"
+                >
+                  {updatingStatus === 'received' ? (
+                    <div className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <Check size={11} />
+                  )}
+                  Mark Received
+                </button>
+              )}
+
               {isOwnerOrManager && (
                 <button
                   onClick={() => onEdit(order)}
