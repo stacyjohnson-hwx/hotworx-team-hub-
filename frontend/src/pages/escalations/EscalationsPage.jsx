@@ -263,9 +263,8 @@ export default function EscalationsPage() {
   const { isOwnerOrManager } = useRole()
   const [entries, setEntries]         = useState([])
   const [loading, setLoading]         = useState(true)
-  const [filter, setFilter]           = useState('open')
-  const [showModal, setShowModal]     = useState(false)
-  const [editEntry, setEditEntry]     = useState(null)
+  const [filter, setFilter]             = useState('open')
+  const [modal, setModal]               = useState(null)   // null=closed, false=new, object=edit
   const [resolveEntry, setResolveEntry] = useState(null)
 
   const load = async () => {
@@ -283,7 +282,7 @@ export default function EscalationsPage() {
   }
 
   const handleEdit = async (form) => {
-    const updated = await apiPut(`/api/escalations/${editEntry.id}`, { ...editEntry, ...form })
+    const updated = await apiPut(`/api/escalations/${modal.id}`, { ...modal, ...form })
     setEntries(prev => prev.map(e => e.id === updated.id ? { ...e, ...updated } : e))
   }
 
@@ -325,7 +324,7 @@ export default function EscalationsPage() {
             <p className="text-xs text-gray-500">Track complaints, incidents, and issues</p>
           </div>
         </div>
-        <button onClick={() => { setEditEntry(null); setShowModal(true) }}
+        <button onClick={() => setModal(false)}
           className="flex items-center gap-1.5 px-3.5 py-2 bg-red-600 text-white text-sm font-semibold rounded-lg hover:bg-red-700 transition-colors">
           <Plus size={16} />
           Log Escalation
@@ -366,7 +365,7 @@ export default function EscalationsPage() {
               key={entry.id}
               entry={entry}
               isOwnerOrManager={isOwnerOrManager()}
-              onEdit={e => setEditEntry(e)}
+              onEdit={e => setModal(e)}
               onUpdateStatus={e => setResolveEntry(e)}
               onDelete={handleDelete}
             />
@@ -375,11 +374,11 @@ export default function EscalationsPage() {
       )}
 
       {/* Modals */}
-      {(showModal || editEntry) && (
+      {modal !== null && (
         <LogModal
-          initial={editEntry}
-          onSave={editEntry ? handleEdit : handleCreate}
-          onClose={() => { setShowModal(false); setEditEntry(null) }}
+          initial={modal || null}
+          onSave={modal ? handleEdit : handleCreate}
+          onClose={() => setModal(null)}
         />
       )}
       {resolveEntry && (
