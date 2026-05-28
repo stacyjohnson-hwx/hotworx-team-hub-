@@ -52,10 +52,11 @@ function LogModal({ initial, onSave, onClose }) {
     setSaving(true)
     try {
       await onSave(form)
-      onClose()
+      // parent closes modal via setModal(null) in same batch as setEntries — no onClose() here
     } catch (e) {
       setErr(e.message)
-    } finally { setSaving(false) }
+      setSaving(false)
+    }
   }
 
   return (
@@ -125,8 +126,8 @@ function ResolveModal({ entry, onSave, onClose }) {
     setSaving(true)
     try {
       await onSave({ ...entry, ...form })
-      onClose()
-    } catch { /* handled by parent */ } finally { setSaving(false) }
+      // parent closes via setResolveEntry(null) in same batch as setEntries
+    } catch { setSaving(false) }
   }
 
   return (
@@ -324,16 +325,19 @@ export default function MaintenancePage() {
   const handleCreate = async (form) => {
     const created = await apiPost('/api/maintenance', form)
     setEntries(prev => [created, ...prev])
+    setModal(null)           // same function, same tick as setEntries → one render
   }
 
   const handleEdit = async (form) => {
     const updated = await apiPut(`/api/maintenance/${modal.id}`, { ...modal, ...form })
     setEntries(prev => prev.map(e => e.id === updated.id ? { ...e, ...updated } : e))
+    setModal(null)
   }
 
   const handleUpdateStatus = async (form) => {
     const updated = await apiPut(`/api/maintenance/${resolveEntry.id}`, form)
     setEntries(prev => prev.map(e => e.id === updated.id ? { ...e, ...updated } : e))
+    setResolveEntry(null)
   }
 
   const handleDelete = async (id) => {

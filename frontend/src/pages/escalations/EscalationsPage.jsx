@@ -54,10 +54,11 @@ function LogModal({ initial, onSave, onClose }) {
     setSaving(true)
     try {
       await onSave(form)
-      onClose()
+      // parent closes modal via setModal(null) in same batch as setEntries — no onClose() here
     } catch (e) {
       setErr(e.message)
-    } finally { setSaving(false) }
+      setSaving(false)
+    }
   }
 
   return (
@@ -130,8 +131,8 @@ function ResolveModal({ entry, onSave, onClose }) {
   const handleSubmit = async (e) => {
     e.preventDefault()
     setSaving(true)
-    try { await onSave({ ...entry, ...form }); onClose() }
-    catch { } finally { setSaving(false) }
+    try { await onSave({ ...entry, ...form }) }
+    catch { setSaving(false) }
   }
 
   return (
@@ -331,16 +332,19 @@ export default function EscalationsPage() {
   const handleCreate = async (form) => {
     const created = await apiPost('/api/escalations', form)
     setEntries(prev => [created, ...prev])
+    setModal(null)           // same function, same tick as setEntries → one render
   }
 
   const handleEdit = async (form) => {
     const updated = await apiPut(`/api/escalations/${modal.id}`, { ...modal, ...form })
     setEntries(prev => prev.map(e => e.id === updated.id ? { ...e, ...updated } : e))
+    setModal(null)
   }
 
   const handleUpdateStatus = async (form) => {
     const updated = await apiPut(`/api/escalations/${resolveEntry.id}`, form)
     setEntries(prev => prev.map(e => e.id === updated.id ? { ...e, ...updated } : e))
+    setResolveEntry(null)
   }
 
   const handleDelete = async (id) => {
