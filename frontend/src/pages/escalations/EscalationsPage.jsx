@@ -3,7 +3,7 @@ import { useRole } from '@/hooks/useRole'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
 import {
   ShieldAlert, Plus, X, CheckCircle2, Clock, AlertTriangle,
-  ChevronDown, ChevronUp, Trash2, Edit2, Loader2, User,
+  ChevronDown, ChevronUp, Trash2, Edit2, Loader2, User, ListTodo,
 } from 'lucide-react'
 
 const TYPES = [
@@ -172,6 +172,57 @@ function ResolveModal({ entry, onSave, onClose }) {
   )
 }
 
+function SendToTodo({ entry }) {
+  const [state, setState] = useState('idle') // idle | picking | saving | done | error
+
+  const send = async (listTarget) => {
+    setState('saving')
+    try {
+      await apiPost('/api/todo', {
+        title: `[Escalation] ${entry.title}`,
+        notes: entry.description || null,
+        priority: entry.priority || 'medium',
+        source: 'manual',
+        list_target: listTarget,
+      })
+      setState('done')
+      setTimeout(() => setState('idle'), 2000)
+    } catch {
+      setState('error')
+      setTimeout(() => setState('idle'), 2500)
+    }
+  }
+
+  if (state === 'done') return (
+    <span className="text-xs text-green-600 font-semibold flex items-center gap-1 px-1">
+      <CheckCircle2 size={12} /> Added
+    </span>
+  )
+  if (state === 'error') return <span className="text-xs text-red-500 px-1">Failed</span>
+  if (state === 'saving') return <span className="p-1.5"><Loader2 size={14} className="animate-spin text-gray-400" /></span>
+  if (state === 'picking') return (
+    <div className="flex items-center gap-1">
+      <button onClick={() => send('manager')}
+        className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 border border-blue-200 rounded-full font-semibold hover:bg-blue-200 transition-colors">
+        Manager
+      </button>
+      <button onClick={() => send('owner')}
+        className="text-xs px-2 py-0.5 bg-red-100 text-red-700 border border-red-200 rounded-full font-semibold hover:bg-red-200 transition-colors">
+        Owner
+      </button>
+      <button onClick={() => setState('idle')} className="text-gray-400 hover:text-gray-600 ml-0.5">
+        <X size={12} />
+      </button>
+    </div>
+  )
+  return (
+    <button onClick={() => setState('picking')} title="Add to Manager/Owner To-Do"
+      className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+      <ListTodo size={15} />
+    </button>
+  )
+}
+
 function EntryCard({ entry, isOwnerOrManager, onEdit, onUpdateStatus, onDelete }) {
   const [expanded, setExpanded]       = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -213,6 +264,7 @@ function EntryCard({ entry, isOwnerOrManager, onEdit, onUpdateStatus, onDelete }
           <div className="flex items-center gap-1 flex-shrink-0">
             {isOwnerOrManager && (
               <>
+                <SendToTodo entry={entry} />
                 <button onClick={() => onUpdateStatus(entry)} title="Update status"
                   className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
                   <CheckCircle2 size={16} />

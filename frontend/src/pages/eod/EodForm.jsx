@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { CheckCircle, ExternalLink, AlertTriangle, Phone, MessageSquare, Sparkles, ClipboardCheck } from 'lucide-react'
+import { CheckCircle, ExternalLink, AlertTriangle, Phone, MessageSquare, Sparkles, ClipboardCheck, Wrench, ShieldAlert, Loader2 } from 'lucide-react'
 import { apiGet, apiPost } from '@/hooks/useApi'
 import { useAuth } from '@/contexts/AuthContext'
 
@@ -73,6 +73,212 @@ function CheckRow({ label, checked, onChange, href }) {
         </a>
       )}
     </label>
+  )
+}
+
+// ─── Maintenance & Escalations section ───────────────────────────────────────
+
+const SAUNA_AREAS = [
+  'Sauna 1','Sauna 2','Sauna 3','Sauna 4','Sauna 5',
+  'Sauna 6','Sauna 7','Sauna 8','Sauna 9','Sauna 10',
+  'Lobby','Restrooms','Break Room','HVAC','Plumbing',
+  'Electrical','Exterior','TV / AV','Equipment - Other','General',
+]
+
+const ESC_TYPES = [
+  { value: 'member_complaint', label: 'Member Complaint' },
+  { value: 'safety_incident',  label: 'Safety Incident'  },
+  { value: 'staff_issue',      label: 'Staff Issue'      },
+  { value: 'operational',      label: 'Operational'      },
+]
+
+function isTodayLocal(iso) {
+  if (!iso) return false
+  return new Date(iso).toLocaleDateString('en-CA') === new Date().toLocaleDateString('en-CA')
+}
+
+const priColor = (p) =>
+  p === 'urgent' ? 'bg-red-100 text-red-700' :
+  p === 'high'   ? 'bg-orange-100 text-orange-700' :
+  p === 'medium' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'
+
+function MaintenanceEscalationsSection() {
+  const [mItems, setMItems]   = useState([])
+  const [eItems, setEItems]   = useState([])
+  const [loaded, setLoaded]   = useState(false)
+  const [adding, setAdding]   = useState(null) // null | 'maintenance' | 'escalation'
+  const [saving, setSaving]   = useState(false)
+  const blankForm = { title:'', description:'', area:'', priority:'medium', type:'operational', member_name:'' }
+  const [form, setForm]       = useState(blankForm)
+
+  const inp = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-600/40 focus:border-red-600'
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  useEffect(() => {
+    Promise.all([
+      apiGet('/api/maintenance').catch(() => []),
+      apiGet('/api/escalations').catch(() => []),
+    ]).then(([m, e]) => {
+      setMItems((Array.isArray(m) ? m : []).filter(x => isTodayLocal(x.created_at)))
+      setEItems((Array.isArray(e) ? e : []).filter(x => isTodayLocal(x.created_at)))
+    }).finally(() => setLoaded(true))
+  }, [])
+
+  const handleQuickLog = async () => {
+    if (!form.title.trim()) return
+    setSaving(true)
+    try {
+      if (adding === 'maintenance') {
+        const created = await apiPost('/api/maintenance', {
+          title: form.title, area: form.area || null,
+          priority: form.priority, description: form.description || null,
+        })
+        setMItems(prev => [created, ...prev])
+      } else {
+        const created = await apiPost('/api/escalations', {
+          type: form.type, title: form.title,
+          description: form.description || form.title,
+          member_name: (form.type === 'member_complaint' || form.type === 'safety_incident')
+            ? form.member_name || null : null,
+          priority: form.priority,
+        })
+        setEItems(prev => [created, ...prev])
+      }
+      setForm(blankForm)
+      setAdding(null)
+    } catch { } finally { setSaving(false) }
+  }
+
+  const totalToday = mItems.length + eItems.length
+
+  return (
+    <Section
+      title="Maintenance & Escalations"
+      badge={totalToday > 0
+        ? <span className="text-xs bg-orange-100 text-orange-700 font-semibold px-2 py-0.5 rounded-full">{totalToday} logged today</span>
+        : null}
+    >
+      {/* Today's maintenance items */}
+      {mItems.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Maintenance Issues</p>
+          {mItems.map(item => (
+            <div key={item.id} className="flex items-center gap-2 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2">
+              <Wrench size={13} className="text-orange-500 flex-shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-semibold text-gray-800 truncate">{item.title}</p>
+                {item.area && <p className="text-xs text-gray-500">{item.area}</p>}
+              </div>
+              <span className={`flex-shrink-0 text-xs font-medium px-1.5 py-0.5 rounded-full capitalize ${priColor(item.priority)}`}>
+                {item.priority}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Today's escalation items */}
+      {eItems.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Escalations</p>
+          {eItems.map(item => (
+            <div key={item.id} className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+              <ShieldAlert size={13} className="text-red-500 flex-shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-semibold text-gray-800 truncate">{item.title}</p>
+                <p className="text-xs text-gray-500 capitalize">{(item.type || '').replace(/_/g, ' ')}</p>
+              </div>
+              <span className={`flex-shrink-0 text-xs font-medium px-1.5 py-0.5 rounded-full capitalize ${priColor(item.priority)}`}>
+                {item.priority}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {totalToday === 0 && loaded && !adding && (
+        <p className="text-xs text-gray-400 italic">Nothing logged yet today.</p>
+      )}
+
+      {/* Quick-add inline form */}
+      {adding && (
+        <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 space-y-2.5">
+          <p className="text-xs font-semibold text-gray-700">
+            {adding === 'maintenance' ? 'Log Maintenance Issue' : 'Log Escalation'}
+          </p>
+
+          {adding === 'escalation' && (
+            <select className={inp} value={form.type} onChange={e => set('type', e.target.value)}>
+              {ESC_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
+          )}
+
+          <input className={inp}
+            placeholder={adding === 'maintenance' ? 'e.g. Sauna 3 not heating' : 'Brief summary'}
+            value={form.title} onChange={e => set('title', e.target.value)} />
+
+          {adding === 'maintenance' && (
+            <div className="grid grid-cols-2 gap-2">
+              <select className={inp} value={form.area} onChange={e => set('area', e.target.value)}>
+                <option value="">— Area —</option>
+                {SAUNA_AREAS.map(a => <option key={a} value={a}>{a}</option>)}
+              </select>
+              <select className={inp} value={form.priority} onChange={e => set('priority', e.target.value)}>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+                <option value="urgent">Urgent</option>
+              </select>
+            </div>
+          )}
+
+          {adding === 'escalation' && (
+            <>
+              {(form.type === 'member_complaint' || form.type === 'safety_incident') && (
+                <input className={inp} placeholder="Member name (if applicable)"
+                  value={form.member_name} onChange={e => set('member_name', e.target.value)} />
+              )}
+              <textarea className={`${inp} resize-none`} rows={2}
+                placeholder="Describe what happened…"
+                value={form.description} onChange={e => set('description', e.target.value)} />
+              <select className={inp} value={form.priority} onChange={e => set('priority', e.target.value)}>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+                <option value="urgent">Urgent</option>
+              </select>
+            </>
+          )}
+
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => { setAdding(null); setForm(blankForm) }}
+              className="px-3 py-1.5 text-xs text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
+              Cancel
+            </button>
+            <button type="button" onClick={handleQuickLog}
+              disabled={saving || !form.title.trim()}
+              className="px-3 py-1.5 text-xs font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center gap-1.5">
+              {saving && <Loader2 size={12} className="animate-spin" />}
+              Log {adding === 'maintenance' ? 'Issue' : 'Escalation'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Add buttons */}
+      {!adding && (
+        <div className="flex gap-2 flex-wrap pt-1">
+          <button type="button" onClick={() => setAdding('maintenance')}
+            className="flex items-center gap-1.5 text-xs font-medium text-orange-700 bg-orange-50 border border-orange-200 rounded-lg px-3 py-1.5 hover:bg-orange-100 transition-colors">
+            <Wrench size={12} /> Log Maintenance Issue
+          </button>
+          <button type="button" onClick={() => setAdding('escalation')}
+            className="flex items-center gap-1.5 text-xs font-medium text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-1.5 hover:bg-red-100 transition-colors">
+            <ShieldAlert size={12} /> Log Escalation
+          </button>
+        </div>
+      )}
+    </Section>
   )
 }
 
@@ -470,6 +676,9 @@ export default function EodForm({ submittedShifts, onSubmitted }) {
 
           {/* Shift at a Glance */}
           <ShiftAtAGlance />
+
+          {/* Maintenance & Escalations */}
+          <MaintenanceEscalationsSection />
 
           {/* Orders & Notes */}
           <Section title="Orders & Notes">
