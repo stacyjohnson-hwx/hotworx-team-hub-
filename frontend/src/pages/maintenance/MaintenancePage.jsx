@@ -413,7 +413,7 @@ export default function MaintenancePage() {
             <EntryCard
               key={entry.id}
               entry={entry}
-              isOwnerOrManager={isOwnerOrManager()}
+              isOwnerOrManager={isOwnerOrManager}
               onEdit={e => setModal(e)}
               onUpdateStatus={e => setResolveEntry(e)}
               onDelete={handleDelete}

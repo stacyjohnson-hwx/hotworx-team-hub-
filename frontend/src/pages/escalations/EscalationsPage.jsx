@@ -420,7 +420,7 @@ export default function EscalationsPage() {
             <EntryCard
               key={entry.id}
               entry={entry}
-              isOwnerOrManager={isOwnerOrManager()}
+              isOwnerOrManager={isOwnerOrManager}
               onEdit={e => setModal(e)}
               onUpdateStatus={e => setResolveEntry(e)}
               onDelete={handleDelete}
