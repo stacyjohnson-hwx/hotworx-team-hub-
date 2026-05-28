@@ -44,6 +44,9 @@ app.use('/api/todo',      require('./routes/todo'))
 app.use('/api/coaching',  require('./routes/coaching'))
 app.use('/api/outreach',  require('./routes/outreach'))
 app.use('/api/feedback',        require('./routes/feedback'))
+
+app.use('/api/maintenance',  require('./routes/maintenance'))
+app.use('/api/escalations',  require('./routes/escalations'))
 app.use('/api/dashboard-links', require('./routes/dashboardLinks'))
 app.use('/api/advisor',         require('./routes/advisor'))
 

@@ -24,6 +24,8 @@ import ProfilePage from '@/pages/profile/ProfilePage'
 import OnboardingPage from '@/pages/onboarding/OnboardingPage'
 import ResetPasswordPage from '@/pages/auth/ResetPasswordPage'
 import AdvisorPage from '@/pages/advisor/AdvisorPage'
+import MaintenancePage from '@/pages/maintenance/MaintenancePage'
+import EscalationsPage from '@/pages/escalations/EscalationsPage'
 
 function ProtectedRoute({ children }) {
   const { session, loading, profile } = useAuth()
@@ -91,8 +93,10 @@ function AppRoutes() {
         <Route path="/eod"       element={<EodPage />} />
         <Route path="/cleaning"  element={<CleaningPage />} />
         <Route path="/timeoff"   element={<TimeOffPage />} />
-        <Route path="/sops"      element={<SopsPage />} />
-        <Route path="/training"  element={<TrainingPage />} />
+        <Route path="/sops"        element={<SopsPage />} />
+        <Route path="/training"    element={<TrainingPage />} />
+        <Route path="/maintenance" element={<MaintenancePage />} />
+        <Route path="/escalations" element={<EscalationsPage />} />
 
         {/* AI Advisor — Owner + Manager only */}
         <Route

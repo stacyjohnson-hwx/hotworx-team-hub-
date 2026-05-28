@@ -24,6 +24,8 @@ import {
   Users,
   UserCircle,
   Sparkles,
+  Wrench,
+  ShieldAlert,
 } from 'lucide-react'
 
 const allNavItems = [
@@ -41,6 +43,8 @@ const allNavItems = [
   { to: '/timeoff',        label: 'Time Off',         icon: CalendarOff,     roles: ['owner', 'manager', 'tsa'] },
   { to: '/sops',           label: 'SOPs',             icon: BookOpen,        roles: ['owner', 'manager', 'tsa'] },
   { to: '/training',       label: 'Training',         icon: GraduationCap,   roles: ['owner', 'manager', 'tsa'] },
+  { to: '/maintenance',    label: 'Maintenance',       icon: Wrench,          roles: ['owner', 'manager', 'tsa'] },
+  { to: '/escalations',    label: 'Escalations',      icon: ShieldAlert,     roles: ['owner', 'manager', 'tsa'] },
   { to: '/todo',           label: 'To-Do',            icon: ListTodo,        roles: ['owner', 'manager'] },
   { to: '/coaching',       label: 'Coaching',         icon: MessageSquare,   roles: ['owner', 'manager'] },
   { to: '/team',           label: 'Team',             icon: Users,           roles: ['owner', 'manager'] },
