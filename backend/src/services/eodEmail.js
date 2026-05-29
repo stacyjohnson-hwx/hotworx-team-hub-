@@ -1,15 +1,5 @@
-const nodemailer = require('nodemailer')
+const { Resend } = require('resend')
 const { createClient } = require('@supabase/supabase-js')
-
-function createTransport() {
-  return nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS,
-    },
-  })
-}
 
 const THRESHOLD = parseFloat(process.env.DRAWER_VARIANCE_THRESHOLD || '5')
 
@@ -292,8 +282,8 @@ async function fetchSubmissionsForDate(dateStr) {
 }
 
 async function sendEodEmail(dateStr) {
-  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-    console.log('[EOD Email] EMAIL_USER/EMAIL_PASS not set — skipping email')
+  if (!process.env.RESEND_API_KEY) {
+    console.log('[EOD Email] RESEND_API_KEY not set — skipping email')
     return
   }
 
@@ -306,10 +296,10 @@ async function sendEodEmail(dateStr) {
   })
 
   try {
-    const transporter = createTransport()
-    await transporter.sendMail({
-      from: `HOTWORX Pewaukee <${process.env.EMAIL_USER}>`,
-      to: recipients.join(', '),
+    const resend = new Resend(process.env.RESEND_API_KEY)
+    await resend.emails.send({
+      from: 'HOTWORX Pewaukee <noreply@hotworx.net>',
+      to: recipients,
       subject: `${process.env.STUDIO_NAME || 'HOTWORX Pewaukee'} — EOD Report ${dateLabel}`,
       html,
     })
@@ -320,14 +310,14 @@ async function sendEodEmail(dateStr) {
 }
 
 async function sendEmail({ to, subject, html }) {
-  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-    console.log('[Email] EMAIL_USER/EMAIL_PASS not set — skipping')
+  if (!process.env.RESEND_API_KEY) {
+    console.log('[Email] RESEND_API_KEY not set — skipping')
     return
   }
-  const transporter = createTransport()
-  await transporter.sendMail({
-    from: `HOTWORX Pewaukee <${process.env.EMAIL_USER}>`,
-    to,
+  const resend = new Resend(process.env.RESEND_API_KEY)
+  await resend.emails.send({
+    from: 'HOTWORX Pewaukee <noreply@hotworx.net>',
+    to: Array.isArray(to) ? to : [to],
     subject,
     html,
   })
