@@ -32,7 +32,7 @@ async function sendOrderEmail(order, requesterName) {
       </div>
     </div>`
   await resend.emails.send({
-    from: 'HOTWORX Pewaukee <noreply@hotworx.net>',
+    from: 'HOTWORX Pewaukee <onboarding@resend.dev>',
     to: [process.env.OWNER_EMAIL, process.env.MANAGER_EMAIL].filter(Boolean),
     subject: `Order Request: ${order.item_name} — HOTWORX Pewaukee`,
     html,

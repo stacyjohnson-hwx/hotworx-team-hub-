@@ -298,7 +298,7 @@ async function sendEodEmail(dateStr) {
   try {
     const resend = new Resend(process.env.RESEND_API_KEY)
     await resend.emails.send({
-      from: 'HOTWORX Pewaukee <noreply@hotworx.net>',
+      from: 'HOTWORX Pewaukee <onboarding@resend.dev>',
       to: recipients,
       subject: `${process.env.STUDIO_NAME || 'HOTWORX Pewaukee'} — EOD Report ${dateLabel}`,
       html,
@@ -316,7 +316,7 @@ async function sendEmail({ to, subject, html }) {
   }
   const resend = new Resend(process.env.RESEND_API_KEY)
   await resend.emails.send({
-    from: 'HOTWORX Pewaukee <noreply@hotworx.net>',
+    from: 'HOTWORX Pewaukee <onboarding@resend.dev>',
     to: Array.isArray(to) ? to : [to],
     subject,
     html,
