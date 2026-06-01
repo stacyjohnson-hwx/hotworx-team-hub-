@@ -1,38 +1,72 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
-import { Eye, EyeOff, CheckCircle, Zap } from 'lucide-react'
+import { Eye, EyeOff, CheckCircle, Zap, AlertCircle } from 'lucide-react'
 
 export default function ResetPasswordPage() {
   const navigate = useNavigate()
   const [password,  setPassword]  = useState('')
   const [confirm,   setConfirm]   = useState('')
   const [showPw,    setShowPw]    = useState(false)
-  const [ready,     setReady]     = useState(false)  // Supabase fired PASSWORD_RECOVERY
+  const [ready,     setReady]     = useState(false)
   const [saving,    setSaving]    = useState(false)
   const [done,      setDone]      = useState(false)
   const [error,     setError]     = useState('')
+  const [linkError, setLinkError] = useState('')
 
-  // Supabase fires PASSWORD_RECOVERY when the recovery token in the URL is valid.
-  // We listen for it AND do an immediate session check, because the event can fire
-  // before the component mounts (especially if AuthContext initialises first).
   useEffect(() => {
-    const hash = window.location.hash
+    async function verifyLink() {
+      // ── PKCE flow: Supabase sends ?code=XXXX in the query string ──────────
+      const params = new URLSearchParams(window.location.search)
+      const code   = params.get('code')
 
-    // Immediate check: if Supabase already processed the hash and we have a session, unlock now
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session && hash.includes('type=recovery')) {
-        setReady(true)
+      if (code) {
+        try {
+          const { error: exchErr } = await supabase.auth.exchangeCodeForSession(code)
+          if (exchErr) {
+            setLinkError('This reset link has expired. Please request a new one.')
+            return
+          }
+          setReady(true)
+          return
+        } catch {
+          setLinkError('Invalid reset link. Please request a new one.')
+          return
+        }
       }
-    })
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') setReady(true)
-      // Fallback: SIGNED_IN fires first in some Supabase versions when type=recovery
-      if (event === 'SIGNED_IN' && hash.includes('type=recovery')) setReady(true)
-    })
-    return () => subscription.unsubscribe()
-  }, [])
+      // ── Legacy hash flow: #access_token=...&type=recovery ─────────────────
+      const hash = window.location.hash
+      if (hash.includes('type=recovery') || hash.includes('access_token')) {
+        // Let Supabase process the hash automatically
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session) { setReady(true); return }
+      }
+
+      // ── Listen for auth events (covers both flows if they fire after mount) ─
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+        if (event === 'PASSWORD_RECOVERY') setReady(true)
+        if (event === 'SIGNED_IN' && (
+          window.location.hash.includes('type=recovery') ||
+          window.location.search.includes('code=')
+        )) setReady(true)
+      })
+
+      // ── Timeout: if nothing fires in 8s, show a helpful error ─────────────
+      const timeout = setTimeout(() => {
+        if (!ready) {
+          setLinkError('Could not verify the reset link — it may have expired. Please request a new one.')
+        }
+      }, 8000)
+
+      return () => {
+        subscription.unsubscribe()
+        clearTimeout(timeout)
+      }
+    }
+
+    verifyLink()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -48,7 +82,6 @@ export default function ResetPasswordPage() {
       setError(updateError.message)
     } else {
       setDone(true)
-      // Sign out so they log in fresh with the new password
       await supabase.auth.signOut()
       setTimeout(() => navigate('/login'), 3000)
     }
@@ -85,12 +118,25 @@ export default function ResetPasswordPage() {
                 <p className="font-bold text-gray-900">Password updated!</p>
                 <p className="text-sm text-gray-500">You've been signed out. Redirecting to login…</p>
               </div>
+
+            ) : linkError ? (
+              <div className="text-center py-4 space-y-4">
+                <AlertCircle size={44} className="text-red-400 mx-auto" />
+                <p className="text-sm text-gray-700 font-medium">{linkError}</p>
+                <button
+                  onClick={() => navigate('/login')}
+                  className="w-full py-2.5 bg-[#E8611A] hover:bg-orange-600 text-white font-bold rounded-xl text-sm transition-colors"
+                >
+                  Back to Login
+                </button>
+              </div>
+
             ) : !ready ? (
               <div className="text-center py-6 space-y-3">
                 <div className="w-8 h-8 border-2 border-[#E8611A] border-t-transparent rounded-full animate-spin mx-auto" />
                 <p className="text-sm text-gray-500">Verifying your reset link…</p>
-                <p className="text-xs text-gray-400">If this takes more than a few seconds, the link may have expired. Request a new one from the Team page.</p>
               </div>
+
             ) : (
               <form onSubmit={handleSubmit} className="space-y-4">
                 {error && (

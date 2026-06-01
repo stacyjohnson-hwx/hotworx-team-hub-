@@ -184,9 +184,9 @@ router.post('/', authenticate, async (req, res) => {
       })
   }
 
-  // Send email immediately if this is a closing shift
-  if (shift_type === 'closing') {
-    sendEodEmail(date).catch(err => console.error('[EOD] Closing email error:', err.message))
+  // Send email immediately on mid and closing shifts
+  if (shift_type === 'mid' || shift_type === 'closing') {
+    sendEodEmail(date).catch(err => console.error('[EOD] Email error:', err.message))
   }
 
   res.status(201).json(data)
