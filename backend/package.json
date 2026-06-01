@@ -5,7 +5,16 @@
   "main": "index.js",
   "scripts": {
     "dev": "nodemon src/index.js",
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "test": "jest --testPathPatterns=src/tests --forceExit",
+    "test:watch": "jest --testPathPatterns=src/tests --watch"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": ["**/tests/**/*.test.js"],
+    "clearMocks": true,
+    "testTimeout": 10000,
+    "openHandlesTimeout": 1000
   },
   "keywords": [],
   "author": "",
@@ -23,6 +32,8 @@
     "resend": "^6.12.3"
   },
   "devDependencies": {
-    "nodemon": "^3.1.14"
+    "jest": "^30.4.2",
+    "nodemon": "^3.1.14",
+    "supertest": "^7.2.2"
   }
 }
