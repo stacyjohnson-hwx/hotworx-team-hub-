@@ -32,12 +32,13 @@ router.get('/', authenticate, async (req, res) => {
 
   // Attach completed tasks per submitter per date
   const userIds = [...new Set(submissions.map(s => s.submitted_by))]
+  // Cleaning tasks are a shared studio checklist — fetch all completions for the
+  // date range regardless of who checked them off, then key by date only.
   const { data: completions } = await db()
     .from('cleaning_completions')
-    .select('task_id, completed_by, completion_date')
+    .select('task_id, completion_date')
     .gte('completion_date', from)
     .lte('completion_date', to)
-    .in('completed_by', userIds)
 
   const taskMap = {}
   if (completions && completions.length > 0) {
@@ -47,23 +48,23 @@ router.get('/', authenticate, async (req, res) => {
     for (const t of tasks || []) taskMap[t.id] = t
   }
 
-  // Key: `userId:date`
-  const tasksByKey = {}
+  // Key by date only — every EOD for a given date shows all tasks done that day
+  const tasksByDate = {}
   for (const c of completions || []) {
-    const key = `${c.completed_by}:${c.completion_date}`
-    if (!tasksByKey[key]) tasksByKey[key] = { cleaning: [], operations: [] }
+    const key = c.completion_date
+    if (!tasksByDate[key]) tasksByDate[key] = { cleaning: [], operations: [] }
     const t = taskMap[c.task_id]
     if (!t) continue
-    if (t.task_type === 'Operations') tasksByKey[key].operations.push(t.title)
-    else tasksByKey[key].cleaning.push(t.title)
+    if (t.task_type === 'Operations') tasksByDate[key].operations.push(t.title)
+    else tasksByDate[key].cleaning.push(t.title)
   }
 
   res.json(submissions.map(s => {
-    const key = `${s.submitted_by}:${s.shift_date}`
+    const tasks = tasksByDate[s.shift_date] || { cleaning: [], operations: [] }
     return {
       ...s,
-      completed_cleaning: tasksByKey[key]?.cleaning || [],
-      completed_operations: tasksByKey[key]?.operations || [],
+      completed_cleaning: tasks.cleaning,
+      completed_operations: tasks.operations,
       completed_missions: s.mission_titles || [],
     }
   }))

@@ -239,15 +239,14 @@ async function fetchSubmissionsForDate(dateStr) {
     outreachByUser[uid] = { totalCalls, totalTexts, tiles }
   }
 
-  // Fetch cleaning completions for all submitters on this date (two-step — avoids relational join issues)
+  // Cleaning tasks are shared studio-wide — fetch all completions for the date
+  // regardless of who checked them off, then apply to every submission.
   const { data: cleaningCompletions } = await db
     .from('cleaning_completions')
-    .select('task_id, completed_by')
+    .select('task_id')
     .eq('completion_date', dateStr)
-    .in('completed_by', userIds)
 
-  // Fetch the task metadata for those task_ids
-  const tasksByUser = {}
+  const sharedTasks = { cleaning: [], operations: [] }
   if (cleaningCompletions && cleaningCompletions.length > 0) {
     const taskIds = [...new Set(cleaningCompletions.map(c => c.task_id))]
     const { data: taskRows } = await db
@@ -258,20 +257,18 @@ async function fetchSubmissionsForDate(dateStr) {
     const taskMap = {}
     for (const t of taskRows || []) taskMap[t.id] = t
 
-    for (const uid of userIds) {
-      const cleaning   = []
-      const operations = []
-      for (const c of cleaningCompletions.filter(c => c.completed_by === uid)) {
-        const t = taskMap[c.task_id]
-        if (!t) continue
-        if (t.task_type === 'Operations') operations.push(t.title)
-        else cleaning.push(t.title)
-      }
-      tasksByUser[uid] = { cleaning, operations }
+    for (const c of cleaningCompletions) {
+      const t = taskMap[c.task_id]
+      if (!t) continue
+      if (t.task_type === 'Operations') sharedTasks.operations.push(t.title)
+      else sharedTasks.cleaning.push(t.title)
     }
   }
+
+  // Every submitter on this date sees the same shared task list
+  const tasksByUser = {}
   for (const uid of userIds) {
-    if (!tasksByUser[uid]) tasksByUser[uid] = { cleaning: [], operations: [] }
+    tasksByUser[uid] = sharedTasks
   }
 
   const enrichedSubmissions = submissions.map(s => ({
