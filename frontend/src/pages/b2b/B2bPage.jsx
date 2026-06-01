@@ -925,6 +925,7 @@ function PipelineTab({ contacts, users, isOwnerOrManager, onEdit, onDelete, onSt
 // ─── Active Partner card ───────────────────────────────────────────────────────
 function ActivePartnerCard({ contact, users, isOwnerOrManager, onEdit, onLog, signal }) {
   const [interactions,  setInteractions]  = useState(null)
+  const [linkedEvents,  setLinkedEvents]  = useState(null)
   const [loadingHist,   setLoadingHist]   = useState(false)
   const [expanded,      setExpanded]      = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -933,8 +934,14 @@ function ActivePartnerCard({ contact, users, isOwnerOrManager, onEdit, onLog, si
     const show = !expanded; setExpanded(show)
     if (show && interactions === null) {
       setLoadingHist(true)
-      try { setInteractions(await apiGet(`/api/b2b/contacts/${contact.id}/interactions`)) }
-      finally { setLoadingHist(false) }
+      try {
+        const [iData, evts] = await Promise.all([
+          apiGet(`/api/b2b/contacts/${contact.id}/interactions`),
+          apiGet(`/api/b2b/contacts/${contact.id}/events`),
+        ])
+        setInteractions(iData)
+        setLinkedEvents(Array.isArray(evts) ? evts : [])
+      } finally { setLoadingHist(false) }
     }
   }
 
@@ -1038,20 +1045,43 @@ function ActivePartnerCard({ contact, users, isOwnerOrManager, onEdit, onLog, si
         <div className="px-4 pb-4 border-t border-gray-100 bg-gray-50">
           {loadingHist ? (
             <p className="text-xs text-gray-400 py-3">Loading…</p>
-          ) : interactions?.length ? (
-            interactions.map(i => (
-              <InteractionRow
-                key={i.id}
-                interaction={i}
-                contact={contact}
-                isOwnerOrManager={isOwnerOrManager}
-                compact={false}
-                onUpdated={updated => setInteractions(prev => prev.map(x => x.id === updated.id ? { ...x, ...updated } : x))}
-                onDeleted={id => setInteractions(prev => prev.filter(x => x.id !== id))}
-              />
-            ))
           ) : (
-            <p className="text-xs text-gray-400 pt-3 italic">No interactions logged yet.</p>
+            <>
+              {interactions?.length ? (
+                interactions.map(i => (
+                  <InteractionRow
+                    key={i.id}
+                    interaction={i}
+                    contact={contact}
+                    isOwnerOrManager={isOwnerOrManager}
+                    compact={false}
+                    onUpdated={updated => setInteractions(prev => prev.map(x => x.id === updated.id ? { ...x, ...updated } : x))}
+                    onDeleted={id => setInteractions(prev => prev.filter(x => x.id !== id))}
+                  />
+                ))
+              ) : (
+                <p className="text-xs text-gray-400 pt-3 italic">No interactions logged yet.</p>
+              )}
+              {linkedEvents?.length > 0 && (
+                <div className="pt-3 mt-1 border-t border-gray-200">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Linked Events</p>
+                  {linkedEvents.map(ev => (
+                    <div key={ev.id} className="flex items-center gap-2.5 pt-2">
+                      <div className="w-7 h-7 rounded-full bg-blue-50 border border-blue-200 flex items-center justify-center flex-shrink-0">
+                        <Calendar size={12} className="text-blue-500" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-gray-800">{ev.title}</p>
+                        <p className="text-xs text-gray-500">
+                          {new Date(ev.start_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          {ev.location && ` · ${ev.location}`}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
