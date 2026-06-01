@@ -838,9 +838,13 @@ function PipelineRow({ contact, users, isOwnerOrManager, onEdit, onDelete, onLog
 }
 
 // ─── Pipeline Tab ─────────────────────────────────────────────────────────────
-function PipelineTab({ contacts, users, isOwnerOrManager, onEdit, onDelete, onStatusChange, b2bSignals = {} }) {
+function PipelineTab({ contacts, users, isOwnerOrManager, onEdit, onDelete, onStatusChange, onInteractionLogged, b2bSignals = {} }) {
   const [logTarget, setLogTarget] = useState(null)
-  const handleInteractionSaved = i => { logTarget?.callback?.(i); setLogTarget(null) }
+  const handleInteractionSaved = i => {
+    logTarget?.callback?.(i)
+    if (logTarget?.contact?.id) onInteractionLogged?.(logTarget.contact.id, i)
+    setLogTarget(null)
+  }
 
   const pipelineContacts = contacts.filter(c => c.status !== 'active_partner')
   const today  = new Date(); today.setHours(0,0,0,0)
@@ -1228,12 +1232,19 @@ function ActivePartnerRow({ contact, isOwnerOrManager, onEdit, onLog, onDelete, 
   )
 }
 
-function ActivePartnersTab({ contacts, users, isOwnerOrManager, onEdit, onDelete, b2bSignals = {} }) {
+function ActivePartnersTab({ contacts, users, isOwnerOrManager, onEdit, onDelete, onInteractionLogged, b2bSignals = {} }) {
   const [logTarget, setLogTarget] = useState(null)
   const [viewMode, setViewMode]   = useState('list') // 'card' | 'list'
-  const handleInteractionSaved = i => { logTarget?.callback?.(i); setLogTarget(null) }
+  const [showPast, setShowPast]   = useState(false)
 
-  const partners = contacts.filter(c => c.status === 'active_partner')
+  const handleInteractionSaved = i => {
+    logTarget?.callback?.(i)
+    if (logTarget?.contact?.id) onInteractionLogged?.(logTarget.contact.id, i)
+    setLogTarget(null)
+  }
+
+  const partners    = contacts.filter(c => c.status === 'active_partner')
+  const pastPartners = contacts.filter(c => c.status === 'past_partner')
 
   return (
     <>
@@ -1292,6 +1303,34 @@ function ActivePartnersTab({ contacts, users, isOwnerOrManager, onEdit, onDelete
           )}
         </>
       )}
+      {/* Past Partners */}
+      {pastPartners.length > 0 && (
+        <div className="mt-8">
+          <button
+            onClick={() => setShowPast(v => !v)}
+            className="flex items-center gap-2 text-sm font-semibold text-gray-400 hover:text-gray-600 transition-colors mb-3"
+          >
+            {showPast ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            Past Partners ({pastPartners.length})
+          </button>
+          {showPast && (
+            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm opacity-75">
+              {pastPartners.map(c => (
+                <ActivePartnerRow
+                  key={c.id}
+                  contact={c}
+                  isOwnerOrManager={isOwnerOrManager}
+                  onEdit={onEdit}
+                  onDelete={onDelete}
+                  onLog={cb => setLogTarget({ contact: c, callback: cb })}
+                  signal={b2bSignals[String(c.id)] ?? null}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {logTarget && (
         <LogInteractionModal
           contact={logTarget.contact}
@@ -1341,6 +1380,16 @@ export default function B2bPage() {
     setModalContact(null)
   }
 
+  // Called after any interaction is logged — keeps last_interacted_at in sync
+  // so "No contact yet" disappears immediately without a page reload
+  const handleInteractionLogged = (contactId, interaction) => {
+    setContacts(prev => prev.map(c =>
+      c.id === contactId
+        ? { ...c, last_interacted_at: interaction.logged_at || new Date().toISOString() }
+        : c
+    ))
+  }
+
   const handleDelete = async (id) => {
     await apiDelete(`/api/b2b/contacts/${id}`)
     setContacts(prev => prev.filter(c => c.id !== id))
@@ -1367,7 +1416,7 @@ export default function B2bPage() {
     const q = searchQuery.toLowerCase()
     const matchSearch = !q || [c.business_name, c.contact_name, c.email, c.industry].some(f => f?.toLowerCase().includes(q))
     const matchIndustry = !industryFilter || c.industry === industryFilter
-    return c.status === 'active_partner' && matchSearch && matchIndustry
+    return (c.status === 'active_partner' || c.status === 'past_partner') && matchSearch && matchIndustry
   })
 
   if (loading) return (
@@ -1436,8 +1485,8 @@ export default function B2bPage() {
       </div>
 
       {tab === 'pipeline'
-        ? <PipelineTab contacts={filtered} users={users} isOwnerOrManager={isOwnerOrManager} onEdit={setModalContact} onDelete={handleDelete} onStatusChange={handleStatusChange} b2bSignals={b2bSignals} />
-        : <ActivePartnersTab contacts={filteredPartners} users={users} isOwnerOrManager={isOwnerOrManager} onEdit={setModalContact} onDelete={handleDelete} b2bSignals={b2bSignals} />
+        ? <PipelineTab contacts={filtered} users={users} isOwnerOrManager={isOwnerOrManager} onEdit={setModalContact} onDelete={handleDelete} onStatusChange={handleStatusChange} onInteractionLogged={handleInteractionLogged} b2bSignals={b2bSignals} />
+        : <ActivePartnersTab contacts={filteredPartners} users={users} isOwnerOrManager={isOwnerOrManager} onEdit={setModalContact} onDelete={handleDelete} onInteractionLogged={handleInteractionLogged} b2bSignals={b2bSignals} />
       }
 
       {modalContact !== null && (
