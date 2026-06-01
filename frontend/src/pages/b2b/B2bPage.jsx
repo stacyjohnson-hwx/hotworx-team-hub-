@@ -660,6 +660,7 @@ const NEXT_STAGE = {
 function PipelineRow({ contact, users, isOwnerOrManager, onEdit, onDelete, onLog, onStatusChange, signal }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [interactions,  setInteractions]  = useState(null)
+  const [linkedEvents,  setLinkedEvents]  = useState(null)
   const [loadingHist,   setLoadingHist]   = useState(false)
   const [expanded,      setExpanded]      = useState(false)
 
@@ -673,8 +674,14 @@ function PipelineRow({ contact, users, isOwnerOrManager, onEdit, onDelete, onLog
     const show = !expanded; setExpanded(show)
     if (show && interactions === null) {
       setLoadingHist(true)
-      try { setInteractions(await apiGet(`/api/b2b/contacts/${contact.id}/interactions`)) }
-      finally { setLoadingHist(false) }
+      try {
+        const [iData, evts] = await Promise.all([
+          apiGet(`/api/b2b/contacts/${contact.id}/interactions`),
+          apiGet(`/api/b2b/contacts/${contact.id}/events`),
+        ])
+        setInteractions(iData)
+        setLinkedEvents(Array.isArray(evts) ? evts : [])
+      } finally { setLoadingHist(false) }
     }
   }
 
@@ -779,27 +786,50 @@ function PipelineRow({ contact, users, isOwnerOrManager, onEdit, onDelete, onLog
         )}
       </div>
 
-      {/* Inline interaction history */}
+      {/* Inline interaction history + linked events */}
       {expanded && (
         <div className="px-4 pb-3 bg-gray-50 border-t border-gray-100">
           {loadingHist ? (
             <p className="text-xs text-gray-400 py-2">Loading…</p>
-          ) : interactions?.length ? (
-            <div className="space-y-0">
-              {interactions.map(i => (
-                <InteractionRow
-                  key={i.id}
-                  interaction={i}
-                  contact={contact}
-                  isOwnerOrManager={isOwnerOrManager}
-                  compact={true}
-                  onUpdated={updated => setInteractions(prev => prev.map(x => x.id === updated.id ? { ...x, ...updated } : x))}
-                  onDeleted={id => setInteractions(prev => prev.filter(x => x.id !== id))}
-                />
-              ))}
-            </div>
           ) : (
-            <p className="text-xs text-gray-400 py-2 italic">No interactions logged yet.</p>
+            <>
+              {interactions?.length ? (
+                <div className="space-y-0">
+                  {interactions.map(i => (
+                    <InteractionRow
+                      key={i.id}
+                      interaction={i}
+                      contact={contact}
+                      isOwnerOrManager={isOwnerOrManager}
+                      compact={true}
+                      onUpdated={updated => setInteractions(prev => prev.map(x => x.id === updated.id ? { ...x, ...updated } : x))}
+                      onDeleted={id => setInteractions(prev => prev.filter(x => x.id !== id))}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-gray-400 py-2 italic">No interactions logged yet.</p>
+              )}
+              {linkedEvents?.length > 0 && (
+                <div className="pt-2 mt-1 border-t border-gray-200">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Linked Events</p>
+                  {linkedEvents.map(ev => (
+                    <div key={ev.id} className="flex items-center gap-2 py-1.5">
+                      <div className="w-6 h-6 rounded-full bg-blue-50 border border-blue-200 flex items-center justify-center flex-shrink-0">
+                        <Calendar size={11} className="text-blue-500" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-gray-800 truncate">{ev.title}</p>
+                        <p className="text-xs text-gray-500">
+                          {new Date(ev.start_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          {ev.location && ` · ${ev.location}`}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
@@ -1033,6 +1063,7 @@ function ActivePartnerCard({ contact, users, isOwnerOrManager, onEdit, onLog, si
 function ActivePartnerRow({ contact, isOwnerOrManager, onEdit, onLog, onDelete, signal }) {
   const [expanded,      setExpanded]      = useState(false)
   const [interactions,  setInteractions]  = useState(null)
+  const [linkedEvents,  setLinkedEvents]  = useState(null)
   const [loadingHist,   setLoadingHist]   = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
@@ -1046,8 +1077,14 @@ function ActivePartnerRow({ contact, isOwnerOrManager, onEdit, onLog, onDelete, 
     const show = !expanded; setExpanded(show)
     if (show && interactions === null) {
       setLoadingHist(true)
-      try { setInteractions(await apiGet(`/api/b2b/contacts/${contact.id}/interactions`)) }
-      finally { setLoadingHist(false) }
+      try {
+        const [iData, evts] = await Promise.all([
+          apiGet(`/api/b2b/contacts/${contact.id}/interactions`),
+          apiGet(`/api/b2b/contacts/${contact.id}/events`),
+        ])
+        setInteractions(iData)
+        setLinkedEvents(Array.isArray(evts) ? evts : [])
+      } finally { setLoadingHist(false) }
     }
   }
 
@@ -1110,27 +1147,50 @@ function ActivePartnerRow({ contact, isOwnerOrManager, onEdit, onLog, onDelete, 
         </div>
       </div>
 
-      {/* Inline history */}
+      {/* Inline history + linked events */}
       {expanded && (
         <div className="px-4 pb-3 bg-gray-50 border-t border-gray-100">
           {loadingHist ? (
             <p className="text-xs text-gray-400 py-2">Loading…</p>
-          ) : interactions?.length ? (
-            <div className="space-y-0">
-              {interactions.map(i => (
-                <InteractionRow
-                  key={i.id}
-                  interaction={i}
-                  contact={contact}
-                  isOwnerOrManager={isOwnerOrManager}
-                  compact={true}
-                  onUpdated={updated => setInteractions(prev => prev.map(x => x.id === updated.id ? { ...x, ...updated } : x))}
-                  onDeleted={id => setInteractions(prev => prev.filter(x => x.id !== id))}
-                />
-              ))}
-            </div>
           ) : (
-            <p className="text-xs text-gray-400 py-2 italic">No interactions logged yet.</p>
+            <>
+              {interactions?.length ? (
+                <div className="space-y-0">
+                  {interactions.map(i => (
+                    <InteractionRow
+                      key={i.id}
+                      interaction={i}
+                      contact={contact}
+                      isOwnerOrManager={isOwnerOrManager}
+                      compact={true}
+                      onUpdated={updated => setInteractions(prev => prev.map(x => x.id === updated.id ? { ...x, ...updated } : x))}
+                      onDeleted={id => setInteractions(prev => prev.filter(x => x.id !== id))}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-gray-400 py-2 italic">No interactions logged yet.</p>
+              )}
+              {linkedEvents?.length > 0 && (
+                <div className="pt-2 mt-1 border-t border-gray-200">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Linked Events</p>
+                  {linkedEvents.map(ev => (
+                    <div key={ev.id} className="flex items-center gap-2 py-1.5">
+                      <div className="w-6 h-6 rounded-full bg-blue-50 border border-blue-200 flex items-center justify-center flex-shrink-0">
+                        <Calendar size={11} className="text-blue-500" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-gray-800 truncate">{ev.title}</p>
+                        <p className="text-xs text-gray-500">
+                          {new Date(ev.start_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          {ev.location && ` · ${ev.location}`}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
