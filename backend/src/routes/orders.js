@@ -3,11 +3,11 @@ const router = express.Router()
 const { createClient } = require('@supabase/supabase-js')
 const { requireRole } = require('../middleware/roleGuard')
 const authenticate = require('../middleware/authMiddleware')
-const { Resend } = require('resend')
+const nodemailer = require('nodemailer')
+const { Resend }  = require('resend')
 
 async function sendOrderEmail(order, requesterName) {
-  if (!process.env.RESEND_API_KEY) return
-  const resend = new Resend(process.env.RESEND_API_KEY)
+  if (!process.env.EMAIL_USER && !process.env.RESEND_API_KEY) return
   const catLabel = { supplies: 'Supplies', retail: 'Retail', equipment: 'Equipment', marketing: 'Marketing', other: 'Other' }[order.category] || order.category
   const costLine = order.est_cost ? `<tr><td style="color:#6b7280;font-size:13px;padding:4px 0">Est. Cost</td><td style="font-size:13px;text-align:right">$${Number(order.est_cost).toFixed(2)}</td></tr>` : ''
   const vendorLine = order.vendor ? `<tr><td style="color:#6b7280;font-size:13px;padding:4px 0">Vendor</td><td style="font-size:13px;text-align:right">${order.vendor}</td></tr>` : ''
@@ -31,12 +31,28 @@ async function sendOrderEmail(order, requesterName) {
         ${notesLine}
       </div>
     </div>`
-  await resend.emails.send({
-    from: 'HOTWORX Pewaukee <onboarding@resend.dev>',
-    to: [process.env.OWNER_EMAIL, process.env.MANAGER_EMAIL].filter(Boolean),
-    subject: `Order Request: ${order.item_name} — HOTWORX Pewaukee`,
-    html,
-  }).catch(err => console.error('Order email failed:', err.message))
+  const recipients = [process.env.OWNER_EMAIL, process.env.MANAGER_EMAIL].filter(Boolean)
+  const subject    = `Order Request: ${order.item_name} — HOTWORX Pewaukee`
+  const fromName   = 'HOTWORX Pewaukee'
+
+  try {
+    if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+      const transport = nodemailer.createTransport({
+        host: 'smtp.gmail.com', port: 465, secure: true,
+        auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+      })
+      await transport.sendMail({
+        from: `"${fromName}" <${process.env.EMAIL_USER}>`,
+        to: recipients.join(', '), subject, html,
+      })
+    } else {
+      const resend = new Resend(process.env.RESEND_API_KEY)
+      await resend.emails.send({
+        from: `${fromName} <onboarding@resend.dev>`,
+        to: recipients, subject, html,
+      })
+    }
+  } catch (err) { console.error('Order email failed:', err.message) }
 }
 
 const supabase = () =>

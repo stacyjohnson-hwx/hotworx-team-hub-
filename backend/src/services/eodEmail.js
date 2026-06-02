@@ -1,5 +1,54 @@
-const { Resend } = require('resend')
+const { Resend }    = require('resend')
+const nodemailer    = require('nodemailer')
 const { createClient } = require('@supabase/supabase-js')
+
+// ─── Transport: Gmail SMTP preferred, Resend fallback ─────────────────────────
+// Gmail SMTP sends to anyone. Resend sandbox only sends to the account owner.
+// Set EMAIL_USER + EMAIL_PASS (Gmail App Password) in Railway to unlock Gmail.
+function createTransport() {
+  if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+    return nodemailer.createTransport({
+      host: 'smtp.gmail.com',
+      port: 465,
+      secure: true,
+      auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+    })
+  }
+  return null // falls through to Resend
+}
+
+async function sendViaBestAvailable({ to, subject, html }) {
+  const transport = createTransport()
+  const fromName  = process.env.STUDIO_NAME || 'HOTWORX Pewaukee'
+
+  if (transport) {
+    // Gmail SMTP — sends to any address, no domain restrictions
+    await transport.sendMail({
+      from: `"${fromName}" <${process.env.EMAIL_USER}>`,
+      to: Array.isArray(to) ? to.join(', ') : to,
+      subject,
+      html,
+    })
+    console.log('[Email] Sent via Gmail SMTP to', Array.isArray(to) ? to.join(', ') : to)
+    return
+  }
+
+  if (process.env.RESEND_API_KEY) {
+    // Resend — sandbox mode only delivers to the Resend account owner email
+    const resend = new Resend(process.env.RESEND_API_KEY)
+    const toList = (Array.isArray(to) ? to : [to])
+    await resend.emails.send({
+      from: `${fromName} <onboarding@resend.dev>`,
+      to: toList,
+      subject,
+      html,
+    })
+    console.log('[Email] Sent via Resend to', toList.join(', '))
+    return
+  }
+
+  console.warn('[Email] No transport configured — set EMAIL_USER+EMAIL_PASS (Gmail) or RESEND_API_KEY')
+}
 
 const THRESHOLD = parseFloat(process.env.DRAWER_VARIANCE_THRESHOLD || '5')
 
@@ -293,9 +342,7 @@ async function sendEodEmail(dateStr) {
   })
 
   try {
-    const resend = new Resend(process.env.RESEND_API_KEY)
-    await resend.emails.send({
-      from: 'HOTWORX Pewaukee <onboarding@resend.dev>',
+    await sendViaBestAvailable({
       to: recipients,
       subject: `${process.env.STUDIO_NAME || 'HOTWORX Pewaukee'} — EOD Report ${dateLabel}`,
       html,
@@ -307,17 +354,7 @@ async function sendEodEmail(dateStr) {
 }
 
 async function sendEmail({ to, subject, html }) {
-  if (!process.env.RESEND_API_KEY) {
-    console.log('[Email] RESEND_API_KEY not set — skipping')
-    return
-  }
-  const resend = new Resend(process.env.RESEND_API_KEY)
-  await resend.emails.send({
-    from: 'HOTWORX Pewaukee <onboarding@resend.dev>',
-    to: Array.isArray(to) ? to : [to],
-    subject,
-    html,
-  })
+  await sendViaBestAvailable({ to, subject, html })
 }
 
 module.exports = { sendEodEmail, sendEmail }

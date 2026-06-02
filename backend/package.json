@@ -11,7 +11,9 @@
   },
   "jest": {
     "testEnvironment": "node",
-    "testMatch": ["**/tests/**/*.test.js"],
+    "testMatch": [
+      "**/tests/**/*.test.js"
+    ],
     "clearMocks": true,
     "testTimeout": 10000,
     "openHandlesTimeout": 1000
@@ -27,6 +29,7 @@
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "node-cron": "^4.2.1",
+    "nodemailer": "^8.0.10",
     "pg": "^8.21.0",
     "postal-mime": "^2.7.4",
     "resend": "^6.12.3"
