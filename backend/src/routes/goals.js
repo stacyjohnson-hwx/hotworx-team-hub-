@@ -40,6 +40,16 @@ async function getUserName(uid) {
   }
 }
 
+// Returns a Set of user IDs that are deactivated, so the goals routes
+// can filter them out without an extra query per user.
+async function getInactiveUserIds() {
+  const { data } = await db()
+    .from('user_profiles')
+    .select('id')
+    .eq('is_active', false)
+  return new Set((data || []).map(p => p.id))
+}
+
 async function getMonthlyHours(month, year) {
   const m = String(month).padStart(2, '0')
   const lastDay = new Date(year, month, 0).getDate()
@@ -221,10 +231,16 @@ router.get('/personal', authenticate, async (req, res) => {
   }
 
   // Owner/manager: all users merged with goals
-  const { data: { users }, error: uErr } = await db().auth.admin.listUsers()
+  const [{ data: { users }, error: uErr }, inactiveIds] = await Promise.all([
+    db().auth.admin.listUsers(),
+    getInactiveUserIds(),
+  ])
   if (uErr) return res.status(500).json({ error: uErr.message })
 
-  const studioUsers = users.filter(u => ['tsa', 'manager', 'owner'].includes(u.app_metadata?.role))
+  const studioUsers = users.filter(u =>
+    ['tsa', 'manager', 'owner'].includes(u.app_metadata?.role) &&
+    !inactiveIds.has(u.id)
+  )
 
   const { data: goalsData, error: gErr } = await db()
     .from('personal_goals').select('*').eq('month', month).eq('year', year)
@@ -302,10 +318,16 @@ router.get('/leaderboard', authenticate, async (req, res) => {
   const { month, year } = req.query
   if (!month || !year) return res.status(400).json({ error: 'month and year required' })
 
-  const { data: { users }, error: uErr } = await db().auth.admin.listUsers()
+  const [{ data: { users }, error: uErr }, inactiveIds] = await Promise.all([
+    db().auth.admin.listUsers(),
+    getInactiveUserIds(),
+  ])
   if (uErr) return res.status(500).json({ error: uErr.message })
 
-  const studioUsers = users.filter(u => ['tsa', 'manager'].includes(u.app_metadata?.role))
+  const studioUsers = users.filter(u =>
+    ['tsa', 'manager'].includes(u.app_metadata?.role) &&
+    !inactiveIds.has(u.id)
+  )
 
   const [{ data: goalsData, error: gErr }, hoursMap, shiftCountMap, studioTargets] = await Promise.all([
     db().from('personal_goals')
