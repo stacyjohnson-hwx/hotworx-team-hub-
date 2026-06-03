@@ -455,43 +455,37 @@ function VisitHistory({ competitor }) {
 function MapView({ competitors, onCompare, onLogVisit }) {
   const HOTWORX_LAT = 43.0840, HOTWORX_LNG = -88.2337
 
-  // Simple SVG pin map using lat/lng projection
-  const allPoints = [
-    { lat: HOTWORX_LAT, lng: HOTWORX_LNG, isHotworx: true },
-    ...competitors.filter(c => c.latitude && c.longitude).map(c => ({ lat: parseFloat(c.latitude), lng: parseFloat(c.longitude), comp: c })),
-  ]
-  const lats = allPoints.map(p => p.lat)
-  const lngs = allPoints.map(p => p.lng)
-  const minLat = Math.min(...lats) - 0.02, maxLat = Math.max(...lats) + 0.02
-  const minLng = Math.min(...lngs) - 0.03, maxLng = Math.max(...lngs) + 0.03
-
-  const W = 800, H = 450
-  const toX = lng => ((lng - minLng) / (maxLng - minLng)) * (W - 80) + 40
-  const toY = lat => ((maxLat - lat) / (maxLat - minLat)) * (H - 80) + 40
-
   const [hovered, setHovered] = useState(null)
 
-  // Calculate tile coordinates for OpenStreetMap
-  const centerLat = (minLat + maxLat) / 2
-  const centerLng = (minLng + maxLng) / 2
+  // Map dimensions
+  const W = 800, H = 450
   const zoom = 11
   const tileSize = 256
+
+  // Web Mercator projection (matches OSM tiles)
   const n = Math.pow(2, zoom)
-  const getTileX = lng => Math.floor((lng + 180) / 360 * n)
-  const getTileY = lat => Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * n)
+  const lngToTileX = lng => (lng + 180) / 360 * n
+  const latToTileY = lat => (1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * n
 
-  const centerTileX = getTileX(centerLng)
-  const centerTileY = getTileY(centerLat)
+  // Convert tile coordinates to pixel coordinates
+  const lngToPixel = lng => lngToTileX(lng) * tileSize
+  const latToPixel = lat => latToTileY(lat) * tileSize
 
-  // Calculate pixel offset for map tiles
-  const lngToPixel = lng => (lng + 180) / 360 * n * tileSize
-  const latToPixel = lat => (1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * n * tileSize
+  // Center map on HOTWORX
+  const centerPixelX = lngToPixel(HOTWORX_LNG)
+  const centerPixelY = latToPixel(HOTWORX_LAT)
 
-  const centerPixelX = lngToPixel(centerLng)
-  const centerPixelY = latToPixel(centerLat)
+  // Calculate tile range to cover viewport
+  const centerTileX = Math.floor(lngToTileX(HOTWORX_LNG))
+  const centerTileY = Math.floor(latToTileY(HOTWORX_LAT))
 
-  const offsetX = W / 2 - (centerPixelX % tileSize)
-  const offsetY = H / 2 - (centerPixelY % tileSize)
+  // Offset to center the map
+  const offsetX = W / 2 - (centerPixelX - centerTileX * tileSize)
+  const offsetY = H / 2 - (centerPixelY - centerTileY * tileSize)
+
+  // Convert lat/lng to screen coordinates
+  const toScreenX = lng => lngToPixel(lng) - centerPixelX + W / 2
+  const toScreenY = lat => latToPixel(lat) - centerPixelY + H / 2
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
@@ -532,7 +526,7 @@ function MapView({ competitors, onCompare, onLogVisit }) {
         {/* Overlay with pins */}
         <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} className="absolute inset-0" style={{ pointerEvents: 'none' }}>
           {/* HOTWORX pin */}
-          <g transform={`translate(${toX(HOTWORX_LNG)},${toY(HOTWORX_LAT)})`} style={{ pointerEvents: 'auto' }}>
+          <g transform={`translate(${toScreenX(HOTWORX_LNG)},${toScreenY(HOTWORX_LAT)})`} style={{ pointerEvents: 'auto' }}>
             <circle r={22} fill="#C8102E" opacity={0.2} />
             <circle r={16} fill="white" stroke="#C8102E" strokeWidth={3} />
             {/* HOTWORX logo in center */}
@@ -542,7 +536,7 @@ function MapView({ competitors, onCompare, onLogVisit }) {
 
           {/* Competitor pins */}
           {competitors.filter(c => c.latitude && c.longitude).map(c => {
-            const x = toX(parseFloat(c.longitude)), y = toY(parseFloat(c.latitude))
+            const x = toScreenX(parseFloat(c.longitude)), y = toScreenY(parseFloat(c.latitude))
             const pinColor = c.type === 'hot_yoga' ? '#f97316' : c.type === 'gym' ? '#3b82f6' : c.type === 'boutique' ? '#ec4899' : c.type === 'yoga' ? '#a855f7' : '#6b7280'
             const isHov = hovered === c.id
             return (
