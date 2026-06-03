@@ -69,7 +69,7 @@ function Avatar({ name, avatarUrl, size = 7 }) {
   )
 }
 
-export function Sidebar() {
+export function Sidebar({ onNavigate }) {
   const { user, signOut, profile } = useAuth()
   const { role } = useRole()
   const navigate = useNavigate()
@@ -99,6 +99,7 @@ export function Sidebar() {
             <NavLink
               key={to}
               to={to}
+              onClick={onNavigate}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
                   isActive
@@ -117,7 +118,7 @@ export function Sidebar() {
       {/* User footer */}
       <div className="border-t border-gray-800 px-3 py-3">
         <button
-          onClick={() => navigate('/profile')}
+          onClick={() => { navigate('/profile'); onNavigate?.() }}
           title="My Profile"
           className="flex items-center gap-2 w-full mb-2 px-1 rounded-lg hover:bg-gray-800 py-1.5 transition-colors group"
         >

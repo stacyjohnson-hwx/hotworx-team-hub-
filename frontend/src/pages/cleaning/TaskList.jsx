@@ -368,25 +368,27 @@ function TaskRow({ task, loading, onToggle, onHistory }) {
 
   return (
     <div className={task.completed ? 'bg-green-50/40' : ''}>
-      <div className="flex items-center gap-3 px-4 py-3.5">
-        {/* Checkbox */}
+      {/* Make the whole left side (checkbox + title) one tap target on mobile */}
+      <div className="flex items-center gap-3 px-4 py-4 md:py-3.5">
+        {/* Checkbox — larger touch target on mobile */}
         <button
           onClick={onToggle}
           disabled={loading}
-          className="flex-shrink-0 disabled:opacity-60"
+          className="flex-shrink-0 disabled:opacity-60 p-1 -m-1"
+          aria-label={task.completed ? 'Mark incomplete' : 'Mark complete'}
         >
           {loading ? (
-            <RefreshCw className="w-5 h-5 text-gray-400 animate-spin" />
+            <RefreshCw className="w-6 h-6 md:w-5 md:h-5 text-gray-400 animate-spin" />
           ) : task.completed ? (
-            <CheckCircle className="w-5 h-5 text-green-500" />
+            <CheckCircle className="w-6 h-6 md:w-5 md:h-5 text-green-500" />
           ) : (
-            <Circle className="w-5 h-5 text-gray-300" />
+            <Circle className="w-6 h-6 md:w-5 md:h-5 text-gray-300" />
           )}
         </button>
 
         {/* Title + badges + last completed */}
-        <div className="flex-1 min-w-0">
-          <p className={`text-sm font-medium ${task.completed ? 'line-through text-gray-400' : 'text-gray-900'}`}>
+        <div className="flex-1 min-w-0" onClick={onToggle}>
+          <p className={`text-base md:text-sm font-medium ${task.completed ? 'line-through text-gray-400' : 'text-gray-900'}`}>
             {task.title}
           </p>
           <div className="flex gap-1.5 mt-1 flex-wrap items-center">
