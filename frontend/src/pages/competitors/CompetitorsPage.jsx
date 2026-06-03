@@ -16,9 +16,9 @@ const HOTWORX = {
   price_drop_in: null,
   price_trial: 'First 3 sessions free',
   hours: '24/7 — always open',
-  contract: false,
+  contract: '6-mo minimum, $99 cancel fee, then month-to-month',
   infrared: true,
-  private_pods: true,
+  semi_private_saunas: true,
   guided_workouts: true,
   formats: ['Hot Yoga','Hot Pilates','Hot Barre','Hot Cycle','Hot Warrior','HIIT'],
   location_count: '1 (local, not a chain)',
@@ -193,11 +193,11 @@ function CompareModal({ competitor, onClose }) {
     { label: 'Free Trial',      hw: HOTWORX.price_trial,                      them: competitor.price_trial || 'None', hwWins: true },
     { label: 'Hours',           hw: '24 / 7',                                 them: 'Class schedule only', hwWins: true },
     { label: 'Infrared Heat',   hw: '✅ Yes — metabolic boost',               them: '❌ No', hwWins: true },
-    { label: 'Private Pods',    hw: '✅ Your own space',                      them: '❌ Shared studio/floor', hwWins: true },
+    { label: 'Semi-Private Saunas', hw: '✅ Your own infrared sauna',          them: '❌ Shared studio/floor', hwWins: true },
     { label: 'Guided Workouts', hw: '✅ Every session',                       them: competitor.type === 'gym' ? '❌ Solo, no guidance' : '✅ Live instructor', hwWins: competitor.type === 'gym' },
     { label: 'Class Formats',   hw: HOTWORX.formats.join(', '),              them: competitor.type === 'gym' ? 'General fitness only' : competitor.type === 'hot_yoga' ? 'Yoga / Pilates' : 'Varies', hwWins: true },
-    { label: 'No Contract',     hw: '✅ Month-to-month',                      them: competitor.type === 'gym' ? 'Often annual' : '✅ Month-to-month', hwWins: true },
-    { label: 'Crowd Factor',    hw: '✅ Zero wait — private pod',             them: competitor.type === 'gym' ? '❌ Peak hour waits' : '❌ Class capacity limits', hwWins: true },
+    { label: 'Contract',        hw: '6-mo minimum · $99 cancel · then month-to-month', them: competitor.type === 'gym' ? 'Often annual — hard to cancel' : 'Class packs or monthly', hwWins: false },
+    { label: 'Crowd Factor',    hw: '✅ Zero wait — semi-private sauna',      them: competitor.type === 'gym' ? '❌ Peak hour waits' : '❌ Class capacity limits', hwWins: true },
   ]
 
   const hotworxWins = rows.filter(r => r.hwWins).length
