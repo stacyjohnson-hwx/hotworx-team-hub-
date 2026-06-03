@@ -1235,7 +1235,7 @@ function ActivePartnerRow({ contact, isOwnerOrManager, onEdit, onLog, onDelete, 
 function ActivePartnersTab({ contacts, users, isOwnerOrManager, onEdit, onDelete, onInteractionLogged, b2bSignals = {} }) {
   const [logTarget, setLogTarget] = useState(null)
   const [viewMode, setViewMode]   = useState('list') // 'card' | 'list'
-  const [showPast, setShowPast]   = useState(false)
+  const [showPast, setShowPast]   = useState(true)
 
   const handleInteractionSaved = i => {
     logTarget?.callback?.(i)
