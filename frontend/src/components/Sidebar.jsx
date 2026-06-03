@@ -3,6 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRole } from '@/hooks/useRole'
 import { supabase } from '@/lib/supabase'
+import { StudioSwitcher } from '@/components/StudioSwitcher'
 import {
   LayoutDashboard,
   Calendar,
@@ -90,8 +91,13 @@ export function Sidebar({ onNavigate }) {
         </div>
         <div className="overflow-hidden">
           <p className="text-white text-sm font-semibold leading-tight truncate">HOTWORX</p>
-          <p className="text-gray-500 text-xs leading-tight">Pewaukee</p>
+          <p className="text-gray-500 text-xs leading-tight">Team Hub</p>
         </div>
+      </div>
+
+      {/* Studio Switcher */}
+      <div className="px-3 py-3 border-b border-gray-800">
+        <StudioSwitcher />
       </div>
 
       {/* Navigation */}

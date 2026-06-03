@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from '@/contexts/AuthContext'
 import { MonthProvider } from '@/contexts/MonthContext'
+import { StudioProvider } from '@/contexts/StudioContext'
 import { Layout } from '@/components/Layout'
 import { RoleGuard } from '@/components/RoleGuard'
 import LoginPage from '@/pages/auth/LoginPage'
@@ -67,9 +68,11 @@ function AppRoutes() {
       <Route
         element={
           <ProtectedRoute>
-            <MonthProvider>
-              <Layout />
-            </MonthProvider>
+            <StudioProvider>
+              <MonthProvider>
+                <Layout />
+              </MonthProvider>
+            </StudioProvider>
           </ProtectedRoute>
         }
       >
