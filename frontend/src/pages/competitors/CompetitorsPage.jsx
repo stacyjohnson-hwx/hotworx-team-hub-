@@ -458,7 +458,7 @@ function MapView({ competitors, onCompare, onLogVisit }) {
   // Simple SVG pin map using lat/lng projection
   const allPoints = [
     { lat: HOTWORX_LAT, lng: HOTWORX_LNG, isHotworx: true },
-    ...competitors.filter(c => c.latitude && c.longitude).map(c => ({ lat: c.latitude, lng: c.longitude, comp: c })),
+    ...competitors.filter(c => c.latitude && c.longitude).map(c => ({ lat: parseFloat(c.latitude), lng: parseFloat(c.longitude), comp: c })),
   ]
   const lats = allPoints.map(p => p.lat)
   const lngs = allPoints.map(p => p.lng)
@@ -502,7 +502,7 @@ function MapView({ competitors, onCompare, onLogVisit }) {
 
           {/* Competitor pins */}
           {competitors.filter(c => c.latitude && c.longitude).map(c => {
-            const x = toX(c.longitude), y = toY(c.latitude)
+            const x = toX(parseFloat(c.longitude)), y = toY(parseFloat(c.latitude))
             const pinColor = c.type === 'hot_yoga' ? '#f97316' : c.type === 'gym' ? '#3b82f6' : c.type === 'boutique' ? '#ec4899' : c.type === 'yoga' ? '#a855f7' : '#6b7280'
             const isHov = hovered === c.id
             return (
