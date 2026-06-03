@@ -508,7 +508,7 @@ function ManageMissionsModal({ customMissions, hiddenMissions, overrides, onClos
 }
 
 // ─── Mission Card ─────────────────────────────────────────────────────────────
-function MissionCard({ mission, completions, onComplete, isPlayMission, canDrag,
+function MissionCard({ mission, completions, onComplete, isPlayMission, onDismiss, canDrag,
                        onDragStart, onDragOver, onDrop, onDragEnd, isDragOver, signal }) {
   const [expanded,    setExpanded]    = useState(false)
   const [showProof,   setShowProof]   = useState(false)
@@ -594,7 +594,20 @@ function MissionCard({ mission, completions, onComplete, isPlayMission, canDrag,
                 }`}>{mission.category}</span>
                 {isPlayMission && <span className="text-[10px] font-medium px-1.5 py-0.5 rounded border bg-yellow-50 text-yellow-700 border-yellow-200">Active Play</span>}
                 {expiryLabel && expiryLabel !== 'Expired' && <span className="text-[10px] font-medium text-amber-600">⏰ {expiryLabel}</span>}
-                {isExpired && <span className="text-[10px] font-medium text-gray-400">Expired</span>}
+                {isExpired && (
+                  <span className="flex items-center gap-1">
+                    <span className="text-[10px] font-medium text-gray-400">Expired</span>
+                    {onDismiss && (
+                      <button
+                        onClick={e => { e.stopPropagation(); onDismiss() }}
+                        className="text-gray-300 hover:text-red-400 transition-colors"
+                        title="Dismiss expired mission"
+                      >
+                        <X size={11} />
+                      </button>
+                    )}
+                  </span>
+                )}
                 {completionCount > 0 && !completedToday && <span className="flex items-center gap-0.5 text-[10px] text-gray-400"><RotateCcw size={9} />{completionCount}×</span>}
                 {completedToday && <span className="text-[10px] font-semibold text-green-600">✓ Done today</span>}
               </div>
@@ -715,7 +728,11 @@ export default function MissionsTab({ employee, onPointsEarned, onStreakUpdate }
   const empCompletions = missionsState[employee.id] || {}
 
   // Build full mission list: play missions (from localStorage plays) + visible built-ins (with overrides applied) + custom
-  const playMissions   = plays.filter(p => p.status === 'Active').flatMap(p => p.generatedMissions || [])
+  // hiddenMissions applies to ALL sources so expired/dismissed play missions stay hidden
+  const playMissions   = plays
+    .filter(p => p.status === 'Active')
+    .flatMap(p => p.generatedMissions || [])
+    .filter(m => !hiddenMissions.includes(String(m.id)))
   const visibleBuiltIn = STANDING_MISSIONS
     .filter(m => !hiddenMissions.includes(m.id))
     .map(m => overrides[m.id] ? { ...m, ...overrides[m.id] } : m)
@@ -781,6 +798,7 @@ export default function MissionsTab({ employee, onPointsEarned, onStreakUpdate }
   function handleAddCustom(mission)          { setCustomMissions(prev => [...prev, mission]) }
   function handleEditCustom(mission)         { setCustomMissions(prev => prev.map(m => m.id === mission.id ? mission : m)) }
   function handleDeleteCustom(id)            { setCustomMissions(prev => prev.filter(m => m.id !== id)) }
+  function handleHideAny(id)                 { setHiddenMissions(prev => prev.includes(String(id)) ? prev : [...prev, String(id)]) }
   function handleToggleHide(id)              { setHiddenMissions(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]) }
   function handleEditBuiltIn(id, form)       { setOverrides(prev => ({ ...prev, [id]: form })) }
   function handleResetBuiltIn(id)            { setOverrides(prev => { const n = { ...prev }; delete n[id]; return n }) }
@@ -898,6 +916,7 @@ export default function MissionsTab({ employee, onPointsEarned, onStreakUpdate }
             {remaining.map(m => (
               <MissionCard key={m.id} mission={m} completions={empCompletions[m.id] || []}
                 onComplete={handleComplete} isPlayMission={m.type === 'play-generated'}
+                onDismiss={() => handleHideAny(m.id)}
                 canDrag={canManage}
                 onDragStart={handleDragStart}
                 onDragOver={handleDragOver}
