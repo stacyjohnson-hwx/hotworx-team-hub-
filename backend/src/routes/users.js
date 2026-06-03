@@ -260,4 +260,38 @@ router.post('/:id/reset-password', authenticate, requireRole('owner', 'manager')
   }
 })
 
+// POST /api/users/:id/set-password
+// Owner/manager sets a password directly — no email needed.
+// They share the temp password with the TSA in person or via text.
+router.post('/:id/set-password', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+  const { id } = req.params
+  const { password } = req.body
+  if (!password || password.length < 8) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters.' })
+  }
+  try {
+    const { error } = await adminClient().auth.admin.updateUserById(id, { password })
+    if (error) return res.status(400).json({ error: error.message })
+    res.json({ ok: true })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// POST /api/users/me/change-password
+// Authenticated user changes their own password.
+router.post('/me/change-password', authenticate, async (req, res) => {
+  const { password } = req.body
+  if (!password || password.length < 8) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters.' })
+  }
+  try {
+    const { error } = await adminClient().auth.admin.updateUserById(req.user.id, { password })
+    if (error) return res.status(400).json({ error: error.message })
+    res.json({ ok: true })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 module.exports = router

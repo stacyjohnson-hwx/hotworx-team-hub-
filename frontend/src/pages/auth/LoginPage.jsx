@@ -127,58 +127,20 @@ export default function LoginPage() {
                 Enter your email and we'll send you a link to set a new password.
               </p>
 
-              {resetSent ? (
-                <div className="text-center space-y-3 py-2">
-                  <div className="text-4xl">✉️</div>
-                  <p className="font-semibold text-gray-900 text-sm">Check your inbox</p>
-                  <p className="text-gray-500 text-xs leading-relaxed">
-                    A reset link was sent to <strong>{resetEmail}</strong>.
-                    Click it to set a new password.
+              <div className="space-y-4">
+                <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+                  <p className="text-sm font-semibold text-amber-800 mb-1">Can't remember your password?</p>
+                  <p className="text-xs text-amber-700 leading-relaxed">
+                    Ask <strong>Stacy</strong> or <strong>Bailey</strong> to set a new password for you from the Team page. You'll get a temporary password to use, then change it in your Profile.
                   </p>
-                  <p className="text-gray-400 text-xs">
-                    Don't see it? Check your spam folder, or{' '}
-                    <button
-                      onClick={() => setResetSent(false)}
-                      className="text-red-600 underline hover:text-red-700"
-                    >
-                      try again
-                    </button>.
-                  </p>
-                  <button
-                    onClick={() => setShowReset(false)}
-                    className="w-full mt-2 border border-gray-300 text-gray-700 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
-                  >
-                    Back to sign in
-                  </button>
                 </div>
-              ) : (
-                <form onSubmit={handleReset} className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Email address
-                    </label>
-                    <input
-                      type="email" autoFocus required
-                      value={resetEmail} onChange={e => setResetEmail(e.target.value)}
-                      placeholder="you@example.com"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-red-600 focus:border-transparent"
-                    />
-                  </div>
-
-                  {resetError && (
-                    <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                      {resetError}
-                    </p>
-                  )}
-
-                  <button
-                    type="submit" disabled={resetLoading}
-                    className="w-full bg-red-600 text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-red-700 transition-colors disabled:opacity-60"
-                  >
-                    {resetLoading ? 'Sending…' : 'Send reset link'}
-                  </button>
-                </form>
-              )}
+                <button
+                  onClick={() => setShowReset(false)}
+                  className="w-full border border-gray-300 text-gray-700 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
+                >
+                  Back to sign in
+                </button>
+              </div>
             </>
           )}
 

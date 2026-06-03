@@ -1,9 +1,9 @@
 import { useState, useRef, useCallback } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRole } from '@/hooks/useRole'
-import { apiPut } from '@/hooks/useApi'
+import { apiPut, apiPost } from '@/hooks/useApi'
 import { supabase } from '@/lib/supabase'
-import { Camera, Save, Check, Loader2, User, Phone, Mail, Calendar, ChevronDown, ChevronUp } from 'lucide-react'
+import { Camera, Save, Check, Loader2, User, Phone, Mail, Calendar, ChevronDown, ChevronUp, KeyRound } from 'lucide-react'
 import { MotivationQuiz } from '@/components/MotivationQuiz'
 
 const inputCls = 'w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 text-sm placeholder-gray-400 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500'
@@ -205,6 +205,90 @@ export default function ProfilePage() {
             </div>
           )}
         </div>
+      )}
+
+      {/* ── Change Password ─────────────────────────────────────────────────── */}
+      <ChangePasswordSection />
+    </div>
+  )
+}
+
+function ChangePasswordSection() {
+  const [open,       setOpen]       = useState(false)
+  const [pw,         setPw]         = useState('')
+  const [confirm,    setConfirm]    = useState('')
+  const [showPw,     setShowPw]     = useState(false)
+  const [saving,     setSaving]     = useState(false)
+  const [done,       setDone]       = useState(false)
+  const [error,      setError]      = useState('')
+
+  const handleSave = async (e) => {
+    e.preventDefault()
+    if (pw.length < 8)    { setError('Password must be at least 8 characters.'); return }
+    if (pw !== confirm)   { setError('Passwords do not match.'); return }
+    setSaving(true); setError('')
+    try {
+      await apiPost('/api/users/me/change-password', { password: pw })
+      setDone(true)
+      setPw(''); setConfirm('')
+      setTimeout(() => { setDone(false); setOpen(false) }, 2500)
+    } catch (err) { setError(err.message) }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+      <button
+        onClick={() => { setOpen(o => !o); setError(''); setDone(false) }}
+        className="w-full flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-gray-50 hover:bg-gray-100 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <KeyRound size={15} className="text-gray-500" />
+          <span className="text-sm font-semibold text-gray-700">Change Password</span>
+        </div>
+        {open ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
+      </button>
+      {open && (
+        <form onSubmit={handleSave} className="px-5 py-5 space-y-4">
+          {done && (
+            <div className="flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg px-3 py-2">
+              <Check size={14} /> Password updated!
+            </div>
+          )}
+          {error && <div className="bg-red-50 border border-red-300 text-red-700 text-sm rounded-lg px-3 py-2">{error}</div>}
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">New Password</label>
+            <div className="relative">
+              <input
+                type={showPw ? 'text' : 'password'}
+                value={pw} onChange={e => setPw(e.target.value)}
+                placeholder="At least 8 characters"
+                className={inputCls}
+              />
+              <button type="button" onClick={() => setShowPw(p => !p)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 hover:text-gray-600">
+                {showPw ? 'Hide' : 'Show'}
+              </button>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">Confirm Password</label>
+            <input
+              type={showPw ? 'text' : 'password'}
+              value={confirm} onChange={e => setConfirm(e.target.value)}
+              placeholder="Repeat new password"
+              className={`${inputCls} ${confirm && confirm !== pw ? 'border-red-300' : ''}`}
+            />
+            {confirm && confirm !== pw && <p className="text-xs text-red-500 mt-1">Passwords don't match</p>}
+          </div>
+          <div className="flex justify-end">
+            <button type="submit" disabled={saving || !pw || !confirm}
+              className="flex items-center gap-2 px-5 py-2 bg-gray-800 hover:bg-gray-700 text-white text-sm font-semibold rounded-lg disabled:opacity-50 transition-colors">
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+              {saving ? 'Saving…' : 'Update Password'}
+            </button>
+          </div>
+        </form>
       )}
     </div>
   )

@@ -190,68 +190,87 @@ function UserModal({ user, currentRole, onSave, onClose }) {
 
 // ─── Reset Password Modal ──────────────────────────────────────────────────────
 function ResetPasswordModal({ user, onClose }) {
-  const [loading, setLoading]   = useState(false)
-  const [resetLink, setResetLink] = useState(null)
-  const [copied, setCopied]     = useState(false)
-  const [error, setError]       = useState('')
+  const [password,  setPassword]  = useState('')
+  const [confirm,   setConfirm]   = useState('')
+  const [showPw,    setShowPw]    = useState(false)
+  const [loading,   setLoading]   = useState(false)
+  const [done,      setDone]      = useState(false)
+  const [error,     setError]     = useState('')
 
-  const handleReset = async () => {
+  const handleSave = async (e) => {
+    e.preventDefault()
+    if (password.length < 8) { setError('Password must be at least 8 characters.'); return }
+    if (password !== confirm) { setError('Passwords do not match.'); return }
     setLoading(true); setError('')
     try {
-      const res = await apiPost(`/api/users/${user.id}/reset-password`, {})
-      setResetLink(res.reset_link || null)
+      await apiPost(`/api/users/${user.id}/set-password`, { password })
+      setDone(true)
     } catch (err) { setError(err.message) }
     finally { setLoading(false) }
   }
 
-  const handleCopy = () => {
-    if (!resetLink) return
-    navigator.clipboard.writeText(resetLink)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
+  const inputCls = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-600/30 focus:border-red-600'
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div className="bg-white rounded-xl w-full max-w-md shadow-2xl border border-gray-200" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 bg-gray-800 rounded-t-xl">
-          <h2 className="text-white font-bold">Reset Password</h2>
+          <h2 className="text-white font-bold">Set Password — {user.name}</h2>
           <button onClick={onClose} className="text-gray-300 hover:text-white"><X size={18} /></button>
         </div>
-        <div className="px-5 py-4 space-y-3">
-          {resetLink ? (
-            <div className="space-y-3">
-              <div className="flex items-start gap-3 bg-teal-50 border border-teal-200 rounded-lg px-4 py-3">
-                <Check size={18} className="text-teal-600 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-teal-800">Reset email sent to <strong>{user.email}</strong>. If it doesn't arrive, use the backup link below. <span className="font-semibold">Expires in 1 hour.</span></p>
+        <div className="px-5 py-4 space-y-4">
+          {done ? (
+            <div className="text-center py-4 space-y-3">
+              <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center mx-auto">
+                <Check size={22} className="text-green-600" />
               </div>
-              <div>
-                <p className="text-xs font-semibold text-gray-500 mb-1">Reset Link</p>
-                <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5">
-                  <span className="flex-1 text-xs text-gray-500 truncate">{resetLink}</span>
-                  <button onClick={handleCopy}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold rounded-lg flex-shrink-0 transition-colors">
-                    {copied ? <Check size={12} /> : <Copy size={12} />}
-                    {copied ? 'Copied!' : 'Copy'}
-                  </button>
-                </div>
-                <p className="text-[11px] text-gray-400 mt-1.5">Text or message this link to {user.name}. It works once and expires in 1 hour.</p>
-              </div>
+              <p className="font-semibold text-gray-900">Password updated!</p>
+              <p className="text-sm text-gray-500">
+                Share the new password with <strong>{user.name}</strong> in person or via text.<br />
+                They can change it anytime from their Profile page.
+              </p>
+              <button onClick={onClose}
+                className="w-full mt-2 bg-gray-800 text-white py-2 rounded-lg text-sm font-semibold">
+                Done
+              </button>
             </div>
           ) : (
             <>
-              <p className="text-sm text-gray-700">Send a password reset email to <strong>{user.name}</strong> at <span className="text-gray-500">{user.email}</span>. A backup link will also appear here in case the email goes to spam.</p>
+              <p className="text-sm text-gray-600">
+                Set a temporary password for <strong>{user.name}</strong>. No email needed — just share it with them directly, then they can change it from their Profile.
+              </p>
               {error && <div className="bg-red-50 border border-red-300 text-red-700 text-sm rounded-lg px-3 py-2">{error}</div>}
-              <button onClick={handleReset} disabled={loading}
-                className="flex items-center gap-2 px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-bold rounded-lg disabled:opacity-50">
-                <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-                {loading ? 'Sending…' : 'Send Reset Email'}
-              </button>
+              <form onSubmit={handleSave} className="space-y-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">New Password</label>
+                  <div className="relative">
+                    <input type={showPw ? 'text' : 'password'} className={inputCls} value={password}
+                      onChange={e => setPassword(e.target.value)} placeholder="At least 8 characters" autoFocus />
+                    <button type="button" onClick={() => setShowPw(p => !p)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs">
+                      {showPw ? 'Hide' : 'Show'}
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Confirm Password</label>
+                  <input type={showPw ? 'text' : 'password'} className={`${inputCls} ${confirm && confirm !== password ? 'border-red-300' : ''}`}
+                    value={confirm} onChange={e => setConfirm(e.target.value)} placeholder="Repeat password" />
+                  {confirm && confirm !== password && <p className="text-xs text-red-500 mt-1">Passwords don't match</p>}
+                </div>
+                <div className="flex gap-3 pt-1">
+                  <button type="button" onClick={onClose}
+                    className="flex-1 border border-gray-300 text-gray-700 text-sm font-medium py-2 rounded-lg hover:bg-gray-50">
+                    Cancel
+                  </button>
+                  <button type="submit" disabled={loading || !password || !confirm}
+                    className="flex-1 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold py-2 rounded-lg disabled:opacity-50 transition-colors">
+                    {loading ? 'Saving…' : 'Set Password'}
+                  </button>
+                </div>
+              </form>
             </>
           )}
-        </div>
-        <div className="flex justify-end px-5 py-3 border-t border-gray-200">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 font-medium">Close</button>
         </div>
       </div>
     </div>
