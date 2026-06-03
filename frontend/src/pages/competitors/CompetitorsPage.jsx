@@ -453,7 +453,7 @@ function VisitHistory({ competitor }) {
 
 // ─── Map View ─────────────────────────────────────────────────────────────────
 function MapView({ competitors, onCompare, onLogVisit }) {
-  const HOTWORX_LAT = 43.0826, HOTWORX_LNG = -88.2315
+  const HOTWORX_LAT = 43.0840, HOTWORX_LNG = -88.2337
 
   // Simple SVG pin map using lat/lng projection
   const allPoints = [
@@ -462,14 +462,36 @@ function MapView({ competitors, onCompare, onLogVisit }) {
   ]
   const lats = allPoints.map(p => p.lat)
   const lngs = allPoints.map(p => p.lng)
-  const minLat = Math.min(...lats) - 0.05, maxLat = Math.max(...lats) + 0.05
-  const minLng = Math.min(...lngs) - 0.05, maxLng = Math.max(...lngs) + 0.05
+  const minLat = Math.min(...lats) - 0.02, maxLat = Math.max(...lats) + 0.02
+  const minLng = Math.min(...lngs) - 0.03, maxLng = Math.max(...lngs) + 0.03
 
   const W = 800, H = 450
   const toX = lng => ((lng - minLng) / (maxLng - minLng)) * (W - 80) + 40
   const toY = lat => ((maxLat - lat) / (maxLat - minLat)) * (H - 80) + 40
 
   const [hovered, setHovered] = useState(null)
+
+  // Calculate tile coordinates for OpenStreetMap
+  const centerLat = (minLat + maxLat) / 2
+  const centerLng = (minLng + maxLng) / 2
+  const zoom = 11
+  const tileSize = 256
+  const n = Math.pow(2, zoom)
+  const getTileX = lng => Math.floor((lng + 180) / 360 * n)
+  const getTileY = lat => Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * n)
+
+  const centerTileX = getTileX(centerLng)
+  const centerTileY = getTileY(centerLat)
+
+  // Calculate pixel offset for map tiles
+  const lngToPixel = lng => (lng + 180) / 360 * n * tileSize
+  const latToPixel = lat => (1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * n * tileSize
+
+  const centerPixelX = lngToPixel(centerLng)
+  const centerPixelY = latToPixel(centerLat)
+
+  const offsetX = W / 2 - (centerPixelX % tileSize)
+  const offsetY = H / 2 - (centerPixelY % tileSize)
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
@@ -482,22 +504,40 @@ function MapView({ competitors, onCompare, onLogVisit }) {
           <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-pink-500 inline-block" />Boutique</span>
         </div>
       </div>
-      <div className="relative bg-slate-50 overflow-hidden" style={{ height: 450 }}>
-        <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} className="absolute inset-0">
-          {/* Grid lines */}
-          {[0.2,0.4,0.6,0.8].map(f => (
-            <g key={f}>
-              <line x1={W*f} y1={0} x2={W*f} y2={H} stroke="#e5e7eb" strokeWidth={1} />
-              <line x1={0} y1={H*f} x2={W} y2={H*f} stroke="#e5e7eb" strokeWidth={1} />
-            </g>
-          ))}
+      <div className="relative overflow-hidden" style={{ height: 450 }}>
+        {/* OpenStreetMap tiles */}
+        <div className="absolute inset-0">
+          {[-1, 0, 1].map(dy => [-1, 0, 1].map(dx => {
+            const tileX = centerTileX + dx
+            const tileY = centerTileY + dy
+            return (
+              <img
+                key={`${tileX}-${tileY}`}
+                src={`https://tile.openstreetmap.org/${zoom}/${tileX}/${tileY}.png`}
+                alt=""
+                className="absolute"
+                style={{
+                  width: tileSize,
+                  height: tileSize,
+                  left: offsetX + dx * tileSize,
+                  top: offsetY + dy * tileSize,
+                  opacity: 0.7,
+                }}
+                crossOrigin="anonymous"
+              />
+            )
+          }))}
+        </div>
 
-          {/* HOTWORX star */}
-          <g transform={`translate(${toX(HOTWORX_LNG)},${toY(HOTWORX_LAT)})`}>
-            <circle r={18} fill="#C8102E" opacity={0.15} />
-            <circle r={10} fill="#C8102E" />
-            <text textAnchor="middle" dominantBaseline="central" fill="white" fontSize={10} fontWeight="bold">H</text>
-            <text textAnchor="middle" y={24} fill="#C8102E" fontSize={9} fontWeight="bold">HOTWORX</text>
+        {/* Overlay with pins */}
+        <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} className="absolute inset-0" style={{ pointerEvents: 'none' }}>
+          {/* HOTWORX pin */}
+          <g transform={`translate(${toX(HOTWORX_LNG)},${toY(HOTWORX_LAT)})`} style={{ pointerEvents: 'auto' }}>
+            <circle r={22} fill="#C8102E" opacity={0.2} />
+            <circle r={16} fill="white" stroke="#C8102E" strokeWidth={3} />
+            {/* HOTWORX logo in center */}
+            <text textAnchor="middle" dominantBaseline="central" fill="#C8102E" fontSize={11} fontWeight="bold">H</text>
+            <text textAnchor="middle" y={30} fill="#C8102E" fontSize={9} fontWeight="bold">HOTWORX</text>
           </g>
 
           {/* Competitor pins */}
@@ -506,27 +546,40 @@ function MapView({ competitors, onCompare, onLogVisit }) {
             const pinColor = c.type === 'hot_yoga' ? '#f97316' : c.type === 'gym' ? '#3b82f6' : c.type === 'boutique' ? '#ec4899' : c.type === 'yoga' ? '#a855f7' : '#6b7280'
             const isHov = hovered === c.id
             return (
-              <g key={c.id} transform={`translate(${x},${y})`}
+              <g key={c.id} transform={`translate(${x},${y})`} style={{ pointerEvents: 'auto' }}
                 onMouseEnter={() => setHovered(c.id)}
-                onMouseLeave={() => setHovered(null)}
-                style={{ cursor: 'pointer' }}>
-                <circle r={isHov ? 14 : 10} fill={pinColor} opacity={isHov ? 1 : 0.85} />
-                <text textAnchor="middle" dominantBaseline="central" fill="white" fontSize={8} fontWeight="bold">
-                  {c.name.split(' ').slice(0,2).map(w=>w[0]).join('')}
-                </text>
+                onMouseLeave={() => setHovered(null)}>
+                <circle r={isHov ? 18 : 14} fill={pinColor} opacity={0.2} />
+                <circle r={isHov ? 14 : 11} fill="white" stroke={pinColor} strokeWidth={2.5} style={{ cursor: 'pointer' }} />
+                {/* Logo */}
+                {c.logo_url ? (
+                  <image
+                    href={c.logo_url}
+                    x={-7}
+                    y={-7}
+                    width={14}
+                    height={14}
+                    clipPath="inset(0% round 50%)"
+                    style={{ cursor: 'pointer' }}
+                  />
+                ) : (
+                  <text textAnchor="middle" dominantBaseline="central" fill={pinColor} fontSize={7} fontWeight="bold" style={{ cursor: 'pointer' }}>
+                    {c.name.split(' ').slice(0,2).map(w=>w[0]).join('')}
+                  </text>
+                )}
                 {isHov && (
                   <g>
-                    <rect x={-80} y={16} width={160} height={52} rx={6} fill="white" stroke="#e5e7eb" strokeWidth={1} filter="url(#shadow)" />
-                    <text x={0} y={30} textAnchor="middle" fill="#111827" fontSize={9} fontWeight="bold">{c.name}</text>
-                    <text x={0} y={44} textAnchor="middle" fill="#6b7280" fontSize={8}>{c.city}</text>
-                    {c.price_monthly && <text x={0} y={58} textAnchor="middle" fill="#059669" fontSize={8} fontWeight="bold">${c.price_monthly}/mo</text>}
+                    <rect x={-90} y={20} width={180} height={60} rx={6} fill="white" stroke="#e5e7eb" strokeWidth={1} filter="url(#shadow)" />
+                    <text x={0} y={36} textAnchor="middle" fill="#111827" fontSize={10} fontWeight="bold">{c.name}</text>
+                    <text x={0} y={50} textAnchor="middle" fill="#6b7280" fontSize={8}>{c.city}</text>
+                    {c.price_monthly && <text x={0} y={66} textAnchor="middle" fill="#059669" fontSize={9} fontWeight="bold">${c.price_monthly}/mo</text>}
                   </g>
                 )}
               </g>
             )
           })}
           <defs>
-            <filter id="shadow"><feDropShadow dx="0" dy="1" stdDeviation="2" floodOpacity="0.15"/></filter>
+            <filter id="shadow"><feDropShadow dx="0" dy="1" stdDeviation="3" floodOpacity="0.25"/></filter>
           </defs>
         </svg>
       </div>

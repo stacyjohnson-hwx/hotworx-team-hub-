@@ -77,7 +77,8 @@
       "WebFetch(domain:business.oconomowoc.org)",
       "Bash(node -e \" *)",
       "WebFetch(domain:www.clubpilates.com)",
-      "WebFetch(domain:www.lifetime.life)"
+      "WebFetch(domain:www.lifetime.life)",
+      "Bash(curl -s \"https://nominatim.openstreetmap.org/search?q=1279+Capitol+Drive+Pewaukee+WI&format=json&limit=1\")"
     ]
   }
 }
