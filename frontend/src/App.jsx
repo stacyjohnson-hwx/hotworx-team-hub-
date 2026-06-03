@@ -26,6 +26,7 @@ import ResetPasswordPage from '@/pages/auth/ResetPasswordPage'
 import AdvisorPage from '@/pages/advisor/AdvisorPage'
 import MaintenancePage from '@/pages/maintenance/MaintenancePage'
 import EscalationsPage from '@/pages/escalations/EscalationsPage'
+import CompetitorsPage from '@/pages/competitors/CompetitorsPage'
 
 function ProtectedRoute({ children }) {
   const { session, loading, profile } = useAuth()
@@ -95,8 +96,9 @@ function AppRoutes() {
         <Route path="/timeoff"   element={<TimeOffPage />} />
         <Route path="/sops"        element={<SopsPage />} />
         <Route path="/training"    element={<TrainingPage />} />
-        <Route path="/maintenance" element={<MaintenancePage />} />
-        <Route path="/escalations" element={<EscalationsPage />} />
+        <Route path="/maintenance"  element={<MaintenancePage />} />
+        <Route path="/escalations"  element={<EscalationsPage />} />
+        <Route path="/competitors"  element={<CompetitorsPage />} />
 
         {/* AI Advisor — Owner + Manager only */}
         <Route
