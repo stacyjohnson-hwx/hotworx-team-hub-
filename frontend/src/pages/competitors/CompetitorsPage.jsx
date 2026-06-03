@@ -3,7 +3,7 @@ import { useRole } from '@/hooks/useRole'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
 import {
   Swords, MapPin, RefreshCw, Plus, X, Star, ChevronDown, ChevronUp,
-  ExternalLink, Instagram, Phone, DollarSign, Trophy, AlertTriangle,
+  ExternalLink, Phone, DollarSign, Trophy, AlertTriangle,
   ClipboardList, Check, Edit2, Trash2, Sparkles, Clock, User,
 } from 'lucide-react'
 
@@ -134,7 +134,7 @@ function CompetitorCard({ comp, isOwnerOrManager, onEdit, onDelete, onCompare, o
           )}
           {comp.instagram && (
             <a href={`https://instagram.com/${comp.instagram.replace('@','')}`} target="_blank" rel="noopener noreferrer"
-              className="p-1.5 text-gray-400 hover:text-pink-500 transition-colors rounded"><Instagram size={13} /></a>
+              className="p-1.5 text-gray-400 hover:text-pink-500 transition-colors rounded text-xs font-bold">IG</a>
           )}
           {comp.phone && (
             <a href={`tel:${comp.phone}`} className="p-1.5 text-gray-400 hover:text-green-500 transition-colors rounded"><Phone size={13} /></a>
