@@ -75,7 +75,9 @@
       "Bash(npm list *)",
       "WebFetch(domain:pewaukeechamber.org)",
       "WebFetch(domain:business.oconomowoc.org)",
-      "Bash(node -e \" *)"
+      "Bash(node -e \" *)",
+      "WebFetch(domain:www.clubpilates.com)",
+      "WebFetch(domain:www.lifetime.life)"
     ]
   }
 }

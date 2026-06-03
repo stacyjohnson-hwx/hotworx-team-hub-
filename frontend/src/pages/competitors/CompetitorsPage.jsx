@@ -1,10 +1,12 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRole } from '@/hooks/useRole'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
+import { supabase } from '@/lib/supabase'
 import {
   Swords, MapPin, RefreshCw, Plus, X, Star, ChevronDown, ChevronUp,
   ExternalLink, Phone, DollarSign, Trophy, AlertTriangle,
   ClipboardList, Check, Edit2, Trash2, Sparkles, Clock, User,
+  ImagePlus, Loader2,
 } from 'lucide-react'
 
 // ─── HOTWORX own profile for comparison ──────────────────────────────────────
@@ -556,9 +558,26 @@ function EditCompetitorModal({ competitor, onClose, onSaved }) {
     logo_url:'', description:'', price_monthly:'', price_drop_in:'', price_trial:'',
     their_strengths:[], our_advantages:[], notes:'',
   })
-  const [saving, setSaving] = useState(false)
-  const [error, setError]   = useState('')
+  const [saving,      setSaving]    = useState(false)
+  const [uploading,   setUploading] = useState(false)
+  const [error,       setError]     = useState('')
+  const logoInputRef  = useRef(null)
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  const handleLogoUpload = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const ext = file.name.split('.').pop().toLowerCase()
+    if (!['jpg','jpeg','png','webp','svg'].includes(ext)) { setError('Logo must be JPG, PNG, WebP, or SVG'); return }
+    setUploading(true); setError('')
+    try {
+      const path = `competitor-logos/${crypto.randomUUID()}.${ext}`
+      const { error: upErr } = await supabase.storage.from('b2b-logos').upload(path, file, { upsert: false, contentType: file.type })
+      if (upErr) { setError(upErr.message); return }
+      const { data: { publicUrl } } = supabase.storage.from('b2b-logos').getPublicUrl(path)
+      set('logo_url', publicUrl)
+    } finally { setUploading(false); e.target.value = '' }
+  }
 
   const handleSave = async (e) => {
     e.preventDefault()
@@ -603,7 +622,24 @@ function EditCompetitorModal({ competitor, onClose, onSaved }) {
             <div><label className="block text-xs font-semibold text-gray-700 mb-1">Phone</label><input className={inp} value={form.phone} onChange={e => set('phone',e.target.value)} /></div>
             <div><label className="block text-xs font-semibold text-gray-700 mb-1">Website</label><input className={inp} value={form.website} onChange={e => set('website',e.target.value)} placeholder="example.com" /></div>
             <div><label className="block text-xs font-semibold text-gray-700 mb-1">Instagram</label><input className={inp} value={form.instagram} onChange={e => set('instagram',e.target.value)} placeholder="@handle" /></div>
-            <div><label className="block text-xs font-semibold text-gray-700 mb-1">Logo URL</label><input className={inp} value={form.logo_url} onChange={e => set('logo_url',e.target.value)} placeholder="https://logo.clearbit.com/domain.com" /></div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">Logo</label>
+              <div className="flex items-center gap-3">
+                {form.logo_url
+                  ? <img src={form.logo_url} alt="Logo" className="w-12 h-12 rounded-lg object-contain bg-gray-50 border border-gray-200 p-1 flex-shrink-0" onError={e => e.target.style.display='none'} />
+                  : <div className="w-12 h-12 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center bg-gray-50 flex-shrink-0"><ImagePlus size={18} className="text-gray-400" /></div>
+                }
+                <div className="space-y-1 flex-1">
+                  <button type="button" onClick={() => logoInputRef.current?.click()} disabled={uploading}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold border border-red-600 text-red-600 hover:bg-red-600 hover:text-white rounded-lg transition-colors disabled:opacity-50">
+                    {uploading ? <><Loader2 size={11} className="animate-spin" />Uploading…</> : <><ImagePlus size={11} />{form.logo_url ? 'Change Logo' : 'Upload Logo'}</>}
+                  </button>
+                  {form.logo_url && <button type="button" onClick={() => set('logo_url','')} className="block text-xs text-gray-400 hover:text-red-500 transition-colors">Remove</button>}
+                  <p className="text-[10px] text-gray-400">Or paste URL: <input className="border-b border-gray-200 text-xs px-1 py-0.5 focus:outline-none focus:border-red-400 w-40" value={form.logo_url} onChange={e => set('logo_url',e.target.value)} placeholder="https://…" /></p>
+                </div>
+                <input ref={logoInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="hidden" onChange={handleLogoUpload} />
+              </div>
+            </div>
             <div><label className="block text-xs font-semibold text-gray-700 mb-1">Monthly Price $</label><input type="number" className={inp} value={form.price_monthly} onChange={e => set('price_monthly',e.target.value)} /></div>
             <div><label className="block text-xs font-semibold text-gray-700 mb-1">Drop-In $</label><input type="number" className={inp} value={form.price_drop_in} onChange={e => set('price_drop_in',e.target.value)} /></div>
             <div className="col-span-2"><label className="block text-xs font-semibold text-gray-700 mb-1">Trial Offer</label><input className={inp} value={form.price_trial} onChange={e => set('price_trial',e.target.value)} placeholder="First class free" /></div>
