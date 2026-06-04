@@ -550,12 +550,13 @@ function MapView({ competitors, onCompare, onLogVisit, studioCoords }) {
           />
           <StudioCenterHandler center={mapCenter} zoom={12} />
 
-          {/* HOTWORX marker */}
-          <Marker position={[HOTWORX_LAT, HOTWORX_LNG]} icon={hotworxIcon}>
+          {/* HOTWORX marker - always on top */}
+          <Marker position={[HOTWORX_LAT, HOTWORX_LNG]} icon={hotworxIcon} zIndexOffset={1000}>
             <Popup>
               <div className="p-2">
-                <p className="font-bold text-red-600">HOTWORX {studioCoords?.name || ''}</p>
-                <p className="text-xs text-gray-600">{studioCoords?.address || ''}</p>
+                <p className="font-bold text-red-600 text-base">HOTWORX {studioCoords?.name || ''}</p>
+                {studioCoords?.address && <p className="text-xs text-gray-600 mt-1">{studioCoords.address}</p>}
+                <p className="text-xs text-gray-500 mt-2">Your Studio Location</p>
               </div>
             </Popup>
           </Marker>
@@ -566,6 +567,7 @@ function MapView({ competitors, onCompare, onLogVisit, studioCoords }) {
               key={c.id}
               position={[parseFloat(c.latitude), parseFloat(c.longitude)]}
               icon={createCompetitorIcon(c)}
+              zIndexOffset={0}
             >
               <Popup>
                 <div className="p-2 min-w-[200px]">
