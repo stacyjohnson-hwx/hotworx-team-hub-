@@ -21,14 +21,17 @@ Hybrid multi-tenant architecture where some data is shared across all studios (c
 ## Phase 2: Add studio_id to Operational Tables
 
 ### Tables That Need studio_id Column
-- [ ] `schedules`
-- [ ] `goals_studio`
-- [ ] `goals_personal`
-- [ ] `leads_daily`
+- [x] `shifts` (schedules)
+- [x] `blocked_days`
+- [x] `time_off_requests`
+- [x] `studio_goals`
+- [x] `personal_goals`
+- [x] `studio_trends`
+- [ ] `leads`
 - [ ] `eod_submissions`
 - [ ] `events`
+- [ ] `promotions`
 - [ ] `orders`
-- [ ] `time_off_requests`
 - [ ] `user_profiles` (home studio)
 - [ ] `coaching_sessions`
 - [ ] `todo_items`
