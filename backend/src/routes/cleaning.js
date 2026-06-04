@@ -290,14 +290,15 @@ router.post('/complete', async (req, res) => {
   const { task_id, date } = req.body
   const completion_date = date || new Date().toISOString().slice(0, 10)
 
-  const { data, error } = await supabase()
+  const { data, error} = await supabase()
     .from('cleaning_completions')
     .upsert({
       task_id,
       completion_date,
       completed_by: req.user.id,
+      completed_at: new Date().toISOString(),
       studio_id: req.studio.id
-    }, { onConflict: 'studio_id,task_id,completion_date' })
+    }, { onConflict: 'studio_id, task_id, completion_date', ignoreDuplicates: false })
     .select()
     .single()
 
