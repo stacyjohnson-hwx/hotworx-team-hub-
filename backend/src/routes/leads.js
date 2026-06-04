@@ -2,15 +2,19 @@ const express = require('express')
 const router = express.Router()
 const { createClient } = require('@supabase/supabase-js')
 const authenticate = require('../middleware/authMiddleware')
+const { requireStudio } = require('../middleware/studioMiddleware')
 
 const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+
+// Apply studio middleware to all routes
+router.use(authenticate, requireStudio)
 
 const DAILY_GOAL  = Number(process.env.LEAD_DAILY_GOAL)   || 5
 const MONTHLY_GOAL = Number(process.env.LEAD_MONTHLY_GOAL) || 145
 
 // GET /api/leads?month=&year=
 // Returns all entries for the month plus the last 7 days and goals
-router.get('/', authenticate, async (req, res) => {
+router.get('/', async (req, res) => {
   const { month, year } = req.query
   if (!month || !year) return res.status(400).json({ error: 'month and year required' })
 
@@ -31,6 +35,7 @@ router.get('/', authenticate, async (req, res) => {
   const { data, error } = await db()
     .from('leads')
     .select('*')
+    .eq('studio_id', req.studio.id)
     .gte('lead_date', queryStart)
     .lte('lead_date', monthEnd > sparkEnd ? monthEnd : sparkEnd)
     .order('lead_date')
@@ -60,7 +65,7 @@ router.get('/', authenticate, async (req, res) => {
 })
 
 // PUT /api/leads — upsert today's lead entry
-router.put('/', authenticate, async (req, res) => {
+router.put('/', async (req, res) => {
   const today = new Date().toLocaleDateString('en-CA')
   const { count, notes, date } = req.body
   const lead_date = date || today
@@ -74,8 +79,9 @@ router.put('/', authenticate, async (req, res) => {
       count: Number(count),
       notes: notes || null,
       entered_by: req.user.id,
+      studio_id: req.studio.id,
       updated_at: new Date().toISOString(),
-    }, { onConflict: 'lead_date' })
+    }, { onConflict: 'studio_id,lead_date' })
     .select()
     .single()
 

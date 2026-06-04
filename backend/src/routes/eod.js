@@ -3,14 +3,18 @@ const router = express.Router()
 const { createClient } = require('@supabase/supabase-js')
 const authenticate = require('../middleware/authMiddleware')
 const { requireRole } = require('../middleware/roleGuard')
+const { requireStudio } = require('../middleware/studioMiddleware')
 const { sendEodEmail } = require('../services/eodEmail')
 const { todayInChicago } = require('../jobs/eodEmailCron')
 
 const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 
+// Apply studio middleware to all routes
+router.use(authenticate, requireStudio)
+
 // ─── GET /api/eod?date=YYYY-MM-DD  OR  ?from=YYYY-MM-DD&to=YYYY-MM-DD ─────────
 // Owner/Manager: all submissions; TSA: their own only
-router.get('/', authenticate, async (req, res) => {
+router.get('/', async (req, res) => {
   const today = todayInChicago()
   const from  = req.query.from || req.query.date || today
   const to    = req.query.to   || req.query.date || today
@@ -18,6 +22,7 @@ router.get('/', authenticate, async (req, res) => {
   let query = db()
     .from('eod_submissions')
     .select('*')
+    .eq('studio_id', req.studio.id)
     .gte('shift_date', from)
     .lte('shift_date', to)
     .order('submitted_at', { ascending: false })
@@ -72,12 +77,13 @@ router.get('/', authenticate, async (req, res) => {
 
 // ─── GET /api/eod/mine ────────────────────────────────────────────────────────
 // Returns today's submissions by the current user (for the TSA form to show already-submitted shifts)
-router.get('/mine', authenticate, async (req, res) => {
+router.get('/mine', async (req, res) => {
   const date = req.query.date || todayInChicago()
 
   const { data, error } = await db()
     .from('eod_submissions')
     .select('shift_type, submitted_at, id')
+    .eq('studio_id', req.studio.id)
     .eq('submitted_by', req.user.id)
     .eq('shift_date', date)
 
@@ -86,7 +92,7 @@ router.get('/mine', authenticate, async (req, res) => {
 })
 
 // ─── POST /api/eod ────────────────────────────────────────────────────────────
-router.post('/', authenticate, async (req, res) => {
+router.post('/', async (req, res) => {
   const {
     shift_date, shift_type,
     drawer_start, cash_collected, credit_collected, drawer_end,
@@ -118,6 +124,7 @@ router.post('/', authenticate, async (req, res) => {
     .from('eod_submissions')
     .insert({
       submitted_by: req.user.id,
+      studio_id: req.studio.id,
       shift_date: date,
       shift_type,
       drawer_start: drawer_start ?? 0,
@@ -194,7 +201,7 @@ router.post('/', authenticate, async (req, res) => {
 
 // ─── DELETE /api/eod/:id ──────────────────────────────────────────────────────
 // Owner/Manager only — remove a submission
-router.delete('/:id', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.delete('/:id', requireRole('owner', 'manager'), async (req, res) => {
   const { error } = await db()
     .from('eod_submissions')
     .delete()
@@ -206,7 +213,7 @@ router.delete('/:id', authenticate, requireRole('owner', 'manager'), async (req,
 
 // ─── POST /api/eod/send-digest ────────────────────────────────────────────────
 // Owner/Manager: manually trigger the email digest for any date
-router.post('/send-digest', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.post('/send-digest', requireRole('owner', 'manager'), async (req, res) => {
   const date = req.body.date || todayInChicago()
   try {
     await sendEodEmail(date)
