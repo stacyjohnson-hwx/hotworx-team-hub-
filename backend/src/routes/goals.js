@@ -3,9 +3,13 @@ const router = express.Router()
 const { createClient } = require('@supabase/supabase-js')
 const authenticate = require('../middleware/authMiddleware')
 const { requireRole } = require('../middleware/roleGuard')
+const { requireStudio } = require('../middleware/studioMiddleware')
 const { calcCommission } = require('../services/commissionCalc')
 
 const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+
+// Apply studio middleware to all routes
+router.use(authenticate, requireStudio)
 
 const STUDIO_GOAL_DEFAULTS = {
   eft_target: 500, eft_actual: 0,
@@ -50,12 +54,13 @@ async function getInactiveUserIds() {
   return new Set((data || []).map(p => p.id))
 }
 
-async function getMonthlyHours(month, year) {
+async function getMonthlyHours(month, year, studioId) {
   const m = String(month).padStart(2, '0')
   const lastDay = new Date(year, month, 0).getDate()
   const { data } = await db()
     .from('shifts')
     .select('tsa_id, start_time, end_time')
+    .eq('studio_id', studioId)
     .gte('shift_date', `${year}-${m}-01`)
     .lte('shift_date', `${year}-${m}-${String(lastDay).padStart(2, '0')}`)
   const hoursMap = {}
@@ -68,12 +73,13 @@ async function getMonthlyHours(month, year) {
   return hoursMap
 }
 
-async function getMonthlyShiftCounts(month, year) {
+async function getMonthlyShiftCounts(month, year, studioId) {
   const m = String(month).padStart(2, '0')
   const lastDay = new Date(year, month, 0).getDate()
   const { data } = await db()
     .from('shifts')
     .select('tsa_id')
+    .eq('studio_id', studioId)
     .gte('shift_date', `${year}-${m}-01`)
     .lte('shift_date', `${year}-${m}-${String(lastDay).padStart(2, '0')}`)
   const countMap = {}
@@ -83,20 +89,21 @@ async function getMonthlyShiftCounts(month, year) {
   return countMap
 }
 
-async function getStudioGoalTargets(month, year) {
+async function getStudioGoalTargets(month, year, studioId) {
   const { data } = await db()
     .from('studio_goals')
     .select('eft_target, memberships_target, retail_target')
+    .eq('studio_id', studioId)
     .eq('month', month)
     .eq('year', year)
     .maybeSingle()
   return data || {}
 }
 
-async function getStudioTrends(month, year) {
+async function getStudioTrends(month, year, studioId) {
   const [{ data: trends }, { data: goals }] = await Promise.all([
-    db().from('studio_trends').select('retail,membership_cash,in_the_bank,itb_goal,net_eft').eq('month', month).eq('year', year).maybeSingle(),
-    db().from('studio_goals').select('retail_actual,in_the_bank_target').eq('month', month).eq('year', year).maybeSingle(),
+    db().from('studio_trends').select('retail,membership_cash,in_the_bank,itb_goal,net_eft').eq('studio_id', studioId).eq('month', month).eq('year', year).maybeSingle(),
+    db().from('studio_goals').select('retail_actual,in_the_bank_target').eq('studio_id', studioId).eq('month', month).eq('year', year).maybeSingle(),
   ])
   const t = trends || {}
   const g = goals || {}
@@ -111,22 +118,22 @@ async function getStudioTrends(month, year) {
 
 // ── Studio Goals ─────────────────────────────────────────────────────────────
 
-router.get('/studio', authenticate, async (req, res) => {
+router.get('/studio', async (req, res) => {
   const { month, year } = req.query
   if (!month || !year) return res.status(400).json({ error: 'month and year required' })
 
   const [{ data: goals, error }, { data: trends }] = await Promise.all([
-    db().from('studio_goals').select('*').eq('month', month).eq('year', year).maybeSingle(),
+    db().from('studio_goals').select('*').eq('studio_id', req.studio.id).eq('month', month).eq('year', year).maybeSingle(),
     db().from('studio_trends').select(
       'leads,cancellations,total_member_count,new_members,' +
       'membership_cash,net_eft,eft_decrease,in_the_bank,itb_goal,' +
       'eft_increase,retail'
-    ).eq('month', month).eq('year', year).maybeSingle(),
+    ).eq('studio_id', req.studio.id).eq('month', month).eq('year', year).maybeSingle(),
   ])
 
   if (error) return res.status(500).json({ error: error.message })
 
-  const base = goals || { ...STUDIO_GOAL_DEFAULTS, month: Number(month), year: Number(year) }
+  const base = goals || { ...STUDIO_GOAL_DEFAULTS, month: Number(month), year: Number(year), studio_id: req.studio.id }
   const t = trends || {}
 
   res.json({
@@ -147,7 +154,7 @@ router.get('/studio', authenticate, async (req, res) => {
   })
 })
 
-router.put('/studio', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.put('/studio', requireRole('owner', 'manager'), async (req, res) => {
   const { month, year, ...fields } = req.body
   if (!month || !year) return res.status(400).json({ error: 'month and year required' })
 
@@ -164,8 +171,14 @@ router.put('/studio', authenticate, requireRole('owner', 'manager'), async (req,
 
   const { data, error } = await db()
     .from('studio_goals')
-    .upsert({ month, year, ...safeFields, updated_by: req.user.id, updated_at: new Date().toISOString() },
-      { onConflict: 'month,year' })
+    .upsert({
+      month,
+      year,
+      studio_id: req.studio.id,
+      ...safeFields,
+      updated_by: req.user.id,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'studio_id,month,year' })
     .select()
     .single()
 
@@ -186,16 +199,16 @@ router.get('/personal', authenticate, async (req, res) => {
     const endDate   = `${year}-${m}-${String(lastDay).padStart(2, '0')}`
 
     const [{ data, error }, hoursMap, studioTargets, { data: myShifts }] = await Promise.all([
-      db().from('personal_goals').select('*').eq('tsa_id', req.user.id).eq('month', month).eq('year', year).maybeSingle(),
-      getMonthlyHours(Number(month), Number(year)),
-      getStudioGoalTargets(month, year),
+      db().from('personal_goals').select('*').eq('studio_id', req.studio.id).eq('tsa_id', req.user.id).eq('month', month).eq('year', year).maybeSingle(),
+      getMonthlyHours(Number(month), Number(year), req.studio.id),
+      getStudioGoalTargets(month, year, req.studio.id),
       db().from('shifts').select('id, shift_date, start_time, end_time, notes')
-        .eq('tsa_id', req.user.id).gte('shift_date', startDate).lte('shift_date', endDate)
+        .eq('studio_id', req.studio.id).eq('tsa_id', req.user.id).gte('shift_date', startDate).lte('shift_date', endDate)
         .order('shift_date').order('start_time'),
     ])
 
     if (error) return res.status(500).json({ error: error.message })
-    const goals = data || { ...PERSONAL_GOAL_DEFAULTS, tsa_id: req.user.id, month: Number(month), year: Number(year) }
+    const goals = data || { ...PERSONAL_GOAL_DEFAULTS, tsa_id: req.user.id, studio_id: req.studio.id, month: Number(month), year: Number(year) }
     const { name, avatar_url } = await getUserName(req.user.id)
     const commission = calcCommission(goals, 'tsa')
 
@@ -243,14 +256,14 @@ router.get('/personal', authenticate, async (req, res) => {
   )
 
   const { data: goalsData, error: gErr } = await db()
-    .from('personal_goals').select('*').eq('month', month).eq('year', year)
+    .from('personal_goals').select('*').eq('studio_id', req.studio.id).eq('month', month).eq('year', year)
   if (gErr) return res.status(500).json({ error: gErr.message })
 
   // Fetch studio trends, hours, and goal targets in parallel
   const [studioData, hoursMap, studioTargets] = await Promise.all([
-    getStudioTrends(month, year),
-    getMonthlyHours(Number(month), Number(year)),
-    getStudioGoalTargets(month, year),
+    getStudioTrends(month, year, req.studio.id),
+    getMonthlyHours(Number(month), Number(year), req.studio.id),
+    getStudioGoalTargets(month, year, req.studio.id),
   ])
 
   const goalsMap = {}
@@ -262,7 +275,7 @@ router.get('/personal', authenticate, async (req, res) => {
 
   const result = studioUsers.map(u => {
     const userRole = u.app_metadata?.role
-    const goals = goalsMap[u.id] || { ...PERSONAL_GOAL_DEFAULTS, tsa_id: u.id, month: Number(month), year: Number(year) }
+    const goals = goalsMap[u.id] || { ...PERSONAL_GOAL_DEFAULTS, tsa_id: u.id, studio_id: req.studio.id, month: Number(month), year: Number(year) }
     const commission = calcCommission(goals, userRole, studioData)
 
     const scheduledHours = userRole !== 'owner' ? (hoursMap[u.id] || 0) : 0
@@ -289,32 +302,35 @@ router.get('/personal', authenticate, async (req, res) => {
   res.json(result.sort((a, b) => a.tsa_name.localeCompare(b.tsa_name)))
 })
 
-router.put('/personal/:tsaId', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.put('/personal/:tsaId', requireRole('owner', 'manager'), async (req, res) => {
   const { month, year, ...fields } = req.body
   if (!month || !year) return res.status(400).json({ error: 'month and year required' })
 
   const { data, error } = await db()
     .from('personal_goals')
     .upsert({
-      tsa_id: req.params.tsaId, month, year,
+      tsa_id: req.params.tsaId,
+      studio_id: req.studio.id,
+      month,
+      year,
       ...fields,
       updated_by: req.user.id,
       updated_at: new Date().toISOString(),
-    }, { onConflict: 'tsa_id,month,year' })
+    }, { onConflict: 'studio_id,tsa_id,month,year' })
     .select()
     .single()
 
   if (error) return res.status(500).json({ error: error.message })
 
   const { name, avatar_url, role: userRole } = await getUserName(req.params.tsaId)
-  const studioData = userRole === 'manager' ? await getStudioTrends(month, year) : {}
+  const studioData = userRole === 'manager' ? await getStudioTrends(month, year, req.studio.id) : {}
   const commission = calcCommission(data, userRole, studioData)
   res.json({ ...data, tsa_name: name, avatar_url, tsa_role: userRole, commission, studio_data: userRole === 'manager' ? studioData : undefined })
 })
 
 // ── Team Performance Leaderboard (all roles) ──────────────────────────────────
 
-router.get('/leaderboard', authenticate, async (req, res) => {
+router.get('/leaderboard', async (req, res) => {
   const { month, year } = req.query
   if (!month || !year) return res.status(400).json({ error: 'month and year required' })
 
@@ -332,10 +348,10 @@ router.get('/leaderboard', authenticate, async (req, res) => {
   const [{ data: goalsData, error: gErr }, hoursMap, shiftCountMap, studioTargets] = await Promise.all([
     db().from('personal_goals')
       .select('tsa_id, total_memberships, retail_actual, sweat_basic, sweat_elite, pos_collected, eft_actual, pif_6mo, pif_12mo, itb_bonus_override, calls_made, texts_made')
-      .eq('month', month).eq('year', year),
-    getMonthlyHours(Number(month), Number(year)),
-    getMonthlyShiftCounts(Number(month), Number(year)),
-    getStudioGoalTargets(month, year),
+      .eq('studio_id', req.studio.id).eq('month', month).eq('year', year),
+    getMonthlyHours(Number(month), Number(year), req.studio.id),
+    getMonthlyShiftCounts(Number(month), Number(year), req.studio.id),
+    getStudioGoalTargets(month, year, req.studio.id),
   ])
 
   if (gErr) return res.status(500).json({ error: gErr.message })
@@ -388,7 +404,7 @@ router.get('/leaderboard', authenticate, async (req, res) => {
 // ─── POST /api/goals/suggest ──────────────────────────────────────────────────
 // Analyzes last 3 months of actuals and returns AI-suggested targets.
 // Owner + Manager only.
-router.post('/suggest', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.post('/suggest', requireRole('owner', 'manager'), async (req, res) => {
   const { month, year } = req.body
   const m = parseInt(month) || new Date().getMonth() + 1
   const y = parseInt(year)  || new Date().getFullYear()
@@ -415,12 +431,13 @@ router.post('/suggest', authenticate, requireRole('owner', 'manager'), async (re
     const [goalsRes, trendsRes, leadsRes] = await Promise.all([
       db().from('studio_goals')
         .select('month,year,eft_target,eft_actual,memberships_target,memberships_actual,retail_target,retail_actual,in_the_bank_target,total_leads_target,conversion_rate_target,conversion_rate_actual,checkin_show_rate_target,checkin_show_rate_actual,close_rate_target,close_rate_actual')
-        .in('month', monthInts).in('year', yearInts),
+        .eq('studio_id', req.studio.id).in('month', monthInts).in('year', yearInts),
       db().from('studio_trends')
         .select('month,year,eft_increase,new_members,retail,in_the_bank,leads,cancellations,total_member_count')
-        .in('month', monthInts).in('year', yearInts),
+        .eq('studio_id', req.studio.id).in('month', monthInts).in('year', yearInts),
       db().from('leads')
         .select('lead_date,count')
+        .eq('studio_id', req.studio.id)
         .gte('lead_date', `${periods[periods.length - 1].year}-${String(periods[periods.length - 1].month).padStart(2, '0')}-01`),
     ])
 
