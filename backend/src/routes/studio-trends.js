@@ -65,7 +65,7 @@ router.get('/', authenticate, requireStudio, requireRole('owner', 'manager'), as
 })
 
 // GET /api/studio-trends/:year/:month — single month
-router.get('/:year/:month', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.get('/:year/:month', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const { year, month } = req.params
   const { data, error } = await db()
     .from('studio_trends')
@@ -80,15 +80,20 @@ router.get('/:year/:month', authenticate, requireRole('owner', 'manager'), async
 })
 
 // PUT /api/studio-trends — upsert a month's data
-router.put('/', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.put('/', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const { month, year, ...fields } = req.body
   if (!month || !year) return res.status(400).json({ error: 'month and year required' })
 
   const { data, error } = await db()
     .from('studio_trends')
-    .upsert({ month, year, ...fields, updated_by: req.user.id, updated_at: new Date().toISOString() },
-      { onConflict: 'month,year' })
-    .eq('studio_id', req.studio.id)
+    .upsert({
+      month,
+      year,
+      studio_id: req.studio.id,
+      ...fields,
+      updated_by: req.user.id,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'studio_id, month, year' })
     .select()
     .single()
 
