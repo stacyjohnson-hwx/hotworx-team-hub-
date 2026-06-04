@@ -17,7 +17,29 @@ export function StudioSwitcher() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  if (loading || !currentStudio) return null
+  // Debug logging
+  useEffect(() => {
+    console.log('[StudioSwitcher] Studios:', studios)
+    console.log('[StudioSwitcher] Current:', currentStudio)
+    console.log('[StudioSwitcher] Loading:', loading)
+  }, [studios, currentStudio, loading])
+
+  if (loading) {
+    return (
+      <div className="px-3 py-2 text-xs text-gray-500">
+        Loading studios...
+      </div>
+    )
+  }
+
+  if (!currentStudio) {
+    return (
+      <div className="px-3 py-2 text-xs text-red-500">
+        No studio selected
+      </div>
+    )
+  }
+
   if (studios.length <= 1) return null // Only show if multiple studios
 
   return (
