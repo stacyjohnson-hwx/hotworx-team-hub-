@@ -20,6 +20,12 @@ export function StudioProvider({ children }) {
 
   async function loadStudios() {
     try {
+      console.log('[StudioContext] Starting to load studios...')
+
+      // Check if we have a session
+      const { data: { session } } = await supabase.auth.getSession()
+      console.log('[StudioContext] Session check:', session ? 'Authenticated' : 'Not authenticated', session?.user?.email)
+
       // First get user-studio relationships
       const { data: userStudios, error: userError } = await supabase
         .from('user_studios')
@@ -29,6 +35,7 @@ export function StudioProvider({ children }) {
 
       if (userError) {
         console.error('[StudioContext] Error loading user_studios:', userError)
+        console.error('[StudioContext] Error details:', JSON.stringify(userError, null, 2))
         throw userError
       }
 
