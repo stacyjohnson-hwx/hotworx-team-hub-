@@ -2,6 +2,7 @@ const express = require('express')
 const router = express.Router()
 const { createClient } = require('@supabase/supabase-js')
 const { requireRole } = require('../middleware/roleGuard')
+const { requireStudio } = require('../middleware/studioMiddleware')
 const authenticate = require('../middleware/authMiddleware')
 
 const supabase = () =>
@@ -9,12 +10,13 @@ const supabase = () =>
 
 // ─── GET /api/b2b/contacts ───────────────────────────────────────────────────
 // All roles: full contact list
-router.get('/contacts', authenticate, async (req, res) => {
+router.get('/contacts', authenticate, requireStudio, async (req, res) => {
   const db = supabase()
 
   const { data, error } = await db
     .from('b2b_contacts')
     .select('*')
+    .eq('studio_id', req.studio.id)
     .order('created_at', { ascending: false })
   if (error) return res.status(500).json({ error: error.message })
 
@@ -35,7 +37,7 @@ router.get('/contacts', authenticate, async (req, res) => {
 })
 
 // ─── POST /api/b2b/contacts ──────────────────────────────────────────────────
-router.post('/contacts', authenticate, async (req, res) => {
+router.post('/contacts', authenticate, requireStudio, async (req, res) => {
   const {
     business_name, contact_name, phone, email, address, industry,
     website, social_handle, logo_url,
@@ -67,6 +69,7 @@ router.post('/contacts', authenticate, async (req, res) => {
       latitude: latitude || null,
       longitude: longitude || null,
       created_by: req.user.id,
+      studio_id: req.studio.id,
     })
     .select()
     .single()
@@ -76,7 +79,7 @@ router.post('/contacts', authenticate, async (req, res) => {
 })
 
 // ─── PUT /api/b2b/contacts/:id ───────────────────────────────────────────────
-router.put('/contacts/:id', authenticate, async (req, res) => {
+router.put('/contacts/:id', authenticate, requireStudio, async (req, res) => {
   const {
     business_name, contact_name, phone, email, address, industry,
     website, social_handle, logo_url,
@@ -104,7 +107,7 @@ router.put('/contacts/:id', authenticate, async (req, res) => {
 })
 
 // ─── DELETE /api/b2b/contacts/:id ────────────────────────────────────────────
-router.delete('/contacts/:id', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.delete('/contacts/:id', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const { error } = await supabase()
     .from('b2b_contacts')
     .delete()
@@ -115,11 +118,12 @@ router.delete('/contacts/:id', authenticate, requireRole('owner', 'manager'), as
 })
 
 // ─── GET /api/b2b/contacts/:id/interactions ──────────────────────────────────
-router.get('/contacts/:id/interactions', authenticate, async (req, res) => {
-  const { data, error } = await supabase()
+router.get('/contacts/:id/interactions', authenticate, requireStudio, async (req, res) => {
+  const { data, error} = await supabase()
     .from('b2b_interactions')
     .select('*')
     .eq('contact_id', req.params.id)
+    .eq('studio_id', req.studio.id)
     .order('logged_at', { ascending: false })
 
   if (error) return res.status(500).json({ error: error.message })
@@ -141,7 +145,7 @@ router.get('/contacts/:id/interactions', authenticate, async (req, res) => {
 })
 
 // ─── POST /api/b2b/contacts/:id/interactions ─────────────────────────────────
-router.post('/contacts/:id/interactions', authenticate, async (req, res) => {
+router.post('/contacts/:id/interactions', authenticate, requireStudio, async (req, res) => {
   const { type, notes, logged_at } = req.body
 
   if (!type) return res.status(400).json({ error: 'type is required' })
@@ -153,6 +157,7 @@ router.post('/contacts/:id/interactions', authenticate, async (req, res) => {
       type,
       notes: notes || null,
       logged_by: req.user.id,
+      studio_id: req.studio.id,
       ...(logged_at ? { logged_at } : {}),
     })
     .select()
@@ -163,7 +168,7 @@ router.post('/contacts/:id/interactions', authenticate, async (req, res) => {
 })
 
 // ─── PUT /api/b2b/interactions/:id ───────────────────────────────────────────
-router.put('/interactions/:id', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.put('/interactions/:id', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const { type, notes, logged_at } = req.body
   if (!type) return res.status(400).json({ error: 'type is required' })
 
@@ -183,7 +188,7 @@ router.put('/interactions/:id', authenticate, requireRole('owner', 'manager'), a
 })
 
 // ─── DELETE /api/b2b/interactions/:id ────────────────────────────────────────
-router.delete('/interactions/:id', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.delete('/interactions/:id', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const { error } = await supabase()
     .from('b2b_interactions')
     .delete()
@@ -196,7 +201,7 @@ router.delete('/interactions/:id', authenticate, requireRole('owner', 'manager')
 // ─── Events linked to a contact ──────────────────────────────────────────────
 
 // GET /api/b2b/contacts/:id/events
-router.get('/contacts/:id/events', authenticate, async (req, res) => {
+router.get('/contacts/:id/events', authenticate, requireStudio, async (req, res) => {
   try {
     const db = supabase()
 

@@ -2,16 +2,18 @@ const express = require('express')
 const router = express.Router()
 const { createClient } = require('@supabase/supabase-js')
 const { requireRole } = require('../middleware/roleGuard')
+const { requireStudio } = require('../middleware/studioMiddleware')
 const authenticate = require('../middleware/authMiddleware')
 
 const supabase = () =>
   createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 
 // GET /api/maintenance
-router.get('/', authenticate, async (req, res) => {
+router.get('/', authenticate, requireStudio, async (req, res) => {
   const { data, error } = await supabase()
     .from('maintenance_logs')
     .select('*')
+    .eq('studio_id', req.studio.id)
     .order('created_at', { ascending: false })
 
   if (error) return res.status(500).json({ error: error.message })
@@ -31,7 +33,7 @@ router.get('/', authenticate, async (req, res) => {
 })
 
 // POST /api/maintenance
-router.post('/', authenticate, async (req, res) => {
+router.post('/', authenticate, requireStudio, async (req, res) => {
   const { title, description, area, priority } = req.body
   if (!title) return res.status(400).json({ error: 'title is required' })
 
@@ -44,6 +46,7 @@ router.post('/', authenticate, async (req, res) => {
       priority: priority || 'medium',
       status: 'open',
       reported_by: req.user.id,
+      studio_id: req.studio.id,
     })
     .select()
     .single()
@@ -53,7 +56,7 @@ router.post('/', authenticate, async (req, res) => {
 })
 
 // PUT /api/maintenance/:id
-router.put('/:id', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.put('/:id', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const { title, description, area, priority, status, resolution_notes } = req.body
 
   const updates = {
@@ -81,7 +84,7 @@ router.put('/:id', authenticate, requireRole('owner', 'manager'), async (req, re
 })
 
 // DELETE /api/maintenance/:id
-router.delete('/:id', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.delete('/:id', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const { error } = await supabase()
     .from('maintenance_logs')
     .delete()

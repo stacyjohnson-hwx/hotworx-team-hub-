@@ -3,6 +3,7 @@ const router  = express.Router()
 const { createClient } = require('@supabase/supabase-js')
 const authenticate    = require('../middleware/authMiddleware')
 const { requireRole } = require('../middleware/roleGuard')
+const { requireStudio } = require('../middleware/studioMiddleware')
 
 const supabase = () => createClient(
   process.env.SUPABASE_URL,
@@ -38,12 +39,13 @@ async function syncPartners(eventId, contactIds = []) {
 // ─── EVENTS ──────────────────────────────────────────────────────────────────
 
 // GET /api/events?month=5&year=2026  — or ?startDate=2026-05-01&endDate=2026-05-31 for range
-router.get('/', authenticate, async (req, res) => {
+router.get('/', authenticate, requireStudio, async (req, res) => {
   const { month, year, startDate, endDate } = req.query
   try {
     let q = supabase()
       .from('events')
       .select('*')
+      .eq('studio_id', req.studio.id)
       .order('start_date', { ascending: true })
 
     if (startDate && endDate) {
@@ -73,7 +75,7 @@ router.get('/', authenticate, async (req, res) => {
 
 // POST /api/events  — owner/manager only
 // body.b2b_contact_ids: string[]  (array of contact UUIDs)
-router.post('/', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.post('/', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const {
     title, description, event_type, start_date, end_date,
     start_time, end_time, location, notes, month, year,
@@ -91,6 +93,7 @@ router.post('/', authenticate, requireRole('owner', 'manager'), async (req, res)
       start_time: start_time || null, end_time: end_time || null,
       location, notes, month: parseInt(month), year: parseInt(year),
       created_by: req.user.id,
+      studio_id: req.studio.id,
     }]).select().single()
     if (error) throw error
     await syncPartners(data.id, b2b_contact_ids)
@@ -103,7 +106,7 @@ router.post('/', authenticate, requireRole('owner', 'manager'), async (req, res)
 })
 
 // PUT /api/events/:id  — owner/manager only
-router.put('/:id', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.put('/:id', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const {
     title, description, event_type, start_date, end_date,
     start_time, end_time, location, notes, month, year,
@@ -129,7 +132,7 @@ router.put('/:id', authenticate, requireRole('owner', 'manager'), async (req, re
 })
 
 // DELETE /api/events/:id  — owner/manager only
-router.delete('/:id', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.delete('/:id', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   try {
     const { error } = await supabase().from('events').delete().eq('id', req.params.id)
     if (error) throw error
@@ -142,10 +145,10 @@ router.delete('/:id', authenticate, requireRole('owner', 'manager'), async (req,
 
 // ─── PROMOTIONS ───────────────────────────────────────────────────────────────
 
-router.get('/promotions', authenticate, async (req, res) => {
+router.get('/promotions', authenticate, requireStudio, async (req, res) => {
   const { month, year, startDate, endDate } = req.query
   try {
-    let mainQ = supabase().from('promotions').select('*')
+    let mainQ = supabase().from('promotions').select('*').eq('studio_id', req.studio.id)
 
     if (startDate && endDate) {
       // Date-range mode (schedule page): no active filter — show every promo whose
@@ -160,8 +163,8 @@ router.get('/promotions', authenticate, async (req, res) => {
 
     // Ongoing promos: always include when in date-range mode; respect active in month/year mode
     const ongoingQ = startDate && endDate
-      ? supabase().from('promotions').select('*').eq('ongoing', true)
-      : supabase().from('promotions').select('*').eq('ongoing', true).eq('active', true)
+      ? supabase().from('promotions').select('*').eq('studio_id', req.studio.id).eq('ongoing', true)
+      : supabase().from('promotions').select('*').eq('studio_id', req.studio.id).eq('ongoing', true).eq('active', true)
     const [{ data: mainData, error: e1 }, { data: ongoingData, error: e2 }] = await Promise.all([mainQ, ongoingQ])
     if (e1) throw e1
     if (e2) throw e2
@@ -185,7 +188,7 @@ router.get('/promotions', authenticate, async (req, res) => {
   }
 })
 
-router.post('/promotions', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.post('/promotions', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const { title, description, promo_type, discount_value, discount_unit, start_date, end_date, ongoing, active, notes, month, year } = req.body
   if (!title || !month || !year) return res.status(400).json({ error: 'title, month, and year are required' })
   try {
@@ -195,6 +198,7 @@ router.post('/promotions', authenticate, requireRole('owner', 'manager'), async 
       start_date: start_date || null, end_date: end_date || null,
       ongoing: ongoing ?? false, active: active ?? true,
       notes, month: parseInt(month), year: parseInt(year), created_by: req.user.id,
+      studio_id: req.studio.id,
     }]).select().single()
     if (error) throw error
     res.status(201).json(data)
@@ -204,7 +208,7 @@ router.post('/promotions', authenticate, requireRole('owner', 'manager'), async 
   }
 })
 
-router.put('/promotions/:id', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.put('/promotions/:id', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const { title, description, promo_type, discount_value, discount_unit, start_date, end_date, ongoing, active, notes, month, year } = req.body
   try {
     const { data, error } = await supabase().from('promotions').update({
@@ -221,7 +225,7 @@ router.put('/promotions/:id', authenticate, requireRole('owner', 'manager'), asy
   }
 })
 
-router.delete('/promotions/:id', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.delete('/promotions/:id', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   try {
     const { error } = await supabase().from('promotions').delete().eq('id', req.params.id)
     if (error) throw error

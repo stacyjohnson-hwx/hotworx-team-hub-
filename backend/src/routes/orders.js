@@ -2,6 +2,7 @@ const express = require('express')
 const router = express.Router()
 const { createClient } = require('@supabase/supabase-js')
 const { requireRole } = require('../middleware/roleGuard')
+const { requireStudio } = require('../middleware/studioMiddleware')
 const authenticate = require('../middleware/authMiddleware')
 const nodemailer = require('nodemailer')
 const { Resend }  = require('resend')
@@ -69,13 +70,14 @@ async function buildUserMap(db) {
 
 // ─── GET /api/orders ─────────────────────────────────────────────────────────
 // all roles can see all orders
-router.get('/', authenticate, async (req, res) => {
+router.get('/', authenticate, requireStudio, async (req, res) => {
   const db = supabase()
   const { status, category, vendor } = req.query
 
   let query = db
     .from('orders')
     .select('*')
+    .eq('studio_id', req.studio.id)
     .order('created_at', { ascending: false })
 
   if (status) query = query.eq('status', status)
@@ -96,7 +98,7 @@ router.get('/', authenticate, async (req, res) => {
 
 // ─── POST /api/orders ────────────────────────────────────────────────────────
 // Anyone authenticated can request an order
-router.post('/', authenticate, async (req, res) => {
+router.post('/', authenticate, requireStudio, async (req, res) => {
   const { item_name, quantity, category, notes, vendor, est_cost } = req.body
 
   if (!item_name) return res.status(400).json({ error: 'item_name is required' })
@@ -112,6 +114,7 @@ router.post('/', authenticate, async (req, res) => {
       est_cost: est_cost || null,
       status: 'pending',
       requested_by: req.user.id,
+      studio_id: req.studio.id,
     })
     .select()
     .single()
@@ -130,7 +133,7 @@ router.post('/', authenticate, async (req, res) => {
 
 // ─── PUT /api/orders/:id ─────────────────────────────────────────────────────
 // Owner/manager: full update. TSA: may only mark ordered → received.
-router.put('/:id', authenticate, async (req, res) => {
+router.put('/:id', authenticate, requireStudio, async (req, res) => {
   const { item_name, quantity, category, notes, vendor, est_cost, status } = req.body
   const role = req.user?.app_metadata?.role || req.user?.role
   const isOwnerOrManager = role === 'owner' || role === 'manager'
@@ -202,7 +205,7 @@ router.put('/:id', authenticate, async (req, res) => {
 })
 
 // ─── DELETE /api/orders/:id ──────────────────────────────────────────────────
-router.delete('/:id', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.delete('/:id', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const { error } = await supabase()
     .from('orders')
     .delete()

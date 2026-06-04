@@ -3,14 +3,16 @@ const router   = express.Router()
 const { createClient } = require('@supabase/supabase-js')
 const authenticate    = require('../middleware/authMiddleware')
 const { requireRole } = require('../middleware/roleGuard')
+const { requireStudio } = require('../middleware/studioMiddleware')
 const Anthropic       = require('@anthropic-ai/sdk')
 
 const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 
 // ─── GET /api/competitors ────────────────────────────────────────────────────
-router.get('/', authenticate, async (req, res) => {
+router.get('/', authenticate, requireStudio, async (req, res) => {
   const { data, error } = await db()
     .from('competitors')
+    .eq('studio_id', req.studio.id)
     .select('*')
     .eq('is_active', true)
     .order('sort_order')
@@ -20,10 +22,10 @@ router.get('/', authenticate, async (req, res) => {
 })
 
 // ─── POST /api/competitors ───────────────────────────────────────────────────
-router.post('/', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.post('/', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const { data, error } = await db()
     .from('competitors')
-    .insert(req.body)
+    .insert({ ...req.body, studio_id: req.studio.id })
     .select()
     .single()
   if (error) return res.status(500).json({ error: error.message })
@@ -31,11 +33,12 @@ router.post('/', authenticate, requireRole('owner', 'manager'), async (req, res)
 })
 
 // ─── PUT /api/competitors/:id ────────────────────────────────────────────────
-router.put('/:id', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.put('/:id', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const { data, error } = await db()
     .from('competitors')
     .update({ ...req.body, updated_at: new Date().toISOString() })
     .eq('id', req.params.id)
+    .eq('studio_id', req.studio.id)
     .select()
     .single()
   if (error) return res.status(500).json({ error: error.message })
@@ -43,8 +46,8 @@ router.put('/:id', authenticate, requireRole('owner', 'manager'), async (req, re
 })
 
 // ─── DELETE /api/competitors/:id ─────────────────────────────────────────────
-router.delete('/:id', authenticate, requireRole('owner', 'manager'), async (req, res) => {
-  const { error } = await db().from('competitors').delete().eq('id', req.params.id)
+router.delete('/:id', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
+  const { error } = await db().from('competitors').delete().eq('id', req.params.id).eq('studio_id', req.studio.id)
   if (error) return res.status(500).json({ error: error.message })
   res.status(204).end()
 })
@@ -53,6 +56,7 @@ router.delete('/:id', authenticate, requireRole('owner', 'manager'), async (req,
 router.get('/:id/visits', authenticate, async (req, res) => {
   const { data, error } = await db()
     .from('competitor_visits')
+    .eq('studio_id', req.studio.id)
     .select('*')
     .eq('competitor_id', req.params.id)
     .order('visited_at', { ascending: false })
@@ -73,7 +77,7 @@ router.get('/:id/visits', authenticate, async (req, res) => {
 router.post('/:id/visits', authenticate, async (req, res) => {
   const { data, error } = await db()
     .from('competitor_visits')
-    .insert({ ...req.body, competitor_id: req.params.id, visited_by: req.user.id })
+      ...req.body, studio_id: req.studio.id
     .select()
     .single()
   if (error) return res.status(500).json({ error: error.message })
@@ -84,6 +88,7 @@ router.post('/:id/visits', authenticate, async (req, res) => {
 // Calls Claude to research each competitor for pricing/new info updates
 router.post('/ai-refresh', authenticate, requireRole('owner', 'manager'), async (req, res) => {
   const { data: comps, error } = await db()
+    .eq('studio_id', req.studio.id)
     .from('competitors').select('id, name, city, website, price_monthly').eq('is_active', true)
   if (error) return res.status(500).json({ error: error.message })
 

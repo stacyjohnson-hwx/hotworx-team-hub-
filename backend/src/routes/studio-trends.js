@@ -3,6 +3,7 @@ const router = express.Router()
 const { createClient } = require('@supabase/supabase-js')
 const authenticate = require('../middleware/authMiddleware')
 const { requireRole } = require('../middleware/roleGuard')
+const { requireStudio } = require('../middleware/studioMiddleware')
 
 const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 
@@ -18,7 +19,7 @@ const DEFAULTS = {
 
 // GET /api/studio-trends?startYear=&startMonth=&endYear=&endMonth=
 // Returns all months in the range (defaults to last 24 months)
-router.get('/', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.get('/', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   let { startYear, startMonth, endYear, endMonth } = req.query
 
   if (!endYear || !endMonth) {
@@ -44,6 +45,7 @@ router.get('/', authenticate, requireRole('owner', 'manager'), async (req, res) 
 
   const { data, error } = await db()
     .from('studio_trends')
+    .eq('studio_id', req.studio.id)
     .select('*')
     .gte('year', startYear)
     .lte('year', endYear)
@@ -67,6 +69,7 @@ router.get('/:year/:month', authenticate, requireRole('owner', 'manager'), async
   const { year, month } = req.params
   const { data, error } = await db()
     .from('studio_trends')
+    .eq('studio_id', req.studio.id)
     .select('*')
     .eq('month', month)
     .eq('year', year)
@@ -85,6 +88,7 @@ router.put('/', authenticate, requireRole('owner', 'manager'), async (req, res) 
     .from('studio_trends')
     .upsert({ month, year, ...fields, updated_by: req.user.id, updated_at: new Date().toISOString() },
       { onConflict: 'month,year' })
+    .eq('studio_id', req.studio.id)
     .select()
     .single()
 
