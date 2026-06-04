@@ -74,6 +74,8 @@ export function StudioProvider({ children }) {
           name: studio.name,
           address: studio.address,
           timezone: studio.timezone,
+          latitude: studio.latitude,
+          longitude: studio.longitude,
           userRole: userStudio?.role,
         }
       }).sort((a, b) => a.code.localeCompare(b.code))

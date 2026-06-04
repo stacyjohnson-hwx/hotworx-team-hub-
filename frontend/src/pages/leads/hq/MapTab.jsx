@@ -270,6 +270,17 @@ function FlyToHandler({ target }) {
   return null
 }
 
+// ─── Studio center handler (recenters when studio changes) ────────────────────
+function StudioCenterHandler({ center, zoom }) {
+  const map = useMap()
+  useEffect(() => {
+    if (center) {
+      map.setView(center, zoom, { animate: true, duration: 1 })
+    }
+  }, [center, zoom, map])
+  return null
+}
+
 // ─── Map click handler ────────────────────────────────────────────────────────
 function MapClickHandler({ active, onMapClick }) {
   const map = useMapEvents({ click(e) { if (active) onMapClick(e.latlng) } })
@@ -1238,6 +1249,7 @@ export default function MapTab() {
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
+          <StudioCenterHandler center={MAP_CENTER} zoom={MAP_ZOOM} />
           <FlyToHandler target={flyTarget} />
           <MapClickHandler active={placingPin} onMapClick={handleMapClick} />
 
