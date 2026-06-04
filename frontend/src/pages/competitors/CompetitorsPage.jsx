@@ -3,6 +3,9 @@ import { useRole } from '@/hooks/useRole'
 import { useStudio } from '@/contexts/StudioContext'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
 import { supabase } from '@/lib/supabase'
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
 import {
   Swords, MapPin, RefreshCw, Plus, X, Star, ChevronDown, ChevronUp,
   ExternalLink, Phone, DollarSign, Trophy, AlertTriangle,
@@ -452,48 +455,66 @@ function VisitHistory({ competitor }) {
   )
 }
 
+// ─── Studio Center Handler (recenters map when studio changes) ──────────────
+function StudioCenterHandler({ center, zoom }) {
+  const map = useMap()
+  useEffect(() => {
+    if (center) {
+      map.setView(center, zoom, { animate: true, duration: 1 })
+    }
+  }, [center, zoom, map])
+  return null
+}
+
 // ─── Map View ─────────────────────────────────────────────────────────────────
 function MapView({ competitors, onCompare, onLogVisit, studioCoords }) {
   // Use studio-specific coordinates or fallback to Pewaukee
   const HOTWORX_LAT = studioCoords?.latitude || 43.0840
   const HOTWORX_LNG = studioCoords?.longitude || -88.2337
+  const MAP_CENTER = [HOTWORX_LAT, HOTWORX_LNG]
+  const [mapCenter, setMapCenter] = useState(MAP_CENTER)
 
-  const [hovered, setHovered] = useState(null)
+  // Update map center when studio changes
+  useEffect(() => {
+    if (studioCoords?.latitude && studioCoords?.longitude) {
+      const newCenter = [parseFloat(studioCoords.latitude), parseFloat(studioCoords.longitude)]
+      setMapCenter(newCenter)
+    }
+  }, [studioCoords?.latitude, studioCoords?.longitude])
 
-  // Map dimensions
-  const W = 800, H = 450
-  const zoom = 11
-  const tileSize = 256
+  // Custom icons for each competitor type
+  const pinColor = (type) => {
+    switch(type) {
+      case 'hot_yoga': return '#f97316' // orange
+      case 'gym': return '#3b82f6' // blue
+      case 'boutique': return '#ec4899' // pink
+      case 'yoga': return '#a855f7' // purple
+      case 'pilates': return '#14b8a6' // teal
+      case 'crossfit': return '#ef4444' // red
+      default: return '#6b7280' // gray
+    }
+  }
 
-  // Web Mercator projection (matches OSM tiles)
-  const n = Math.pow(2, zoom)
-  const lngToTileX = lng => (lng + 180) / 360 * n
-  const latToTileY = lat => (1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * n
+  const createIcon = (color) => L.divIcon({
+    className: 'custom-competitor-pin',
+    html: `<div style="background-color: ${color}; width: 24px; height: 24px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3);"></div>`,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12]
+  })
 
-  // Convert tile coordinates to pixel coordinates
-  const lngToPixel = lng => lngToTileX(lng) * tileSize
-  const latToPixel = lat => latToTileY(lat) * tileSize
-
-  // Center map on HOTWORX
-  const centerPixelX = lngToPixel(HOTWORX_LNG)
-  const centerPixelY = latToPixel(HOTWORX_LAT)
-
-  // Calculate tile range to cover viewport
-  const centerTileX = Math.floor(lngToTileX(HOTWORX_LNG))
-  const centerTileY = Math.floor(latToTileY(HOTWORX_LAT))
-
-  // Offset to center the map
-  const offsetX = W / 2 - (centerPixelX - centerTileX * tileSize)
-  const offsetY = H / 2 - (centerPixelY - centerTileY * tileSize)
-
-  // Convert lat/lng to screen coordinates (must match tile offset)
-  const toScreenX = lng => lngToPixel(lng) - centerTileX * tileSize + offsetX
-  const toScreenY = lat => latToPixel(lat) - centerTileY * tileSize + offsetY
+  const hotworxIcon = L.divIcon({
+    className: 'custom-hotworx-pin',
+    html: `<div style="background-color: #C8102E; width: 32px; height: 32px; border-radius: 50%; border: 4px solid white; box-shadow: 0 3px 12px rgba(200,16,46,0.5); display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 14px;">H</div>`,
+    iconSize: [32, 32],
+    iconAnchor: [16, 16]
+  })
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
       <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-        <h3 className="font-semibold text-gray-800 flex items-center gap-2"><MapPin size={15} className="text-red-600" />Competitor Map</h3>
+        <h3 className="font-semibold text-gray-800 flex items-center gap-2">
+          <MapPin size={15} className="text-red-600" />Competitor Map
+        </h3>
         <div className="flex gap-3 text-xs text-gray-500">
           <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-red-600 inline-block" />HOTWORX</span>
           <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-orange-400 inline-block" />Hot Yoga</span>
@@ -501,100 +522,59 @@ function MapView({ competitors, onCompare, onLogVisit, studioCoords }) {
           <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-pink-500 inline-block" />Boutique</span>
         </div>
       </div>
-      <div className="relative overflow-hidden" style={{ height: 450 }}>
-        {/* OpenStreetMap tiles */}
-        <div className="absolute inset-0">
-          {[-1, 0, 1].map(dy => [-1, 0, 1].map(dx => {
-            const tileX = centerTileX + dx
-            const tileY = centerTileY + dy
-            return (
-              <img
-                key={`${tileX}-${tileY}`}
-                src={`https://tile.openstreetmap.org/${zoom}/${tileX}/${tileY}.png`}
-                alt=""
-                className="absolute"
-                style={{
-                  width: tileSize,
-                  height: tileSize,
-                  left: offsetX + dx * tileSize,
-                  top: offsetY + dy * tileSize,
-                  opacity: 0.7,
-                }}
-                crossOrigin="anonymous"
-              />
-            )
-          }))}
-        </div>
+      <div style={{ height: 500, position: 'relative', zIndex: 0 }}>
+        <MapContainer center={mapCenter} zoom={12} style={{ height: '100%', width: '100%' }} scrollWheelZoom>
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          />
+          <StudioCenterHandler center={mapCenter} zoom={12} />
 
-        {/* Overlay with pins */}
-        <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} className="absolute inset-0" style={{ pointerEvents: 'none' }}>
-          {/* HOTWORX pin */}
-          <g transform={`translate(${toScreenX(HOTWORX_LNG)},${toScreenY(HOTWORX_LAT)})`} style={{ pointerEvents: 'auto' }}>
-            <circle r={22} fill="#C8102E" opacity={0.2} />
-            <circle r={16} fill="white" stroke="#C8102E" strokeWidth={3} />
-            {/* HOTWORX logo in center */}
-            <text textAnchor="middle" dominantBaseline="central" fill="#C8102E" fontSize={11} fontWeight="bold">H</text>
-            <text textAnchor="middle" y={30} fill="#C8102E" fontSize={9} fontWeight="bold">HOTWORX</text>
-          </g>
-
-          {/* Competitor pins */}
-          {competitors.filter(c => c.latitude && c.longitude).map(c => {
-            const x = toScreenX(parseFloat(c.longitude)), y = toScreenY(parseFloat(c.latitude))
-            const pinColor = c.type === 'hot_yoga' ? '#f97316' : c.type === 'gym' ? '#3b82f6' : c.type === 'boutique' ? '#ec4899' : c.type === 'yoga' ? '#a855f7' : '#6b7280'
-            const isHov = hovered === c.id
-            return (
-              <g key={c.id} transform={`translate(${x},${y})`} style={{ pointerEvents: 'auto' }}
-                onMouseEnter={() => setHovered(c.id)}
-                onMouseLeave={() => setHovered(null)}>
-                <circle r={isHov ? 18 : 14} fill={pinColor} opacity={0.2} />
-                <circle r={isHov ? 14 : 11} fill="white" stroke={pinColor} strokeWidth={2.5} style={{ cursor: 'pointer' }} />
-                {/* Logo */}
-                {c.logo_url ? (
-                  <image
-                    href={c.logo_url}
-                    x={-7}
-                    y={-7}
-                    width={14}
-                    height={14}
-                    clipPath="inset(0% round 50%)"
-                    style={{ cursor: 'pointer' }}
-                  />
-                ) : (
-                  <text textAnchor="middle" dominantBaseline="central" fill={pinColor} fontSize={7} fontWeight="bold" style={{ cursor: 'pointer' }}>
-                    {c.name.split(' ').slice(0,2).map(w=>w[0]).join('')}
-                  </text>
-                )}
-                {isHov && (
-                  <g>
-                    <rect x={-90} y={20} width={180} height={60} rx={6} fill="white" stroke="#e5e7eb" strokeWidth={1} filter="url(#shadow)" />
-                    <text x={0} y={36} textAnchor="middle" fill="#111827" fontSize={10} fontWeight="bold">{c.name}</text>
-                    <text x={0} y={50} textAnchor="middle" fill="#6b7280" fontSize={8}>{c.city}</text>
-                    {c.price_monthly && <text x={0} y={66} textAnchor="middle" fill="#059669" fontSize={9} fontWeight="bold">${c.price_monthly}/mo</text>}
-                  </g>
-                )}
-              </g>
-            )
-          })}
-          <defs>
-            <filter id="shadow"><feDropShadow dx="0" dy="1" stdDeviation="3" floodOpacity="0.25"/></filter>
-          </defs>
-        </svg>
-      </div>
-      {/* Competitor list below map */}
-      <div className="p-4 grid grid-cols-2 md:grid-cols-3 gap-2">
-        {competitors.filter(c => c.latitude && c.longitude).map(c => {
-          const tm = typeMeta(c.type)
-          return (
-            <button key={c.id} onClick={() => onCompare(c)}
-              className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg hover:border-red-300 hover:bg-red-50 transition-colors text-left">
-              <Logo competitor={c} size={7} />
-              <div className="min-w-0">
-                <p className="text-xs font-semibold text-gray-800 truncate">{c.name}</p>
-                <p className="text-[10px] text-gray-400">{c.city}</p>
+          {/* HOTWORX marker */}
+          <Marker position={[HOTWORX_LAT, HOTWORX_LNG]} icon={hotworxIcon}>
+            <Popup>
+              <div className="p-2">
+                <p className="font-bold text-red-600">HOTWORX {studioCoords?.name || ''}</p>
+                <p className="text-xs text-gray-600">{studioCoords?.address || ''}</p>
               </div>
-            </button>
-          )
-        })}
+            </Popup>
+          </Marker>
+
+          {/* Competitor markers */}
+          {competitors.filter(c => c.latitude && c.longitude).map(c => (
+            <Marker
+              key={c.id}
+              position={[parseFloat(c.latitude), parseFloat(c.longitude)]}
+              icon={createIcon(pinColor(c.type))}
+            >
+              <Popup>
+                <div className="p-2 min-w-[200px]">
+                  <div className="flex items-start gap-2 mb-2">
+                    <Logo competitor={c} size={8} />
+                    <div>
+                      <p className="font-bold text-gray-800">{c.name}</p>
+                      <p className="text-xs text-gray-600">{c.city}</p>
+                    </div>
+                  </div>
+                  {c.price_monthly && (
+                    <p className="text-sm text-green-600 font-semibold mb-2">${c.price_monthly}/mo</p>
+                  )}
+                  {c.address && (
+                    <p className="text-xs text-gray-500 mb-2">{c.address}</p>
+                  )}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => onCompare(c)}
+                      className="flex-1 px-2 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700"
+                    >
+                      Compare
+                    </button>
+                  </div>
+                </div>
+              </Popup>
+            </Marker>
+          ))}
+        </MapContainer>
       </div>
     </div>
   )
