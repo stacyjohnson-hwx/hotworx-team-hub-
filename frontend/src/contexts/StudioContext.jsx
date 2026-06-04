@@ -1,16 +1,22 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/contexts/AuthContext'
 
 const StudioContext = createContext(null)
 
 export function StudioProvider({ children }) {
+  const { session } = useAuth()
   const [studios, setStudios] = useState([])
   const [currentStudio, setCurrentStudio] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    loadStudios()
-  }, [])
+    if (session) {
+      loadStudios()
+    } else {
+      setLoading(false)
+    }
+  }, [session])
 
   async function loadStudios() {
     try {
