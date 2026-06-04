@@ -85,8 +85,52 @@ const DEFAULT_NEIGHBORHOODS_PEWAUKEE = [
   { id:'nh-33', name:'New Berlin',                          lat:42.9764, lng:-88.1082 },
 ]
 
-// Madison has no pre-populated neighborhoods - starts with empty slate
-const DEFAULT_NEIGHBORHOODS_MADISON = []
+// ─── Pre-populated neighborhoods (Madison WI0021) ──────────────────────────────
+const DEFAULT_NEIGHBORHOODS_MADISON = [
+  // ── Near West Side (closest to studio at 2901 University Ave) ────────────
+  { id:'nh-mad-1',  name:'University Heights',              lat:43.0746, lng:-89.4193 },
+  { id:'nh-mad-2',  name:'Hilldale',                        lat:43.0772, lng:-89.4244 },
+  { id:'nh-mad-3',  name:'Midvale Heights',                 lat:43.0880, lng:-89.4385 },
+  { id:'nh-mad-4',  name:'Sunset Village',                  lat:43.0713, lng:-89.4412 },
+  { id:'nh-mad-5',  name:'Regent',                          lat:43.0663, lng:-89.4098 },
+  { id:'nh-mad-6',  name:'Dudgeon-Monroe',                  lat:43.0637, lng:-89.4189 },
+  { id:'nh-mad-7',  name:'Hill Farms',                      lat:43.0611, lng:-89.4318 },
+  { id:'nh-mad-8',  name:'University Hill Farms',           lat:43.0807, lng:-89.4464 },
+  { id:'nh-mad-9',  name:'Shorewood Hills',                 lat:43.0807, lng:-89.4533 },
+  // ── Southwest Madison ──────────────────────────────────────────────────────
+  { id:'nh-mad-10', name:'Vilas',                           lat:43.0552, lng:-89.4095 },
+  { id:'nh-mad-11', name:'Greenbush',                       lat:43.0569, lng:-89.3847 },
+  { id:'nh-mad-12', name:'Nakoma',                          lat:43.0469, lng:-89.4312 },
+  { id:'nh-mad-13', name:'Westmorland',                     lat:43.0537, lng:-89.4433 },
+  { id:'nh-mad-14', name:'Bay Creek',                       lat:43.0378, lng:-89.3719 },
+  // ── West Side ──────────────────────────────────────────────────────────────
+  { id:'nh-mad-15', name:'West Towne',                      lat:43.0458, lng:-89.5167 },
+  { id:'nh-mad-16', name:'Junction West',                   lat:43.0522, lng:-89.4869 },
+  { id:'nh-mad-17', name:'Mineral Point Road Corridor',     lat:43.0441, lng:-89.4594 },
+  // ── Downtown & Isthmus ─────────────────────────────────────────────────────
+  { id:'nh-mad-18', name:'Downtown Madison',                lat:43.0731, lng:-89.3840 },
+  { id:'nh-mad-19', name:'Tenney-Lapham',                   lat:43.0835, lng:-89.3735 },
+  { id:'nh-mad-20', name:'Marquette',                       lat:43.0900, lng:-89.3668 },
+  // ── East Side ──────────────────────────────────────────────────────────────
+  { id:'nh-mad-21', name:'Atwood',                          lat:43.0947, lng:-89.3459 },
+  { id:'nh-mad-22', name:'Schenk-Atwood',                   lat:43.0874, lng:-89.3351 },
+  { id:'nh-mad-23', name:'East Towne',                      lat:43.1012, lng:-89.3221 },
+  // ── North Side ─────────────────────────────────────────────────────────────
+  { id:'nh-mad-24', name:'Maple Bluff',                     lat:43.1091, lng:-89.3810 },
+  { id:'nh-mad-25', name:'Sherman',                         lat:43.1178, lng:-89.3626 },
+  { id:'nh-mad-26', name:'Northport',                       lat:43.1333, lng:-89.3593 },
+  // ── South Side ─────────────────────────────────────────────────────────────
+  { id:'nh-mad-27', name:'South Madison',                   lat:43.0214, lng:-89.3509 },
+  { id:'nh-mad-28', name:'Monona',                          lat:43.0594, lng:-89.3315 },
+  { id:'nh-mad-29', name:'McFarland',                       lat:43.0133, lng:-89.2876 },
+  // ── Suburbs ────────────────────────────────────────────────────────────────
+  { id:'nh-mad-30', name:'Middleton',                       lat:43.0974, lng:-89.5043 },
+  { id:'nh-mad-31', name:'Verona',                          lat:42.9908, lng:-89.5332 },
+  { id:'nh-mad-32', name:'Fitchburg',                       lat:42.9608, lng:-89.4698 },
+  { id:'nh-mad-33', name:'Cottage Grove',                   lat:43.0755, lng:-89.1996 },
+  { id:'nh-mad-34', name:'Sun Prairie',                     lat:43.1836, lng:-89.2137 },
+  { id:'nh-mad-35', name:'Waunakee',                        lat:43.1919, lng:-89.4557 },
+]
 
 // Get default neighborhoods for current studio
 function getDefaultNeighborhoods(studioCode) {
