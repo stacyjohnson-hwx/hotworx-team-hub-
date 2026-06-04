@@ -734,6 +734,14 @@ export default function CompetitorsPage() {
 
   useEffect(() => { load() }, [load])
 
+  // Reload competitors when studio changes
+  useEffect(() => {
+    if (currentStudio?.id) {
+      setLoading(true)
+      load()
+    }
+  }, [currentStudio?.id, load])
+
   const handleAiRefresh = async () => {
     setRefreshing(true)
     try {
