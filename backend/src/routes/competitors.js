@@ -12,8 +12,8 @@ const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SER
 router.get('/', authenticate, requireStudio, async (req, res) => {
   const { data, error } = await db()
     .from('competitors')
-    .eq('studio_id', req.studio.id)
     .select('*')
+    .eq('studio_id', req.studio.id)
     .eq('is_active', true)
     .order('sort_order')
     .order('name')
