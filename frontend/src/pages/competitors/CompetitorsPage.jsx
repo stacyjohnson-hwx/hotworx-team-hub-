@@ -495,18 +495,38 @@ function MapView({ competitors, onCompare, onLogVisit, studioCoords }) {
     }
   }
 
-  const createIcon = (color) => L.divIcon({
-    className: 'custom-competitor-pin',
-    html: `<div style="background-color: ${color}; width: 24px; height: 24px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3);"></div>`,
-    iconSize: [24, 24],
-    iconAnchor: [12, 12]
-  })
+  // Create icon with logo if available, otherwise colored circle with initials
+  const createCompetitorIcon = (competitor) => {
+    const color = pinColor(competitor.type)
+    const initials = competitor.name.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase()
+
+    if (competitor.logo_url) {
+      // Logo version
+      return L.divIcon({
+        className: 'custom-competitor-logo-pin',
+        html: `<div style="width: 40px; height: 40px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3); overflow: hidden; background: white; display: flex; align-items: center; justify-content: center;">
+          <img src="${competitor.logo_url}" style="width: 32px; height: 32px; object-fit: contain;" onerror="this.style.display='none'; this.nextSibling.style.display='flex';" />
+          <div style="display: none; width: 100%; height: 100%; background-color: ${color}; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 14px;">${initials}</div>
+        </div>`,
+        iconSize: [40, 40],
+        iconAnchor: [20, 20]
+      })
+    } else {
+      // Fallback colored circle with initials
+      return L.divIcon({
+        className: 'custom-competitor-pin',
+        html: `<div style="background-color: ${color}; width: 32px; height: 32px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 12px;">${initials}</div>`,
+        iconSize: [32, 32],
+        iconAnchor: [16, 16]
+      })
+    }
+  }
 
   const hotworxIcon = L.divIcon({
     className: 'custom-hotworx-pin',
-    html: `<div style="background-color: #C8102E; width: 32px; height: 32px; border-radius: 50%; border: 4px solid white; box-shadow: 0 3px 12px rgba(200,16,46,0.5); display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 14px;">H</div>`,
-    iconSize: [32, 32],
-    iconAnchor: [16, 16]
+    html: `<div style="background-color: #C8102E; width: 44px; height: 44px; border-radius: 50%; border: 4px solid white; box-shadow: 0 3px 12px rgba(200,16,46,0.5); display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 18px;">H</div>`,
+    iconSize: [44, 44],
+    iconAnchor: [22, 22]
   })
 
   return (
@@ -545,7 +565,7 @@ function MapView({ competitors, onCompare, onLogVisit, studioCoords }) {
             <Marker
               key={c.id}
               position={[parseFloat(c.latitude), parseFloat(c.longitude)]}
-              icon={createIcon(pinColor(c.type))}
+              icon={createCompetitorIcon(c)}
             >
               <Popup>
                 <div className="p-2 min-w-[200px]">
