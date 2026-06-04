@@ -553,9 +553,11 @@ function MapView({ competitors, onCompare, onLogVisit, studioCoords }) {
 
   const hotworxIcon = L.divIcon({
     className: 'custom-hotworx-pin',
-    html: `<div style="background-color: #C8102E; width: 44px; height: 44px; border-radius: 50%; border: 4px solid white; box-shadow: 0 3px 12px rgba(200,16,46,0.5); display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 18px;">H</div>`,
-    iconSize: [44, 44],
-    iconAnchor: [22, 22]
+    html: `<div style="width: 50px; height: 50px; border-radius: 50%; border: 4px solid white; box-shadow: 0 3px 12px rgba(200,16,46,0.5); overflow: hidden; background: #C8102E; display: flex; align-items: center; justify-content: center;">
+      <img src="https://www.hotworx.net/app/themes/hotworx-child/images/logo/HotWorx-Logo_White.svg" style="width: 38px; height: 38px; object-fit: contain;" onerror="this.outerHTML='<div style=\\'color: white; font-weight: bold; font-size: 20px;\\'>H</div>';" />
+    </div>`,
+    iconSize: [50, 50],
+    iconAnchor: [25, 25]
   })
 
   return (
@@ -583,7 +585,7 @@ function MapView({ competitors, onCompare, onLogVisit, studioCoords }) {
           <Marker position={[HOTWORX_LAT, HOTWORX_LNG]} icon={hotworxIcon} zIndexOffset={1000}>
             <Popup>
               <div className="p-2">
-                <p className="font-bold text-red-600 text-base">HOTWORX {studioCoords?.name || ''}</p>
+                <p className="font-bold text-red-600 text-base">{studioCoords?.name || 'HOTWORX'}</p>
                 {studioCoords?.address && <p className="text-xs text-gray-600 mt-1">{studioCoords.address}</p>}
                 <p className="text-xs text-gray-500 mt-2">Your Studio Location</p>
               </div>
