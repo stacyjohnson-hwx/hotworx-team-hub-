@@ -3,6 +3,7 @@ const router = express.Router()
 const { createClient } = require('@supabase/supabase-js')
 const authenticate = require('../middleware/authMiddleware')
 const { requireRole } = require('../middleware/roleGuard')
+const { requireStudio } = require('../middleware/studioMiddleware')
 const { sendEmail } = require('../services/eodEmail')
 
 // All DB access goes through the Supabase JS client (HTTPS / REST API),
@@ -106,23 +107,46 @@ router.put('/me/quiz', authenticate, async (req, res) => {
 // ─── Admin / user-management endpoints ───────────────────────────────────────
 
 // GET /api/users — list all studio users merged with profiles
-router.get('/', authenticate, async (req, res) => {
+router.get('/', authenticate, requireStudio, async (req, res) => {
   try {
     const supabase = adminClient()
+
+    // Get users assigned to this studio
+    const { data: userStudios, error: usError } = await supabase
+      .from('user_studios')
+      .select('user_id, role')
+      .eq('studio_id', req.studio.id)
+
+    if (usError) return res.status(500).json({ error: usError.message })
+    if (!userStudios || userStudios.length === 0) {
+      return res.json([])
+    }
+
+    const userIds = userStudios.map(us => us.user_id)
+    const roleMap = Object.fromEntries(userStudios.map(us => [us.user_id, us.role]))
+
+    // Get auth user details for those users
     const { data: { users }, error } = await supabase.auth.admin.listUsers({ perPage: 200 })
     if (error) return res.status(500).json({ error: error.message })
 
-    const { data: profiles } = await supabase.from('user_profiles').select('*')
+    const studioUsers = users.filter(u => userIds.includes(u.id))
+
+    // Get profiles
+    const { data: profiles } = await supabase
+      .from('user_profiles')
+      .select('*')
+      .in('id', userIds)
+
     const pm = Object.fromEntries((profiles || []).map(p => [p.id, p]))
 
-    res.json(users.map(u => formatUser(u, pm[u.id] || {})))
+    res.json(studioUsers.map(u => formatUser(u, pm[u.id] || {}, roleMap[u.id])))
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
 })
 
 // POST /api/users — create new team member
-router.post('/', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.post('/', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const { email, full_name, role = 'tsa', phone, birthday } = req.body
   if (!email?.trim() || !full_name?.trim()) {
     return res.status(400).json({ error: 'email and full_name are required' })
@@ -151,6 +175,13 @@ router.post('/', authenticate, requireRole('owner', 'manager'), async (req, res)
       { onConflict: 'id', ignoreDuplicates: true }
     )
 
+    // Assign user to current studio
+    await supabase.from('user_studios').insert({
+      user_id: user.id,
+      studio_id: req.studio.id,
+      role,
+    })
+
     res.json({
       id: user.id, email: user.email, name: full_name, role,
       phone: phone || null, birthday: birthday || null,
@@ -162,7 +193,7 @@ router.post('/', authenticate, requireRole('owner', 'manager'), async (req, res)
 })
 
 // PUT /api/users/:id — update any user (owner/manager only)
-router.put('/:id', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.put('/:id', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const { id } = req.params
   const { full_name, role, phone, birthday, email } = req.body
 
@@ -188,6 +219,15 @@ router.put('/:id', authenticate, requireRole('owner', 'manager'), async (req, re
       phone:     phone     || existing.phone     || null,
       birthday:  birthday  || existing.birthday  || null,
     }, { onConflict: 'id' })
+
+    // Update user_studios role if role changed
+    if (role) {
+      await supabase
+        .from('user_studios')
+        .update({ role })
+        .eq('user_id', id)
+        .eq('studio_id', req.studio.id)
+    }
 
     // Fetch the updated user to get current email
     const { data: { user: updatedUser } } = await supabase.auth.admin.getUserById(id)
