@@ -483,9 +483,9 @@ function MapView({ competitors, onCompare, onLogVisit }) {
   const offsetX = W / 2 - (centerPixelX - centerTileX * tileSize)
   const offsetY = H / 2 - (centerPixelY - centerTileY * tileSize)
 
-  // Convert lat/lng to screen coordinates
-  const toScreenX = lng => lngToPixel(lng) - centerPixelX + W / 2
-  const toScreenY = lat => latToPixel(lat) - centerPixelY + H / 2
+  // Convert lat/lng to screen coordinates (must match tile offset)
+  const toScreenX = lng => lngToPixel(lng) - centerTileX * tileSize + offsetX
+  const toScreenY = lat => latToPixel(lat) - centerTileY * tileSize + offsetY
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
