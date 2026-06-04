@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { apiGet, apiPut } from '@/hooks/useApi'
 import { useMonth } from '@/hooks/useMonth'
+import { useStudio } from '@/contexts/StudioContext'
 import { formatCurrency } from '@/lib/utils'
 import {
   LineChart, Line, BarChart, Bar, AreaChart, Area,
@@ -286,6 +287,7 @@ function DataEntryTab({ month: initialMonth, year: initialYear }) {
 // ── Table tab ─────────────────────────────────────────────────────────────────
 
 function TableTab() {
+  const { currentStudio } = useStudio()
   const now = new Date()
   const [startYear, setStartYear]   = useState(now.getFullYear() - 1)
   const [startMonth, setStartMonth] = useState(now.getMonth() + 1)
@@ -305,6 +307,13 @@ function TableTab() {
   }, [startYear, startMonth, endYear, endMonth])
 
   useEffect(() => { load() }, [load])
+
+  // Reload when studio changes
+  useEffect(() => {
+    if (currentStudio?.id) {
+      load()
+    }
+  }, [currentStudio?.id, load])
 
   const prevYearMap = {}
   if (yoy) {
@@ -675,6 +684,7 @@ function DashboardTab() {
 
 export default function StudioTrendsPage() {
   const { selectedMonth } = useMonth()
+  const { currentStudio } = useStudio()
   const { month, year } = selectedMonth
   const [tab, setTab] = useState('table')
 

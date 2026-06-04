@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useRole } from '@/hooks/useRole'
+import { useStudio } from '@/contexts/StudioContext'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
 import {
   ShieldAlert, Plus, X, CheckCircle2, Clock, AlertTriangle,
@@ -314,6 +315,7 @@ function EntryCard({ entry, isOwnerOrManager, onEdit, onUpdateStatus, onDelete }
 
 export default function EscalationsPage() {
   const { isOwnerOrManager } = useRole()
+  const { currentStudio } = useStudio()
   const [entries, setEntries]         = useState([])
   const [loading, setLoading]         = useState(true)
   const [filter, setFilter]             = useState('open')
@@ -328,6 +330,14 @@ export default function EscalationsPage() {
   }
 
   useEffect(() => { load() }, [])
+
+  // Reload when studio changes
+  useEffect(() => {
+    if (currentStudio?.id) {
+      setLoading(true)
+      load()
+    }
+  }, [currentStudio?.id])
 
   const handleCreate = async (form) => {
     const created = await apiPost('/api/escalations', form)
