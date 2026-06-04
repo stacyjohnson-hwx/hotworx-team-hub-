@@ -14,40 +14,58 @@ export function StudioProvider({ children }) {
 
   async function loadStudios() {
     try {
-      // Fetch user's studios with explicit join
+      // First get user-studio relationships
       const { data: userStudios, error: userError } = await supabase
         .from('user_studios')
-        .select(`
-          role,
-          studio_id,
-          studios (
-            id,
-            code,
-            name,
-            address,
-            timezone
-          )
-        `)
+        .select('role, studio_id')
 
-      if (userError) throw userError
+      console.log('[StudioContext] user_studios query:', { userStudios, userError })
+
+      if (userError) {
+        console.error('[StudioContext] Error loading user_studios:', userError)
+        throw userError
+      }
 
       if (!userStudios || userStudios.length === 0) {
-        console.warn('No studios found for user')
+        console.warn('[StudioContext] No studios found for user')
         setLoading(false)
         return
       }
 
-      const studioList = userStudios
-        .filter(us => us.studios) // Filter out any null studios
-        .map(us => ({
-          id: us.studios.id,
-          code: us.studios.code,
-          name: us.studios.name,
-          address: us.studios.address,
-          timezone: us.studios.timezone,
-          userRole: us.role,
-        }))
-        .sort((a, b) => a.code.localeCompare(b.code))
+      // Then get studio details
+      const studioIds = userStudios.map(us => us.studio_id)
+      const { data: studios, error: studiosError } = await supabase
+        .from('studios')
+        .select('*')
+        .in('id', studioIds)
+
+      console.log('[StudioContext] studios query:', { studios, studiosError })
+
+      if (studiosError) {
+        console.error('[StudioContext] Error loading studios:', studiosError)
+        throw studiosError
+      }
+
+      if (!studios || studios.length === 0) {
+        console.warn('[StudioContext] No studio details found')
+        setLoading(false)
+        return
+      }
+
+      // Merge role with studio data
+      const studioList = studios.map(studio => {
+        const userStudio = userStudios.find(us => us.studio_id === studio.id)
+        return {
+          id: studio.id,
+          code: studio.code,
+          name: studio.name,
+          address: studio.address,
+          timezone: studio.timezone,
+          userRole: userStudio?.role,
+        }
+      }).sort((a, b) => a.code.localeCompare(b.code))
+
+      console.log('[StudioContext] Final studio list:', studioList)
 
       setStudios(studioList)
 
@@ -55,10 +73,12 @@ export function StudioProvider({ children }) {
       const savedStudioId = localStorage.getItem('selectedStudioId')
       const defaultStudio = studioList.find(s => s.id === savedStudioId) || studioList[0]
 
+      console.log('[StudioContext] Selected studio:', defaultStudio)
+
       setCurrentStudio(defaultStudio || null)
       setLoading(false)
     } catch (err) {
-      console.error('Failed to load studios:', err)
+      console.error('[StudioContext] Failed to load studios:', err)
       setLoading(false)
     }
   }
