@@ -3,8 +3,12 @@ const router = express.Router()
 const { createClient } = require('@supabase/supabase-js')
 const authenticate = require('../middleware/authMiddleware')
 const { requireRole } = require('../middleware/roleGuard')
+const { requireStudio } = require('../middleware/studioMiddleware')
 
 const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+
+// Apply studio middleware to all routes
+router.use(authenticate, requireStudio)
 
 async function withRequesterNames(requests) {
   if (!requests.length) return []
@@ -19,10 +23,11 @@ async function withRequesterNames(requests) {
 }
 
 // GET /api/timeoff — own requests (TSA) or all (owner/manager)
-router.get('/', authenticate, async (req, res) => {
+router.get('/', async (req, res) => {
   let query = db()
     .from('time_off_requests')
     .select('*')
+    .eq('studio_id', req.studio.id)
     .order('created_at', { ascending: false })
 
   if (req.role === 'tsa') {
@@ -37,7 +42,7 @@ router.get('/', authenticate, async (req, res) => {
 })
 
 // POST /api/timeoff — TSA submits a request
-router.post('/', authenticate, async (req, res) => {
+router.post('/', async (req, res) => {
   const { start_date, end_date, reason } = req.body
   if (!start_date || !end_date) return res.status(400).json({ error: 'start_date and end_date are required' })
 
@@ -48,6 +53,7 @@ router.post('/', authenticate, async (req, res) => {
       start_date,
       end_date,
       reason: reason || null,
+      studio_id: req.studio.id
     })
     .select()
     .single()
@@ -58,7 +64,7 @@ router.post('/', authenticate, async (req, res) => {
 })
 
 // PATCH /api/timeoff/:id — approve or deny (owner/manager only)
-router.patch('/:id', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.patch('/:id', requireRole('owner', 'manager'), async (req, res) => {
   const { status, review_note } = req.body
   if (!['approved', 'denied'].includes(status))
     return res.status(400).json({ error: 'status must be approved or denied' })
@@ -81,7 +87,7 @@ router.patch('/:id', authenticate, requireRole('owner', 'manager'), async (req, 
 })
 
 // DELETE /api/timeoff/:id — submitter (own pending), manager, or owner can delete
-router.delete('/:id', authenticate, async (req, res) => {
+router.delete('/:id', async (req, res) => {
   const role = req.user.app_metadata?.role || req.role
 
   let query = db()

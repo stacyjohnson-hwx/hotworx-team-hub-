@@ -3,8 +3,12 @@ const router = express.Router()
 const { createClient } = require('@supabase/supabase-js')
 const authenticate = require('../middleware/authMiddleware')
 const { requireRole } = require('../middleware/roleGuard')
+const { requireStudio } = require('../middleware/studioMiddleware')
 
 const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+
+// Apply studio middleware to all routes
+router.use(authenticate, requireStudio)
 
 // Fetch display names via RPC function that queries auth.users directly
 async function fetchNameMap(userIds) {
@@ -49,7 +53,7 @@ function resolveRange(weekStart, endOverride) {
 }
 
 // GET /api/schedule?weekStart=YYYY-MM-DD[&end=YYYY-MM-DD]
-router.get('/', authenticate, async (req, res) => {
+router.get('/', async (req, res) => {
   const { weekStart, end } = req.query
   if (!weekStart) return res.status(400).json({ error: 'weekStart required' })
   const weekEnd = resolveRange(weekStart, end)
@@ -57,6 +61,7 @@ router.get('/', authenticate, async (req, res) => {
   const { data, error } = await db()
     .from('shifts')
     .select('*')
+    .eq('studio_id', req.studio.id)
     .gte('shift_date', weekStart)
     .lte('shift_date', weekEnd)
     .order('shift_date')
@@ -68,7 +73,7 @@ router.get('/', authenticate, async (req, res) => {
 })
 
 // GET /api/schedule/timeoff-week?weekStart=YYYY-MM-DD[&end=YYYY-MM-DD]
-router.get('/timeoff-week', authenticate, async (req, res) => {
+router.get('/timeoff-week', async (req, res) => {
   const { weekStart, end } = req.query
   if (!weekStart) return res.status(400).json({ error: 'weekStart required' })
   const weekEnd = resolveRange(weekStart, end)
@@ -76,6 +81,7 @@ router.get('/timeoff-week', authenticate, async (req, res) => {
   const { data, error } = await db()
     .from('time_off_requests')
     .select('*')
+    .eq('studio_id', req.studio.id)
     .eq('status', 'approved')
     .lte('start_date', weekEnd)
     .gte('end_date', weekStart)
@@ -86,7 +92,7 @@ router.get('/timeoff-week', authenticate, async (req, res) => {
 })
 
 // GET /api/schedule/blocked?weekStart=YYYY-MM-DD[&end=YYYY-MM-DD]
-router.get('/blocked', authenticate, async (req, res) => {
+router.get('/blocked', async (req, res) => {
   const { weekStart, end } = req.query
   if (!weekStart) return res.status(400).json({ error: 'weekStart required' })
   const weekEnd = resolveRange(weekStart, end)
@@ -94,6 +100,7 @@ router.get('/blocked', authenticate, async (req, res) => {
   const { data, error } = await db()
     .from('blocked_days')
     .select('*')
+    .eq('studio_id', req.studio.id)
     .gte('block_date', weekStart)
     .lte('block_date', weekEnd)
     .order('block_date')
@@ -103,14 +110,20 @@ router.get('/blocked', authenticate, async (req, res) => {
 })
 
 // POST /api/schedule/blocked
-router.post('/blocked', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.post('/blocked', requireRole('owner', 'manager'), async (req, res) => {
   const { block_date, label, block_type } = req.body
   if (!block_date) return res.status(400).json({ error: 'block_date is required' })
 
   const { data, error } = await db()
     .from('blocked_days')
     .upsert(
-      { block_date, label: label || 'Holiday', block_type: block_type || 'holiday', created_by: req.user.id },
+      {
+        block_date,
+        label: label || 'Holiday',
+        block_type: block_type || 'holiday',
+        created_by: req.user.id,
+        studio_id: req.studio.id
+      },
       { onConflict: 'block_date' }
     )
     .select()
@@ -121,21 +134,29 @@ router.post('/blocked', authenticate, requireRole('owner', 'manager'), async (re
 })
 
 // DELETE /api/schedule/blocked/:id
-router.delete('/blocked/:id', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.delete('/blocked/:id', requireRole('owner', 'manager'), async (req, res) => {
   const { error } = await db().from('blocked_days').delete().eq('id', req.params.id)
   if (error) return res.status(500).json({ error: error.message })
   res.status(204).end()
 })
 
 // POST /api/schedule
-router.post('/', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.post('/', requireRole('owner', 'manager'), async (req, res) => {
   const { tsa_id, shift_date, start_time, end_time, notes } = req.body
   if (!tsa_id || !shift_date || !start_time || !end_time)
     return res.status(400).json({ error: 'tsa_id, shift_date, start_time, end_time are required' })
 
   const { data, error } = await db()
     .from('shifts')
-    .insert({ tsa_id, shift_date, start_time, end_time, notes: notes || null, created_by: req.user.id })
+    .insert({
+      tsa_id,
+      shift_date,
+      start_time,
+      end_time,
+      notes: notes || null,
+      created_by: req.user.id,
+      studio_id: req.studio.id
+    })
     .select()
     .single()
 
@@ -145,7 +166,7 @@ router.post('/', authenticate, requireRole('owner', 'manager'), async (req, res)
 })
 
 // PUT /api/schedule/:id
-router.put('/:id', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.put('/:id', requireRole('owner', 'manager'), async (req, res) => {
   const { tsa_id, shift_date, start_time, end_time, notes } = req.body
 
   const { data, error } = await db()
@@ -161,7 +182,7 @@ router.put('/:id', authenticate, requireRole('owner', 'manager'), async (req, re
 })
 
 // DELETE /api/schedule/:id
-router.delete('/:id', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.delete('/:id', requireRole('owner', 'manager'), async (req, res) => {
   const { error } = await db().from('shifts').delete().eq('id', req.params.id)
   if (error) return res.status(500).json({ error: error.message })
   res.status(204).end()

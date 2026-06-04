@@ -2,14 +2,27 @@ import { supabase } from '@/lib/supabase'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001'
 
-async function getAuthHeaders() {
+async function getAuthHeaders(studioId = null) {
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) return {}
-  return { Authorization: `Bearer ${session.access_token}` }
+  const headers = { Authorization: `Bearer ${session.access_token}` }
+
+  // Add studio ID if provided
+  if (studioId) {
+    headers['X-Studio-ID'] = studioId
+  } else {
+    // Try to get from localStorage as fallback
+    const savedStudioId = localStorage.getItem('selectedStudioId')
+    if (savedStudioId) {
+      headers['X-Studio-ID'] = savedStudioId
+    }
+  }
+
+  return headers
 }
 
-export async function apiGet(path) {
-  const headers = await getAuthHeaders()
+export async function apiGet(path, studioId = null) {
+  const headers = await getAuthHeaders(studioId)
   const res = await fetch(`${API_URL}${path}`, { headers })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }))
@@ -18,8 +31,8 @@ export async function apiGet(path) {
   return res.json()
 }
 
-export async function apiPost(path, body) {
-  const headers = await getAuthHeaders()
+export async function apiPost(path, body, studioId = null) {
+  const headers = await getAuthHeaders(studioId)
   const res = await fetch(`${API_URL}${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...headers },
@@ -33,8 +46,8 @@ export async function apiPost(path, body) {
   return res.json()
 }
 
-export async function apiPut(path, body) {
-  const headers = await getAuthHeaders()
+export async function apiPut(path, body, studioId = null) {
+  const headers = await getAuthHeaders(studioId)
   const res = await fetch(`${API_URL}${path}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...headers },
@@ -47,8 +60,8 @@ export async function apiPut(path, body) {
   return res.json()
 }
 
-export async function apiPatch(path, body) {
-  const headers = await getAuthHeaders()
+export async function apiPatch(path, body, studioId = null) {
+  const headers = await getAuthHeaders(studioId)
   const res = await fetch(`${API_URL}${path}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...headers },
@@ -61,8 +74,8 @@ export async function apiPatch(path, body) {
   return res.json()
 }
 
-export async function apiDelete(path, body) {
-  const headers = await getAuthHeaders()
+export async function apiDelete(path, body, studioId = null) {
+  const headers = await getAuthHeaders(studioId)
   const res = await fetch(`${API_URL}${path}`, {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json', ...headers },
