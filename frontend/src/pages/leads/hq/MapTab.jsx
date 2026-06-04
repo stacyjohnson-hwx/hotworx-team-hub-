@@ -7,11 +7,9 @@ import { Plus, MapPin, X, Search, Loader2, Trash2, Building2, Home, ChevronRight
 import { MAP_ACTIVITIES, EMPLOYEES } from '../data/mockData'
 import { apiGet, apiPut } from '@/hooks/useApi'
 import { useRole } from '@/hooks/useRole'
+import { useStudio } from '@/contexts/StudioContext'
 
-// ─── Studio ───────────────────────────────────────────────────────────────────
-const STUDIO = { lat: 43.08398, lng: -88.23366, name: 'HOTWORX Pewaukee', address: '1279 Capitol Drive, Pewaukee, WI 53072' }
-const MAP_CENTER = [43.05, -88.23]
-const MAP_ZOOM   = 11
+const MAP_ZOOM = 11
 
 // ─── Activity types & radii ───────────────────────────────────────────────────
 const ACTIVITY_TYPES = [
@@ -87,55 +85,60 @@ const DEFAULT_NEIGHBORHOODS = [
   { id:'nh-33', name:'New Berlin',                          lat:42.9764, lng:-88.1082 },
 ]
 
-// ─── localStorage ─────────────────────────────────────────────────────────────
-const ACT_KEY          = 'leadgenhq_map_activities'
-const NBH_KEY          = 'leadgenhq_neighborhoods'
-const NBH_DELETED_KEY  = 'leadgenhq_neighborhoods_deleted'
-const NBH_OVERRIDE_KEY = 'leadgenhq_neighborhoods_overrides'  // edits to default neighborhoods
+// ─── localStorage (studio-specific) ───────────────────────────────────────────
+function getStudioKey(baseKey) {
+  const studioId = localStorage.getItem('selectedStudioId') || 'default'
+  return `${baseKey}_${studioId}`
+}
 
-const ACT_VERSION_KEY = 'leadgenhq_map_activities_version'
+const ACT_KEY          = () => getStudioKey('leadgenhq_map_activities')
+const NBH_KEY          = () => getStudioKey('leadgenhq_neighborhoods')
+const NBH_DELETED_KEY  = () => getStudioKey('leadgenhq_neighborhoods_deleted')
+const NBH_OVERRIDE_KEY = () => getStudioKey('leadgenhq_neighborhoods_overrides')
+
+const ACT_VERSION_KEY = () => getStudioKey('leadgenhq_map_activities_version')
 const ACT_VERSION     = 2  // bump to wipe stale mock activities from localStorage
 
 // Activities: save the full list (not just custom-*) so edits/deletes to mock data persist
 function loadActivities() {
   try {
     // If version mismatch, discard stored activities and start fresh
-    if (localStorage.getItem(ACT_VERSION_KEY) !== String(ACT_VERSION)) {
-      localStorage.removeItem(ACT_KEY)
-      localStorage.setItem(ACT_VERSION_KEY, String(ACT_VERSION))
+    if (localStorage.getItem(ACT_VERSION_KEY()) !== String(ACT_VERSION)) {
+      localStorage.removeItem(ACT_KEY())
+      localStorage.setItem(ACT_VERSION_KEY(), String(ACT_VERSION))
       return MAP_ACTIVITIES
     }
-    const saved = localStorage.getItem(ACT_KEY)
+    const saved = localStorage.getItem(ACT_KEY())
     return saved ? JSON.parse(saved) : MAP_ACTIVITIES
   } catch { return MAP_ACTIVITIES }
 }
 function saveActivities(list) {
-  try { localStorage.setItem(ACT_KEY, JSON.stringify(list)) } catch {}
+  try { localStorage.setItem(ACT_KEY(), JSON.stringify(list)) } catch {}
 }
 
 // Neighborhood delete persistence
 function loadDeletedDefaultIds() {
-  try { return new Set(JSON.parse(localStorage.getItem(NBH_DELETED_KEY) || '[]')) } catch { return new Set() }
+  try { return new Set(JSON.parse(localStorage.getItem(NBH_DELETED_KEY()) || '[]')) } catch { return new Set() }
 }
 function saveDeletedDefaultIds(ids) {
-  try { localStorage.setItem(NBH_DELETED_KEY, JSON.stringify([...ids])) } catch {}
+  try { localStorage.setItem(NBH_DELETED_KEY(), JSON.stringify([...ids])) } catch {}
 }
 
 // Neighborhood edit overrides (for default neighborhoods whose name/notes/coords were changed)
 function loadNbhOverrides() {
-  try { return JSON.parse(localStorage.getItem(NBH_OVERRIDE_KEY) || '{}') } catch { return {} }
+  try { return JSON.parse(localStorage.getItem(NBH_OVERRIDE_KEY()) || '{}') } catch { return {} }
 }
 function saveNbhOverride(id, data) {
   const overrides = loadNbhOverrides()
   overrides[id] = data
-  try { localStorage.setItem(NBH_OVERRIDE_KEY, JSON.stringify(overrides)) } catch {}
+  try { localStorage.setItem(NBH_OVERRIDE_KEY(), JSON.stringify(overrides)) } catch {}
 }
 
 function loadNeighborhoods() {
   try {
     const deleted   = loadDeletedDefaultIds()
     const overrides = loadNbhOverrides()
-    const custom    = JSON.parse(localStorage.getItem(NBH_KEY) || '[]')
+    const custom    = JSON.parse(localStorage.getItem(NBH_KEY()) || '[]')
     const customIds = new Set(custom.map(n => n.id))
     return [
       ...DEFAULT_NEIGHBORHOODS
@@ -146,7 +149,7 @@ function loadNeighborhoods() {
   } catch { return DEFAULT_NEIGHBORHOODS }
 }
 function saveNeighborhoods(list) {
-  try { localStorage.setItem(NBH_KEY, JSON.stringify(list.filter(n => n.id.startsWith('custom-')))) } catch {}
+  try { localStorage.setItem(NBH_KEY(), JSON.stringify(list.filter(n => n.id.startsWith('custom-')))) } catch {}
 }
 
 // B2B status colors for map pins
@@ -1005,11 +1008,22 @@ function LocationRow({ item, type, activities, onFly, onDelete, onShowHistory, o
 
 // ─── Main MapTab ──────────────────────────────────────────────────────────────
 export default function MapTab() {
+  const { currentStudio } = useStudio()
   const isOwnerOrManager = true // all roles can add/edit map activities and notes
   const [activities,       setActivities]       = useState(() => loadActivities())
   const [neighborhoods,    setNeighborhoods]    = useState(() => loadNeighborhoods())
   const [b2bContacts,      setB2bContacts]      = useState([])
   const [b2bLoading,       setB2bLoading]       = useState(true)
+
+  // Studio coordinates for map center
+  const STUDIO = currentStudio ? {
+    lat: parseFloat(currentStudio.latitude || 43.08398),
+    lng: parseFloat(currentStudio.longitude || -88.23366),
+    name: currentStudio.name,
+    address: currentStudio.address,
+  } : { lat: 43.08398, lng: -88.23366, name: 'HOTWORX', address: '' }
+
+  const MAP_CENTER = [STUDIO.lat - 0.03, STUDIO.lng]
   const [flyTarget,        setFlyTarget]        = useState(null)
   const [listTab,          setListTab]          = useState('neighborhoods')
   const [search,           setSearch]           = useState('')
