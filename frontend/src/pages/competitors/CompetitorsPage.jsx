@@ -152,29 +152,58 @@ function CompetitorCard({ comp, isOwnerOrManager, onEdit, onDelete, onCompare, o
 
         {/* Expanded — strengths vs advantages */}
         {expanded && (
-          <div className="mt-3 pt-3 border-t border-gray-100 grid grid-cols-2 gap-3">
-            <div>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1.5">Their Strengths</p>
-              <ul className="space-y-1">
-                {(comp.their_strengths || []).map((s, i) => (
-                  <li key={i} className="flex items-start gap-1.5 text-xs text-gray-600">
-                    <AlertTriangle size={10} className="text-amber-400 flex-shrink-0 mt-0.5" />{s}
-                  </li>
-                ))}
-              </ul>
+          <div className="mt-3 pt-3 border-t border-gray-100 space-y-3">
+            {/* Full description */}
+            {comp.description && (
+              <div>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1.5">Description</p>
+                <p className="text-xs text-gray-700 leading-relaxed">{comp.description}</p>
+              </div>
+            )}
+
+            {/* Strengths vs Advantages */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1.5">Their Strengths</p>
+                {(comp.their_strengths || []).length > 0 ? (
+                  <ul className="space-y-1">
+                    {comp.their_strengths.map((s, i) => (
+                      <li key={i} className="flex items-start gap-1.5 text-xs text-gray-600">
+                        <AlertTriangle size={10} className="text-amber-400 flex-shrink-0 mt-0.5" />{s}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-xs text-gray-400 italic">None listed</p>
+                )}
+              </div>
+              <div>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1.5">Why We Win</p>
+                {(comp.our_advantages || []).length > 0 ? (
+                  <ul className="space-y-1">
+                    {comp.our_advantages.map((a, i) => (
+                      <li key={i} className="flex items-start gap-1.5 text-xs text-gray-600">
+                        <Check size={10} className="text-green-500 flex-shrink-0 mt-0.5" />{a}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-xs text-gray-400 italic">None listed</p>
+                )}
+              </div>
             </div>
-            <div>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1.5">Why We Win</p>
-              <ul className="space-y-1">
-                {(comp.our_advantages || []).map((a, i) => (
-                  <li key={i} className="flex items-start gap-1.5 text-xs text-gray-600">
-                    <Check size={10} className="text-green-500 flex-shrink-0 mt-0.5" />{a}
-                  </li>
-                ))}
-              </ul>
-            </div>
+
+            {/* Internal notes */}
+            {comp.notes && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2">
+                <p className="text-[10px] font-bold text-yellow-700 uppercase tracking-wide mb-1">Internal Notes</p>
+                <p className="text-xs text-gray-700 leading-relaxed whitespace-pre-wrap">{comp.notes}</p>
+              </div>
+            )}
+
+            {/* AI summary */}
             {comp.ai_summary && (
-              <div className="col-span-2 bg-purple-50 border border-purple-100 rounded-lg px-3 py-2">
+              <div className="bg-purple-50 border border-purple-100 rounded-lg px-3 py-2">
                 <p className="text-[10px] font-bold text-purple-500 uppercase tracking-wide mb-1 flex items-center gap-1"><Sparkles size={9} />AI Intel</p>
                 <p className="text-xs text-gray-700 leading-relaxed">{comp.ai_summary}</p>
                 {comp.ai_last_updated && (
