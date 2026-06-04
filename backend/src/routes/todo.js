@@ -2,6 +2,7 @@ const express = require('express')
 const router = express.Router()
 const { createClient } = require('@supabase/supabase-js')
 const { requireRole } = require('../middleware/roleGuard')
+const { requireStudio } = require('../middleware/studioMiddleware')
 const authenticate = require('../middleware/authMiddleware')
 
 const supabase = () =>
@@ -17,13 +18,14 @@ async function buildUserMap(db) {
 }
 
 // ─── GET /api/todo ────────────────────────────────────────────────────────────
-router.get('/', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.get('/', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const { status } = req.query
   const db = supabase()
 
   let query = db
     .from('todo_items')
     .select('*')
+    .eq('studio_id', req.studio.id)
     .order('status')                          // open before done
     .order('due_date', { ascending: true, nullsFirst: false })
     .order('created_at', { ascending: false })
@@ -42,7 +44,7 @@ router.get('/', authenticate, requireRole('owner', 'manager'), async (req, res) 
 })
 
 // ─── POST /api/todo ───────────────────────────────────────────────────────────
-router.post('/', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.post('/', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const { title, notes, due_date, priority, area, source, coaching_session_id, list_target } = req.body
   if (!title) return res.status(400).json({ error: 'title is required' })
 
@@ -59,6 +61,7 @@ router.post('/', authenticate, requireRole('owner', 'manager'), async (req, res)
       coaching_session_id: coaching_session_id || null,
       list_target: ['manager', 'owner'].includes(list_target) ? list_target : 'manager',
       created_by: req.user.id,
+      studio_id: req.studio.id,
     })
     .select()
     .single()
@@ -68,7 +71,7 @@ router.post('/', authenticate, requireRole('owner', 'manager'), async (req, res)
 })
 
 // ─── PUT /api/todo/:id ────────────────────────────────────────────────────────
-router.put('/:id', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.put('/:id', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const { title, notes, due_date, priority, area, status, list_target } = req.body
   const db = supabase()
 
@@ -103,7 +106,7 @@ router.put('/:id', authenticate, requireRole('owner', 'manager'), async (req, re
 })
 
 // ─── DELETE /api/todo/:id ─────────────────────────────────────────────────────
-router.delete('/:id', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.delete('/:id', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const { error } = await supabase()
     .from('todo_items')
     .delete()

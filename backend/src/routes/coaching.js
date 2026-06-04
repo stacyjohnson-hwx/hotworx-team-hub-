@@ -2,6 +2,7 @@ const express = require('express')
 const router = express.Router()
 const { createClient } = require('@supabase/supabase-js')
 const { requireRole } = require('../middleware/roleGuard')
+const { requireStudio } = require('../middleware/studioMiddleware')
 const authenticate = require('../middleware/authMiddleware')
 
 const supabase = () =>
@@ -17,16 +18,18 @@ async function buildUserMap(db) {
 }
 
 // ─── GET /api/coaching ────────────────────────────────────────────────────────
-router.get('/', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.get('/', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const db = supabase()
 
   const [{ data: sessions, error }, { data: actions }, userMap] = await Promise.all([
     db.from('coaching_sessions')
       .select('*')
+      .eq('studio_id', req.studio.id)
       .order('session_date', { ascending: false })
       .order('created_at', { ascending: false }),
     db.from('coaching_action_items')
       .select('*')
+      .eq('studio_id', req.studio.id)
       .order('created_at'),
     buildUserMap(db),
   ])
@@ -50,7 +53,7 @@ router.get('/', authenticate, requireRole('owner', 'manager'), async (req, res) 
 })
 
 // ─── POST /api/coaching ───────────────────────────────────────────────────────
-router.post('/', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.post('/', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const { session_date, session_time, staff_name, session_type, notes, action_items } = req.body
   if (!staff_name) return res.status(400).json({ error: 'staff_name is required' })
 
@@ -65,6 +68,7 @@ router.post('/', authenticate, requireRole('owner', 'manager'), async (req, res)
       session_type: session_type || 'one-on-one',
       notes: notes || null,
       created_by: req.user.id,
+      studio_id: req.studio.id,
     })
     .select()
     .single()
@@ -80,6 +84,7 @@ router.post('/', authenticate, requireRole('owner', 'manager'), async (req, res)
         session_id: session.id,
         title: a.title,
         notes: a.notes || null,
+        studio_id: req.studio.id,
       })))
       .select()
     savedActions = acts || []
@@ -89,7 +94,7 @@ router.post('/', authenticate, requireRole('owner', 'manager'), async (req, res)
 })
 
 // ─── PUT /api/coaching/:id ────────────────────────────────────────────────────
-router.put('/:id', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.put('/:id', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const { session_date, session_time, staff_name, session_type, notes } = req.body
   const db = supabase()
 
@@ -116,7 +121,7 @@ router.put('/:id', authenticate, requireRole('owner', 'manager'), async (req, re
 })
 
 // ─── DELETE /api/coaching/:id ─────────────────────────────────────────────────
-router.delete('/:id', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.delete('/:id', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const { error } = await supabase()
     .from('coaching_sessions')
     .delete()
@@ -128,13 +133,13 @@ router.delete('/:id', authenticate, requireRole('owner', 'manager'), async (req,
 
 // ─── POST /api/coaching/actions ───────────────────────────────────────────────
 // Add a single action item to an existing session
-router.post('/actions', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.post('/actions', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const { session_id, title, notes } = req.body
   if (!session_id || !title) return res.status(400).json({ error: 'session_id and title required' })
 
   const { data, error } = await supabase()
     .from('coaching_action_items')
-    .insert({ session_id, title, notes: notes || null })
+    .insert({ session_id, title, notes: notes || null, studio_id: req.studio.id })
     .select()
     .single()
 
@@ -143,7 +148,7 @@ router.post('/actions', authenticate, requireRole('owner', 'manager'), async (re
 })
 
 // ─── DELETE /api/coaching/actions/:id ────────────────────────────────────────
-router.delete('/actions/:id', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.delete('/actions/:id', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const { error } = await supabase()
     .from('coaching_action_items')
     .delete()
@@ -155,7 +160,7 @@ router.delete('/actions/:id', authenticate, requireRole('owner', 'manager'), asy
 
 // ─── POST /api/coaching/actions/:id/push-to-todo ─────────────────────────────
 // Push an action item to the Manager or Owner To-Do list
-router.post('/actions/:id/push-to-todo', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.post('/actions/:id/push-to-todo', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const db = supabase()
 
   // Fetch the action item + its session for context
@@ -185,6 +190,7 @@ router.post('/actions/:id/push-to-todo', authenticate, requireRole('owner', 'man
       list_target: target,
       coaching_session_id: session?.id || null,
       created_by: req.user.id,
+      studio_id: req.studio.id,
     })
     .select()
     .single()
