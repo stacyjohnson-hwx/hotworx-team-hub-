@@ -33,11 +33,14 @@ const INTERACTION_TYPES = [
 ]
 
 const INDUSTRIES = [
-  'Apartments', 'Chiropractic', 'Club / Group', 'Coffee / Café', 'Community Org',
-  'Corporate / Office', 'Gym / Fitness', 'Healthcare',
-  'Influencer', 'Massage', 'Municipal', 'Neighborhood / HOA', 'Networking Group',
-  'Nutrition / Wellness', 'Physical Therapy', 'Real Estate', 'Restaurant / Bar',
-  'Retail', 'Salon / Spa', 'School', 'Sports / Athletics', 'Yoga / Pilates', 'Other',
+  'Accounting', 'Apartments', 'Chiropractic', 'Club / Group', 'Coffee / Café', 'Community Org',
+  'Corporate / Office', 'Corporate Wellness', 'Education', 'Entertainment', 'Events',
+  'Fitness Equipment', 'Government', 'Gym / Fitness', 'Health Tech', 'Healthcare',
+  'Hospitality', 'Influencer', 'Insurance', 'Legal', 'Manufacturing', 'Massage',
+  'MedSpa', 'Municipal', 'Neighborhood / HOA', 'Networking Group', 'Nutrition / Wellness',
+  'Physical Therapy', 'Private Club', 'Property Management', 'Real Estate', 'Recreation',
+  'Restaurant / Bar', 'Restaurant Group', 'Retail', 'Salon / Spa', 'School',
+  'Sports / Athletics', 'Wellness', 'Yoga / Pilates', 'Other',
 ]
 
 function statusMeta(val) {
