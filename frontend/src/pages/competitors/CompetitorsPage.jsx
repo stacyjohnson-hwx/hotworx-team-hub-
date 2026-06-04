@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRole } from '@/hooks/useRole'
+import { useStudio } from '@/contexts/StudioContext'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
 import { supabase } from '@/lib/supabase'
 import {
@@ -9,9 +10,9 @@ import {
   ImagePlus, Loader2,
 } from 'lucide-react'
 
-// ─── HOTWORX own profile for comparison ──────────────────────────────────────
+// ─── HOTWORX own profile for comparison (studio-specific name) ───────────────
 const HOTWORX = {
-  name: 'HOTWORX Pewaukee',
+  // name will be dynamically set from currentStudio
   price_monthly: 59,
   price_drop_in: null,
   price_trial: 'First 3 sessions free',
@@ -452,8 +453,10 @@ function VisitHistory({ competitor }) {
 }
 
 // ─── Map View ─────────────────────────────────────────────────────────────────
-function MapView({ competitors, onCompare, onLogVisit }) {
-  const HOTWORX_LAT = 43.0840, HOTWORX_LNG = -88.2337
+function MapView({ competitors, onCompare, onLogVisit, studioCoords }) {
+  // Use studio-specific coordinates or fallback to Pewaukee
+  const HOTWORX_LAT = studioCoords?.latitude || 43.0840
+  const HOTWORX_LNG = studioCoords?.longitude || -88.2337
 
   const [hovered, setHovered] = useState(null)
 
@@ -710,6 +713,7 @@ function EditCompetitorModal({ competitor, onClose, onSaved }) {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function CompetitorsPage() {
   const { role } = useRole()
+  const { currentStudio } = useStudio()
   const isOwnerOrManager = role === 'owner' || role === 'manager'
 
   const [competitors, setCompetitors] = useState([])
@@ -834,7 +838,12 @@ export default function CompetitorsPage() {
 
       {/* ── Map ── */}
       {tab === 'map' && (
-        <MapView competitors={competitors} onCompare={setCompareComp} onLogVisit={setVisitComp} />
+        <MapView
+          competitors={competitors}
+          onCompare={setCompareComp}
+          onLogVisit={setVisitComp}
+          studioCoords={currentStudio}
+        />
       )}
 
       {/* ── Compare ── */}
