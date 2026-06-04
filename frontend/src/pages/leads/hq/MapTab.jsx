@@ -40,8 +40,8 @@ function getIntensity(dateStr) {
   return days <= 7 ? 'fresh' : days <= 30 ? 'fading' : 'stale'
 }
 
-// ─── Pre-populated neighborhoods ──────────────────────────────────────────────
-const DEFAULT_NEIGHBORHOODS = [
+// ─── Pre-populated neighborhoods (Pewaukee WI0009 only) ───────────────────────
+const DEFAULT_NEIGHBORHOODS_PEWAUKEE = [
   // ── Pewaukee subdivisions (closest to studio) ─────────────────────────────
   { id:'nh-1',  name:'Five Fields',                         lat:43.0813, lng:-88.2201 },
   { id:'nh-2',  name:'Broken Hill',                         lat:43.0870, lng:-88.2178 },
@@ -84,6 +84,16 @@ const DEFAULT_NEIGHBORHOODS = [
   { id:'nh-32', name:'Muskego — Muskego Lake Area',         lat:42.8745, lng:-88.1128 },
   { id:'nh-33', name:'New Berlin',                          lat:42.9764, lng:-88.1082 },
 ]
+
+// Madison has no pre-populated neighborhoods - starts with empty slate
+const DEFAULT_NEIGHBORHOODS_MADISON = []
+
+// Get default neighborhoods for current studio
+function getDefaultNeighborhoods(studioCode) {
+  if (studioCode === 'WI0009') return DEFAULT_NEIGHBORHOODS_PEWAUKEE
+  if (studioCode === 'WI0021') return DEFAULT_NEIGHBORHOODS_MADISON
+  return [] // Unknown studios start empty
+}
 
 // ─── localStorage (studio-specific) ───────────────────────────────────────────
 function getStudioKey(baseKey) {
@@ -136,6 +146,17 @@ function saveNbhOverride(id, data) {
 
 function loadNeighborhoods() {
   try {
+    // Get studio code from the currently selected studio
+    const studioId = localStorage.getItem('selectedStudioId')
+    let studioCode = null
+
+    // Parse studio code from storage (studios are stored with their code)
+    // We'll need to look up via a small inline query to get the code
+    // For now, we'll use a simple mapping based on known studio IDs
+    const studioIdToCode = JSON.parse(localStorage.getItem('studioIdToCode') || '{}')
+    studioCode = studioIdToCode[studioId] || 'WI0009' // Default to Pewaukee
+
+    const DEFAULT_NEIGHBORHOODS = getDefaultNeighborhoods(studioCode)
     const deleted   = loadDeletedDefaultIds()
     const overrides = loadNbhOverrides()
     const custom    = JSON.parse(localStorage.getItem(NBH_KEY()) || '[]')
@@ -146,7 +167,7 @@ function loadNeighborhoods() {
         .map(n => overrides[n.id] ? { ...n, ...overrides[n.id] } : n),
       ...custom,
     ]
-  } catch { return DEFAULT_NEIGHBORHOODS }
+  } catch { return [] }
 }
 function saveNeighborhoods(list) {
   try { localStorage.setItem(NBH_KEY(), JSON.stringify(list.filter(n => n.id.startsWith('custom-')))) } catch {}
@@ -1025,6 +1046,20 @@ export default function MapTab() {
   const [neighborhoods,    setNeighborhoods]    = useState(() => loadNeighborhoods())
   const [b2bContacts,      setB2bContacts]      = useState([])
   const [b2bLoading,       setB2bLoading]       = useState(true)
+
+  // Update studio code mapping in localStorage for neighborhood filtering
+  useEffect(() => {
+    if (currentStudio) {
+      const mapping = JSON.parse(localStorage.getItem('studioIdToCode') || '{}')
+      mapping[currentStudio.id] = currentStudio.code
+      localStorage.setItem('studioIdToCode', JSON.stringify(mapping))
+    }
+  }, [currentStudio])
+
+  // Reload neighborhoods when studio changes
+  useEffect(() => {
+    setNeighborhoods(loadNeighborhoods())
+  }, [currentStudio?.id])
 
   // Studio coordinates for map center
   const STUDIO = currentStudio ? {
