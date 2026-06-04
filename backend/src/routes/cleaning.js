@@ -3,9 +3,13 @@ const router = express.Router()
 const { createClient } = require('@supabase/supabase-js')
 const { requireRole } = require('../middleware/roleGuard')
 const authenticate = require('../middleware/authMiddleware')
+const { requireStudio } = require('../middleware/studioMiddleware')
 
 const supabase = () =>
   createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+
+// Apply studio middleware to all routes
+router.use(authenticate, requireStudio)
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -44,15 +48,16 @@ async function buildUserMap(db) {
 
 // ─── GET /api/cleaning/today?date=YYYY-MM-DD ────────────────────────────────
 // Returns tasks that should appear today + their completion status + last completion
-router.get('/today', authenticate, async (req, res) => {
+router.get('/today', async (req, res) => {
   const date = req.query.date || new Date().toISOString().slice(0, 10)
   const db = supabase()
 
   const [tasksRes, completionsRes, recentRes] = await Promise.all([
     db.from('cleaning_tasks').select('*').eq('active', true).order('sort_order').order('created_at'),
-    db.from('cleaning_completions').select('*').eq('completion_date', date),
+    db.from('cleaning_completions').select('*').eq('studio_id', req.studio.id).eq('completion_date', date),
     // Last 90 days of completions to find "last completed" per task
     db.from('cleaning_completions').select('task_id, completion_date, completed_by, completed_at')
+      .eq('studio_id', req.studio.id)
       .order('completed_at', { ascending: false }).limit(2000),
   ])
 
@@ -92,12 +97,13 @@ router.get('/today', authenticate, async (req, res) => {
 
 // ─── GET /api/cleaning/history/:taskId ───────────────────────────────────────
 // Returns the last 60 completions for a single task, with user names
-router.get('/history/:taskId', authenticate, async (req, res) => {
+router.get('/history/:taskId', async (req, res) => {
   const db = supabase()
 
   const [histRes, userMap] = await Promise.all([
     db.from('cleaning_completions')
       .select('*')
+      .eq('studio_id', req.studio.id)
       .eq('task_id', req.params.taskId)
       .order('completed_at', { ascending: false })
       .limit(60),
@@ -116,7 +122,7 @@ router.get('/history/:taskId', authenticate, async (req, res) => {
 
 // ─── GET /api/cleaning/tasks ─────────────────────────────────────────────────
 // Full library (owner/manager only)
-router.get('/tasks', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.get('/tasks', requireRole('owner', 'manager'), async (req, res) => {
   const { data, error } = await supabase()
     .from('cleaning_tasks')
     .select('*')
@@ -129,7 +135,7 @@ router.get('/tasks', authenticate, requireRole('owner', 'manager'), async (req, 
 })
 
 // ─── POST /api/cleaning/tasks ─────────────────────────────────────────────────
-router.post('/tasks', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.post('/tasks', requireRole('owner', 'manager'), async (req, res) => {
   const { title, area, description, task_type, frequency, day_of_week, day_of_month, quarterly_dates, one_off_date, sort_order } = req.body
 
   if (!title || !frequency) return res.status(400).json({ error: 'title and frequency are required' })
@@ -156,7 +162,7 @@ router.post('/tasks', authenticate, requireRole('owner', 'manager'), async (req,
 })
 
 // ─── PUT /api/cleaning/tasks/:id ─────────────────────────────────────────────
-router.put('/tasks/:id', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.put('/tasks/:id', requireRole('owner', 'manager'), async (req, res) => {
   const { title, area, description, task_type, frequency, day_of_week, day_of_month, quarterly_dates, one_off_date, active, sort_order } = req.body
 
   const { data, error } = await supabase()
@@ -171,7 +177,7 @@ router.put('/tasks/:id', authenticate, requireRole('owner', 'manager'), async (r
 })
 
 // ─── DELETE /api/cleaning/tasks/:id ──────────────────────────────────────────
-router.delete('/tasks/:id', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.delete('/tasks/:id', requireRole('owner', 'manager'), async (req, res) => {
   const { error } = await supabase()
     .from('cleaning_tasks')
     .delete()
@@ -184,7 +190,7 @@ router.delete('/tasks/:id', authenticate, requireRole('owner', 'manager'), async
 // ─── GET /api/cleaning/analytics?days=30 ─────────────────────────────────────
 // Returns completion stats per task and per staff member for the last N days.
 // Accessible to all authenticated roles.
-router.get('/analytics', authenticate, async (req, res) => {
+router.get('/analytics', async (req, res) => {
   const days = Math.min(Math.max(parseInt(req.query.days) || 30, 7), 90)
   const db   = supabase()
 
@@ -205,6 +211,7 @@ router.get('/analytics', authenticate, async (req, res) => {
     db.from('cleaning_tasks').select('*').eq('active', true),
     db.from('cleaning_completions')
       .select('task_id, completed_by, completion_date')
+      .eq('studio_id', req.studio.id)
       .gte('completion_date', fromStr)
       .lte('completion_date', toStr),
     buildUserMap(db),
@@ -279,13 +286,18 @@ router.get('/analytics', authenticate, async (req, res) => {
 
 // ─── POST /api/cleaning/complete ─────────────────────────────────────────────
 // TSA marks a task done
-router.post('/complete', authenticate, async (req, res) => {
+router.post('/complete', async (req, res) => {
   const { task_id, date } = req.body
   const completion_date = date || new Date().toISOString().slice(0, 10)
 
   const { data, error } = await supabase()
     .from('cleaning_completions')
-    .upsert({ task_id, completion_date, completed_by: req.user.id }, { onConflict: 'task_id,completion_date' })
+    .upsert({
+      task_id,
+      completion_date,
+      completed_by: req.user.id,
+      studio_id: req.studio.id
+    }, { onConflict: 'studio_id,task_id,completion_date' })
     .select()
     .single()
 
@@ -295,13 +307,14 @@ router.post('/complete', authenticate, async (req, res) => {
 
 // ─── DELETE /api/cleaning/complete ───────────────────────────────────────────
 // TSA un-checks a task
-router.delete('/complete', authenticate, async (req, res) => {
+router.delete('/complete', async (req, res) => {
   const { task_id, date } = req.body
   const completion_date = date || new Date().toISOString().slice(0, 10)
 
   const { error } = await supabase()
     .from('cleaning_completions')
     .delete()
+    .eq('studio_id', req.studio.id)
     .eq('task_id', task_id)
     .eq('completion_date', completion_date)
     .eq('completed_by', req.user.id)
