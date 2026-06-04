@@ -14,18 +14,40 @@ export function StudioProvider({ children }) {
 
   async function loadStudios() {
     try {
-      // Fetch user's studios
+      // Fetch user's studios with explicit join
       const { data: userStudios, error: userError } = await supabase
         .from('user_studios')
-        .select('studio_id, role, studios(*)')
-        .order('studios(code)')
+        .select(`
+          role,
+          studio_id,
+          studios (
+            id,
+            code,
+            name,
+            address,
+            timezone
+          )
+        `)
 
       if (userError) throw userError
 
-      const studioList = userStudios.map(us => ({
-        ...us.studios,
-        userRole: us.role,
-      }))
+      if (!userStudios || userStudios.length === 0) {
+        console.warn('No studios found for user')
+        setLoading(false)
+        return
+      }
+
+      const studioList = userStudios
+        .filter(us => us.studios) // Filter out any null studios
+        .map(us => ({
+          id: us.studios.id,
+          code: us.studios.code,
+          name: us.studios.name,
+          address: us.studios.address,
+          timezone: us.studios.timezone,
+          userRole: us.role,
+        }))
+        .sort((a, b) => a.code.localeCompare(b.code))
 
       setStudios(studioList)
 
