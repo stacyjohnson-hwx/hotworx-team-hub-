@@ -27,16 +27,19 @@ Hybrid multi-tenant architecture where some data is shared across all studios (c
 - [x] `studio_goals`
 - [x] `personal_goals`
 - [x] `studio_trends`
-- [ ] `leads`
-- [ ] `eod_submissions`
-- [ ] `events`
-- [ ] `promotions`
-- [ ] `orders`
-- [ ] `user_profiles` (home studio)
-- [ ] `coaching_sessions`
-- [ ] `todo_items`
-- [ ] `maintenance_requests`
-- [ ] `escalations`
+- [x] `leads`
+- [x] `eod_submissions`
+- [x] `events`
+- [x] `promotions`
+- [x] `orders`
+- [x] `b2b_contacts`
+- [x] `b2b_interactions`
+- [x] `competitors`
+- [x] `maintenance_logs`
+- [x] `escalation_logs`
+- [ ] `user_profiles` (home studio - optional)
+- [ ] `coaching_sessions` (optional)
+- [ ] `todo_items` (optional)
 
 ### Migration Strategy
 For each table:
