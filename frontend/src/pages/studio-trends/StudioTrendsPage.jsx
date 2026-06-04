@@ -136,6 +136,7 @@ function MonthPicker({ month, year, onChange }) {
 // ── Data Entry tab ────────────────────────────────────────────────────────────
 
 function DataEntryTab({ month: initialMonth, year: initialYear }) {
+  const { currentStudio } = useStudio()
   const [entryMonth, setEntryMonth] = useState(initialMonth)
   const [entryYear, setEntryYear]   = useState(initialYear)
   const [data, setData] = useState({ ...DEFAULTS, month: initialMonth, year: initialYear })
@@ -149,7 +150,7 @@ function DataEntryTab({ month: initialMonth, year: initialYear }) {
     setEntryYear(initialYear)
   }, [initialMonth, initialYear])
 
-  useEffect(() => {
+  const loadData = useCallback(() => {
     setLoading(true)
     setError(null)
     setSaved(false)
@@ -158,6 +159,15 @@ function DataEntryTab({ month: initialMonth, year: initialYear }) {
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
   }, [entryMonth, entryYear])
+
+  useEffect(() => { loadData() }, [loadData])
+
+  // Reload when studio changes
+  useEffect(() => {
+    if (currentStudio?.id) {
+      loadData()
+    }
+  }, [currentStudio?.id, loadData])
 
   const handleMonthChange = (m, y) => { setEntryMonth(m); setEntryYear(y) }
   const set = (field, val) => setData(prev => ({ ...prev, [field]: val }))
@@ -479,12 +489,14 @@ const CustomTooltip = ({ active, payload, label, currency }) => {
 }
 
 function DashboardTab() {
+  const { currentStudio } = useStudio()
   const now = new Date()
   const [months, setMonths] = useState(12)
   const [data, setData]     = useState([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
+  const loadData = useCallback(() => {
+    setLoading(true)
     const end   = new Date()
     const start = new Date(end.getFullYear(), end.getMonth() - (months - 1), 1)
     apiGet(
@@ -499,6 +511,15 @@ function DashboardTab() {
       })))
     }).finally(() => setLoading(false))
   }, [months])
+
+  useEffect(() => { loadData() }, [loadData])
+
+  // Reload when studio changes
+  useEffect(() => {
+    if (currentStudio?.id) {
+      loadData()
+    }
+  }, [currentStudio?.id, loadData])
 
   if (loading) return <div className="text-center py-20 text-gray-400 text-sm">Loading dashboard…</div>
 
