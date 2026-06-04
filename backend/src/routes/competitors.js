@@ -77,7 +77,7 @@ router.get('/:id/visits', authenticate, async (req, res) => {
 router.post('/:id/visits', authenticate, async (req, res) => {
   const { data, error } = await db()
     .from('competitor_visits')
-      ...req.body, studio_id: req.studio.id
+    .insert({ ...req.body, competitor_id: req.params.id, visited_by: req.user.id })
     .select()
     .single()
   if (error) return res.status(500).json({ error: error.message })
@@ -86,10 +86,12 @@ router.post('/:id/visits', authenticate, async (req, res) => {
 
 // ─── POST /api/competitors/ai-refresh ────────────────────────────────────────
 // Calls Claude to research each competitor for pricing/new info updates
-router.post('/ai-refresh', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.post('/ai-refresh', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const { data: comps, error } = await db()
+    .from('competitors')
+    .select('id, name, city, website, price_monthly')
     .eq('studio_id', req.studio.id)
-    .from('competitors').select('id, name, city, website, price_monthly').eq('is_active', true)
+    .eq('is_active', true)
   if (error) return res.status(500).json({ error: error.message })
 
   const client = new Anthropic()
