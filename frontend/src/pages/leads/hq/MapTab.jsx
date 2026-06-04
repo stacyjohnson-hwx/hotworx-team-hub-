@@ -1114,6 +1114,7 @@ export default function MapTab() {
   } : { lat: 43.08398, lng: -88.23366, name: 'HOTWORX', address: '' }
 
   const MAP_CENTER = [STUDIO.lat - 0.03, STUDIO.lng]
+  const [mapCenter,        setMapCenter]        = useState(MAP_CENTER)
   const [flyTarget,        setFlyTarget]        = useState(null)
   const [listTab,          setListTab]          = useState('neighborhoods')
   const [search,           setSearch]           = useState('')
@@ -1129,6 +1130,14 @@ export default function MapTab() {
 
   useEffect(() => { saveActivities(activities) },       [activities])
   useEffect(() => { saveNeighborhoods(neighborhoods) }, [neighborhoods])
+
+  // Update map center when studio changes
+  useEffect(() => {
+    if (currentStudio?.latitude && currentStudio?.longitude) {
+      const newCenter = [parseFloat(currentStudio.latitude) - 0.03, parseFloat(currentStudio.longitude)]
+      setMapCenter(newCenter)
+    }
+  }, [currentStudio?.id, currentStudio?.latitude, currentStudio?.longitude])
 
   // Fetch B2B contacts from API (auto-populates the businesses list + map pins)
   useEffect(() => {
@@ -1323,12 +1332,12 @@ export default function MapTab() {
 
       {/* ── Map ────────────────────────────────────────────────────────────── */}
       <div id="map-container" style={{ height: 360, zIndex: 0 }}>
-        <MapContainer center={MAP_CENTER} zoom={MAP_ZOOM} style={{ height:'100%', width:'100%' }} scrollWheelZoom>
+        <MapContainer center={mapCenter} zoom={MAP_ZOOM} style={{ height:'100%', width:'100%' }} scrollWheelZoom>
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
-          <StudioCenterHandler center={MAP_CENTER} zoom={MAP_ZOOM} />
+          <StudioCenterHandler center={mapCenter} zoom={MAP_ZOOM} />
           <FlyToHandler target={flyTarget} />
           <MapClickHandler active={placingPin} onMapClick={handleMapClick} />
 
