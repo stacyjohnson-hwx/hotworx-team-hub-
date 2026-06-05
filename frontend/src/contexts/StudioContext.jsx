@@ -90,7 +90,11 @@ export function StudioProvider({ children }) {
 
       console.log('[StudioContext] Selected studio:', defaultStudio)
 
-      setCurrentStudio(defaultStudio || null)
+      if (defaultStudio) {
+        setCurrentStudio(defaultStudio)
+        // Always save to localStorage to ensure it's set
+        localStorage.setItem('selectedStudioId', defaultStudio.id)
+      }
       setLoading(false)
     } catch (err) {
       console.error('[StudioContext] Failed to load studios:', err)
