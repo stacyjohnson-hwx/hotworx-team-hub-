@@ -151,14 +151,15 @@ function DataEntryTab({ month: initialMonth, year: initialYear }) {
   }, [initialMonth, initialYear])
 
   const loadData = useCallback(() => {
+    if (!currentStudio?.id) return
     setLoading(true)
     setError(null)
     setSaved(false)
-    apiGet(`/api/studio-trends/${entryYear}/${entryMonth}`)
+    apiGet(`/api/studio-trends/${entryYear}/${entryMonth}`, currentStudio.id)
       .then(d => setData({ ...DEFAULTS, ...d, month: entryMonth, year: entryYear }))
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
-  }, [entryMonth, entryYear])
+  }, [entryMonth, entryYear, currentStudio?.id])
 
   useEffect(() => { loadData() }, [loadData])
 
@@ -180,7 +181,7 @@ function DataEntryTab({ month: initialMonth, year: initialYear }) {
         net_eft_increase: (Number(data.eft_increase) || 0) - (Number(data.eft_decrease) || 0),
         month: entryMonth,
         year: entryYear,
-      })
+      }, currentStudio.id)
       setData({ ...DEFAULTS, ...result })
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
@@ -309,12 +310,13 @@ function TableTab() {
   const [error, setError] = useState(null)
 
   const load = useCallback(() => {
+    if (!currentStudio?.id) return
     setLoading(true)
-    apiGet(`/api/studio-trends?startYear=${startYear}&startMonth=${startMonth}&endYear=${endYear}&endMonth=${endMonth}`)
+    apiGet(`/api/studio-trends?startYear=${startYear}&startMonth=${startMonth}&endYear=${endYear}&endMonth=${endMonth}`, currentStudio.id)
       .then(setRows)
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
-  }, [startYear, startMonth, endYear, endMonth])
+  }, [startYear, startMonth, endYear, endMonth, currentStudio?.id])
 
   useEffect(() => { load() }, [load])
 
@@ -496,11 +498,13 @@ function DashboardTab() {
   const [loading, setLoading] = useState(true)
 
   const loadData = useCallback(() => {
+    if (!currentStudio?.id) return
     setLoading(true)
     const end   = new Date()
     const start = new Date(end.getFullYear(), end.getMonth() - (months - 1), 1)
     apiGet(
-      `/api/studio-trends?startYear=${start.getFullYear()}&startMonth=${start.getMonth()+1}&endYear=${end.getFullYear()}&endMonth=${end.getMonth()+1}`
+      `/api/studio-trends?startYear=${start.getFullYear()}&startMonth=${start.getMonth()+1}&endYear=${end.getFullYear()}&endMonth=${end.getMonth()+1}`,
+      currentStudio.id
     ).then(rows => {
       setData(rows.map(r => ({
         ...r,
@@ -510,7 +514,7 @@ function DashboardTab() {
         net_members: (r.new_members || 0) - (r.cancellations || 0),
       })))
     }).finally(() => setLoading(false))
-  }, [months])
+  }, [months, currentStudio?.id])
 
   useEffect(() => { loadData() }, [loadData])
 
