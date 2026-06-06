@@ -45,8 +45,8 @@ router.get('/', authenticate, requireStudio, requireRole('owner', 'manager'), as
 
   const { data, error } = await db()
     .from('studio_trends')
-    .eq('studio_id', req.studio.id)
     .select('*')
+    .eq('studio_id', req.studio.id)
     .gte('year', startYear)
     .lte('year', endYear)
     .order('year').order('month')
