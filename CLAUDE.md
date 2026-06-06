@@ -1,12 +1,28 @@
-# HOTWORX Pewaukee Team Hub — CLAUDE.md
+# HOTWORX Team Hub — CLAUDE.md
 
 ## Project Overview
 
-Internal web application for HOTWORX Pewaukee (studio code WI0009, Heat Therapy Inc.).
+Internal web application for HOTWORX studios (multi-studio support).
 Replaces paper checklists, group texts, and spreadsheets with a centralized, role-aware
-daily operations tool for the studio owner, manager, and TSA staff.
+daily operations tool for studio owners, managers, and TSA staff.
 
 **PRD source:** `HOTWORX_TeamHub_PRD.docx` (same directory as this file)
+
+## CRITICAL: Production Deployment
+
+**This app is LIVE in production on Vercel + Railway. DO NOT use localhost URLs.**
+
+- **Frontend (Vercel):** Auto-deploys from `main` branch on GitHub
+- **Backend (Railway):** Auto-deploys from `main` branch on GitHub
+- **Frontend URL:** Check Vercel dashboard for actual URL
+- **Backend URL:** `https://hotworx-team-hub-production.up.railway.app`
+
+**When debugging issues:**
+1. Check Railway dashboard for backend logs and deployment status
+2. Check Vercel dashboard for frontend deployment status
+3. Verify Railway backend is responding (not 502 error)
+4. DO NOT test against localhost unless explicitly asked
+5. All code changes auto-deploy when pushed to `main`
 
 ---
 
@@ -22,9 +38,29 @@ hotworx-team-hub/
 
 ---
 
+## Multi-Studio Architecture
+
+**This app supports multiple HOTWORX studios.** Each user can be assigned to one or more studios with a specific role per studio.
+
+**Current Studios:**
+- HOTWORX Pewaukee (WI0009) - `studio_id: 3abc6af6-37b8-4c13-b761-a92b5204ca25`
+- HOTWORX Madison (WI0021) - `studio_id: 3dd138e4-3393-4cb3-a1b2-0cc54719ab2d`
+
+**How it works:**
+1. `user_studios` junction table maps users to studios with roles
+2. Frontend: `StudioContext` loads all studios user has access to
+3. Frontend: `currentStudio` is saved to `localStorage.selectedStudioId`
+4. Frontend: `useApi` hook sends `X-Studio-ID` header with every request
+5. Backend: `requireStudio` middleware validates header and attaches `req.studio`
+6. Backend: All queries filter by `studio_id`
+
+**All data is studio-specific:** competitors, events, promotions, B2B contacts, coaching sessions, todos, studio trends, cleaning tasks, schedules, etc.
+
+---
+
 ## Users & Roles
 
-Three roles with distinct permissions. Role is stored in the Supabase Auth JWT custom claim (`app_metadata.role`).
+Three roles with distinct permissions. Role is stored per studio in the `user_studios` table.
 
 | Role | Who | Notes |
 |------|-----|-------|
@@ -263,11 +299,12 @@ frontend/src/
 │   └── training/
 ├── contexts/
 │   ├── AuthContext.jsx    # Supabase session + role
+│   ├── StudioContext.jsx  # Multi-studio support: loads user's studios, manages currentStudio
 │   └── MonthContext.jsx   # Global month/year selector state
 ├── hooks/
 │   ├── useRole.js         # Returns current role; helper: canEdit(), isOwner()
 │   ├── useMonth.js        # Current selected month/year
-│   └── useApi.js          # Axios wrapper with auth header
+│   └── useApi.js          # Fetch wrapper with auth + X-Studio-ID header
 └── lib/
     ├── supabase.js        # Supabase client
     └── utils.js           # formatCurrency, formatDate, etc.
@@ -280,7 +317,8 @@ backend/src/
 ├── routes/           # One file per module (auth, schedule, goals, leads, ...)
 ├── middleware/
 │   ├── authMiddleware.js   # Verify Supabase JWT
-│   └── roleGuard.js        # requireRole('owner', 'manager') etc.
+│   ├── roleGuard.js        # requireRole('owner', 'manager') etc.
+│   └── studioMiddleware.js # requireStudio: validates X-Studio-ID header, attaches req.studio
 ├── services/
 │   ├── commissionCalc.js   # Commission formula (testable, pure function)
 │   └── eodEmail.js         # HTML email builder
