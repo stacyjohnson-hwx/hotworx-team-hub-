@@ -28,6 +28,7 @@ import AdvisorPage from '@/pages/advisor/AdvisorPage'
 import MaintenancePage from '@/pages/maintenance/MaintenancePage'
 import EscalationsPage from '@/pages/escalations/EscalationsPage'
 import CompetitorsPage from '@/pages/competitors/CompetitorsPage'
+import RetailPage from '@/pages/retail/RetailPage'
 
 function ProtectedRoute({ children }) {
   const { session, loading, profile } = useAuth()
@@ -102,6 +103,14 @@ function AppRoutes() {
         <Route path="/maintenance"  element={<MaintenancePage />} />
         <Route path="/escalations"  element={<EscalationsPage />} />
         <Route path="/competitors"  element={<CompetitorsPage />} />
+        <Route
+          path="/retail"
+          element={
+            <RoleGuard allowedRoles={['owner', 'manager']}>
+              <RetailPage />
+            </RoleGuard>
+          }
+        />
 
         {/* AI Advisor — Owner + Manager only */}
         <Route
