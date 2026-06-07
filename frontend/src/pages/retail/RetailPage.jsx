@@ -26,6 +26,7 @@ export default function RetailPage() {
   const [filterCategory, setFilterCategory] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [editingSku, setEditingSku] = useState(null)
+  const [showImportModal, setShowImportModal] = useState(false)
 
   const handleTabChange = (newTab) => {
     setTab(newTab)
@@ -175,14 +176,22 @@ export default function RetailPage() {
                 ))}
               </select>
 
-              {/* Add Button */}
+              {/* Add & Import Buttons */}
               {isOwnerOrManager && (
-                <button
-                  onClick={() => { setEditingSku(null); setShowModal(true) }}
-                  className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 whitespace-nowrap"
-                >
-                  <Plus size={18} /> Add Product
-                </button>
+                <>
+                  <button
+                    onClick={() => setShowImportModal(true)}
+                    className="flex items-center gap-2 px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800 whitespace-nowrap"
+                  >
+                    <Upload size={18} /> Import Catalog
+                  </button>
+                  <button
+                    onClick={() => { setEditingSku(null); setShowModal(true) }}
+                    className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 whitespace-nowrap"
+                  >
+                    <Plus size={18} /> Add Product
+                  </button>
+                </>
               )}
             </div>
           </div>
@@ -264,7 +273,7 @@ export default function RetailPage() {
       {/* Analytics Tab */}
       {tab === 'analytics' && <AnalyticsTab />}
 
-      {/* Modal */}
+      {/* Modals */}
       {showModal && (
         <ProductModal
           sku={editingSku}
@@ -272,6 +281,13 @@ export default function RetailPage() {
           vendors={vendors}
           onSave={handleSave}
           onClose={() => { setShowModal(false); setEditingSku(null) }}
+        />
+      )}
+
+      {showImportModal && (
+        <InventoryImportModal
+          onClose={() => setShowImportModal(false)}
+          onSuccess={() => { setShowImportModal(false); loadData() }}
         />
       )}
     </div>
