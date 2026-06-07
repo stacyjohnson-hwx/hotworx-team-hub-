@@ -29,6 +29,7 @@ import MaintenancePage from '@/pages/maintenance/MaintenancePage'
 import EscalationsPage from '@/pages/escalations/EscalationsPage'
 import CompetitorsPage from '@/pages/competitors/CompetitorsPage'
 import RetailPage from '@/pages/retail/RetailPage'
+import InventoryCountPage from '@/pages/retail/InventoryCountPage'
 
 function ProtectedRoute({ children }) {
   const { session, loading, profile } = useAuth()
@@ -108,6 +109,14 @@ function AppRoutes() {
           element={
             <RoleGuard allowedRoles={['owner', 'manager']}>
               <RetailPage />
+            </RoleGuard>
+          }
+        />
+        <Route
+          path="/retail/count/:sessionId"
+          element={
+            <RoleGuard allowedRoles={['owner', 'manager']}>
+              <InventoryCountPage />
             </RoleGuard>
           }
         />

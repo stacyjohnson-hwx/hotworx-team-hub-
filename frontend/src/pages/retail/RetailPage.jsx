@@ -1,46 +1,74 @@
 import { useState, useEffect } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useRole } from '@/hooks/useRole'
 import { useStudio } from '@/contexts/StudioContext'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
 import {
   Package, Plus, Search, Filter, Edit2, Trash2, DollarSign,
-  AlertCircle, BarChart3, ShoppingCart, CheckCircle, X,
+  AlertCircle, BarChart3, ShoppingCart, CheckCircle, X, ClipboardList,
+  Calendar, PlayCircle,
 } from 'lucide-react'
 
 export default function RetailPage() {
+  const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { currentStudio } = useStudio()
   const { isOwnerOrManager } = useRole()
-  const [tab, setTab] = useState('catalog')
+  const [tab, setTab] = useState(searchParams.get('tab') || 'catalog')
   const [loading, setLoading] = useState(true)
   const [skus, setSkus] = useState([])
   const [categories, setCategories] = useState([])
   const [vendors, setVendors] = useState([])
+  const [countSessions, setCountSessions] = useState([])
   const [search, setSearch] = useState('')
   const [filterCategory, setFilterCategory] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [editingSku, setEditingSku] = useState(null)
 
+  const handleTabChange = (newTab) => {
+    setTab(newTab)
+    setSearchParams({ tab: newTab })
+  }
+
   useEffect(() => {
     if (currentStudio?.id) {
       loadData()
     }
-  }, [currentStudio?.id])
+  }, [currentStudio?.id, tab])
 
   const loadData = async () => {
     setLoading(true)
     try {
-      const [skuData, catData, vendorData] = await Promise.all([
+      const promises = [
         apiGet('/api/retail/skus', currentStudio.id),
         apiGet('/api/retail/categories', currentStudio.id),
         apiGet('/api/retail/vendors', currentStudio.id),
-      ])
-      setSkus(skuData)
-      setCategories(catData)
-      setVendors(vendorData)
+      ]
+
+      if (tab === 'inventory') {
+        promises.push(apiGet('/api/retail/counts', currentStudio.id))
+      }
+
+      const results = await Promise.all(promises)
+      setSkus(results[0])
+      setCategories(results[1])
+      setVendors(results[2])
+      if (results[3]) setCountSessions(results[3])
     } catch (err) {
       console.error('Failed to load retail data:', err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleStartCount = async () => {
+    try {
+      const session = await apiPost('/api/retail/counts', {
+        count_date: new Date().toISOString().split('T')[0]
+      }, currentStudio.id)
+      navigate(`/retail/count/${session.id}`)
+    } catch (err) {
+      alert('Failed to start count: ' + err.message)
     }
   }
 
@@ -104,14 +132,14 @@ export default function RetailPage() {
 
       {/* Tabs */}
       <div className="flex gap-2 mb-6 border-b border-gray-200 overflow-x-auto">
-        <TabButton active={tab === 'catalog'} onClick={() => setTab('catalog')}>
+        <TabButton active={tab === 'catalog'} onClick={() => handleTabChange('catalog')}>
           <Package size={16} /> Catalog
         </TabButton>
-        <TabButton active={tab === 'inventory'} onClick={() => setTab('inventory')}>
-          <BarChart3 size={16} /> Inventory
+        <TabButton active={tab === 'inventory'} onClick={() => handleTabChange('inventory')}>
+          <ClipboardList size={16} /> Inventory
         </TabButton>
-        <TabButton active={tab === 'analytics'} onClick={() => setTab('analytics')}>
-          <ShoppingCart size={16} /> Analytics
+        <TabButton active={tab === 'analytics'} onClick={() => handleTabChange('analytics')}>
+          <BarChart3 size={16} /> Analytics
         </TabButton>
       </div>
 
@@ -189,10 +217,45 @@ export default function RetailPage() {
 
       {/* Inventory Tab */}
       {tab === 'inventory' && (
-        <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
-          <BarChart3 size={48} className="mx-auto text-gray-300 mb-3" />
-          <p className="text-gray-500">Inventory count interface coming in Phase 2</p>
-          <p className="text-sm text-gray-400 mt-2">iPad-optimized count cards with size grids</p>
+        <div>
+          {/* Header */}
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-bold text-gray-900">Inventory Counts</h2>
+            {isOwnerOrManager && (
+              <button
+                onClick={handleStartCount}
+                className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+              >
+                <PlayCircle size={18} /> Start New Count
+              </button>
+            )}
+          </div>
+
+          {/* Count Sessions List */}
+          <div className="space-y-3">
+            {countSessions.map(session => (
+              <CountSessionCard
+                key={session.id}
+                session={session}
+                onResume={() => navigate(`/retail/count/${session.id}`)}
+              />
+            ))}
+
+            {countSessions.length === 0 && (
+              <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
+                <ClipboardList size={48} className="mx-auto text-gray-300 mb-3" />
+                <p className="text-gray-500 mb-4">No inventory counts yet</p>
+                {isOwnerOrManager && (
+                  <button
+                    onClick={handleStartCount}
+                    className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                  >
+                    Start Your First Count
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -468,6 +531,79 @@ function ProductModal({ sku, categories, vendors, onSave, onClose }) {
           </div>
         </form>
       </div>
+    </div>
+  )
+}
+
+function CountSessionCard({ session, onResume }) {
+  const isSubmitted = session.status === 'submitted'
+  const progress = session.items_counted || 0
+  const total = session.total_items || 0
+  const progressPct = total > 0 ? Math.round((progress / total) * 100) : 0
+
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-md transition-shadow">
+      <div className="flex items-start justify-between mb-3">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <Calendar size={16} className="text-gray-400" />
+            <span className="font-semibold text-gray-900">{session.count_date}</span>
+          </div>
+          <p className="text-xs text-gray-500">
+            Counted by {session.counted_by_user?.raw_user_meta_data?.full_name || session.counted_by_user?.email}
+          </p>
+        </div>
+        <div className="text-right">
+          {isSubmitted ? (
+            <div className="flex items-center gap-1 text-green-600">
+              <CheckCircle size={16} />
+              <span className="text-sm font-semibold">Submitted</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1 text-amber-600">
+              <AlertCircle size={16} />
+              <span className="text-sm font-semibold">In Progress</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Progress */}
+      <div className="mb-3">
+        <div className="flex items-center justify-between text-sm mb-1">
+          <span className="text-gray-600">{progress} of {total} items</span>
+          <span className="font-semibold text-gray-900">{progressPct}%</span>
+        </div>
+        <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+          <div className="h-full bg-red-600 transition-all" style={{ width: `${progressPct}%` }} />
+        </div>
+      </div>
+
+      {/* Stats (if submitted) */}
+      {isSubmitted && (
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          <div className="p-3 bg-red-50 rounded-lg">
+            <p className="text-xs text-gray-600 mb-1">Total Variance</p>
+            <p className={`text-lg font-bold ${session.total_variance_value < 0 ? 'text-red-600' : 'text-green-600'}`}>
+              {session.total_variance_value < 0 ? '-' : '+'}${Math.abs(session.total_variance_value || 0).toFixed(2)}
+            </p>
+          </div>
+          <div className="p-3 bg-gray-50 rounded-lg">
+            <p className="text-xs text-gray-600 mb-1">Shrinkage Rate</p>
+            <p className="text-lg font-bold text-gray-900">{(session.shrinkage_rate || 0).toFixed(2)}%</p>
+          </div>
+        </div>
+      )}
+
+      {/* Action */}
+      {!isSubmitted && (
+        <button
+          onClick={onResume}
+          className="w-full py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors"
+        >
+          Resume Count
+        </button>
+      )}
     </div>
   )
 }

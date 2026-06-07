@@ -1,0 +1,419 @@
+import { useState, useEffect } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
+import { useStudio } from '@/contexts/StudioContext'
+import { apiGet, apiPut, apiPost } from '@/hooks/useApi'
+import {
+  CheckCircle, Circle, AlertCircle, Camera, Flag, ArrowLeft,
+  Package, Check, X, DollarSign, TrendingDown, TrendingUp,
+} from 'lucide-react'
+
+export default function InventoryCountPage() {
+  const { sessionId } = useParams()
+  const { currentStudio } = useStudio()
+  const navigate = useNavigate()
+  const [loading, setLoading] = useState(true)
+  const [session, setSession] = useState(null)
+  const [entries, setEntries] = useState([])
+  const [currentIndex, setCurrentIndex] = useState(0)
+  const [showReconciliation, setShowReconciliation] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => {
+    if (currentStudio?.id && sessionId) {
+      loadSession()
+    }
+  }, [currentStudio?.id, sessionId])
+
+  const loadSession = async () => {
+    setLoading(true)
+    try {
+      const data = await apiGet(`/api/retail/counts/${sessionId}`, currentStudio.id)
+      setSession(data)
+      setEntries(data.entries || [])
+    } catch (err) {
+      console.error('Failed to load count session:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const currentEntry = entries[currentIndex]
+  const progress = entries.filter(e => e.actual_quantity !== null).length
+  const total = entries.length
+
+  const handleCount = async (quantity, sizeQuantities = null) => {
+    const updated = await apiPut(
+      `/api/retail/counts/${sessionId}/entries/${currentEntry.id}`,
+      {
+        actual_quantity: quantity,
+        actual_size_quantities: sizeQuantities,
+      },
+      currentStudio.id
+    )
+
+    setEntries(prev => prev.map(e => e.id === updated.id ? { ...e, ...updated } : e))
+
+    // Auto-advance to next uncounted item
+    const nextUncounted = entries.findIndex((e, i) => i > currentIndex && e.actual_quantity === null)
+    if (nextUncounted !== -1) {
+      setCurrentIndex(nextUncounted)
+    } else if (currentIndex < entries.length - 1) {
+      setCurrentIndex(currentIndex + 1)
+    }
+  }
+
+  const handleQuickMatch = () => {
+    handleCount(currentEntry.expected_quantity, currentEntry.expected_size_quantities)
+  }
+
+  const handleSubmit = async () => {
+    if (!confirm(`Submit count session? This will lock the count and update inventory levels.`)) return
+    setSubmitting(true)
+    try {
+      await apiPost(`/api/retail/counts/${sessionId}/submit`, {}, currentStudio.id)
+      navigate('/retail?tab=inventory')
+    } catch (err) {
+      alert('Failed to submit: ' + err.message)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="p-8">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-gray-400">Loading count session...</div>
+        </div>
+      </div>
+    )
+  }
+
+  if (showReconciliation) {
+    return <ReconciliationView entries={entries} session={session} onBack={() => setShowReconciliation(false)} onSubmit={handleSubmit} submitting={submitting} />
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      {/* Header */}
+      <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+        <button onClick={() => navigate('/retail?tab=inventory')} className="flex items-center gap-2 text-gray-600 hover:text-gray-900">
+          <ArrowLeft size={20} />
+          <span className="font-medium">Back</span>
+        </button>
+        <div className="text-center">
+          <h1 className="text-lg font-bold text-gray-900">Inventory Count</h1>
+          <p className="text-xs text-gray-500">{session?.count_date}</p>
+        </div>
+        <div className="w-16" /> {/* Spacer */}
+      </div>
+
+      {/* Progress */}
+      <div className="bg-white border-b border-gray-200 px-4 py-3">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm text-gray-600">{progress} of {total} counted</span>
+          <span className="text-sm font-semibold text-red-600">{Math.round(progress / total * 100)}%</span>
+        </div>
+        <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+          <div className="h-full bg-red-600 transition-all" style={{ width: `${progress / total * 100}%` }} />
+        </div>
+      </div>
+
+      {/* Count Card */}
+      <div className="flex-1 overflow-y-auto p-4">
+        {currentEntry && (
+          <CountCard
+            entry={currentEntry}
+            onCount={handleCount}
+            onQuickMatch={handleQuickMatch}
+            onPrev={() => setCurrentIndex(Math.max(0, currentIndex - 1))}
+            onNext={() => setCurrentIndex(Math.min(entries.length - 1, currentIndex + 1))}
+            hasPrev={currentIndex > 0}
+            hasNext={currentIndex < entries.length - 1}
+          />
+        )}
+      </div>
+
+      {/* Bottom Actions */}
+      <div className="bg-white border-t border-gray-200 p-4 safe-area-bottom">
+        <button
+          onClick={() => setShowReconciliation(true)}
+          className="w-full py-4 bg-red-600 text-white rounded-lg font-semibold text-lg hover:bg-red-700 transition-colors"
+        >
+          Review & Submit ({progress}/{total})
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Count Card Component ────────────────────────────────────────────────────
+
+function CountCard({ entry, onCount, onQuickMatch, onPrev, onNext, hasPrev, hasNext }) {
+  const [quantity, setQuantity] = useState(entry.actual_quantity ?? '')
+  const [sizeQty, setSizeQty] = useState(entry.actual_size_quantities || {})
+
+  const sku = entry.sku
+  const hasSizes = sku?.has_sizes
+  const sizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL']
+
+  const handleSave = () => {
+    if (hasSizes) {
+      const total = Object.values(sizeQty).reduce((sum, val) => sum + (parseInt(val) || 0), 0)
+      onCount(total, sizeQty)
+    } else {
+      onCount(parseInt(quantity) || 0, null)
+    }
+  }
+
+  const isCounted = entry.actual_quantity !== null
+
+  return (
+    <div className="max-w-2xl mx-auto">
+      {/* Product Info */}
+      <div className="bg-white rounded-lg border border-gray-200 p-6 mb-4">
+        <div className="flex gap-4 mb-4">
+          <div className="w-24 h-24 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
+            {sku.image_url ? (
+              <img src={sku.image_url} alt={sku.product_name} className="w-full h-full object-cover rounded-lg" />
+            ) : (
+              <Package size={32} className="text-gray-300" />
+            )}
+          </div>
+          <div className="flex-1">
+            <h2 className="text-xl font-bold text-gray-900 mb-1">{sku.product_name}</h2>
+            <p className="text-sm text-gray-500 mb-2">SKU: {sku.sku_code}</p>
+            <p className="text-sm text-gray-600">Category: {sku.category?.name || 'None'}</p>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+          <div>
+            <p className="text-xs text-gray-500 mb-1">Expected Quantity</p>
+            <p className="text-2xl font-bold text-gray-900">{entry.expected_quantity}</p>
+          </div>
+          {isCounted && (
+            <div className="text-center">
+              <CheckCircle size={32} className="text-green-500 mx-auto mb-1" />
+              <p className="text-xs text-green-600 font-medium">Counted</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Count Input */}
+      {!hasSizes && (
+        <div className="bg-white rounded-lg border border-gray-200 p-6 mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-3">Actual Quantity</label>
+          <input
+            type="number"
+            inputMode="numeric"
+            value={quantity}
+            onChange={e => setQuantity(e.target.value)}
+            className="w-full text-4xl font-bold text-center py-6 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-600 focus:border-transparent"
+            placeholder="0"
+            autoFocus
+          />
+          <div className="flex gap-3 mt-4">
+            <button
+              onClick={handleQuickMatch}
+              className="flex-1 py-3 bg-green-50 text-green-700 rounded-lg font-medium hover:bg-green-100 transition-colors flex items-center justify-center gap-2"
+            >
+              <Check size={18} />
+              Quick Match ({entry.expected_quantity})
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={quantity === ''}
+              className="flex-1 py-3 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Save Count
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Size Grid (Apparel) */}
+      {hasSizes && (
+        <div className="bg-white rounded-lg border border-gray-200 p-6 mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-3">Actual Quantity by Size</label>
+          <div className="grid grid-cols-3 gap-3 mb-4">
+            {sizes.map(size => (
+              <div key={size}>
+                <label className="block text-xs font-medium text-gray-600 mb-1 text-center">{size}</label>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  value={sizeQty[size] || ''}
+                  onChange={e => setSizeQty(prev => ({ ...prev, [size]: e.target.value }))}
+                  className="w-full text-2xl font-bold text-center py-3 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-600 focus:border-transparent"
+                  placeholder="0"
+                />
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg mb-4">
+            <span className="text-sm font-medium text-gray-700">Total</span>
+            <span className="text-2xl font-bold text-gray-900">
+              {Object.values(sizeQty).reduce((sum, val) => sum + (parseInt(val) || 0), 0)}
+            </span>
+          </div>
+          <button
+            onClick={handleSave}
+            className="w-full py-3 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors"
+          >
+            Save Count
+          </button>
+        </div>
+      )}
+
+      {/* Navigation */}
+      <div className="flex gap-3">
+        <button
+          onClick={onPrev}
+          disabled={!hasPrev}
+          className="flex-1 py-3 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          ← Previous
+        </button>
+        <button
+          onClick={onNext}
+          disabled={!hasNext}
+          className="flex-1 py-3 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Next →
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Reconciliation View ─────────────────────────────────────────────────────
+
+function ReconciliationView({ entries, session, onBack, onSubmit, submitting }) {
+  const variances = entries.filter(e => e.variance !== 0 && e.actual_quantity !== null)
+  const matches = entries.filter(e => e.variance === 0 && e.actual_quantity !== null)
+  const uncounted = entries.filter(e => e.actual_quantity === null)
+
+  const totalVarianceValue = entries.reduce((sum, e) => sum + (e.variance_value || 0), 0)
+  const totalInventoryValue = entries.reduce((sum, e) => {
+    return sum + (e.expected_quantity * (e.sku?.retail_price || 0))
+  }, 0)
+  const shrinkageRate = totalInventoryValue > 0 ? Math.abs(totalVarianceValue / totalInventoryValue * 100) : 0
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      {/* Header */}
+      <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+        <button onClick={onBack} className="flex items-center gap-2 text-gray-600 hover:text-gray-900">
+          <ArrowLeft size={20} />
+          <span className="font-medium">Back to Count</span>
+        </button>
+        <h1 className="text-lg font-bold text-gray-900">Reconciliation</h1>
+        <div className="w-20" />
+      </div>
+
+      {/* Summary Stats */}
+      <div className="bg-white border-b border-gray-200 p-4">
+        <div className="grid grid-cols-3 gap-4 mb-4">
+          <div className="text-center">
+            <p className="text-2xl font-bold text-green-600">{matches.length}</p>
+            <p className="text-xs text-gray-500">Exact Matches</p>
+          </div>
+          <div className="text-center">
+            <p className="text-2xl font-bold text-red-600">{variances.length}</p>
+            <p className="text-xs text-gray-500">Variances</p>
+          </div>
+          <div className="text-center">
+            <p className="text-2xl font-bold text-amber-600">{uncounted.length}</p>
+            <p className="text-xs text-gray-500">Uncounted</p>
+          </div>
+        </div>
+
+        <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium text-gray-700">Total Variance</span>
+            <span className={`text-xl font-bold ${totalVarianceValue < 0 ? 'text-red-600' : 'text-green-600'}`}>
+              {totalVarianceValue < 0 ? '-' : '+'}${Math.abs(totalVarianceValue).toFixed(2)}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-gray-600">Shrinkage Rate</span>
+            <span className="text-sm font-semibold text-red-600">{shrinkageRate.toFixed(2)}%</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Variance List */}
+      <div className="flex-1 overflow-y-auto p-4">
+        {variances.length > 0 && (
+          <div className="mb-6">
+            <h2 className="text-sm font-bold text-gray-900 mb-3 flex items-center gap-2">
+              <AlertCircle size={16} className="text-red-600" />
+              Variances ({variances.length})
+            </h2>
+            <div className="space-y-2">
+              {variances.map(entry => (
+                <VarianceCard key={entry.id} entry={entry} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {uncounted.length > 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
+            <p className="text-sm font-medium text-amber-900">
+              {uncounted.length} items not counted yet. Go back to complete the count.
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Submit Button */}
+      <div className="bg-white border-t border-gray-200 p-4 safe-area-bottom">
+        <button
+          onClick={onSubmit}
+          disabled={submitting || uncounted.length > 0}
+          className="w-full py-4 bg-red-600 text-white rounded-lg font-semibold text-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {submitting ? 'Submitting...' : 'Submit & Lock Count'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function VarianceCard({ entry }) {
+  const variance = entry.variance
+  const isNegative = variance < 0
+
+  return (
+    <div className={`border-l-4 ${isNegative ? 'border-red-500' : 'border-green-500'} bg-white rounded-lg p-4 shadow-sm`}>
+      <div className="flex items-start justify-between">
+        <div className="flex-1">
+          <h3 className="font-semibold text-gray-900">{entry.sku?.product_name}</h3>
+          <p className="text-xs text-gray-500 mt-1">SKU: {entry.sku?.sku_code}</p>
+        </div>
+        <div className="text-right">
+          <div className={`flex items-center gap-1 ${isNegative ? 'text-red-600' : 'text-green-600'}`}>
+            {isNegative ? <TrendingDown size={16} /> : <TrendingUp size={16} />}
+            <span className="text-lg font-bold">{variance > 0 ? '+' : ''}{variance}</span>
+          </div>
+          <p className={`text-sm font-semibold ${isNegative ? 'text-red-600' : 'text-green-600'}`}>
+            {entry.variance_value < 0 ? '-' : '+'}${Math.abs(entry.variance_value || 0).toFixed(2)}
+          </p>
+        </div>
+      </div>
+      <div className="flex items-center gap-6 mt-3 text-sm">
+        <div>
+          <span className="text-gray-500">Expected: </span>
+          <span className="font-semibold text-gray-900">{entry.expected_quantity}</span>
+        </div>
+        <div>
+          <span className="text-gray-500">Actual: </span>
+          <span className="font-semibold text-gray-900">{entry.actual_quantity}</span>
+        </div>
+      </div>
+    </div>
+  )
+}
