@@ -28,15 +28,32 @@ router.post('/inventory', authenticate, requireStudio, requireRole('owner', 'man
     try {
       // Extract data from your format (handles both Excel inventory export and CSV catalog)
       const productName = item.product_name || item['Product Name'] || item.name || item.Name
-      const skuCode = (item.sku_code || item['SKU Code'] || item.sku || item.SKU)?.trim()
-      const wholesaleRate = parseFloat(item.wholesale_rate || item['Wholesale Rate'] || item.wholesale_cost || 0) || 0
+      let skuCode = (item.sku_code || item['SKU Code'] || item.sku || item.SKU)?.trim()
+      const wholesaleRate = parseFloat(item.wholesale_rate || item['Wholesale Rate'] || item['Wholesale Price'] || item.wholesale_cost || 0) || 0
       const retailRate = parseFloat(item.retail_rate || item['Retail Rate'] || item.retail_price || item.Price || 0) || 0
-      const quantity = parseInt(item.quantity || item.Quantity || 0) || 0
+      const quantity = parseInt(item.quantity || item.Quantity || item.Qty || 0) || 0
       const imageUrl = item.image_url || item['Image URL']
       // Note: category is NOT saved - would need category_id (UUID) instead
 
+      // If no SKU code, try to find existing product by name
+      if (!skuCode && productName) {
+        const { data: existingBySKU } = await db()
+          .from('sku_master')
+          .select('sku_code')
+          .ilike('product_name', productName.trim())
+          .limit(1)
+          .maybeSingle()
+
+        if (existingBySKU) {
+          skuCode = existingBySKU.sku_code
+        } else {
+          // Generate SKU from product name if none exists
+          skuCode = 'AUTO-' + productName.substring(0, 20).replace(/[^a-zA-Z0-9]/g, '').toUpperCase()
+        }
+      }
+
       if (!skuCode) {
-        errors.push({ item, error: 'Missing SKU code' })
+        errors.push({ item, error: 'Missing SKU code and product name' })
         continue
       }
 
@@ -218,8 +235,24 @@ router.post('/preview', authenticate, requireStudio, requireRole('owner', 'manag
   for (const item of items.slice(0, 20)) { // Preview first 20
     // Use flexible column mapping (same as main import)
     const productName = item.product_name || item['Product Name'] || item.name || item.Name
-    const skuCode = (item.sku_code || item['SKU Code'] || item.sku || item.SKU)?.trim()
-    const quantity = parseInt(item.quantity || item.Quantity || 0) || 0
+    let skuCode = (item.sku_code || item['SKU Code'] || item.sku || item.SKU)?.trim()
+    const quantity = parseInt(item.quantity || item.Quantity || item.Qty || 0) || 0
+
+    // If no SKU code, try to find by product name
+    if (!skuCode && productName) {
+      const { data: existingBySKU } = await db()
+        .from('sku_master')
+        .select('sku_code')
+        .ilike('product_name', productName.trim())
+        .limit(1)
+        .maybeSingle()
+
+      if (existingBySKU) {
+        skuCode = existingBySKU.sku_code
+      } else {
+        skuCode = 'AUTO-' + productName.substring(0, 20).replace(/[^a-zA-Z0-9]/g, '').toUpperCase()
+      }
+    }
 
     if (!skuCode) continue
 
