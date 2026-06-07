@@ -81,10 +81,19 @@ router.get('/skus/:id', authenticate, requireStudio, async (req, res) => {
 
 // ─── POST /api/retail/skus ──────────────────────────────────────────────────
 router.post('/skus', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+  // Whitelist valid fields (no 'category' - only 'category_id')
+  const {
+    sku_code, product_name, description, category_id, vendor_id,
+    retail_price, wholesale_cost, has_sizes, available_sizes,
+    image_url, par_level, reorder_quantity, active
+  } = req.body
+
   const { data, error } = await db()
     .from('sku_master')
     .insert({
-      ...req.body,
+      sku_code, product_name, description, category_id, vendor_id,
+      retail_price, wholesale_cost, has_sizes, available_sizes,
+      image_url, par_level, reorder_quantity, active,
       created_by: req.user.id,
     })
     .select()
@@ -96,10 +105,19 @@ router.post('/skus', authenticate, requireRole('owner', 'manager'), async (req, 
 
 // ─── PUT /api/retail/skus/:id ───────────────────────────────────────────────
 router.put('/skus/:id', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+  // Whitelist valid fields (no 'category' - only 'category_id')
+  const {
+    sku_code, product_name, description, category_id, vendor_id,
+    retail_price, wholesale_cost, has_sizes, available_sizes,
+    image_url, par_level, reorder_quantity, active
+  } = req.body
+
   const { data, error } = await db()
     .from('sku_master')
     .update({
-      ...req.body,
+      sku_code, product_name, description, category_id, vendor_id,
+      retail_price, wholesale_cost, has_sizes, available_sizes,
+      image_url, par_level, reorder_quantity, active,
       updated_at: new Date().toISOString(),
     })
     .eq('id', req.params.id)
