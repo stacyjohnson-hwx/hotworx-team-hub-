@@ -16,6 +16,33 @@ router.post('/import-sales', authenticate, requireStudio, requireRole('owner', '
     return res.status(400).json({ error: 'sales array required' })
   }
 
+  // Check for duplicate date range
+  const dates = sales.map(s => new Date(s.date || s['Order Date'])).filter(d => !isNaN(d))
+  if (dates.length === 0) {
+    return res.status(400).json({ error: 'No valid dates found in sales data' })
+  }
+
+  const minDate = new Date(Math.min(...dates)).toISOString().split('T')[0]
+  const maxDate = new Date(Math.max(...dates)).toISOString().split('T')[0]
+
+  // Check if this date range overlaps with any existing imports
+  const { data: existingBatch } = await db()
+    .from('sales_import_batches')
+    .select('id, file_name, date_range_start, date_range_end, created_at')
+    .eq('studio_id', req.studio.id)
+    .or(`date_range_start.lte.${maxDate},date_range_end.gte.${minDate}`)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (existingBatch) {
+    return res.status(400).json({
+      error: 'Duplicate sales import detected',
+      message: `Sales data for ${minDate} to ${maxDate} overlaps with existing import "${existingBatch.file_name}" (${existingBatch.date_range_start} to ${existingBatch.date_range_end})`,
+      existing_batch: existingBatch,
+    })
+  }
+
   // Create import batch
   const { data: batch, error: batchError } = await db()
     .from('sales_import_batches')
