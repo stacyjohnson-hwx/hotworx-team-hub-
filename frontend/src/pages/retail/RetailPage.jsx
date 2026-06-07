@@ -4,10 +4,11 @@ import { useRole } from '@/hooks/useRole'
 import { useStudio } from '@/contexts/StudioContext'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
 import { AnalyticsTab } from './AnalyticsTab'
+import { InventoryImportModal } from './InventoryImportModal'
 import {
   Package, Plus, Search, Filter, Edit2, Trash2, DollarSign,
   AlertCircle, BarChart3, ShoppingCart, CheckCircle, X, ClipboardList,
-  Calendar, PlayCircle,
+  Calendar, PlayCircle, Upload,
 } from 'lucide-react'
 
 export default function RetailPage() {
