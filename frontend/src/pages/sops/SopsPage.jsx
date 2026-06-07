@@ -34,6 +34,8 @@ function SopModal({ sop, onSave, onClose }) {
     category: sop?.category || 'general',
     content: sop?.content || '',
     video_url: sop?.video_url || '',
+    status: sop?.status || 'draft',
+    visibility: sop?.visibility || 'all',
   })
   const [file, setFile] = useState(null)
   const [uploading, setUploading] = useState(false)
@@ -126,6 +128,20 @@ function SopModal({ sop, onSave, onClose }) {
               <label className="block text-xs font-medium text-gray-600 mb-1">Category</label>
               <select className={inputCls} value={form.category} onChange={e => set('category', e.target.value)}>
                 {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
+              <select className={inputCls} value={form.status} onChange={e => set('status', e.target.value)}>
+                <option value="draft">Draft</option>
+                <option value="live">Live</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Visibility</label>
+              <select className={inputCls} value={form.visibility} onChange={e => set('visibility', e.target.value)}>
+                <option value="all">All Team Members</option>
+                <option value="manager_only">Manager/Owner Only</option>
               </select>
             </div>
             <div>
@@ -287,6 +303,16 @@ function SopCard({ sop, isOwnerOrManager, onEdit, onDelete, onViewHistory }) {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
+          {sop.status === 'draft' && (
+            <span className="text-xs text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+              Draft
+            </span>
+          )}
+          {sop.visibility === 'manager_only' && (
+            <span className="text-xs text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-200">
+              Manager Only
+            </span>
+          )}
           {sop.video_url && (
             <span className="text-xs text-red-500 bg-red-50 px-1.5 py-0.5 rounded border border-red-200 flex items-center gap-1">
               <Video size={10} /> Video
