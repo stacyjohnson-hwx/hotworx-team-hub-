@@ -85,7 +85,7 @@ router.post('/skus', authenticate, requireRole('owner', 'manager'), async (req, 
   const {
     sku_code, product_name, description, category_id, vendor_id,
     retail_price, wholesale_cost, has_sizes, available_sizes,
-    image_url, par_level, reorder_quantity, active
+    image_url, par_level, reorder_quantity, active, top_seller
   } = req.body
 
   const { data, error } = await db()
@@ -93,7 +93,7 @@ router.post('/skus', authenticate, requireRole('owner', 'manager'), async (req, 
     .insert({
       sku_code, product_name, description, category_id, vendor_id,
       retail_price, wholesale_cost, has_sizes, available_sizes,
-      image_url, par_level, reorder_quantity, active,
+      image_url, par_level, reorder_quantity, active, top_seller,
       created_by: req.user.id,
     })
     .select()
@@ -109,7 +109,7 @@ router.put('/skus/:id', authenticate, requireRole('owner', 'manager'), async (re
   const {
     sku_code, product_name, description, category_id, vendor_id,
     retail_price, wholesale_cost, has_sizes, available_sizes,
-    image_url, par_level, reorder_quantity, active
+    image_url, par_level, reorder_quantity, active, top_seller
   } = req.body
 
   const { data, error } = await db()
@@ -117,7 +117,7 @@ router.put('/skus/:id', authenticate, requireRole('owner', 'manager'), async (re
     .update({
       sku_code, product_name, description, category_id, vendor_id,
       retail_price, wholesale_cost, has_sizes, available_sizes,
-      image_url, par_level, reorder_quantity, active,
+      image_url, par_level, reorder_quantity, active, top_seller,
       updated_at: new Date().toISOString(),
     })
     .eq('id', req.params.id)

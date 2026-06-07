@@ -24,6 +24,7 @@ export default function RetailPage() {
   const [countSessions, setCountSessions] = useState([])
   const [search, setSearch] = useState('')
   const [filterCategory, setFilterCategory] = useState('')
+  const [filterTopSellers, setFilterTopSellers] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [editingSku, setEditingSku] = useState(null)
   const [showImportModal, setShowImportModal] = useState(false)
@@ -108,7 +109,8 @@ export default function RetailPage() {
       s.sku_code?.toLowerCase().includes(search.toLowerCase()) ||
       s.product_name?.toLowerCase().includes(search.toLowerCase())
     const matchesCategory = !filterCategory || s.category_id === filterCategory
-    return matchesSearch && matchesCategory
+    const matchesTopSeller = !filterTopSellers || s.top_seller === true
+    return matchesSearch && matchesCategory && matchesTopSeller
   })
 
   if (loading) {
@@ -176,6 +178,17 @@ export default function RetailPage() {
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
+
+              {/* Top Sellers Filter */}
+              <label className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50">
+                <input
+                  type="checkbox"
+                  checked={filterTopSellers}
+                  onChange={e => setFilterTopSellers(e.target.checked)}
+                  className="w-4 h-4 accent-red-600"
+                />
+                <span className="text-sm font-medium text-gray-700 whitespace-nowrap">Top Sellers Only</span>
+              </label>
 
               {/* View Mode Toggle */}
               <div className="flex border border-gray-300 rounded-lg overflow-hidden">
@@ -260,7 +273,14 @@ export default function RetailPage() {
                     {filteredSkus.map(sku => (
                       <tr key={sku.id} className="hover:bg-gray-50 transition-colors">
                         <td className="px-4 py-3 font-mono text-xs text-gray-900 font-semibold">{sku.sku_code}</td>
-                        <td className="px-4 py-3 text-gray-900">{sku.product_name}</td>
+                        <td className="px-4 py-3 text-gray-900">
+                          <div className="flex items-center gap-2">
+                            {sku.product_name}
+                            {sku.top_seller && (
+                              <span className="text-xs bg-amber-500 text-white px-1.5 py-0.5 rounded-full font-bold">⭐</span>
+                            )}
+                          </div>
+                        </td>
                         <td className="px-4 py-3 text-gray-600">
                           {categories.find(c => c.id === sku.category_id)?.name || '-'}
                         </td>
@@ -427,6 +447,11 @@ function ProductCard({ sku, onEdit, onDelete, isOwnerOrManager }) {
             <Package size={48} className="text-gray-300" />
           </div>
         )}
+        {sku.top_seller && (
+          <div className="absolute top-2 right-2 bg-amber-500 text-white px-2 py-1 rounded-full text-xs font-bold shadow-lg">
+            ⭐ Top Seller
+          </div>
+        )}
         {!sku.active && (
           <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
             <span className="text-white font-bold">INACTIVE</span>
@@ -499,6 +524,7 @@ function ProductModal({ sku, categories, vendors, onSave, onClose }) {
     par_level: 0,
     reorder_quantity: 0,
     active: true,
+    top_seller: false,
   })
 
   const set = (key, val) => setForm(prev => ({ ...prev, [key]: val }))
@@ -611,7 +637,7 @@ function ProductModal({ sku, categories, vendors, onSave, onClose }) {
               />
             </div>
 
-            <div className="md:col-span-2">
+            <div className="md:col-span-2 flex gap-6">
               <label className="flex items-center gap-2">
                 <input
                   type="checkbox"
@@ -620,6 +646,15 @@ function ProductModal({ sku, categories, vendors, onSave, onClose }) {
                   className="w-4 h-4 accent-red-600"
                 />
                 <span className="text-sm font-medium text-gray-700">Has multiple sizes (apparel)</span>
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={form.top_seller}
+                  onChange={e => set('top_seller', e.target.checked)}
+                  className="w-4 h-4 accent-red-600"
+                />
+                <span className="text-sm font-medium text-gray-700">⭐ Top Seller</span>
               </label>
             </div>
 
