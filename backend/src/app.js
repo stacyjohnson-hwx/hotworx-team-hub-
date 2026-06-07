@@ -42,8 +42,9 @@ app.use('/api/maintenance',     require('./routes/maintenance'))
 app.use('/api/escalations',     require('./routes/escalations'))
 app.use('/api/dashboard-links', require('./routes/dashboardLinks'))
 app.use('/api/advisor',         require('./routes/advisor'))
-app.use('/api/competitors',     require('./routes/competitors'))
-app.use('/api/retail/counts',   require('./routes/retail-counts'))
-app.use('/api/retail',          require('./routes/retail'))
+app.use('/api/competitors',          require('./routes/competitors'))
+app.use('/api/retail/analytics',    require('./routes/retail-analytics'))
+app.use('/api/retail/counts',       require('./routes/retail-counts'))
+app.use('/api/retail',              require('./routes/retail'))
 
 module.exports = app

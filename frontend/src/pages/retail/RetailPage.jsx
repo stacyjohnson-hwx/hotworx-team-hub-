@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useRole } from '@/hooks/useRole'
 import { useStudio } from '@/contexts/StudioContext'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
+import { AnalyticsTab } from './AnalyticsTab'
 import {
   Package, Plus, Search, Filter, Edit2, Trash2, DollarSign,
   AlertCircle, BarChart3, ShoppingCart, CheckCircle, X, ClipboardList,
@@ -260,13 +261,7 @@ export default function RetailPage() {
       )}
 
       {/* Analytics Tab */}
-      {tab === 'analytics' && (
-        <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
-          <ShoppingCart size={48} className="mx-auto text-gray-300 mb-3" />
-          <p className="text-gray-500">Sales analytics coming in Phase 3-5</p>
-          <p className="text-sm text-gray-400 mt-2">Velocity, shrinkage, dead stock detection</p>
-        </div>
-      )}
+      {tab === 'analytics' && <AnalyticsTab />}
 
       {/* Modal */}
       {showModal && (
