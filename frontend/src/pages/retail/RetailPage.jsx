@@ -8,7 +8,7 @@ import { InventoryImportModal } from './InventoryImportModal'
 import {
   Package, Plus, Search, Filter, Edit2, Trash2, DollarSign,
   AlertCircle, BarChart3, ShoppingCart, CheckCircle, X, ClipboardList,
-  Calendar, PlayCircle, Upload,
+  Calendar, PlayCircle, Upload, Grid3x3, List,
 } from 'lucide-react'
 
 export default function RetailPage() {
@@ -27,6 +27,7 @@ export default function RetailPage() {
   const [showModal, setShowModal] = useState(false)
   const [editingSku, setEditingSku] = useState(null)
   const [showImportModal, setShowImportModal] = useState(false)
+  const [viewMode, setViewMode] = useState('grid') // 'grid' or 'table'
 
   const handleTabChange = (newTab) => {
     setTab(newTab)
@@ -176,6 +177,32 @@ export default function RetailPage() {
                 ))}
               </select>
 
+              {/* View Mode Toggle */}
+              <div className="flex border border-gray-300 rounded-lg overflow-hidden">
+                <button
+                  onClick={() => setViewMode('grid')}
+                  className={`px-3 py-2 text-sm font-medium transition-colors ${
+                    viewMode === 'grid'
+                      ? 'bg-red-600 text-white'
+                      : 'bg-white text-gray-600 hover:bg-gray-50'
+                  }`}
+                  title="Grid View"
+                >
+                  <Grid3x3 size={18} />
+                </button>
+                <button
+                  onClick={() => setViewMode('table')}
+                  className={`px-3 py-2 text-sm font-medium transition-colors border-l border-gray-300 ${
+                    viewMode === 'table'
+                      ? 'bg-red-600 text-white'
+                      : 'bg-white text-gray-600 hover:bg-gray-50'
+                  }`}
+                  title="Table View"
+                >
+                  <List size={18} />
+                </button>
+              </div>
+
               {/* Add & Import Buttons */}
               {isOwnerOrManager && (
                 <>
@@ -196,18 +223,89 @@ export default function RetailPage() {
             </div>
           </div>
 
-          {/* Product Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredSkus.map(sku => (
-              <ProductCard
-                key={sku.id}
-                sku={sku}
-                onEdit={() => { setEditingSku(sku); setShowModal(true) }}
-                onDelete={() => handleDelete(sku.id)}
-                isOwnerOrManager={isOwnerOrManager}
-              />
-            ))}
-          </div>
+          {/* Product Grid View */}
+          {viewMode === 'grid' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filteredSkus.map(sku => (
+                <ProductCard
+                  key={sku.id}
+                  sku={sku}
+                  onEdit={() => { setEditingSku(sku); setShowModal(true) }}
+                  onDelete={() => handleDelete(sku.id)}
+                  isOwnerOrManager={isOwnerOrManager}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Table View */}
+          {viewMode === 'table' && (
+            <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">SKU</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Product Name</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Category</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Retail</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Wholesale</th>
+                      <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Sizes</th>
+                      {isOwnerOrManager && (
+                        <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider w-24">Actions</th>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {filteredSkus.map(sku => (
+                      <tr key={sku.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-4 py-3 font-mono text-xs text-gray-900 font-semibold">{sku.sku_code}</td>
+                        <td className="px-4 py-3 text-gray-900">{sku.product_name}</td>
+                        <td className="px-4 py-3 text-gray-600">
+                          {categories.find(c => c.id === sku.category_id)?.name || '-'}
+                        </td>
+                        <td className="px-4 py-3 text-right font-semibold text-gray-900">
+                          {sku.retail_price ? `$${parseFloat(sku.retail_price).toFixed(2)}` : '-'}
+                        </td>
+                        <td className="px-4 py-3 text-right text-gray-600">
+                          {sku.wholesale_cost ? `$${parseFloat(sku.wholesale_cost).toFixed(2)}` : '-'}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          {sku.has_sizes ? (
+                            <span className="text-xs text-gray-500">
+                              {(sku.available_sizes || []).join(', ') || 'Multi-size'}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-gray-400">-</span>
+                          )}
+                        </td>
+                        {isOwnerOrManager && (
+                          <td className="px-4 py-3">
+                            <div className="flex items-center justify-center gap-2">
+                              <button
+                                onClick={() => { setEditingSku(sku); setShowModal(true) }}
+                                className="p-1.5 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                title="Edit"
+                              >
+                                <Edit2 size={16} />
+                              </button>
+                              <button
+                                onClick={() => handleDelete(sku.id)}
+                                className="p-1.5 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                title="Delete"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {filteredSkus.length === 0 && (
             <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
