@@ -524,6 +524,38 @@ function ProductModal({ sku, categories, vendors, onSave, onClose }) {
                 <span className="text-sm font-medium text-gray-700">Has multiple sizes (apparel)</span>
               </label>
             </div>
+
+            {form.has_sizes && (
+              <div className="md:col-span-2 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <label className="block text-sm font-medium text-gray-700 mb-3">Available Sizes</label>
+                <div className="flex flex-wrap gap-2">
+                  {['XS', 'S', 'M', 'L', 'XL', 'XXL', '2X', '3X', '4X'].map(size => (
+                    <button
+                      key={size}
+                      type="button"
+                      onClick={() => {
+                        const sizes = form.available_sizes || []
+                        if (sizes.includes(size)) {
+                          set('available_sizes', sizes.filter(s => s !== size))
+                        } else {
+                          set('available_sizes', [...sizes, size])
+                        }
+                      }}
+                      className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
+                        (form.available_sizes || []).includes(size)
+                          ? 'bg-red-600 text-white border-red-600'
+                          : 'bg-white text-gray-700 border-gray-300 hover:border-red-600'
+                      }`}
+                    >
+                      {size}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  Selected: {(form.available_sizes || []).length > 0 ? (form.available_sizes || []).join(', ') : 'None'}
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="flex gap-3 mt-6">
