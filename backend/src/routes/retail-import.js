@@ -216,7 +216,11 @@ router.post('/preview', authenticate, requireStudio, requireRole('owner', 'manag
   const preview = []
 
   for (const item of items.slice(0, 20)) { // Preview first 20
-    const skuCode = item.sku_code?.trim()
+    // Use flexible column mapping (same as main import)
+    const productName = item.product_name || item['Product Name'] || item.name || item.Name
+    const skuCode = (item.sku_code || item['SKU Code'] || item.sku || item.SKU)?.trim()
+    const quantity = parseInt(item.quantity || item.Quantity || 0) || 0
+
     if (!skuCode) continue
 
     const { data: existing } = await db()
@@ -229,8 +233,8 @@ router.post('/preview', authenticate, requireStudio, requireRole('owner', 'manag
       existingSkus++
       preview.push({
         sku_code: skuCode,
-        product_name: item.product_name,
-        quantity: item.quantity,
+        product_name: productName,
+        quantity: quantity,
         status: 'update',
         existing_name: existing.product_name,
       })
@@ -238,8 +242,8 @@ router.post('/preview', authenticate, requireStudio, requireRole('owner', 'manag
       newSkus++
       preview.push({
         sku_code: skuCode,
-        product_name: item.product_name,
-        quantity: item.quantity,
+        product_name: productName,
+        quantity: quantity,
         status: 'new',
       })
     }
