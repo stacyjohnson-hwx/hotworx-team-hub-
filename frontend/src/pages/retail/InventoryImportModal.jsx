@@ -23,22 +23,39 @@ export function InventoryImportModal({ onClose, onSuccess }) {
         let items = []
 
         if (selectedFile.name.endsWith('.csv')) {
-          // Parse CSV
+          // Parse CSV (handle quoted fields)
           const text = event.target.result
-          const rows = text.split('\n')
-          const headers = rows[0].split(',')
+          const parseCSVLine = (line) => {
+            const result = []
+            let current = ''
+            let inQuotes = false
 
-          items = rows.slice(1)
-            .filter(row => row.trim())
-            .map(row => {
-              const values = row.split(',')
-              const obj = {}
-              headers.forEach((header, idx) => {
-                obj[header.trim()] = values[idx]?.trim()
-              })
-              return obj
+            for (let i = 0; i < line.length; i++) {
+              const char = line[i]
+              if (char === '"') {
+                inQuotes = !inQuotes
+              } else if (char === ',' && !inQuotes) {
+                result.push(current.trim())
+                current = ''
+              } else {
+                current += char
+              }
+            }
+            result.push(current.trim())
+            return result
+          }
+
+          const lines = text.split('\n').filter(l => l.trim())
+          const headers = parseCSVLine(lines[0])
+
+          items = lines.slice(1).map(line => {
+            const values = parseCSVLine(line)
+            const obj = {}
+            headers.forEach((header, idx) => {
+              obj[header.replace(/^["']|["']$/g, '')] = values[idx]?.replace(/^["']|["']$/g, '')
             })
-            .filter(item => item.SKU || item.sku_code)
+            return obj
+          }).filter(item => item['SKU Code'] || item.SKU || item.sku_code)
         } else {
           // Parse Excel
           const data = new Uint8Array(event.target.result)
@@ -83,22 +100,39 @@ export function InventoryImportModal({ onClose, onSuccess }) {
       let items = []
 
       if (file.name.endsWith('.csv')) {
-        // Parse CSV
+        // Parse CSV (handle quoted fields)
         const text = await file.text()
-        const rows = text.split('\n')
-        const headers = rows[0].split(',')
+        const parseCSVLine = (line) => {
+          const result = []
+          let current = ''
+          let inQuotes = false
 
-        items = rows.slice(1)
-          .filter(row => row.trim())
-          .map(row => {
-            const values = row.split(',')
-            const obj = {}
-            headers.forEach((header, idx) => {
-              obj[header.trim()] = values[idx]?.trim()
-            })
-            return obj
+          for (let i = 0; i < line.length; i++) {
+            const char = line[i]
+            if (char === '"') {
+              inQuotes = !inQuotes
+            } else if (char === ',' && !inQuotes) {
+              result.push(current.trim())
+              current = ''
+            } else {
+              current += char
+            }
+          }
+          result.push(current.trim())
+          return result
+        }
+
+        const lines = text.split('\n').filter(l => l.trim())
+        const headers = parseCSVLine(lines[0])
+
+        items = lines.slice(1).map(line => {
+          const values = parseCSVLine(line)
+          const obj = {}
+          headers.forEach((header, idx) => {
+            obj[header.replace(/^["']|["']$/g, '')] = values[idx]?.replace(/^["']|["']$/g, '')
           })
-          .filter(item => item.SKU || item.sku_code)
+          return obj
+        }).filter(item => item['SKU Code'] || item.SKU || item.sku_code)
       } else {
         // Parse Excel
         const data = await file.arrayBuffer()

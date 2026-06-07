@@ -27,11 +27,11 @@ router.post('/inventory', authenticate, requireStudio, requireRole('owner', 'man
   for (const item of items) {
     try {
       // Extract data from your format (handles both Excel inventory export and CSV catalog)
-      const productName = item.product_name || item.name || item.Name
-      const skuCode = (item.sku_code || item.sku || item.SKU)?.trim()
-      const wholesaleRate = parseFloat(item.wholesale_rate || item.wholesale_cost || 0) || 0
-      const retailRate = parseFloat(item.retail_rate || item.retail_price || item.Price || 0) || 0
-      const quantity = parseInt(item.quantity || 0) || 0
+      const productName = item.product_name || item['Product Name'] || item.name || item.Name
+      const skuCode = (item.sku_code || item['SKU Code'] || item.sku || item.SKU)?.trim()
+      const wholesaleRate = parseFloat(item.wholesale_rate || item['Wholesale Rate'] || item.wholesale_cost || 0) || 0
+      const retailRate = parseFloat(item.retail_rate || item['Retail Rate'] || item.retail_price || item.Price || 0) || 0
+      const quantity = parseInt(item.quantity || item.Quantity || 0) || 0
       const imageUrl = item.image_url || item['Image URL']
       const category = item.category || item.Category
 
