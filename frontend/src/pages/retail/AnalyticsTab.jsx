@@ -42,18 +42,46 @@ export function AnalyticsTab() {
     if (!file) return
 
     const text = await file.text()
-    const rows = text.split('\n').slice(1) // Skip header
-    const sales = rows
-      .filter(row => row.trim())
-      .map(row => {
-        const [date, sku_code, quantity, unit_price] = row.split(',')
-        return {
-          date: date?.trim(),
-          sku_code: sku_code?.trim(),
-          quantity: parseInt(quantity?.trim()) || 0,
-          unit_price: parseFloat(unit_price?.trim()) || 0,
+
+    // Parse CSV with quoted fields
+    const parseCSVLine = (line) => {
+      const result = []
+      let current = ''
+      let inQuotes = false
+
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i]
+        if (char === '"') {
+          inQuotes = !inQuotes
+        } else if (char === ',' && !inQuotes) {
+          result.push(current.trim())
+          current = ''
+        } else {
+          current += char
         }
+      }
+      result.push(current.trim())
+      return result
+    }
+
+    const lines = text.split('\n').filter(l => l.trim())
+    const headers = parseCSVLine(lines[0]).map(h => h.replace(/^["']|["']$/g, ''))
+
+    const sales = lines.slice(1).map(line => {
+      const values = parseCSVLine(line).map(v => v.replace(/^["']|["']$/g, ''))
+      const obj = {}
+      headers.forEach((header, idx) => {
+        obj[header] = values[idx]
       })
+
+      // Map columns flexibly
+      return {
+        product_name: obj['Product Name'] || obj.product_name,
+        date: obj['Order Date'] || obj.date,
+        quantity: parseFloat(obj.Qty || obj.quantity || 1),
+        unit_price: parseFloat(obj.Price || obj.unit_price || 0),
+      }
+    }).filter(s => s.product_name && s.date)
 
     setLoading(true)
     try {
