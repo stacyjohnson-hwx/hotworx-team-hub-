@@ -80,7 +80,14 @@
       "WebFetch(domain:www.lifetime.life)",
       "Bash(curl -s \"https://nominatim.openstreetmap.org/search?q=1279+Capitol+Drive+Pewaukee+WI&format=json&limit=1\")",
       "Bash(pkill -f \"vite build\")",
-      "Bash(pkill -f \"node.*backend\")"
+      "Bash(pkill -f \"node.*backend\")",
+      "Bash(curl -s http://localhost:5173)",
+      "Bash(curl -s http://localhost:3001/health)",
+      "Bash(curl -s \"http://localhost:3001/api/studio-trends?startYear=2025&startMonth=6&endYear=2026&endMonth=6\" -H \"Authorization: Bearer test\")",
+      "Bash(curl -s \"https://hotworx-team-hub.vercel.app\")",
+      "Bash(curl -s -I https://hotworx-team-hub-production.up.railway.app)",
+      "Bash(cat railway.json)",
+      "Bash(cat .railway/config.json)"
     ]
   }
 }
