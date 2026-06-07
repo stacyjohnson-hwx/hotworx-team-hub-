@@ -33,7 +33,7 @@ router.post('/inventory', authenticate, requireStudio, requireRole('owner', 'man
       const retailRate = parseFloat(item.retail_rate || item['Retail Rate'] || item.retail_price || item.Price || 0) || 0
       const quantity = parseInt(item.quantity || item.Quantity || 0) || 0
       const imageUrl = item.image_url || item['Image URL']
-      const category = item.category || item.Category
+      // Note: category is NOT saved - would need category_id (UUID) instead
 
       if (!skuCode) {
         errors.push({ item, error: 'Missing SKU code' })
