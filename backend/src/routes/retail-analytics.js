@@ -63,15 +63,28 @@ router.post('/import-sales', authenticate, requireStudio, requireRole('owner', '
 
   for (const sale of sales) {
     try {
-      // Validate SKU exists
+      // Extract data with flexible column mapping
+      const productName = sale.product_name || sale['Product Name']
+      const saleDate = sale.date || sale['Order Date']
+      const quantity = parseFloat(sale.quantity || sale.Qty || 1)
+      const unitPrice = parseFloat(sale.unit_price || sale.Price || 0)
+
+      if (!productName || !saleDate) {
+        errors.push({ row: sale, error: 'Missing product name or date' })
+        failed++
+        continue
+      }
+
+      // Find SKU by product name (case-insensitive)
       const { data: sku } = await db()
         .from('sku_master')
         .select('id')
-        .eq('sku_code', sale.sku_code)
-        .single()
+        .ilike('product_name', productName.trim())
+        .limit(1)
+        .maybeSingle()
 
       if (!sku) {
-        errors.push({ row: sale, error: `SKU ${sale.sku_code} not found` })
+        errors.push({ row: sale, error: `Product "${productName}" not found in catalog` })
         failed++
         continue
       }
@@ -82,9 +95,9 @@ router.post('/import-sales', authenticate, requireStudio, requireRole('owner', '
         .insert({
           studio_id: req.studio.id,
           sku_id: sku.id,
-          sale_date: sale.date,
-          quantity: sale.quantity,
-          unit_price: sale.unit_price,
+          sale_date: saleDate,
+          quantity: quantity,
+          unit_price: unitPrice,
           size_quantities: sale.size_quantities || null,
           imported_by: req.user.id,
           import_batch_id: batch.id,
@@ -98,10 +111,7 @@ router.post('/import-sales', authenticate, requireStudio, requireRole('owner', '
     }
   }
 
-  // Update batch stats
-  const dates = sales.map(s => new Date(s.date)).filter(d => !isNaN(d))
-  const minDate = dates.length > 0 ? new Date(Math.min(...dates)).toISOString().split('T')[0] : null
-  const maxDate = dates.length > 0 ? new Date(Math.max(...dates)).toISOString().split('T')[0] : null
+  // Update batch stats (already calculated at top, just use those values)
 
   await db()
     .from('sales_import_batches')
