@@ -74,7 +74,7 @@ router.get('/:id/versions', authenticate, async (req, res) => {
 
 // ─── POST /api/sops ───────────────────────────────────────────────────────────
 router.post('/', authenticate, requireRole('owner', 'manager'), async (req, res) => {
-  const { title, category, content, pdf_path, video_url } = req.body
+  const { title, category, content, pdf_path, video_url, status, visibility } = req.body
   if (!title) return res.status(400).json({ error: 'title is required' })
 
   const { data, error } = await supabase()
@@ -85,6 +85,8 @@ router.post('/', authenticate, requireRole('owner', 'manager'), async (req, res)
       content: content || null,
       pdf_path: pdf_path || null,
       video_url: video_url || null,
+      status: status || 'draft',
+      visibility: visibility || 'all',
       version: 1,
       created_by: req.user.id,
       updated_by: req.user.id,
@@ -98,7 +100,7 @@ router.post('/', authenticate, requireRole('owner', 'manager'), async (req, res)
 
 // ─── PUT /api/sops/:id ────────────────────────────────────────────────────────
 router.put('/:id', authenticate, requireRole('owner', 'manager'), async (req, res) => {
-  const { title, category, content, pdf_path, video_url } = req.body
+  const { title, category, content, pdf_path, video_url, status, visibility } = req.body
   const db = supabase()
 
   // Fetch current SOP to save a version snapshot
@@ -130,6 +132,8 @@ router.put('/:id', authenticate, requireRole('owner', 'manager'), async (req, re
       content: content !== undefined ? content : current.content,
       pdf_path: pdf_path !== undefined ? pdf_path : current.pdf_path,
       video_url: video_url !== undefined ? video_url : current.video_url,
+      status: status ?? current.status,
+      visibility: visibility ?? current.visibility,
       version: newVersion,
       updated_by: req.user.id,
       updated_at: new Date().toISOString(),
