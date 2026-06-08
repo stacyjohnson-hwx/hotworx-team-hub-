@@ -400,10 +400,18 @@ export function AnalyticsTab() {
               {shrinkageData.length === 0 && (
                 <div className="p-12 text-center text-gray-500">
                   <BarChart3 size={48} className="mx-auto text-gray-300 mb-3" />
-                  <p>No shrinkage data yet</p>
-                  <p className="text-xs text-gray-400 mt-2">
-                    Import sales data and calculate shrinkage to see analysis
-                  </p>
+                  <p className="font-semibold text-gray-700">No shrinkage data calculated yet</p>
+                  <div className="mt-4 text-sm text-gray-600 max-w-md mx-auto text-left space-y-2">
+                    <p className="font-medium">To calculate shrinkage, you need:</p>
+                    <ol className="list-decimal list-inside space-y-1">
+                      <li>At least 2 completed inventory counts (go to Counts tab)</li>
+                      <li>Sales data imported (go to Sales Data tab)</li>
+                      <li>Click "Calculate Shrinkage" button above</li>
+                    </ol>
+                    <p className="text-xs text-gray-500 mt-3">
+                      Shrinkage = (Starting Inventory - Ending Inventory) - Sales
+                    </p>
+                  </div>
                 </div>
               )}
             </div>
@@ -445,10 +453,17 @@ export function AnalyticsTab() {
               {deadStockData.length === 0 && (
                 <div className="p-12 text-center text-gray-500">
                   <Package size={48} className="mx-auto text-gray-300 mb-3" />
-                  <p>No dead stock found</p>
-                  <p className="text-xs text-gray-400 mt-2">
-                    Calculate dead stock analysis to see slow-moving items
-                  </p>
+                  <p className="font-semibold text-gray-700">No dead stock calculated yet</p>
+                  <div className="mt-4 text-sm text-gray-600 max-w-md mx-auto text-left space-y-2">
+                    <p className="font-medium">To calculate dead stock:</p>
+                    <ol className="list-decimal list-inside space-y-1">
+                      <li>Import sales data (go to Sales Data tab)</li>
+                      <li>Click "Calculate Dead Stock" button above</li>
+                    </ol>
+                    <p className="text-xs text-gray-500 mt-3">
+                      Dead stock = items with no sales in the last 90 days
+                    </p>
+                  </div>
                 </div>
               )}
             </div>
