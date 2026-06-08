@@ -127,6 +127,43 @@ router.post('/import-sales', authenticate, requireStudio, requireRole('owner', '
   res.json({ batch_id: batch.id, successful, failed, errors })
 })
 
+// ─── GET /api/retail/analytics/sales ────────────────────────────────────────
+// Get sales data with optional date filtering
+router.get('/sales', authenticate, requireStudio, async (req, res) => {
+  const { start_date, end_date } = req.query
+
+  let query = db()
+    .from('retail_sales')
+    .select(`
+      *,
+      sku:sku_master(id, sku_code, product_name, image_url, retail_price, category:product_categories(name))
+    `)
+    .eq('studio_id', req.studio.id)
+    .order('sale_date', { ascending: false })
+
+  if (start_date) query = query.gte('sale_date', start_date)
+  if (end_date) query = query.lte('sale_date', end_date)
+
+  const { data, error } = await query.limit(500)
+
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data)
+})
+
+// ─── GET /api/retail/analytics/import-batches ───────────────────────────────
+// Get import batch history with errors
+router.get('/import-batches', authenticate, requireStudio, async (req, res) => {
+  const { data, error } = await db()
+    .from('sales_import_batches')
+    .select('*')
+    .eq('studio_id', req.studio.id)
+    .order('created_at', { ascending: false })
+    .limit(20)
+
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data)
+})
+
 // ─── GET /api/retail/analytics/shrinkage ────────────────────────────────────
 // Get shrinkage analysis
 router.get('/shrinkage', authenticate, requireStudio, async (req, res) => {

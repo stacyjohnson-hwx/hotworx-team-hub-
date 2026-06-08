@@ -8,11 +8,14 @@ import {
 
 export function AnalyticsTab() {
   const { currentStudio } = useStudio()
-  const [view, setView] = useState('shrinkage')
+  const [view, setView] = useState('sales')
   const [loading, setLoading] = useState(false)
   const [shrinkageData, setShrinkageData] = useState([])
   const [deadStockData, setDeadStockData] = useState([])
+  const [salesData, setSalesData] = useState([])
+  const [importBatches, setImportBatches] = useState([])
   const [importResult, setImportResult] = useState(null)
+  const [dateFilter, setDateFilter] = useState({ start: '', end: '' })
 
   useEffect(() => {
     if (currentStudio?.id) {
@@ -23,7 +26,16 @@ export function AnalyticsTab() {
   const loadAnalytics = async () => {
     setLoading(true)
     try {
-      if (view === 'shrinkage') {
+      if (view === 'sales') {
+        const params = new URLSearchParams()
+        if (dateFilter.start) params.append('start_date', dateFilter.start)
+        if (dateFilter.end) params.append('end_date', dateFilter.end)
+        const data = await apiGet(`/api/retail/analytics/sales?${params}`, currentStudio.id)
+        setSalesData(data)
+
+        const batches = await apiGet('/api/retail/analytics/import-batches', currentStudio.id)
+        setImportBatches(batches)
+      } else if (view === 'shrinkage') {
         const data = await apiGet('/api/retail/analytics/shrinkage', currentStudio.id)
         setShrinkageData(data)
       } else if (view === 'dead-stock') {
@@ -195,6 +207,9 @@ export function AnalyticsTab() {
 
       {/* View Selector */}
       <div className="flex gap-2 mb-4 border-b border-gray-200">
+        <ViewButton active={view === 'sales'} onClick={() => setView('sales')}>
+          <BarChart3 size={16} /> Sales Data
+        </ViewButton>
         <ViewButton active={view === 'shrinkage'} onClick={() => setView('shrinkage')}>
           <TrendingDown size={16} /> Shrinkage Analysis
         </ViewButton>
@@ -205,6 +220,145 @@ export function AnalyticsTab() {
           <Activity size={16} /> Velocity
         </ViewButton>
       </div>
+
+      {/* Sales Data View */}
+      {view === 'sales' && (
+        <div>
+          {/* Date Range Filter */}
+          <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4">
+            <div className="flex gap-3 items-end">
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                <input
+                  type="date"
+                  value={dateFilter.start}
+                  onChange={(e) => setDateFilter(prev => ({ ...prev, start: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-600/30"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                <input
+                  type="date"
+                  value={dateFilter.end}
+                  onChange={(e) => setDateFilter(prev => ({ ...prev, end: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-600/30"
+                />
+              </div>
+              <button
+                onClick={loadAnalytics}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+              >
+                Filter
+              </button>
+              <button
+                onClick={() => { setDateFilter({ start: '', end: '' }); setTimeout(loadAnalytics, 100) }}
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+
+          {/* Import Batches */}
+          <div className="bg-white rounded-lg border border-gray-200 mb-4">
+            <div className="p-4 border-b border-gray-200">
+              <h2 className="text-lg font-bold text-gray-900">Import History</h2>
+            </div>
+            <div className="divide-y divide-gray-200">
+              {importBatches.map(batch => (
+                <div key={batch.id} className="p-4">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <p className="font-semibold text-gray-900">{batch.file_name}</p>
+                      <p className="text-sm text-gray-600">
+                        {batch.date_range_start} to {batch.date_range_end} • {batch.total_rows} rows
+                      </p>
+                      <p className="text-sm text-gray-600 mt-1">
+                        <span className="text-green-600 font-medium">{batch.successful_rows} successful</span>
+                        {' • '}
+                        <span className="text-red-600 font-medium">{batch.failed_rows} failed</span>
+                      </p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        Imported {new Date(batch.created_at).toLocaleString()}
+                      </p>
+                    </div>
+                    {batch.errors && batch.errors.length > 0 && (
+                      <details className="ml-4">
+                        <summary className="cursor-pointer text-sm text-red-600 font-medium">
+                          View {batch.errors.length} Errors
+                        </summary>
+                        <div className="mt-2 p-3 bg-red-50 rounded border border-red-200 text-xs space-y-1 max-h-48 overflow-y-auto">
+                          {batch.errors.map((err, idx) => (
+                            <div key={idx} className="text-red-800">
+                              <span className="font-semibold">{err.row?.product_name || err.row?.Product Name || 'Unknown'}:</span> {err.error}
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {importBatches.length === 0 && (
+                <div className="p-12 text-center text-gray-500">
+                  <Upload size={48} className="mx-auto text-gray-300 mb-3" />
+                  <p>No imports yet</p>
+                  <p className="text-xs text-gray-400 mt-2">
+                    Upload a sales CSV to get started
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Sales Table */}
+          <div className="bg-white rounded-lg border border-gray-200">
+            <div className="p-4 border-b border-gray-200">
+              <h2 className="text-lg font-bold text-gray-900">Sales Transactions</h2>
+              <p className="text-xs text-gray-500 mt-1">
+                Showing {salesData.length} transactions
+                {(dateFilter.start || dateFilter.end) && ' (filtered)'}
+              </p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Date</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Product</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Qty</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Unit Price</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Total</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {salesData.map(sale => (
+                    <tr key={sale.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 text-gray-900">{sale.sale_date}</td>
+                      <td className="px-4 py-3 text-gray-900">{sale.sku?.product_name || 'Unknown'}</td>
+                      <td className="px-4 py-3 text-right font-semibold text-gray-900">{sale.quantity}</td>
+                      <td className="px-4 py-3 text-right text-gray-600">${parseFloat(sale.unit_price || 0).toFixed(2)}</td>
+                      <td className="px-4 py-3 text-right font-semibold text-gray-900">
+                        ${(sale.quantity * parseFloat(sale.unit_price || 0)).toFixed(2)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {salesData.length === 0 && (
+                <div className="p-12 text-center text-gray-500">
+                  <BarChart3 size={48} className="mx-auto text-gray-300 mb-3" />
+                  <p>No sales data</p>
+                  <p className="text-xs text-gray-400 mt-2">
+                    {(dateFilter.start || dateFilter.end) ? 'No sales in selected date range' : 'Import sales CSV to see transactions'}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Shrinkage View */}
       {view === 'shrinkage' && (
