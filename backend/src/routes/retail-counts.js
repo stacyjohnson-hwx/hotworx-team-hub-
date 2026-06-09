@@ -222,20 +222,32 @@ router.post('/:id/submit', authenticate, requireStudio, requireRole('owner', 'ma
 // ─── DELETE /api/retail/counts/:id ─────────────────────────────────────────
 // Delete count session (only if not submitted)
 router.delete('/:id', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
-  const { data: session } = await db()
+  // Check session exists and is in_progress
+  const { data: session, error: checkError } = await db()
     .from('inventory_count_sessions')
     .select('status')
     .eq('id', req.params.id)
-    .single()
+    .eq('studio_id', req.studio.id)
+    .maybeSingle()
 
-  if (session?.status === 'submitted') {
+  if (checkError) return res.status(500).json({ error: checkError.message })
+  if (!session) return res.status(404).json({ error: 'Session not found' })
+  if (session.status === 'submitted') {
     return res.status(400).json({ error: 'Cannot delete submitted count session' })
   }
 
+  // Delete entries first (cascade)
+  await db()
+    .from('inventory_count_entries')
+    .delete()
+    .eq('session_id', req.params.id)
+
+  // Delete session
   const { error } = await db()
     .from('inventory_count_sessions')
     .delete()
     .eq('id', req.params.id)
+    .eq('studio_id', req.studio.id)
 
   if (error) return res.status(500).json({ error: error.message })
   res.status(204).end()
