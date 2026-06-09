@@ -12,6 +12,7 @@ export function InventoryImportModal({ onClose, onSuccess }) {
   const [result, setResult] = useState(null)
   const [countMonth, setCountMonth] = useState(new Date().getMonth() + 1)
   const [countYear, setCountYear] = useState(new Date().getFullYear())
+  const [importProgress, setImportProgress] = useState(null)
 
   const handleFileSelect = async (e) => {
     const selectedFile = e.target.files?.[0]
@@ -152,13 +153,30 @@ export function InventoryImportModal({ onClose, onSuccess }) {
       }
 
       const countDate = `${countYear}-${String(countMonth).padStart(2, '0')}-01`
-      const importResult = await apiPost(
-        '/api/retail/import/inventory',
-        { items, count_date: countDate },
-        currentStudio.id
-      )
 
-      setResult(importResult)
+      setImportProgress(`Uploading ${items.length} items to server...`)
+
+      // Add timeout for large imports (2 minutes)
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 120000)
+
+      try {
+        const importResult = await apiPost(
+          '/api/retail/import/inventory',
+          { items, count_date: countDate },
+          currentStudio.id
+        )
+        clearTimeout(timeoutId)
+        setImportProgress(null)
+        setResult(importResult)
+      } catch (err) {
+        clearTimeout(timeoutId)
+        setImportProgress(null)
+        if (err.name === 'AbortError') {
+          throw new Error('Import timeout - the file is too large. Try a smaller batch.')
+        }
+        throw err
+      }
 
       if (importResult.errors === 0) {
         setTimeout(() => {
@@ -341,7 +359,7 @@ export function InventoryImportModal({ onClose, onSuccess }) {
                   {importing ? (
                     <>
                       <Loader size={18} className="animate-spin" />
-                      Importing...
+                      {importProgress || `Importing ${preview.total} items... (this may take up to 2 minutes)`}
                     </>
                   ) : (
                     <>
