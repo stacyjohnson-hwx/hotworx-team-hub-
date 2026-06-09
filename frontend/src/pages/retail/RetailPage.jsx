@@ -78,6 +78,15 @@ export default function RetailPage() {
     }
   }
 
+  const handleDeleteCount = async (id) => {
+    try {
+      await apiDelete(`/api/retail/counts/${id}`, currentStudio.id)
+      loadData() // Reload to refresh the list
+    } catch (err) {
+      alert('Failed to delete count: ' + err.message)
+    }
+  }
+
   const handleSave = async (skuData) => {
     try {
       if (editingSku?.id) {
@@ -380,6 +389,7 @@ export default function RetailPage() {
                 key={session.id}
                 session={session}
                 onResume={() => navigate(`/retail/count/${session.id}`)}
+                onDelete={handleDeleteCount}
               />
             ))}
 
@@ -725,7 +735,7 @@ function ProductModal({ sku, categories, vendors, onSave, onClose }) {
   )
 }
 
-function CountSessionCard({ session, onResume }) {
+function CountSessionCard({ session, onResume, onDelete }) {
   const isSubmitted = session.status === 'submitted'
   const progress = session.items_counted || 0
   const total = session.total_items || 0
@@ -785,14 +795,26 @@ function CountSessionCard({ session, onResume }) {
         </div>
       )}
 
-      {/* Action */}
+      {/* Actions */}
       {!isSubmitted && (
-        <button
-          onClick={onResume}
-          className="w-full py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors"
-        >
-          Resume Count
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={onResume}
+            className="flex-1 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors"
+          >
+            Resume Count
+          </button>
+          <button
+            onClick={() => {
+              if (confirm('Delete this count session? This cannot be undone.')) {
+                onDelete(session.id)
+              }
+            }}
+            className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-red-50 hover:text-red-600 transition-colors"
+          >
+            <Trash2 size={18} />
+          </button>
+        </div>
       )}
     </div>
   )
