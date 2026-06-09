@@ -25,6 +25,7 @@ export default function RetailPage() {
   const [search, setSearch] = useState('')
   const [filterCategory, setFilterCategory] = useState('')
   const [filterTopSellers, setFilterTopSellers] = useState(false)
+  const [hideZeroInventory, setHideZeroInventory] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [editingSku, setEditingSku] = useState(null)
   const [showImportModal, setShowImportModal] = useState(false)
@@ -110,7 +111,8 @@ export default function RetailPage() {
       s.product_name?.toLowerCase().includes(search.toLowerCase())
     const matchesCategory = !filterCategory || s.category_id === filterCategory
     const matchesTopSeller = !filterTopSellers || s.top_seller === true
-    return matchesSearch && matchesCategory && matchesTopSeller
+    const matchesInventory = !hideZeroInventory || (s.inventory && s.inventory.quantity_on_hand > 0)
+    return matchesSearch && matchesCategory && matchesTopSeller && matchesInventory
   })
 
   if (loading) {
@@ -188,6 +190,17 @@ export default function RetailPage() {
                   className="w-4 h-4 accent-red-600"
                 />
                 <span className="text-sm font-medium text-gray-700 whitespace-nowrap">Top Sellers Only</span>
+              </label>
+
+              {/* Hide Zero Inventory Filter */}
+              <label className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50">
+                <input
+                  type="checkbox"
+                  checked={hideZeroInventory}
+                  onChange={e => setHideZeroInventory(e.target.checked)}
+                  className="w-4 h-4 accent-red-600"
+                />
+                <span className="text-sm font-medium text-gray-700 whitespace-nowrap">Hide Zero Inventory</span>
               </label>
 
               {/* View Mode Toggle */}
