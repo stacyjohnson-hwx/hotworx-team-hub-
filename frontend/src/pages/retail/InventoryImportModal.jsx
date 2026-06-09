@@ -10,6 +10,8 @@ export function InventoryImportModal({ onClose, onSuccess }) {
   const [preview, setPreview] = useState(null)
   const [importing, setImporting] = useState(false)
   const [result, setResult] = useState(null)
+  const [countMonth, setCountMonth] = useState(new Date().getMonth() + 1)
+  const [countYear, setCountYear] = useState(new Date().getFullYear())
 
   const handleFileSelect = async (e) => {
     const selectedFile = e.target.files?.[0]
@@ -149,9 +151,10 @@ export function InventoryImportModal({ onClose, onSuccess }) {
         })).filter(item => item.sku_code)
       }
 
+      const countDate = `${countYear}-${String(countMonth).padStart(2, '0')}-01`
       const importResult = await apiPost(
         '/api/retail/import/inventory',
-        { items, count_date: new Date().toISOString().split('T')[0] },
+        { items, count_date: countDate },
         currentStudio.id
       )
 
@@ -253,6 +256,37 @@ export function InventoryImportModal({ onClose, onSuccess }) {
                     <p className="text-2xl font-bold text-blue-600">{preview.existing_skus}</p>
                     <p className="text-xs text-gray-500">Updates</p>
                   </div>
+                </div>
+              </div>
+
+              <div className="mb-4 p-4 bg-white border border-gray-200 rounded-lg">
+                <label className="block text-sm font-semibold text-gray-900 mb-3">Inventory Month/Year</label>
+                <div className="flex items-center gap-3">
+                  <select
+                    value={countMonth}
+                    onChange={e => setCountMonth(parseInt(e.target.value))}
+                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-600/30"
+                  >
+                    {Array.from({ length: 12 }, (_, i) => (
+                      <option key={i + 1} value={i + 1}>
+                        {new Date(2000, i).toLocaleDateString('en-US', { month: 'long' })}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={countYear}
+                    onChange={e => setCountYear(parseInt(e.target.value))}
+                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-600/30"
+                  >
+                    {Array.from({ length: 5 }, (_, i) => (
+                      <option key={i} value={new Date().getFullYear() - 2 + i}>
+                        {new Date().getFullYear() - 2 + i}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-500">
+                    This inventory snapshot is for {new Date(2000, countMonth - 1).toLocaleDateString('en-US', { month: 'long' })} {countYear}
+                  </p>
                 </div>
               </div>
 
