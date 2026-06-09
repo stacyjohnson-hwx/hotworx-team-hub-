@@ -80,7 +80,7 @@ export default function RetailPage() {
 
   const handleDeleteCount = async (id) => {
     try {
-      await apiDelete(`/api/retail/counts/${id}`, currentStudio.id)
+      await apiDelete(`/api/retail/counts/${id}`, null, currentStudio.id)
       loadData() // Reload to refresh the list
     } catch (err) {
       alert('Failed to delete count: ' + err.message)
