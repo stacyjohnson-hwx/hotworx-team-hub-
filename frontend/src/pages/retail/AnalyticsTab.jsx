@@ -291,7 +291,7 @@ export function AnalyticsTab() {
                         <div className="mt-2 p-3 bg-red-50 rounded border border-red-200 text-xs space-y-1 max-h-48 overflow-y-auto">
                           {batch.errors.map((err, idx) => (
                             <div key={idx} className="text-red-800">
-                              <span className="font-semibold">{err.row?.product_name || err.row?.Product Name || 'Unknown'}:</span> {err.error}
+                              <span className="font-semibold">{err.row?.product_name || err.row?.['Product Name'] || 'Unknown'}:</span> {err.error}
                             </div>
                           ))}
                         </div>
