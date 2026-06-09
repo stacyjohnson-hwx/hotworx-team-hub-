@@ -12,10 +12,7 @@ const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SER
 router.get('/', authenticate, requireStudio, async (req, res) => {
   const { data, error } = await db()
     .from('inventory_count_sessions')
-    .select(`
-      *,
-      counted_by_user:auth.users!counted_by(id, email, raw_user_meta_data)
-    `)
+    .select('*')
     .eq('studio_id', req.studio.id)
     .order('count_date', { ascending: false })
 
@@ -28,10 +25,7 @@ router.get('/', authenticate, requireStudio, async (req, res) => {
 router.get('/:id', authenticate, requireStudio, async (req, res) => {
   const { data: session, error: sessionError } = await db()
     .from('inventory_count_sessions')
-    .select(`
-      *,
-      counted_by_user:auth.users!counted_by(id, email, raw_user_meta_data)
-    `)
+    .select('*')
     .eq('id', req.params.id)
     .eq('studio_id', req.studio.id)
     .single()
