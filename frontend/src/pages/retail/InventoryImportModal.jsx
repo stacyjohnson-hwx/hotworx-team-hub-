@@ -156,27 +156,14 @@ export function InventoryImportModal({ onClose, onSuccess }) {
 
       setImportProgress(`Uploading ${items.length} items to server...`)
 
-      // Add timeout for large imports (2 minutes)
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 120000)
+      const importResult = await apiPost(
+        '/api/retail/import/inventory',
+        { items, count_date: countDate },
+        currentStudio.id
+      )
 
-      try {
-        const importResult = await apiPost(
-          '/api/retail/import/inventory',
-          { items, count_date: countDate },
-          currentStudio.id
-        )
-        clearTimeout(timeoutId)
-        setImportProgress(null)
-        setResult(importResult)
-      } catch (err) {
-        clearTimeout(timeoutId)
-        setImportProgress(null)
-        if (err.name === 'AbortError') {
-          throw new Error('Import timeout - the file is too large. Try a smaller batch.')
-        }
-        throw err
-      }
+      setImportProgress(null)
+      setResult(importResult)
 
       if (importResult.errors === 0) {
         setTimeout(() => {
