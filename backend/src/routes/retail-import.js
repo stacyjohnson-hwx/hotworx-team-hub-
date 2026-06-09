@@ -84,6 +84,7 @@ router.post('/inventory', authenticate, requireStudio, requireRole('owner', 'man
             retail_price: retailRate,
             wholesale_cost: wholesaleRate,
             image_url: imageUrl || null,
+            active: true,
             created_by: req.user.id,
           })
           .select('id')
