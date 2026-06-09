@@ -4,8 +4,9 @@ import { useStudio } from '@/contexts/StudioContext'
 import { apiGet, apiPut, apiPost } from '@/hooks/useApi'
 import {
   CheckCircle, Circle, AlertCircle, Camera, Flag, ArrowLeft,
-  Package, Check, X, DollarSign, TrendingDown, TrendingUp, Calendar, History, Save,
+  Package, Check, X, DollarSign, TrendingDown, TrendingUp, Calendar, History, Save, Upload,
 } from 'lucide-react'
+import { InventoryImportModal } from './InventoryImportModal'
 
 export default function InventoryCountPage() {
   const navigate = useNavigate()
@@ -18,6 +19,7 @@ export default function InventoryCountPage() {
   const [saving, setSaving] = useState(false)
   const [countMonth, setCountMonth] = useState(new Date().getMonth() + 1)
   const [countYear, setCountYear] = useState(new Date().getFullYear())
+  const [showImportModal, setShowImportModal] = useState(false)
 
   useEffect(() => {
     if (currentStudio?.id) {
@@ -162,6 +164,13 @@ export default function InventoryCountPage() {
               >
                 Load Month
               </button>
+              <button
+                onClick={() => setShowImportModal(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium"
+              >
+                <Upload size={18} />
+                Import Inventory
+              </button>
             </div>
 
             {/* Progress Stats */}
@@ -285,6 +294,17 @@ export default function InventoryCountPage() {
           )}
         </div>
       </div>
+
+      {/* Import Modal */}
+      {showImportModal && (
+        <InventoryImportModal
+          onClose={() => setShowImportModal(false)}
+          onSuccess={() => {
+            setShowImportModal(false)
+            loadData() // Reload to show newly imported items
+          }}
+        />
+      )}
     </div>
   )
 }
