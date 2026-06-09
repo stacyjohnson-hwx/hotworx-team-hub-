@@ -116,151 +116,174 @@ export default function InventoryCountPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-4 py-4">
-        <div className="flex items-center justify-between mb-3">
-          <button onClick={() => navigate('/retail?tab=inventory')} className="flex items-center gap-2 text-gray-600 hover:text-gray-900">
-            <ArrowLeft size={20} />
-            <span className="font-medium">Back</span>
-          </button>
-          <h1 className="text-xl font-bold text-gray-900">Inventory Count</h1>
-          <button onClick={() => setView('history')} className="flex items-center gap-2 text-red-600 hover:text-red-700">
-            <History size={20} />
-            <span className="font-medium">History</span>
-          </button>
-        </div>
+      <div className="bg-white border-b border-gray-200 px-6 py-4">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex items-center justify-between mb-4">
+            <button onClick={() => navigate('/retail?tab=inventory')} className="flex items-center gap-2 text-gray-600 hover:text-gray-900">
+              <ArrowLeft size={20} />
+              <span className="font-medium">Back</span>
+            </button>
+            <h1 className="text-2xl font-bold text-gray-900">Inventory Count</h1>
+            <button onClick={() => setView('history')} className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium">
+              <History size={20} />
+              <span className="hidden md:inline">View History</span>
+            </button>
+          </div>
 
-        {/* Month/Year Selector */}
-        <div className="flex items-center gap-3 mb-3">
-          <label className="text-sm font-medium text-gray-700">Count Period:</label>
-          <select
-            value={countMonth}
-            onChange={e => setCountMonth(parseInt(e.target.value))}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-600/30"
-          >
-            {Array.from({ length: 12 }, (_, i) => (
-              <option key={i + 1} value={i + 1}>
-                {new Date(2000, i).toLocaleDateString('en-US', { month: 'long' })}
-              </option>
-            ))}
-          </select>
-          <select
-            value={countYear}
-            onChange={e => setCountYear(parseInt(e.target.value))}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-600/30"
-          >
-            {Array.from({ length: 5 }, (_, i) => (
-              <option key={i} value={new Date().getFullYear() - 2 + i}>
-                {new Date().getFullYear() - 2 + i}
-              </option>
-            ))}
-          </select>
-          <button
-            onClick={loadData}
-            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium"
-          >
-            Load Month
-          </button>
-        </div>
+          {/* Month/Year Selector & Stats */}
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="flex items-center gap-3 flex-wrap">
+              <label className="text-sm font-medium text-gray-700">Count Period:</label>
+              <select
+                value={countMonth}
+                onChange={e => setCountMonth(parseInt(e.target.value))}
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-600/30"
+              >
+                {Array.from({ length: 12 }, (_, i) => (
+                  <option key={i + 1} value={i + 1}>
+                    {new Date(2000, i).toLocaleDateString('en-US', { month: 'long' })}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={countYear}
+                onChange={e => setCountYear(parseInt(e.target.value))}
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-600/30"
+              >
+                {Array.from({ length: 5 }, (_, i) => (
+                  <option key={i} value={new Date().getFullYear() - 2 + i}>
+                    {new Date().getFullYear() - 2 + i}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={loadData}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium"
+              >
+                Load Month
+              </button>
+            </div>
 
-        {/* Progress */}
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-sm text-gray-600">{counted} of {total} counted</span>
-          <span className="text-sm font-semibold text-red-600">{progress}%</span>
-        </div>
-        <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-          <div className="h-full bg-red-600 transition-all" style={{ width: `${progress}%` }} />
+            {/* Progress Stats */}
+            <div className="flex items-center gap-6">
+              <div className="text-right">
+                <p className="text-2xl font-bold text-gray-900">{counted}<span className="text-gray-400">/{total}</span></p>
+                <p className="text-xs text-gray-500">Items Counted</p>
+              </div>
+              <div className="text-right">
+                <p className="text-2xl font-bold text-red-600">{progress}%</p>
+                <p className="text-xs text-gray-500">Complete</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Progress Bar */}
+          <div className="mt-4">
+            <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+              <div className="h-full bg-red-600 transition-all" style={{ width: `${progress}%` }} />
+            </div>
+          </div>
         </div>
       </div>
 
       {/* Count Table */}
-      <div className="p-4">
-        <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Image</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Product</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">SKU</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Expected</th>
-                  <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Actual Count</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Variance</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {entries.map(entry => {
-                  const variance = entry.actual_quantity !== null ? entry.actual_quantity - entry.expected_quantity : null
-                  return (
-                    <tr key={entry.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3">
-                        <div className="w-12 h-12 bg-gray-100 rounded flex items-center justify-center overflow-hidden">
-                          {entry.sku?.image_url ? (
-                            <img src={entry.sku.image_url} alt="" className="w-full h-full object-cover" />
+      <div className="px-6 py-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+            <div className="overflow-x-auto" style={{ maxHeight: 'calc(100vh - 350px)' }}>
+              <table className="w-full">
+                <thead className="bg-gray-50 border-b-2 border-gray-200 sticky top-0">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-20">Image</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Product Name</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-32">SKU</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider w-24">Expected</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider w-32">Actual Count</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider w-24">Variance</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200 bg-white">
+                  {entries.map(entry => {
+                    const variance = entry.actual_quantity !== null ? entry.actual_quantity - entry.expected_quantity : null
+                    return (
+                      <tr key={entry.id} className={`hover:bg-gray-50 transition-colors ${variance !== null && variance !== 0 ? 'bg-amber-50/30' : ''}`}>
+                        <td className="px-4 py-3">
+                          <div className="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden shadow-sm">
+                            {entry.sku?.image_url ? (
+                              <img src={entry.sku.image_url} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <Package size={28} className="text-gray-300" />
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <p className="text-gray-900 font-medium">{entry.sku?.product_name}</p>
+                          <p className="text-xs text-gray-500 mt-1">{entry.sku?.category?.name || 'Uncategorized'}</p>
+                        </td>
+                        <td className="px-4 py-3 text-gray-600 font-mono text-xs">{entry.sku?.sku_code}</td>
+                        <td className="px-4 py-3 text-right">
+                          <span className="text-lg font-bold text-gray-900">{entry.expected_quantity}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <input
+                            type="number"
+                            value={entry.actual_quantity ?? ''}
+                            onChange={e => handleActualChange(entry.id, e.target.value)}
+                            className="w-28 px-3 py-2 border-2 border-gray-300 rounded-lg text-center text-lg font-bold focus:outline-none focus:ring-2 focus:ring-red-600 focus:border-red-600"
+                            placeholder="—"
+                          />
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          {variance !== null ? (
+                            <div className="inline-flex items-center gap-1">
+                              <span className={`text-lg font-bold ${variance < 0 ? 'text-red-600' : variance > 0 ? 'text-green-600' : 'text-gray-600'}`}>
+                                {variance > 0 ? '+' : ''}{variance}
+                              </span>
+                            </div>
                           ) : (
-                            <Package size={24} className="text-gray-300" />
+                            <span className="text-gray-400 text-lg">—</span>
                           )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-gray-900 font-medium">{entry.sku?.product_name}</td>
-                      <td className="px-4 py-3 text-gray-600 font-mono text-xs">{entry.sku?.sku_code}</td>
-                      <td className="px-4 py-3 text-right font-semibold text-gray-900">{entry.expected_quantity}</td>
-                      <td className="px-4 py-3">
-                        <input
-                          type="number"
-                          value={entry.actual_quantity ?? ''}
-                          onChange={e => handleActualChange(entry.id, e.target.value)}
-                          className="w-24 px-3 py-2 border border-gray-300 rounded-lg text-center font-semibold focus:outline-none focus:ring-2 focus:ring-red-600/30"
-                          placeholder="—"
-                        />
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        {variance !== null ? (
-                          <span className={`font-bold ${variance < 0 ? 'text-red-600' : variance > 0 ? 'text-green-600' : 'text-gray-600'}`}>
-                            {variance > 0 ? '+' : ''}{variance}
-                          </span>
-                        ) : (
-                          <span className="text-gray-400">—</span>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {entries.length === 0 && (
+              <div className="p-16 text-center text-gray-500">
+                <Package size={64} className="mx-auto text-gray-300 mb-4" />
+                <p className="text-lg font-semibold text-gray-700 mb-2">No inventory items found</p>
+                <p className="text-sm text-gray-500">
+                  Import inventory from the Catalog tab first
+                </p>
+              </div>
+            )}
           </div>
 
-          {entries.length === 0 && (
-            <div className="p-12 text-center text-gray-500">
-              <Package size={48} className="mx-auto text-gray-300 mb-3" />
-              <p>No inventory items found</p>
-              <p className="text-xs text-gray-400 mt-2">
-                Import inventory from the Catalog tab first
-              </p>
+          {/* Actions */}
+          {entries.length > 0 && (
+            <div className="flex flex-col md:flex-row gap-3 mt-6">
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="flex-1 flex items-center justify-center gap-2 px-8 py-4 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 font-semibold text-lg shadow-sm"
+              >
+                <Save size={22} />
+                {saving ? 'Saving...' : 'Save Progress'}
+              </button>
+              <button
+                onClick={handleSubmit}
+                disabled={saving}
+                className="flex-1 flex items-center justify-center gap-2 px-8 py-4 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 font-semibold text-lg shadow-sm"
+              >
+                <CheckCircle size={22} />
+                Submit & Lock Count
+              </button>
             </div>
           )}
         </div>
-
-        {/* Actions */}
-        {entries.length > 0 && (
-          <div className="flex gap-3 mt-4">
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 font-semibold"
-            >
-              <Save size={20} />
-              {saving ? 'Saving...' : 'Save Progress'}
-            </button>
-            <button
-              onClick={handleSubmit}
-              disabled={saving}
-              className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 font-semibold"
-            >
-              <CheckCircle size={20} />
-              Submit & Lock Count
-            </button>
-          </div>
-        )}
       </div>
     </div>
   )
