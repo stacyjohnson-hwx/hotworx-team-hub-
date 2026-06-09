@@ -25,7 +25,7 @@ export default function InventoryCountPage() {
     if (currentStudio?.id) {
       loadData()
     }
-  }, [currentStudio?.id])
+  }, [currentStudio?.id, countMonth, countYear])
 
   const loadData = async () => {
     setLoading(true)
