@@ -59,6 +59,7 @@ router.post('/inventory', authenticate, requireStudio, requireRole('owner', 'man
       if (existingSku) {
         // Update existing SKU (merge data, keep existing if new data is empty)
         const updateData = {
+          active: true, // Always set active when importing
           updated_at: new Date().toISOString(),
         }
 
