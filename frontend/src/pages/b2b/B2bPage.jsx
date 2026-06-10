@@ -3,6 +3,7 @@ import { useRole } from '@/hooks/useRole'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
 import { supabase } from '@/lib/supabase'
 import ThumbsWidget, { useFeedbackSignals } from '@/components/ThumbsWidget'
+import MapTab from '@/pages/leads/hq/MapTab'
 import {
   Plus, X, Phone, Mail, MapPin, Building2, Tag,
   MessageSquare, ChevronDown, ChevronUp, Edit2, Trash2, Clock,
@@ -1523,7 +1524,7 @@ export default function B2bPage() {
 
       {/* Tabs */}
       <div className="flex gap-1 mb-5 border-b border-gray-200">
-        {[{ key: 'pipeline', label: 'Pipeline' }, { key: 'partners', label: 'Active Partners' }].map(t => (
+        {[{ key: 'pipeline', label: 'Pipeline' }, { key: 'partners', label: 'Active Partners' }, { key: 'map', label: 'Map' }].map(t => (
           <button key={t.key} onClick={() => { setTab(t.key); if (t.key === 'partners') setStatusFilter('') }}
             className={`px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${
               tab === t.key ? 'border-orange-500 text-orange-500' : 'border-transparent text-gray-500 hover:text-gray-800'
@@ -1533,7 +1534,8 @@ export default function B2bPage() {
         ))}
       </div>
 
-      {/* Search + filter */}
+      {/* Search + filter (hidden on the Map tab) */}
+      {tab !== 'map' && (
       <div className="flex gap-3 mb-6 flex-wrap">
         <input
           className="flex-1 min-w-48 bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 text-sm placeholder-gray-400 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
@@ -1562,11 +1564,15 @@ export default function B2bPage() {
           </select>
         )}
       </div>
+      )}
 
-      {tab === 'pipeline'
-        ? <PipelineTab contacts={filtered} users={users} isOwnerOrManager={isOwnerOrManager} onEdit={setModalContact} onDelete={handleDelete} onStatusChange={handleStatusChange} onInteractionLogged={handleInteractionLogged} b2bSignals={b2bSignals} />
-        : <ActivePartnersTab contacts={filteredPartners} users={users} isOwnerOrManager={isOwnerOrManager} onEdit={setModalContact} onDelete={handleDelete} onInteractionLogged={handleInteractionLogged} b2bSignals={b2bSignals} />
-      }
+      {tab === 'pipeline' && (
+        <PipelineTab contacts={filtered} users={users} isOwnerOrManager={isOwnerOrManager} onEdit={setModalContact} onDelete={handleDelete} onStatusChange={handleStatusChange} onInteractionLogged={handleInteractionLogged} b2bSignals={b2bSignals} />
+      )}
+      {tab === 'partners' && (
+        <ActivePartnersTab contacts={filteredPartners} users={users} isOwnerOrManager={isOwnerOrManager} onEdit={setModalContact} onDelete={handleDelete} onInteractionLogged={handleInteractionLogged} b2bSignals={b2bSignals} />
+      )}
+      {tab === 'map' && <MapTab />}
 
       {modalContact !== null && (
         <ContactModal contact={modalContact || null} users={users} onSave={handleSave} onClose={() => setModalContact(null)} />
