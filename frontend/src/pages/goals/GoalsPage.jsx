@@ -549,7 +549,11 @@ function TeamGoals({ month, year }) {
     <div>
       {error && <ErrorBox>{error}</ErrorBox>}
 
-      <div className="flex justify-end mb-3">
+      <div className="flex justify-end gap-2 mb-3">
+        <button onClick={load} title="Reload the team list (e.g. after adding a new member)"
+          className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors">
+          <RefreshCw size={15} /> Refresh
+        </button>
         <button onClick={() => setShowBulk(true)}
           className="flex items-center gap-2 px-4 py-2 bg-gray-900 hover:bg-gray-800 text-white text-sm font-semibold rounded-lg transition-colors">
           <Sparkles size={15} /> Quick Entry — All Team
