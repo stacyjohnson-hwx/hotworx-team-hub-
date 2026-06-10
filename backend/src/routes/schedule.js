@@ -188,4 +188,153 @@ router.delete('/:id', requireRole('owner', 'manager'), async (req, res) => {
   res.status(204).end()
 })
 
+// ─── Scheduling suggestions (Phase 2) ─────────────────────────────────────────
+// Ranks team members for an open shift using availability + approved time off +
+// existing shifts that week. Rule-based and explainable (returns reasons).
+
+const DAY_NAMES_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+const hhmm = (t) => (t ? t.slice(0, 5) : null)
+const toMin = (t) => { const [h, m] = hhmm(t).split(':').map(Number); return h * 60 + m }
+function fmt12(t) {
+  const [h, m] = hhmm(t).split(':').map(Number)
+  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`
+}
+function sundayOf(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00')
+  d.setDate(d.getDate() - d.getDay())
+  return d.toISOString().slice(0, 10)
+}
+function addDaysStr(dateStr, n) {
+  const d = new Date(dateStr + 'T00:00:00')
+  d.setDate(d.getDate() + n)
+  return d.toISOString().slice(0, 10)
+}
+
+// GET /api/schedule/suggestions?date=YYYY-MM-DD&start=HH:MM&end=HH:MM
+router.get('/suggestions', requireRole('owner', 'manager'), async (req, res) => {
+  const { date, start, end } = req.query
+  if (!date || !start || !end) {
+    return res.status(400).json({ error: 'date, start, and end are required' })
+  }
+
+  const dow = new Date(date + 'T00:00:00').getDay()
+  const dayName = DAY_NAMES_FULL[dow]
+  const sStart = hhmm(start)
+  const sEnd = hhmm(end)
+  const shiftHours = Math.max(0, (toMin(sEnd) - toMin(sStart)) / 60)
+  const weekStart = sundayOf(date)
+  const weekEnd = addDaysStr(weekStart, 6)
+
+  try {
+    // 1. Studio members
+    const { data: memberRows, error: memErr } = await db()
+      .from('user_studios')
+      .select('user_id, role')
+      .eq('studio_id', req.studio.id)
+    if (memErr) return res.status(500).json({ error: memErr.message })
+    const memberIds = [...new Set((memberRows || []).map(m => m.user_id))]
+    if (!memberIds.length) return res.json([])
+
+    // 2. Availability for this day-of-week
+    const { data: availRows } = await db()
+      .from('availability')
+      .select('*')
+      .eq('studio_id', req.studio.id)
+      .eq('day_of_week', dow)
+    const availByUser = {}
+    for (const a of availRows || []) availByUser[a.user_id] = a
+
+    // 3. Approved time off covering this date
+    const { data: offRows } = await db()
+      .from('time_off_requests')
+      .select('requested_by, start_date, end_date, status')
+      .eq('studio_id', req.studio.id)
+      .eq('status', 'approved')
+      .lte('start_date', date)
+      .gte('end_date', date)
+    const offUsers = new Set((offRows || []).map(r => r.requested_by))
+
+    // 4. Existing shifts that week (for fairness + same-day conflict)
+    const { data: weekShifts } = await db()
+      .from('shifts')
+      .select('tsa_id, shift_date, start_time, end_time')
+      .eq('studio_id', req.studio.id)
+      .gte('shift_date', weekStart)
+      .lte('shift_date', weekEnd)
+    const hoursByUser = {}
+    const sameDayByUser = {}
+    for (const s of weekShifts || []) {
+      const h = Math.max(0, (toMin(s.end_time) - toMin(s.start_time)) / 60)
+      hoursByUser[s.tsa_id] = (hoursByUser[s.tsa_id] || 0) + h
+      if (s.shift_date === date) (sameDayByUser[s.tsa_id] = sameDayByUser[s.tsa_id] || []).push(s)
+    }
+
+    // 5. Names
+    const nameMap = await fetchNameMap(memberIds)
+
+    // 6. Score each member
+    const candidates = memberIds.map(uid => {
+      const reasons = []
+      let status = 'available' // available | partial | unavailable
+      let score = 100
+      const avail = availByUser[uid]
+      const hoursThisWeek = Math.round((hoursByUser[uid] || 0) * 10) / 10
+      const conflict = !!(sameDayByUser[uid] && sameDayByUser[uid].length)
+
+      // Time off is a hard block
+      if (offUsers.has(uid)) {
+        status = 'unavailable'
+        reasons.push('Approved time off this day')
+      } else if (avail && avail.available === false) {
+        status = 'unavailable'
+        reasons.push(`Marked unavailable on ${dayName}s`)
+      } else if (avail && avail.all_day === false) {
+        const aStart = hhmm(avail.start_time)
+        const aEnd = hhmm(avail.end_time)
+        if (aStart && aEnd && toMin(aStart) <= toMin(sStart) && toMin(aEnd) >= toMin(sEnd)) {
+          reasons.push(`Available ${fmt12(aStart)}–${fmt12(aEnd)}`)
+        } else if (aStart && aEnd) {
+          status = 'partial'
+          score -= 45
+          reasons.push(`Only available ${fmt12(aStart)}–${fmt12(aEnd)}`)
+        } else {
+          reasons.push('Availability hours not fully set')
+        }
+      } else {
+        reasons.push(`Available all day ${dayName}`)
+      }
+
+      if (conflict) {
+        score -= 60
+        reasons.push('Already has a shift this day')
+      }
+
+      // Fairness — fewer hours already scheduled ranks higher
+      score -= hoursThisWeek * 3
+      reasons.push(`${hoursThisWeek}h scheduled this week`)
+
+      return {
+        user_id: uid,
+        name: nameMap[uid]?.name || 'Team Member',
+        role: (memberRows.find(m => m.user_id === uid) || {}).role || 'tsa',
+        status,
+        score: Math.round(score),
+        conflict,
+        hours_this_week: hoursThisWeek,
+        reasons,
+      }
+    })
+
+    // Rank: available first (by score), then partial, then unavailable
+    const rank = { available: 0, partial: 1, unavailable: 2 }
+    candidates.sort((a, b) =>
+      rank[a.status] - rank[b.status] || b.score - a.score || a.name.localeCompare(b.name)
+    )
+
+    res.json({ shift_hours: shiftHours, day: dayName, candidates })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 module.exports = router

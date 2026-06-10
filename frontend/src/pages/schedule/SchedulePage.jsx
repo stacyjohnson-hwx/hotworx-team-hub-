@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { ChevronLeft, ChevronRight, Plus, Pencil, Trash2, RefreshCw, X, Flag, Calendar, LayoutGrid, MessageSquare, Tag } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, Pencil, Trash2, RefreshCw, X, Flag, Calendar, LayoutGrid, MessageSquare, Tag, Sparkles, Check } from 'lucide-react'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
 import { useRole } from '@/hooks/useRole'
 
@@ -1134,8 +1134,37 @@ function ShiftForm({ shift, defaultDate, users, onSaved, onClose }) {
     end_time:   shift?.end_time?.slice(0, 5)   || '15:00',
     notes:      shift?.notes || '',
   })
+  const [suggestions, setSuggestions] = useState([])
+  const [loadingSugg, setLoadingSugg] = useState(false)
 
   function set(k, v) { setForm(p => ({ ...p, [k]: v })) }
+
+  // Fetch ranked suggestions whenever date/times change (debounced)
+  useEffect(() => {
+    const { shift_date, start_time, end_time } = form
+    if (!shift_date || !start_time || !end_time || end_time <= start_time) {
+      setSuggestions([])
+      return
+    }
+    let cancelled = false
+    setLoadingSugg(true)
+    const t = setTimeout(async () => {
+      try {
+        const res = await apiGet(
+          `/api/schedule/suggestions?date=${shift_date}&start=${start_time}&end=${end_time}`
+        )
+        if (!cancelled) setSuggestions(res.candidates || [])
+      } catch {
+        if (!cancelled) setSuggestions([])
+      } finally {
+        if (!cancelled) setLoadingSugg(false)
+      }
+    }, 400)
+    return () => { cancelled = true; clearTimeout(t) }
+  }, [form.shift_date, form.start_time, form.end_time])
+
+  const statusDot = (s) =>
+    s === 'available' ? 'bg-green-500' : s === 'partial' ? 'bg-amber-500' : 'bg-gray-300'
 
   async function submit(e) {
     e.preventDefault()
@@ -1167,6 +1196,41 @@ function ShiftForm({ shift, defaultDate, users, onSaved, onClose }) {
               {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
             </select>
           </div>
+
+          {/* Smart suggestions */}
+          {form.shift_date && form.start_time && form.end_time && form.end_time > form.start_time && (
+            <div className="rounded-lg border border-gray-200 bg-gray-50/60 p-2.5">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 mb-2">
+                <Sparkles size={13} className="text-red-500" /> Suggested for this shift
+              </div>
+              {loadingSugg ? (
+                <p className="text-xs text-gray-400 px-1 py-1">Finding the best matches…</p>
+              ) : suggestions.length === 0 ? (
+                <p className="text-xs text-gray-400 px-1 py-1">No team availability data yet — ask the team to set their availability.</p>
+              ) : (
+                <div className="space-y-1.5 max-h-52 overflow-y-auto">
+                  {suggestions.slice(0, 5).map(c => {
+                    const selected = form.tsa_id === c.user_id
+                    return (
+                      <button type="button" key={c.user_id} onClick={() => set('tsa_id', c.user_id)}
+                        className={`w-full text-left rounded-lg border px-3 py-2 transition-colors ${
+                          selected ? 'border-red-500 bg-red-50' : 'border-gray-200 bg-white hover:bg-gray-50'
+                        }`}>
+                        <div className="flex items-center justify-between">
+                          <span className="flex items-center gap-2 text-sm font-medium text-gray-900">
+                            <span className={`w-2 h-2 rounded-full ${statusDot(c.status)}`} />
+                            {c.name}
+                          </span>
+                          {selected && <Check size={14} className="text-red-600" />}
+                        </div>
+                        <p className="text-[11px] text-gray-500 mt-0.5 leading-snug">{c.reasons.join(' · ')}</p>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
 
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Date *</label>
