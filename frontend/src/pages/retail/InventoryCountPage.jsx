@@ -11,6 +11,7 @@ import { InventoryImportModal } from './InventoryImportModal'
 
 export default function InventoryCountPage() {
   const navigate = useNavigate()
+  const { sessionId } = useParams()
   const { currentStudio } = useStudio()
   const [view, setView] = useState('current') // 'current' or 'history'
   const [sessions, setSessions] = useState([])
@@ -18,8 +19,6 @@ export default function InventoryCountPage() {
   const [entries, setEntries] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [countMonth, setCountMonth] = useState(new Date().getMonth() + 1)
-  const [countYear, setCountYear] = useState(new Date().getFullYear())
   const [showImportModal, setShowImportModal] = useState(false)
   const [search, setSearch] = useState('')
   const [filterCategory, setFilterCategory] = useState('')
@@ -27,33 +26,22 @@ export default function InventoryCountPage() {
   const [sortDir, setSortDir] = useState('asc') // 'asc' | 'desc'
 
   useEffect(() => {
-    if (currentStudio?.id) {
+    if (currentStudio?.id && sessionId) {
       loadData()
     }
-  }, [currentStudio?.id, countMonth, countYear])
+  }, [currentStudio?.id, sessionId])
 
   const loadData = async () => {
     setLoading(true)
     try {
+      // Load the specific session this page was opened for (from the URL)
+      const sessionData = await apiGet(`/api/retail/counts/${sessionId}`, currentStudio.id)
+      setCurrentSession(sessionData)
+      setEntries(sessionData.entries || [])
+
+      // Also load all sessions for the History view
       const allSessions = await apiGet('/api/retail/counts', currentStudio.id)
       setSessions(allSessions)
-
-      // Load or create current month's session
-      const monthKey = `${countYear}-${String(countMonth).padStart(2, '0')}`
-      let session = allSessions.find(s => s.count_date?.startsWith(monthKey) && s.status === 'in_progress')
-
-      if (!session) {
-        // Create new session for this month
-        session = await apiPost('/api/retail/counts', {
-          count_date: `${monthKey}-01`,
-        }, currentStudio.id)
-      }
-
-      setCurrentSession(session)
-
-      // Load entries
-      const sessionData = await apiGet(`/api/retail/counts/${session.id}`, currentStudio.id)
-      setEntries(sessionData.entries || [])
     } catch (err) {
       console.error('Failed to load:', err)
       alert(`Failed to load inventory count: ${err.message}`)
@@ -182,38 +170,22 @@ export default function InventoryCountPage() {
             </button>
           </div>
 
-          {/* Month/Year Selector & Stats */}
+          {/* Count Date & Stats */}
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div className="flex items-center gap-3 flex-wrap">
-              <label className="text-sm font-medium text-gray-700">Count Period:</label>
-              <select
-                value={countMonth}
-                onChange={e => setCountMonth(parseInt(e.target.value))}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-600/30"
-              >
-                {Array.from({ length: 12 }, (_, i) => (
-                  <option key={i + 1} value={i + 1}>
-                    {new Date(2000, i).toLocaleDateString('en-US', { month: 'long' })}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={countYear}
-                onChange={e => setCountYear(parseInt(e.target.value))}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-600/30"
-              >
-                {Array.from({ length: 5 }, (_, i) => (
-                  <option key={i} value={new Date().getFullYear() - 2 + i}>
-                    {new Date().getFullYear() - 2 + i}
-                  </option>
-                ))}
-              </select>
-              <button
-                onClick={loadData}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium"
-              >
-                Load Month
-              </button>
+              <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg">
+                <Calendar size={18} className="text-gray-500" />
+                <span className="text-sm font-medium text-gray-700">
+                  {currentSession?.count_date
+                    ? new Date(currentSession.count_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+                    : 'Inventory Count'}
+                </span>
+                {currentSession?.status === 'submitted' && (
+                  <span className="ml-1 inline-flex items-center gap-1 text-xs font-semibold text-green-600">
+                    <CheckCircle size={14} /> Submitted
+                  </span>
+                )}
+              </div>
               <button
                 onClick={() => setShowImportModal(true)}
                 className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium"
