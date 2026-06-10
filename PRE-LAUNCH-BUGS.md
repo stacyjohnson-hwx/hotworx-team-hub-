@@ -50,6 +50,36 @@
 **Deploy:** Live on Railway  
 **Note:** Pre-existing bug, unrelated to launch-prep changes
 
+### BUG #8: Competitor Visits "Failed to Fetch" ✅ FIXED
+**Status:** Fixed in commit `65542b4`  
+**Issue:** Same `.eq()` before `.select()` bug as Studio Trends, in the competitor visits query  
+**Fix:** Reordered `.select('*')` before filters  
+**Deploy:** Live on Railway
+
+### BUG #9: Escalations List "Failed to Fetch" ✅ FIXED
+**Status:** Fixed in commit `65542b4`  
+**Issue:** Same `.eq()` before `.select()` bug in the escalations list query  
+**Fix:** Reordered `.select('*')` before filters  
+**Deploy:** Live on Railway
+
+### BUG #10: Inventory Shrinkage Rate Always 0 ✅ FIXED
+**Status:** Fixed in commit `65542b4`  
+**Issue:** On count submit, the inventory-value loop queried prices inside a `reduce()` without `await`, so every price read as undefined → shrinkage rate was always 0 on submitted counts  
+**Fix:** Pre-fetch all retail prices in one query, then compute totals  
+**Deploy:** Live on Railway
+
+### BUG #11: Outreach Status Toggle Silently Failed ✅ FIXED
+**Status:** Fixed in commit `65542b4`  
+**Issue:** The Outreach tab's PATCH used a hand-rolled fetch whose auth header interpolated a Promise (`Bearer [object Promise]`), so marking a contact called/done never saved (401)  
+**Fix:** Routed through the existing `apiPatch` helper (correct auth + studio headers); removed dead `handleAction`  
+**Deploy:** Live on Vercel
+
+### BUG #12: Dead /api/retail/import/sales Route ✅ FIXED
+**Status:** Fixed in commit `65542b4`  
+**Issue:** Route called a non-existent `importSales()` export and would crash if hit (frontend doesn't use it, so latent)  
+**Fix:** Removed the dead route; sales import goes through `/api/retail/analytics/import-sales`  
+**Deploy:** Live on Railway
+
 ---
 
 ## 🎨 ENHANCEMENTS ADDED (June 9)
