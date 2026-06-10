@@ -7,6 +7,7 @@ import { StudioSwitcher } from '@/components/StudioSwitcher'
 import {
   LayoutDashboard,
   Calendar,
+  Clock,
   Target,
   TrendingUp,
   BarChart2,
@@ -34,6 +35,7 @@ import {
 const allNavItems = [
   { to: '/dashboard',      label: 'Dashboard',       icon: LayoutDashboard, roles: ['owner', 'manager', 'tsa'] },
   { to: '/schedule',       label: 'Schedule',         icon: Calendar,        roles: ['owner', 'manager', 'tsa'] },
+  { to: '/availability',   label: 'Availability',     icon: Clock,           roles: ['owner', 'manager', 'tsa'] },
   { to: '/goals',          label: 'Goals',            icon: Target,          roles: ['owner', 'manager', 'tsa'] },
   { to: '/leads',          label: 'Growth',           icon: TrendingUp,      roles: ['owner', 'manager', 'tsa'] },
   { to: '/cleaning',       label: 'Tasks',            icon: CheckSquare,     roles: ['owner', 'manager', 'tsa'] },
