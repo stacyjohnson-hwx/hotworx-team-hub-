@@ -12,8 +12,8 @@ const supabase = () =>
 router.get('/', authenticate, requireStudio, async (req, res) => {
   const { data, error } = await supabase()
     .from('escalation_logs')
-    .eq('studio_id', req.studio.id)
     .select('*')
+    .eq('studio_id', req.studio.id)
     .order('created_at', { ascending: false })
 
   if (error) return res.status(500).json({ error: error.message })

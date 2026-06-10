@@ -129,38 +129,10 @@ router.post('/inventory', authenticate, requireStudio, requireRole('owner', 'man
   })
 })
 
-// ─── POST /api/retail/import/sales ──────────────────────────────────────────
-// Import sales data with duplicate month detection
-router.post('/sales', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
-  const { sales, file_name, month, year } = req.body
-
-  if (!sales || !Array.isArray(sales)) {
-    return res.status(400).json({ error: 'sales array required' })
-  }
-
-  // Check if this month already has sales data
-  const { data: existingSales, error: checkError } = await db()
-    .from('retail_sales')
-    .select('id')
-    .eq('studio_id', req.studio.id)
-    .gte('sale_date', `${year}-${String(month).padStart(2, '0')}-01`)
-    .lt('sale_date', `${year}-${String(month + 1).padStart(2, '0')}-01`)
-    .limit(1)
-
-  if (checkError) return res.status(500).json({ error: checkError.message })
-
-  if (existingSales && existingSales.length > 0) {
-    return res.status(409).json({
-      error: 'duplicate_month',
-      message: `Sales data for ${year}-${String(month).padStart(2, '0')} already exists. Delete existing data first or use a different month.`,
-      month,
-      year,
-    })
-  }
-
-  // Use existing analytics import
-  return await require('./retail-analytics').importSales(req, res)
-})
+// NOTE: Sales import is handled by POST /api/retail/analytics/import-sales
+// (see retail-analytics.js). A previous /api/retail/import/sales route here was
+// removed because it called a non-existent importSales() export and always crashed.
+// The frontend uses the analytics route directly.
 
 // ─── POST /api/retail/import/check-duplicate ───────────────────────────────
 // Check if month already has data (for inventory or sales)

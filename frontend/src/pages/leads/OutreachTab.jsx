@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRole } from '@/hooks/useRole'
-import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
+import { apiGet, apiPost, apiPut, apiPatch, apiDelete } from '@/hooks/useApi'
 import {
   Phone, MessageSquare, ChevronDown, ChevronUp, Plus, Trash2,
   Edit2, Check, X, ArrowUp, ArrowDown, Upload, Users,
@@ -226,25 +226,10 @@ function ContactRow({ contact, onChange }) {
   const [showOutcome, setShowOutcome] = useState(false)
   const isDone = contact.status === 'done' || contact.status === 'called'
 
-  const handleAction = async (status, outcome) => {
-    try {
-      const updated = await apiPost(`/api/outreach/contacts/${contact.id}`, { status, outcome })
-        .catch(() => null)
-      // optimistic
-      onChange({ ...contact, status, outcome })
-      setShowOutcome(false)
-    } catch {}
-  }
-
-  // Use PATCH via apiPut workaround — our hook uses PUT, we'll use apiPost for PATCH
+  // Update a contact's status/outcome via the PATCH endpoint
   const patch = async (payload) => {
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/outreach/contacts/${contact.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${(await import('@/lib/supabase')).supabase.auth.getSession().then(s => s.data.session?.access_token)}` },
-        body: JSON.stringify(payload),
-      })
-      return res.json()
+      return await apiPatch(`/api/outreach/contacts/${contact.id}`, payload)
     } catch { return null }
   }
 

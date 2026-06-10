@@ -187,10 +187,18 @@ router.post('/:id/submit', authenticate, requireStudio, requireRole('owner', 'ma
   const total_variance_value = entries.reduce((sum, e) => sum + (e.variance_value || 0), 0)
 
   // Calculate shrinkage rate (total variance / total inventory value)
-  const total_inventory_value = entries.reduce((sum, e) => {
-    const { data: sku } = db().from('sku_master').select('retail_price').eq('id', e.sku_id).single()
-    return sum + (e.expected_quantity * (sku?.retail_price || 0))
-  }, 0)
+  // Pre-fetch retail prices in one query — can't await inside reduce()
+  const skuIds = [...new Set(entries.map(e => e.sku_id))]
+  const { data: skuRows } = await db()
+    .from('sku_master')
+    .select('id, retail_price')
+    .in('id', skuIds)
+  const priceMap = Object.fromEntries((skuRows || []).map(s => [s.id, s.retail_price || 0]))
+
+  const total_inventory_value = entries.reduce(
+    (sum, e) => sum + (e.expected_quantity * (priceMap[e.sku_id] || 0)),
+    0
+  )
 
   const shrinkage_rate = total_inventory_value > 0
     ? Math.abs(total_variance_value / total_inventory_value * 100)

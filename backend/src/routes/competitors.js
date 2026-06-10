@@ -56,8 +56,8 @@ router.delete('/:id', authenticate, requireStudio, requireRole('owner', 'manager
 router.get('/:id/visits', authenticate, async (req, res) => {
   const { data, error } = await db()
     .from('competitor_visits')
-    .eq('studio_id', req.studio.id)
     .select('*')
+    .eq('studio_id', req.studio.id)
     .eq('competitor_id', req.params.id)
     .order('visited_at', { ascending: false })
   if (error) return res.status(500).json({ error: error.message })
