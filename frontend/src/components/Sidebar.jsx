@@ -31,29 +31,60 @@ import {
   Package,
 } from 'lucide-react'
 
-const allNavItems = [
-  { to: '/dashboard',      label: 'Dashboard',       icon: LayoutDashboard, roles: ['owner', 'manager', 'tsa'] },
-  { to: '/schedule',       label: 'Schedule',         icon: Calendar,        roles: ['owner', 'manager', 'tsa'] },
-  { to: '/goals',          label: 'Goals',            icon: Target,          roles: ['owner', 'manager', 'tsa'] },
-  { to: '/leads',          label: 'Growth',           icon: TrendingUp,      roles: ['owner', 'manager', 'tsa'] },
-  { to: '/cleaning',       label: 'Tasks',            icon: CheckSquare,     roles: ['owner', 'manager', 'tsa'] },
-  { to: '/studio-trends',  label: 'Studio Trends',    icon: BarChart2,       roles: ['owner', 'manager'] },
-  { to: '/advisor',        label: 'AI Advisor',       icon: Sparkles,        roles: ['owner', 'manager'] },
-  { to: '/events',         label: 'Events & Promos',  icon: Megaphone,       roles: ['owner', 'manager', 'tsa'] },
-  { to: '/b2b',            label: 'B2B Outreach',     icon: Building2,       roles: ['owner', 'manager', 'tsa'] },
-  { to: '/orders',         label: 'Orders',           icon: ShoppingCart,    roles: ['owner', 'manager', 'tsa'] },
-  { to: '/eod',            label: 'EOD Checkout',     icon: ClipboardCheck,  roles: ['owner', 'manager', 'tsa'] },
-  { to: '/timeoff',        label: 'Time Off & Availability', icon: CalendarOff, roles: ['owner', 'manager', 'tsa'] },
-  { to: '/sops',           label: 'SOPs',             icon: BookOpen,        roles: ['owner', 'manager', 'tsa'] },
-  { to: '/training',       label: 'Training',         icon: GraduationCap,   roles: ['owner', 'manager', 'tsa'] },
-  { to: '/maintenance',    label: 'Maintenance',       icon: Wrench,          roles: ['owner', 'manager', 'tsa'] },
-  { to: '/escalations',    label: 'Escalations',      icon: ShieldAlert,     roles: ['owner', 'manager', 'tsa'] },
-  { to: '/competitors',    label: 'Competitors',       icon: Swords,          roles: ['owner', 'manager', 'tsa'] },
-  { to: '/retail',         label: 'Retail',           icon: Package,         roles: ['owner', 'manager'] },
-  { to: '/todo',           label: 'To-Do',            icon: ListTodo,        roles: ['owner', 'manager'] },
-  { to: '/coaching',       label: 'Coaching',         icon: MessageSquare,   roles: ['owner', 'manager'] },
-  { to: '/team',           label: 'Team',             icon: Users,           roles: ['owner', 'manager'] },
-  { to: '/profile',        label: 'My Profile',       icon: UserCircle,      roles: ['owner', 'manager', 'tsa'] },
+// Sidebar organized into sections. Dashboard is pinned (no header); the footer
+// button covers "My Profile". Sections with no role-visible items are hidden.
+const NAV_SECTIONS = [
+  {
+    title: null,
+    items: [
+      { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['owner', 'manager', 'tsa'] },
+    ],
+  },
+  {
+    title: 'Daily Operations',
+    items: [
+      { to: '/schedule',    label: 'Schedule',                icon: Calendar,       roles: ['owner', 'manager', 'tsa'] },
+      { to: '/timeoff',     label: 'Time Off & Availability', icon: CalendarOff,    roles: ['owner', 'manager', 'tsa'] },
+      { to: '/cleaning',    label: 'Tasks',                   icon: CheckSquare,    roles: ['owner', 'manager', 'tsa'] },
+      { to: '/eod',         label: 'EOD Checkout',            icon: ClipboardCheck, roles: ['owner', 'manager', 'tsa'] },
+      { to: '/orders',      label: 'Orders',                  icon: ShoppingCart,   roles: ['owner', 'manager', 'tsa'] },
+      { to: '/maintenance', label: 'Maintenance',             icon: Wrench,         roles: ['owner', 'manager', 'tsa'] },
+      { to: '/escalations', label: 'Escalations',             icon: ShieldAlert,    roles: ['owner', 'manager', 'tsa'] },
+    ],
+  },
+  {
+    title: 'Sales & Growth',
+    items: [
+      { to: '/goals',       label: 'Goals',           icon: Target,     roles: ['owner', 'manager', 'tsa'] },
+      { to: '/leads',       label: 'Growth',          icon: TrendingUp, roles: ['owner', 'manager', 'tsa'] },
+      { to: '/events',      label: 'Events & Promos', icon: Megaphone,  roles: ['owner', 'manager', 'tsa'] },
+      { to: '/b2b',         label: 'B2B Outreach',    icon: Building2,  roles: ['owner', 'manager', 'tsa'] },
+      { to: '/competitors', label: 'Competitors',     icon: Swords,     roles: ['owner', 'manager', 'tsa'] },
+      { to: '/retail',      label: 'Retail',          icon: Package,    roles: ['owner', 'manager'] },
+    ],
+  },
+  {
+    title: 'Resources',
+    items: [
+      { to: '/sops',     label: 'SOPs',     icon: BookOpen,      roles: ['owner', 'manager', 'tsa'] },
+      { to: '/training', label: 'Training', icon: GraduationCap, roles: ['owner', 'manager', 'tsa'] },
+    ],
+  },
+  {
+    title: 'Team & Coaching',
+    items: [
+      { to: '/team',     label: 'Team',     icon: Users,         roles: ['owner', 'manager'] },
+      { to: '/coaching', label: 'Coaching', icon: MessageSquare, roles: ['owner', 'manager'] },
+      { to: '/todo',     label: 'To-Do',    icon: ListTodo,      roles: ['owner', 'manager'] },
+    ],
+  },
+  {
+    title: 'Insights',
+    items: [
+      { to: '/studio-trends', label: 'Studio Trends', icon: BarChart2, roles: ['owner', 'manager'] },
+      { to: '/advisor',       label: 'AI Advisor',    icon: Sparkles,  roles: ['owner', 'manager'] },
+    ],
+  },
 ]
 
 function Avatar({ name, avatarUrl, size = 7 }) {
@@ -79,7 +110,6 @@ export function Sidebar({ onNavigate }) {
   const { role } = useRole()
   const navigate = useNavigate()
 
-  const navItems = allNavItems.filter(item => item.roles.includes(role))
   const roleLabel = role === 'owner' ? 'Owner' : role === 'manager' ? 'Manager' : 'TSA'
   const displayName = profile?.name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Team Member'
   const avatarUrl   = profile?.avatar_url || user?.user_metadata?.avatar_url || null
@@ -104,24 +134,39 @@ export function Sidebar({ onNavigate }) {
 
       {/* Navigation */}
       <div className="flex-1 overflow-y-auto relative min-h-0">
-        <nav className="py-3 px-2 space-y-0.5">
-          {navItems.map(({ to, label, icon: Icon }) => (
-            <NavLink
-              key={to}
-              to={to}
-              onClick={onNavigate}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
-                  isActive
-                    ? 'bg-red-950 text-red-600 font-medium'
-                    : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
-                }`
-              }
-            >
-              <Icon size={16} className="flex-shrink-0" />
-              <span className="truncate">{label}</span>
-            </NavLink>
-          ))}
+        <nav className="py-3 px-2">
+          {NAV_SECTIONS.map((section, si) => {
+            const items = section.items.filter(item => item.roles.includes(role))
+            if (!items.length) return null
+            return (
+              <div key={si} className={section.title ? 'mt-4 first:mt-0' : ''}>
+                {section.title && (
+                  <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-600">
+                    {section.title}
+                  </p>
+                )}
+                <div className="space-y-0.5">
+                  {items.map(({ to, label, icon: Icon }) => (
+                    <NavLink
+                      key={to}
+                      to={to}
+                      onClick={onNavigate}
+                      className={({ isActive }) =>
+                        `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                          isActive
+                            ? 'bg-red-950 text-red-600 font-medium'
+                            : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
+                        }`
+                      }
+                    >
+                      <Icon size={16} className="flex-shrink-0" />
+                      <span className="truncate">{label}</span>
+                    </NavLink>
+                  ))}
+                </div>
+              </div>
+            )
+          })}
         </nav>
       </div>
 
