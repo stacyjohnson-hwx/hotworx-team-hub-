@@ -154,6 +154,19 @@ router.put('/:id/entries/:entry_id', authenticate, requireStudio, requireRole('o
     .single()
 
   if (error) return res.status(500).json({ error: error.message })
+
+  // Keep the session's items_counted in sync so the Inventory list shows progress
+  const { count: countedCount } = await db()
+    .from('inventory_count_entries')
+    .select('*', { count: 'exact', head: true })
+    .eq('session_id', req.params.id)
+    .not('actual_quantity', 'is', null)
+
+  await db()
+    .from('inventory_count_sessions')
+    .update({ items_counted: countedCount || 0, updated_at: new Date().toISOString() })
+    .eq('id', req.params.id)
+
   res.json(data)
 })
 
