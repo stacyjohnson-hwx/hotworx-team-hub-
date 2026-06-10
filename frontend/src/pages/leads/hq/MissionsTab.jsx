@@ -141,17 +141,10 @@ function EditTopItemsModal({ challenge, aiRecs, onSaveChallenge, onSaveAiRecs, o
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-[#E8611A]" />
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">Target count</label>
-                  <input type="number" min={1} value={ch.targetCount} onChange={e => setChField('targetCount', parseInt(e.target.value) || 1)}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-[#E8611A]" />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">Bonus points</label>
-                  <input type="number" min={0} value={ch.bonusPoints} onChange={e => setChField('bonusPoints', parseInt(e.target.value) || 0)}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-[#E8611A]" />
-                </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Target count</label>
+                <input type="number" min={1} value={ch.targetCount} onChange={e => setChField('targetCount', parseInt(e.target.value) || 1)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-[#E8611A]" />
               </div>
 
               <div className="grid grid-cols-2 gap-2">
@@ -262,10 +255,6 @@ function ProofModal({ mission, onConfirm, onCancel }) {
           <button onClick={onCancel} className="text-white/40 hover:text-white/70 transition-colors mt-0.5 flex-shrink-0 ml-3"><X size={18} /></button>
         </div>
         <div className="p-5">
-          <div className="flex items-center justify-center gap-2 bg-orange-50 border border-orange-200 rounded-xl p-3 mb-4">
-            <Zap size={18} className="text-[#E8611A]" fill="#E8611A" />
-            <span className="font-bold text-[#E8611A] text-lg">+{mission.points} points</span>
-          </div>
           {needsNote && (
             <div className="mb-4">
               <label className="block text-xs font-semibold text-gray-600 mb-1.5">
@@ -294,7 +283,7 @@ function ProofModal({ mission, onConfirm, onCancel }) {
 function MissionForm({ initial, onSave, onCancel }) {
   const [form, setForm] = useState(initial || BLANK_FORM)
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
-  const valid = form.title.trim().length > 0 && form.points > 0
+  const valid = form.title.trim().length > 0
 
   return (
     <div className="space-y-3">
@@ -332,19 +321,12 @@ function MissionForm({ initial, onSave, onCancel }) {
         </div>
       </div>
 
-      {/* Row: Points + Time */}
-      <div className="grid grid-cols-2 gap-2">
-        <div>
-          <label className="block text-xs font-semibold text-gray-600 mb-1">Points *</label>
-          <input type="number" min={1} value={form.points} onChange={e => set('points', parseInt(e.target.value) || 0)}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-[#E8611A]" />
-        </div>
-        <div>
-          <label className="block text-xs font-semibold text-gray-600 mb-1">Est. time</label>
-          <input value={form.estimatedTime} onChange={e => set('estimatedTime', e.target.value)}
-            placeholder="e.g. 30 min"
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-[#E8611A]" />
-        </div>
+      {/* Est. time */}
+      <div>
+        <label className="block text-xs font-semibold text-gray-600 mb-1">Est. time</label>
+        <input value={form.estimatedTime} onChange={e => set('estimatedTime', e.target.value)}
+          placeholder="e.g. 30 min"
+          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-[#E8611A]" />
       </div>
 
       {/* Row: Proof + Repeatable */}
@@ -464,8 +446,6 @@ function ManageMissionsModal({ customMissions, hiddenMissions, overrides, onClos
                       </div>
                       <div className="flex items-center gap-1.5 mt-0.5">
                         <span className="text-[10px] text-gray-400">{m.category}</span>
-                        <span className="text-[10px] text-gray-300">·</span>
-                        <span className="text-[10px] font-semibold text-[#E8611A]">{m.points} pts</span>
                       </div>
                     </div>
                     <button
@@ -615,9 +595,6 @@ function MissionCard({ mission, completions, onComplete, isPlayMission, onDismis
             </div>
 
             <div className="flex-shrink-0 flex flex-col items-end gap-1.5">
-              <span className="flex items-center gap-0.5 text-xs font-bold text-[#E8611A] bg-orange-50 border border-orange-200 px-1.5 py-0.5 rounded-md">
-                <Zap size={10} fill="#E8611A" />{mission.points}
-              </span>
               <ThumbsWidget
                 entityType="mission"
                 entityId={mission.id}
@@ -653,7 +630,6 @@ function WeeklyChallenge({ challenge }) {
           </div>
         </div>
         <div className="text-right flex-shrink-0 ml-3">
-          <p className="text-xs font-bold text-[#E8611A]">+{challenge.bonusPoints} pts</p>
           <p className="text-[10px] text-gray-400">{daysLeft}d left</p>
         </div>
       </div>
@@ -816,7 +792,6 @@ export default function MissionsTab({ employee, onPointsEarned, onStreakUpdate }
 
   return (
     <div className="pb-4">
-      {flashPts !== null && <PointsFlash points={flashPts} onDone={() => setFlashPts(null)} />}
       {showManage && (
         <ManageMissionsModal
           customMissions={customMissions}
@@ -849,11 +824,6 @@ export default function MissionsTab({ employee, onPointsEarned, onStreakUpdate }
             <p className="text-[10px] text-gray-400 leading-none mt-0.5">done today</p>
           </div>
           <div className="w-px h-7 bg-gray-200" />
-          <div className="text-center">
-            <p className="text-xl font-black text-gray-800 leading-none">{employee.pointsThisWeek.toLocaleString()}</p>
-            <p className="text-[10px] text-gray-400 leading-none mt-0.5">pts this week</p>
-          </div>
-          <div className="w-px h-7 bg-gray-200" />
           <div className="flex items-center gap-1.5">
             <Flame size={15} className="text-[#E8611A]" />
             <div>
@@ -863,12 +833,6 @@ export default function MissionsTab({ employee, onPointsEarned, onStreakUpdate }
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {ptsToNext > 0 && nextRank && (
-            <div className="text-right">
-              <p className="text-[10px] text-gray-400 leading-none">{ptsToNext.toLocaleString()} pts to</p>
-              <p className={`text-xs font-bold leading-tight mt-0.5 ${nextRank.color}`}>{nextRank.name}</p>
-            </div>
-          )}
           {canManage && (
             <div className="flex items-center gap-1 ml-2">
               <button onClick={() => setShowTopEdit(true)}
