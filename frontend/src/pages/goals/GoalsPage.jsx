@@ -520,6 +520,7 @@ function TeamGoals({ month, year }) {
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState(null)
   const [editing, setEditing] = useState(null)
+  const [showBulk, setShowBulk] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true); setError(null)
@@ -535,17 +536,178 @@ function TeamGoals({ month, year }) {
     setEditing(null)
   }
 
+  function onSavedAll(updatedRows) {
+    setTeam(prev => prev.map(t => {
+      const u = updatedRows.find(r => r && r.tsa_id === t.tsa_id)
+      return u || t
+    }))
+  }
+
   if (loading) return <Spinner />
 
   return (
     <div>
       {error && <ErrorBox>{error}</ErrorBox>}
+
+      <div className="flex justify-end mb-3">
+        <button onClick={() => setShowBulk(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-gray-900 hover:bg-gray-800 text-white text-sm font-semibold rounded-lg transition-colors">
+          <Sparkles size={15} /> Quick Entry — All Team
+        </button>
+      </div>
+
       <div className="space-y-2">
         {team.map(member => (
           <TeamMemberRow key={member.tsa_id} member={member} onEdit={() => setEditing(member)} />
         ))}
       </div>
       {editing && <PersonalGoalModal member={editing} month={month} year={year} onSaved={onSaved} onClose={() => setEditing(null)} />}
+      {showBulk && <BulkGoalEntry team={team} month={month} year={year} onSavedAll={onSavedAll} onClose={() => setShowBulk(false)} />}
+    </div>
+  )
+}
+
+// ─── Bulk Quick-Entry grid: every team member's numbers on one screen ─────────
+const BULK_FIELDS = [
+  { key: 'eft_actual',        label: 'EFT $',     money: true },
+  { key: 'pos_collected',     label: 'POS $',     money: true },
+  { key: 'pif_6mo',           label: 'PIF 6mo $', money: true },
+  { key: 'pif_12mo',          label: 'PIF 12mo $',money: true },
+  { key: 'retail_actual',     label: 'Retail $',  money: true },
+  { key: 'sweat_basic',       label: 'Basic' },
+  { key: 'sweat_elite',       label: 'Elite' },
+  { key: 'total_memberships', label: 'Members' },
+  { key: 'calls_made',        label: 'Calls' },
+  { key: 'texts_made',        label: 'Texts' },
+]
+
+function pickBulkFields(m) {
+  const o = {}
+  for (const f of BULK_FIELDS) o[f.key] = Number(m[f.key]) || 0
+  return o
+}
+
+function BulkGoalEntry({ team, month, year, onSavedAll, onClose }) {
+  const [rows, setRows] = useState(() =>
+    Object.fromEntries(team.map(m => [m.tsa_id, pickBulkFields(m)]))
+  )
+  const [initial] = useState(() =>
+    Object.fromEntries(team.map(m => [m.tsa_id, pickBulkFields(m)]))
+  )
+  const [statusMap, setStatusMap] = useState({}) // tsa_id -> 'saving'|'saved'|'error'
+  const [savingAll, setSavingAll] = useState(false)
+  const [error, setError] = useState(null)
+
+  const setCell = (tsaId, key, val) => {
+    setRows(prev => ({ ...prev, [tsaId]: { ...prev[tsaId], [key]: val === '' ? 0 : Number(val) } }))
+    setStatusMap(prev => ({ ...prev, [tsaId]: undefined }))
+  }
+
+  const isDirty = (tsaId) =>
+    BULK_FIELDS.some(f => Number(rows[tsaId][f.key]) !== Number(initial[tsaId][f.key]))
+
+  const dirtyCount = team.filter(m => isDirty(m.tsa_id)).length
+
+  async function saveAll() {
+    const dirtyIds = team.map(m => m.tsa_id).filter(isDirty)
+    if (!dirtyIds.length) { onClose(); return }
+    setSavingAll(true); setError(null)
+    const results = await Promise.all(dirtyIds.map(async id => {
+      setStatusMap(s => ({ ...s, [id]: 'saving' }))
+      try {
+        const saved = await apiPut(`/api/goals/personal/${id}`, { month, year, ...rows[id] })
+        setStatusMap(s => ({ ...s, [id]: 'saved' }))
+        return saved
+      } catch (e) {
+        setStatusMap(s => ({ ...s, [id]: 'error' }))
+        return null
+      }
+    }))
+    setSavingAll(false)
+    const ok = results.filter(Boolean)
+    onSavedAll(ok)
+    if (ok.length < dirtyIds.length) setError('Some rows failed to save — check the red rows and retry.')
+  }
+
+  const monthLabel = new Date(year, month - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-6xl max-h-[92vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between p-5 border-b border-gray-100">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">Quick Entry — Team Numbers</h2>
+            <p className="text-xs text-gray-400">{monthLabel} · enter everyone’s numbers, then Save All</p>
+          </div>
+          <button onClick={onClose}><X className="w-5 h-5 text-gray-400 hover:text-gray-600" /></button>
+        </div>
+
+        {error && <div className="mx-5 mt-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3">{error}</div>}
+
+        {/* Grid */}
+        <div className="flex-1 overflow-auto p-5">
+          <table className="w-full border-collapse text-sm">
+            <thead className="sticky top-0 bg-white">
+              <tr className="border-b-2 border-gray-200">
+                <th className="text-left px-2 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide sticky left-0 bg-white min-w-[150px]">Team Member</th>
+                {BULK_FIELDS.map(f => (
+                  <th key={f.key} className="px-1.5 py-2 text-xs font-semibold text-gray-500 text-center whitespace-nowrap">{f.label}</th>
+                ))}
+                <th className="w-8" />
+              </tr>
+            </thead>
+            <tbody>
+              {team.map(m => {
+                const st = statusMap[m.tsa_id]
+                return (
+                  <tr key={m.tsa_id} className={`border-b border-gray-100 ${st === 'error' ? 'bg-red-50' : st === 'saved' ? 'bg-green-50' : ''}`}>
+                    <td className="px-2 py-1.5 font-medium text-gray-900 whitespace-nowrap sticky left-0 bg-inherit">
+                      <div className="flex items-center gap-2">
+                        <Avatar name={m.tsa_name} avatarUrl={m.avatar_url} size={7} />
+                        <span className="truncate max-w-[120px]">{m.tsa_name}</span>
+                      </div>
+                    </td>
+                    {BULK_FIELDS.map(f => (
+                      <td key={f.key} className="px-1 py-1.5">
+                        <input
+                          type="number"
+                          value={rows[m.tsa_id][f.key] || ''}
+                          onChange={e => setCell(m.tsa_id, f.key, e.target.value)}
+                          placeholder="0"
+                          className="w-[72px] px-2 py-1.5 border border-gray-300 rounded-md text-center focus:outline-none focus:ring-2 focus:ring-red-600/30 focus:border-red-600"
+                        />
+                      </td>
+                    ))}
+                    <td className="text-center">
+                      {st === 'saving' && <RefreshCw size={14} className="animate-spin text-gray-400 inline" />}
+                      {st === 'saved' && <Check size={15} className="text-green-600 inline" />}
+                      {st === 'error' && <X size={15} className="text-red-500 inline" />}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between gap-3 p-5 border-t border-gray-100">
+          <span className="text-xs text-gray-500">
+            {dirtyCount > 0 ? `${dirtyCount} row${dirtyCount !== 1 ? 's' : ''} changed` : 'No changes yet'}
+          </span>
+          <div className="flex gap-3">
+            <button onClick={onClose}
+              className="px-5 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50">
+              Close
+            </button>
+            <button onClick={saveAll} disabled={savingAll || dirtyCount === 0}
+              className="flex items-center gap-2 px-6 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-sm font-bold rounded-lg">
+              {savingAll ? <><RefreshCw size={15} className="animate-spin" /> Saving…</> : <>Save All ({dirtyCount})</>}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
