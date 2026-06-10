@@ -69,8 +69,8 @@ router.get('/:year/:month', authenticate, requireStudio, requireRole('owner', 'm
   const { year, month } = req.params
   const { data, error } = await db()
     .from('studio_trends')
-    .eq('studio_id', req.studio.id)
     .select('*')
+    .eq('studio_id', req.studio.id)
     .eq('month', month)
     .eq('year', year)
     .maybeSingle()
