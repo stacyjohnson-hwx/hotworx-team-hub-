@@ -105,25 +105,15 @@ function EditTopItemsModal({ challenge, aiRecs, onSaveChallenge, onSaveAiRecs, o
         <div className="bg-[#1A1A1A] px-5 py-4 flex items-center justify-between flex-shrink-0">
           <div>
             <p className="text-[#E8611A] text-xs font-bold uppercase tracking-wider mb-0.5">Growth HQ</p>
-            <p className="text-white font-bold text-base">Edit Top Items</p>
+            <p className="text-white font-bold text-base">Edit Weekly Challenge</p>
           </div>
           <button onClick={onClose} className="text-white/40 hover:text-white/70 transition-colors"><X size={20} /></button>
-        </div>
-
-        {/* Sub-tabs */}
-        <div className="flex border-b border-gray-200 flex-shrink-0">
-          {[['challenge', '🏆 Weekly Challenge'], ['recs', '⭐ AI Recommendations']].map(([key, label]) => (
-            <button key={key} onClick={() => setTab(key)}
-              className={`flex-1 py-2.5 text-xs font-semibold transition-colors ${
-                tab === key ? 'border-b-2 border-[#E8611A] text-[#E8611A]' : 'text-gray-500 hover:text-gray-700'
-              }`}>{label}</button>
-          ))}
         </div>
 
         <div className="overflow-y-auto flex-1 p-5">
 
           {/* ── Weekly Challenge editor ── */}
-          {tab === 'challenge' && (
+          {(
             <div className="space-y-3">
               <p className="text-xs text-gray-500">This banner appears at the top of the Missions tab for all TSAs.</p>
 
@@ -158,58 +148,6 @@ function EditTopItemsModal({ challenge, aiRecs, onSaveChallenge, onSaveAiRecs, o
                   <input type="date" value={ch.endsAt?.slice(0, 10) || ''} onChange={e => setChField('endsAt', e.target.value + 'T23:59:59Z')}
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-[#E8611A]" />
                 </div>
-              </div>
-            </div>
-          )}
-
-          {/* ── AI Recs editor ── */}
-          {tab === 'recs' && (
-            <div className="space-y-3">
-              <p className="text-xs text-gray-500">These tip cards appear below the Weekly Challenge. TSAs can dismiss them.</p>
-
-              {/* Existing recs */}
-              {recs.length === 0 && (
-                <p className="text-xs text-gray-400 italic py-2 text-center">No recommendations yet.</p>
-              )}
-              {recs.map(rec => (
-                <div key={rec.id} className="border border-blue-200 bg-blue-50 rounded-xl p-3 space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <select value={rec.type} onChange={e => {
-                        const opt = REC_TYPE_OPTIONS.find(o => o.label === e.target.value) || REC_TYPE_OPTIONS[4]
-                        updateRec(rec.id, 'type', opt.label)
-                        updateRec(rec.id, 'typeColor', opt.value)
-                      }}
-                      className="text-xs border border-blue-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400">
-                      {REC_TYPE_OPTIONS.map(o => <option key={o.label} value={o.label}>{o.label}</option>)}
-                    </select>
-                    <button onClick={() => removeRec(rec.id)} className="text-gray-400 hover:text-red-500 transition-colors flex-shrink-0"><Trash2 size={14} /></button>
-                  </div>
-                  <input value={rec.headline} onChange={e => updateRec(rec.id, 'headline', e.target.value)}
-                    placeholder="Headline (e.g. Post a member spotlight)"
-                    className="w-full border border-blue-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white" />
-                  <input value={rec.reason} onChange={e => updateRec(rec.id, 'reason', e.target.value)}
-                    placeholder="Reason (e.g. engagement is down this week)"
-                    className="w-full border border-blue-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white" />
-                </div>
-              ))}
-
-              {/* Add new rec */}
-              <div className="border-2 border-dashed border-gray-200 rounded-xl p-3 space-y-2">
-                <p className="text-xs font-semibold text-gray-500">Add new recommendation</p>
-                <select value={newRec.type} onChange={e => setNewRec(r => ({ ...r, type: e.target.value }))}
-                  className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-orange-400">
-                  {REC_TYPE_OPTIONS.map(o => <option key={o.label} value={o.label}>{o.label}</option>)}
-                </select>
-                <input value={newRec.headline} onChange={e => setNewRec(r => ({ ...r, headline: e.target.value }))}
-                  placeholder="Headline *"
-                  className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-orange-400" />
-                <input value={newRec.reason} onChange={e => setNewRec(r => ({ ...r, reason: e.target.value }))}
-                  placeholder="Reason (why now?)"
-                  className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-orange-400" />
-                <button onClick={addRec} disabled={!newRec.headline.trim()}
-                  className="flex items-center gap-1 text-xs font-semibold text-[#E8611A] hover:text-orange-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-                  <Plus size={13} /> Add Recommendation
-                </button>
               </div>
             </div>
           )}
@@ -853,9 +791,6 @@ export default function MissionsTab({ employee, onPointsEarned, onStreakUpdate }
 
       {/* ── Weekly Challenge ─────────────────────────────────────────────── */}
       <div className="pt-3"><WeeklyChallenge challenge={challenge} /></div>
-
-      {/* ── AI Recommender ───────────────────────────────────────────────── */}
-      <AIRecommender recommendations={aiRecs} />
 
       {/* ── Category Filter ──────────────────────────────────────────────── */}
       <div className="px-4 mb-3">
