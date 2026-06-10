@@ -896,20 +896,6 @@ function PipelineTab({ contacts, users, isOwnerOrManager, onEdit, onDelete, onSt
 
   return (
     <>
-      {/* Overdue urgency banner */}
-      {overdue.length > 0 && (
-        <div className="mb-5 bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-start gap-3">
-          <AlertCircle size={18} className="text-red-500 flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="text-red-700 font-semibold text-sm">
-              {overdue.length} contact{overdue.length > 1 ? 's' : ''} need{overdue.length === 1 ? 's' : ''} immediate follow-up
-            </p>
-            <p className="text-red-500 text-xs mt-0.5 leading-relaxed">
-              {overdue.map(c => c.business_name).join(' · ')}
-            </p>
-          </div>
-        </div>
-      )}
 
       {pipelineContacts.length === 0 ? (
         <div className="text-center py-24">
