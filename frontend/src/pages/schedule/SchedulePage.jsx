@@ -485,7 +485,7 @@ function WeekGrid({ days, shifts, timeOffReqs, blockedDays, events, promotions, 
         {days.map((day, i) => {
           const dateStr    = toDateStr(day)
           const isToday    = dateStr === today
-          const dayShifts  = shifts.filter(s => s.shift_date === dateStr)
+          const dayShifts  = shifts.filter(s => s.shift_date === dateStr).sort((a, b) => a.start_time.localeCompare(b.start_time))
           const dayTimeOff = timeOffReqs.filter(r => dateInRange(dateStr, r.start_date, r.end_date))
           const dayEvents  = (events || []).filter(e => dateInRange(dateStr, e.start_date, e.end_date || e.start_date))
           const blocked    = blockedDays.find(b => b.block_date === dateStr)
@@ -623,7 +623,7 @@ function MonthGrid({ monthYear, shifts, timeOffReqs, blockedDays, events, promot
                   const dateStr    = toDateStr(day)
                   const isToday    = dateStr === today
                   const inMonth    = dateStr >= currentMonthStart && dateStr <= currentMonthEnd
-                  const dayShifts  = shifts.filter(s => s.shift_date === dateStr)
+                  const dayShifts  = shifts.filter(s => s.shift_date === dateStr).sort((a, b) => a.start_time.localeCompare(b.start_time))
                   const dayTimeOff = timeOffReqs.filter(r => dateInRange(dateStr, r.start_date, r.end_date))
                   const dayEvents  = (events || []).filter(e => dateInRange(dateStr, e.start_date, e.end_date || e.start_date))
                   const blocked    = blockedDays.find(b => b.block_date === dateStr)
