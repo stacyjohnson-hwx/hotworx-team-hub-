@@ -113,6 +113,8 @@ router.post('/', async (req, res) => {
     orders_needed, general_notes, support_notes,
     // Missions (Growth HQ) — array of title strings
     mission_titles,
+    // Training completed today (pulled from Training module) — array of title strings
+    completed_training,
   } = req.body
 
   if (!shift_type) return res.status(400).json({ error: 'shift_type is required' })
@@ -162,6 +164,7 @@ router.post('/', async (req, res) => {
       general_notes: general_notes || null,
       support_notes: support_notes || null,
       mission_titles: Array.isArray(mission_titles) && mission_titles.length > 0 ? mission_titles : [],
+      completed_training: Array.isArray(completed_training) ? completed_training : [],
     })
     .select()
     .single()
@@ -173,23 +176,8 @@ router.post('/', async (req, res) => {
     return res.status(500).json({ error: error.message })
   }
 
-  // Auto-draft a pending order if TSA listed items needed
-  if (orders_needed && orders_needed.trim()) {
-    const shiftLabel = shift_type.charAt(0).toUpperCase() + shift_type.slice(1)
-    db()
-      .from('orders')
-      .insert({
-        item_name: `EOD request — ${shiftLabel} shift (${date})`,
-        quantity: 1,
-        category: 'supplies',
-        notes: orders_needed.trim(),
-        status: 'pending',
-        requested_by: req.user.id,
-      })
-      .then(({ error: oErr }) => {
-        if (oErr) console.error('[EOD] Auto-order draft error:', oErr.message)
-      })
-  }
+  // Orders are now logged directly to the orders table via the EOD "Orders Needed"
+  // section (POST /api/orders), so no auto-draft from a free-text field here.
 
   // Send email immediately on mid and closing shifts
   if (shift_type === 'mid' || shift_type === 'closing') {

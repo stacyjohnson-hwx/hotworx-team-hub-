@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { CheckCircle, ExternalLink, AlertTriangle, Phone, MessageSquare, Sparkles, ClipboardCheck, Wrench, ShieldAlert, Loader2 } from 'lucide-react'
+import { CheckCircle, ExternalLink, AlertTriangle, Phone, MessageSquare, Sparkles, ClipboardCheck, Wrench, ShieldAlert, Loader2, GraduationCap, ShoppingCart } from 'lucide-react'
 import { apiGet, apiPost } from '@/hooks/useApi'
 import { useAuth } from '@/contexts/AuthContext'
 
@@ -299,24 +299,17 @@ function StatPill({ label, value, icon: Icon, color }) {
 }
 
 function ShiftAtAGlance() {
-  const [outreach, setOutreach]   = useState(null)
   const [cleaning, setCleaning]   = useState(null)
   const [loading,  setLoading]    = useState(true)
 
   useEffect(() => {
     const today = new Date().toISOString().split('T')[0]
-    Promise.all([
-      apiGet(`/api/outreach/logs/summary?date=${today}`),
-      apiGet(`/api/cleaning/today?date=${today}`),
-    ])
-      .then(([out, clean]) => { setOutreach(out); setCleaning(clean) })
+    apiGet(`/api/cleaning/today?date=${today}`)
+      .then(clean => setCleaning(clean))
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
 
-  const totalCalls  = outreach?.totalCalls  || 0
-  const totalTexts  = outreach?.totalTexts  || 0
-  const activeTiles = (outreach?.byTile || []).filter(t => (t.calls_made || 0) + (t.texts_made || 0) > 0)
   const allTasks         = cleaning?.tasks || []
   const cleaningTasks    = allTasks.filter(t => t.task_type !== 'Operations')
   const operationsTasks  = allTasks.filter(t => t.task_type === 'Operations')
@@ -380,36 +373,6 @@ function ShiftAtAGlance() {
           </div>
         ) : (
           <>
-            {/* ── Outreach ── */}
-            <div>
-              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Outreach</p>
-              {totalCalls === 0 && totalTexts === 0 ? (
-                <p className="text-xs text-gray-400 italic">No outreach logged today yet.</p>
-              ) : (
-                <>
-                  <div className="grid grid-cols-2 gap-2 mb-3">
-                    <StatPill label="Calls Made"  value={totalCalls} icon={Phone}          color="border-blue-200" />
-                    <StatPill label="Texts Sent"  value={totalTexts} icon={MessageSquare}  color="border-violet-200" />
-                  </div>
-                  {activeTiles.length > 0 && (
-                    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-                      {activeTiles.map((tile, i) => (
-                        <div key={tile.tile_id || i}
-                          className={`flex items-center justify-between px-3 py-2 text-xs ${i < activeTiles.length - 1 ? 'border-b border-gray-100' : ''}`}>
-                          <span className="font-medium text-gray-700 truncate pr-2">{tile.outreach_tiles?.title || 'Outreach Tile'}</span>
-                          <span className="text-gray-400 flex-shrink-0">
-                            {tile.calls_made > 0 && <span className="text-blue-600 font-semibold">{tile.calls_made}c</span>}
-                            {tile.calls_made > 0 && tile.texts_made > 0 && <span className="text-gray-300 mx-1">·</span>}
-                            {tile.texts_made > 0 && <span className="text-violet-600 font-semibold">{tile.texts_made}t</span>}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-
             {/* ── Cleaning ── */}
             <TaskGroup
               tasks={cleaningTasks}
@@ -438,23 +401,176 @@ function ShiftAtAGlance() {
   )
 }
 
+// ─── Completed Training (pulled from the Training module) ─────────────────────
+function CompletedTrainingSection({ userId, onChange }) {
+  const [items, setItems]   = useState([])
+  const [loaded, setLoaded] = useState(false)
+
+  useEffect(() => {
+    apiGet('/api/training').then(resources => {
+      const mine = (Array.isArray(resources) ? resources : [])
+        .map(r => {
+          const c = (r.completions || []).find(c => c.user_id === userId && isTodayLocal(c.completed_at))
+          return c ? { id: r.id, title: r.title, category: r.category } : null
+        })
+        .filter(Boolean)
+      setItems(mine)
+      onChange?.(mine.map(m => m.title))
+    }).catch(() => {}).finally(() => setLoaded(true))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId])
+
+  return (
+    <Section title="Training Completed" badge={items.length > 0 ? `${items.length}` : null}>
+      {!loaded ? (
+        <p className="text-xs text-gray-400">Loading…</p>
+      ) : items.length === 0 ? (
+        <p className="text-xs text-gray-400">
+          No training marked complete today. Finish a course in the <strong>Resources → Training</strong> section and it will appear here automatically.
+        </p>
+      ) : (
+        <div className="space-y-1.5">
+          {items.map(item => (
+            <div key={item.id} className="flex items-center gap-2.5 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+              <GraduationCap size={14} className="text-green-600 flex-shrink-0" />
+              <span className="text-sm font-medium text-gray-800 flex-1 truncate">{item.title}</span>
+              {item.category && <span className="text-[10px] text-gray-400 flex-shrink-0">{item.category}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </Section>
+  )
+}
+
+// ─── Orders (structured entries — same pattern as Maintenance/Escalations) ────
+const ORDER_CATEGORIES = [
+  { value: 'supplies',  label: 'Supplies'  },
+  { value: 'retail',    label: 'Retail'    },
+  { value: 'equipment', label: 'Equipment' },
+  { value: 'marketing', label: 'Marketing' },
+  { value: 'other',     label: 'Other'     },
+]
+
+function OrdersSection() {
+  const [items, setItems] = useState([])
+  const [loaded, setLoaded] = useState(false)
+  const [adding, setAdding] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const blank = { item_name: '', quantity: '1', category: 'supplies', notes: '' }
+  const [form, setForm] = useState(blank)
+
+  const inp = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-600/40 focus:border-red-600'
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  useEffect(() => {
+    apiGet('/api/orders').then(rows => {
+      setItems((Array.isArray(rows) ? rows : []).filter(x => isTodayLocal(x.created_at)))
+    }).catch(() => {}).finally(() => setLoaded(true))
+  }, [])
+
+  const handleAdd = async () => {
+    if (!form.item_name.trim()) return
+    setSaving(true)
+    try {
+      const created = await apiPost('/api/orders', {
+        item_name: form.item_name.trim(),
+        quantity: parseInt(form.quantity) || 1,
+        category: form.category,
+        notes: form.notes || null,
+      })
+      setItems(prev => [created, ...prev])
+      setForm(blank)
+      setAdding(false)
+    } catch { } finally { setSaving(false) }
+  }
+
+  return (
+    <Section
+      title="Orders Needed"
+      badge={items.length > 0
+        ? <span className="text-xs bg-blue-100 text-blue-700 font-semibold px-2 py-0.5 rounded-full">{items.length} logged today</span>
+        : null}
+    >
+      {items.length > 0 && (
+        <div className="space-y-1.5">
+          {items.map(item => (
+            <div key={item.id} className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+              <ShoppingCart size={13} className="text-blue-500 flex-shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-semibold text-gray-800 truncate">{item.item_name}</p>
+                {item.notes && <p className="text-xs text-gray-500 truncate">{item.notes}</p>}
+              </div>
+              <span className="flex-shrink-0 text-xs text-gray-500">×{item.quantity}</span>
+              <span className="flex-shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600 capitalize">{item.category}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {items.length === 0 && loaded && !adding && (
+        <p className="text-xs text-gray-400 italic">No orders logged yet today.</p>
+      )}
+
+      {adding && (
+        <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 space-y-2.5">
+          <p className="text-xs font-semibold text-gray-700">Log Order Item</p>
+          <input className={inp} placeholder="e.g. Hot Exercise Gel 8oz"
+            value={form.item_name} onChange={e => set('item_name', e.target.value)} />
+          <div className="grid grid-cols-2 gap-2">
+            <input className={inp} type="number" min="1" placeholder="Qty"
+              value={form.quantity} onChange={e => set('quantity', e.target.value)} />
+            <select className={inp} value={form.category} onChange={e => set('category', e.target.value)}>
+              {ORDER_CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
+          </div>
+          <textarea className={`${inp} resize-none`} rows={2} placeholder="Notes (optional)"
+            value={form.notes} onChange={e => set('notes', e.target.value)} />
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => { setAdding(false); setForm(blank) }}
+              className="px-3 py-1.5 text-xs text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
+              Cancel
+            </button>
+            <button type="button" onClick={handleAdd} disabled={saving || !form.item_name.trim()}
+              className="px-3 py-1.5 text-xs font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center gap-1.5">
+              {saving && <Loader2 size={12} className="animate-spin" />}
+              Add Order
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!adding && (
+        <div className="pt-1">
+          <button type="button" onClick={() => setAdding(true)}
+            className="flex items-center gap-1.5 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-1.5 hover:bg-blue-100 transition-colors">
+            <ShoppingCart size={12} /> Add Order Item
+          </button>
+        </div>
+      )}
+    </Section>
+  )
+}
+
 const INITIAL_FORM = {
   shift_type: '',
   drawer_start: '', cash_collected: '', credit_collected: '', drawer_end: '',
   sweat_basic: '', sweat_elite: '', cancellations_count: '', cancellations_notes: '',
   retail_amount: '', sales_notes: '',
-  watched_training_video: false, used_sales_gpt: false, role_played_script: false,
-  orders_needed: '', general_notes: '', support_notes: '',
+  phone_calls: '', sms_sent: '',
+  general_notes: '', support_notes: '',
 }
 
 export default function EodForm({ submittedShifts, onSubmitted }) {
-  const { profile } = useAuth()
+  const { profile, user } = useAuth()
   const [form, setForm] = useState(INITIAL_FORM)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(false)
   // Auto-read today's mission completions from Growth HQ (localStorage)
   const [missionTitles, setMissionTitles] = useState([])
+  // Training the user marked complete today (pulled from the Training module)
+  const [completedTraining, setCompletedTraining] = useState([])
 
   // Read missions fresh from localStorage — always pull at the moment of call
   function readMissionsFromStorage(profileArg) {
@@ -532,8 +648,8 @@ export default function EodForm({ submittedShifts, onSubmitted }) {
         retail_amount: parseFloat(form.retail_amount) || 0,
         phone_calls: parseInt(form.phone_calls) || 0,
         sms_sent: parseInt(form.sms_sent) || 0,
-        red_appt_scheduled: parseInt(form.red_appt_scheduled) || 0,
         mission_titles: finalMissions,
+        completed_training: completedTraining,
       }
       await apiPost('/api/eod', payload)
       setSuccess(true)
@@ -640,11 +756,16 @@ export default function EodForm({ submittedShifts, onSubmitted }) {
             </div>
           </Section>
 
-          {/* Sales Training */}
-          <Section title="Sales Training">
-            <CheckRow label="Watched sales training video" checked={form.watched_training_video} onChange={v => set('watched_training_video', v)} href={import.meta.env.VITE_SALES_VIDEO_URL} />
-            <CheckRow label="Role played / practiced script" checked={form.role_played_script} onChange={v => set('role_played_script', v)} />
-            <CheckRow label="Practiced with Sales GPT" checked={form.used_sales_gpt} onChange={v => set('used_sales_gpt', v)} href={import.meta.env.VITE_SALES_GPT_URL} />
+          {/* Training Completed — pulled from the Training module */}
+          <CompletedTrainingSection userId={user?.id} onChange={setCompletedTraining} />
+
+          {/* Outreach — editable: enter calls/texts directly */}
+          <Section title="Outreach">
+            <p className="text-xs text-gray-400 -mt-1">Enter the calls and texts you made this shift.</p>
+            <div className="grid grid-cols-2 gap-3">
+              <NumberInput label="Calls Made" value={form.phone_calls} onChange={v => set('phone_calls', v)} />
+              <NumberInput label="Texts Sent" value={form.sms_sent} onChange={v => set('sms_sent', v)} />
+            </div>
           </Section>
 
           {/* Missions (Growth HQ) — auto-populated from Growth HQ Missions tab */}
@@ -680,14 +801,11 @@ export default function EodForm({ submittedShifts, onSubmitted }) {
           {/* Maintenance & Escalations */}
           <MaintenanceEscalationsSection />
 
-          {/* Orders & Notes */}
-          <Section title="Orders & Notes">
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Items to Order <span className="text-gray-400 font-normal">(optional)</span></label>
-              <textarea rows={2} value={form.orders_needed} onChange={e => set('orders_needed', e.target.value)}
-                placeholder="List anything that needs to be ordered or restocked…"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-600/40 focus:border-red-600 resize-none" />
-            </div>
+          {/* Orders — structured items (same pattern as Maintenance/Escalations) */}
+          <OrdersSection />
+
+          {/* Notes */}
+          <Section title="Notes">
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">General Notes <span className="text-gray-400 font-normal">(optional)</span></label>
               <textarea rows={3} value={form.general_notes} onChange={e => set('general_notes', e.target.value)}

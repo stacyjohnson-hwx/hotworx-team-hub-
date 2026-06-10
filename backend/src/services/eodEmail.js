@@ -182,24 +182,14 @@ function buildShiftBlock(row_data, outreachSummary, tasksByUser) {
         ${sectionHeader('Missions Completed')}
         ${missionsRows}
 
-        ${sectionHeader('Sales Training')}
+        ${sectionHeader('Training Completed')}
         ${(() => {
-          const done = [
-            row_data.watched_training_video && 'Watched training video',
-            row_data.role_played_script     && 'Role played / practiced script',
-            row_data.used_sales_gpt         && 'Practiced with Sales GPT',
-          ].filter(Boolean)
-          return done.length
-            ? done.map(label => `<tr><td colspan="2" style="padding:2px 0;font-size:13px;">✅ ${label}</td></tr>`).join('')
+          const items = row_data.completed_training || []
+          return items.length
+            ? items.map(label => `<tr><td colspan="2" style="padding:2px 0;font-size:13px;">✅ ${label}</td></tr>`).join('')
             : `<tr><td colspan="2" style="padding:5px 0;font-size:13px;color:#9ca3af;">None completed.</td></tr>`
         })()}
       </table>
-
-      ${row_data.orders_needed ? `
-        <div style="margin-top:12px;">
-          <div style="font-weight:700;font-size:12px;color:#374151;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Orders Needed</div>
-          <div style="font-size:13px;color:#374151;background:#fef9c3;padding:8px 12px;border-radius:6px;">${row_data.orders_needed}</div>
-        </div>` : ''}
 
       ${row_data.general_notes ? `
         <div style="margin-top:12px;">

@@ -268,20 +268,13 @@ export default function EodHistory() {
                         )}
                       </div>
 
-                      {/* Sales Training */}
+                      {/* Training Completed */}
                       <div>
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Sales Training</p>
-                        {sub.watched_training_video && <p className="text-green-600">✅ Training video</p>}
-                        {sub.role_played_script     && <p className="text-green-600">✅ Role played script</p>}
-                        {sub.used_sales_gpt         && <p className="text-green-600">✅ Sales GPT</p>}
-                        {!sub.watched_training_video && !sub.role_played_script && !sub.used_sales_gpt && (
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Training Completed</p>
+                        {(sub.completed_training?.length > 0) ? (
+                          sub.completed_training.map((t, i) => <p key={i} className="text-green-600">✅ {t}</p>)
+                        ) : (
                           <p className="text-gray-400 text-xs italic">None completed</p>
-                        )}
-                        {sub.orders_needed && (
-                          <div className="mt-2">
-                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-0.5">Orders Needed</p>
-                            <p className="text-gray-700 text-xs">{sub.orders_needed}</p>
-                          </div>
                         )}
                       </div>
                     </div>
