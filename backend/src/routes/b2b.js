@@ -40,7 +40,7 @@ router.get('/contacts', authenticate, requireStudio, async (req, res) => {
 router.post('/contacts', authenticate, requireStudio, async (req, res) => {
   const {
     business_name, contact_name, phone, email, address, industry,
-    website, social_handle, logo_url,
+    website, social_handle, logo_url, partner_type,
     status, discount_desc, discount_ongoing, next_action, next_action_date,
     notes, assigned_to, latitude, longitude,
   } = req.body
@@ -59,6 +59,7 @@ router.post('/contacts', authenticate, requireStudio, async (req, res) => {
       website: website || null,
       social_handle: social_handle || null,
       logo_url: logo_url || null,
+      partner_type: partner_type === 'corporate' ? 'corporate' : 'referral_collab',
       status: status || 'new_lead',
       discount_desc: discount_desc || null,
       discount_ongoing: discount_ongoing || false,
@@ -82,7 +83,7 @@ router.post('/contacts', authenticate, requireStudio, async (req, res) => {
 router.put('/contacts/:id', authenticate, requireStudio, async (req, res) => {
   const {
     business_name, contact_name, phone, email, address, industry,
-    website, social_handle, logo_url,
+    website, social_handle, logo_url, partner_type,
     status, discount_desc, discount_ongoing, next_action, next_action_date,
     notes, assigned_to, latitude, longitude,
   } = req.body
@@ -92,6 +93,7 @@ router.put('/contacts/:id', authenticate, requireStudio, async (req, res) => {
     .update({
       business_name, contact_name, phone, email, address, industry,
       website, social_handle, logo_url,
+      ...(partner_type ? { partner_type: partner_type === 'corporate' ? 'corporate' : 'referral_collab' } : {}),
       status, discount_desc, discount_ongoing, next_action,
       next_action_date: next_action_date || null, // empty string → null (DATE column)
       notes, assigned_to: assigned_to || null,

@@ -83,6 +83,7 @@ const labelCls = 'block text-xs font-semibold text-gray-700 mb-1'
 const blankForm = {
   business_name: '', contact_name: '', phone: '', email: '', address: '',
   industry: '', website: '', social_handle: '', logo_url: '',
+  partner_type: 'referral_collab',
   status: 'new_lead', discount_desc: '', discount_ongoing: false,
   next_action: '', next_action_date: '', notes: '', assigned_to: '',
   latitude: null, longitude: null,
@@ -120,6 +121,7 @@ function ContactModal({ contact, users, onSave, onClose }) {
     website:          contact.website || '',
     social_handle:    contact.social_handle || '',
     logo_url:         contact.logo_url || '',
+    partner_type:     contact.partner_type || 'referral_collab',
     status:           contact.status || 'new_lead',
     discount_desc:    contact.discount_desc || '',
     discount_ongoing: contact.discount_ongoing || false,
@@ -231,6 +233,23 @@ function ContactModal({ contact, users, onSave, onClose }) {
             <div><label className={labelCls}>Social Media Handle</label><input className={inputCls} value={form.social_handle} onChange={e => set('social_handle', e.target.value)} placeholder="@acmechiro" /></div>
           </div>
 
+          {/* Type */}
+          <div>
+            <label className={labelCls}>Type</label>
+            <div className="flex gap-2">
+              {[{ v: 'referral_collab', l: 'Referral / Collab' }, { v: 'corporate', l: 'Corporate Membership' }].map(o => (
+                <button key={o.v} type="button" onClick={() => set('partner_type', o.v)}
+                  className={`flex-1 py-2 px-3 rounded-lg border text-sm font-semibold transition-all ${
+                    form.partner_type === o.v
+                      ? 'bg-orange-50 text-orange-700 border-orange-300 ring-2 ring-offset-1 ring-orange-400'
+                      : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
+                  }`}>
+                  {o.l}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Status + Assignment */}
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -240,7 +259,7 @@ function ContactModal({ contact, users, onSave, onClose }) {
               </select>
             </div>
             <div>
-              <label className={labelCls}>Assigned To</label>
+              <label className={labelCls}>Assigned To <span className="text-gray-400 font-normal">(manager who'll reach out)</span></label>
               <select className={inputCls} value={form.assigned_to} onChange={e => set('assigned_to', e.target.value)}>
                 <option value="">Unassigned</option>
                 {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
@@ -1367,6 +1386,8 @@ export default function B2bPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [industryFilter, setIndustryFilter] = useState('')
+  const [typeFilter, setTypeFilter] = useState('')
+  const [queueAssignee, setQueueAssignee] = useState('')
 
   const load = useCallback(async () => {
     try {
@@ -1420,15 +1441,26 @@ export default function B2bPage() {
     const matchSearch = !q || [c.business_name, c.contact_name, c.email, c.industry].some(f => f?.toLowerCase().includes(q))
     const matchStatus = !statusFilter || c.status === statusFilter
     const matchIndustry = !industryFilter || c.industry === industryFilter
-    return matchSearch && matchStatus && matchIndustry
+    const matchType = !typeFilter || (c.partner_type || 'referral_collab') === typeFilter
+    return matchSearch && matchStatus && matchIndustry && matchType
   })
 
   const filteredPartners = contacts.filter(c => {
     const q = searchQuery.toLowerCase()
     const matchSearch = !q || [c.business_name, c.contact_name, c.email, c.industry].some(f => f?.toLowerCase().includes(q))
     const matchIndustry = !industryFilter || c.industry === industryFilter
-    return (c.status === 'active_partner' || c.status === 'past_partner') && matchSearch && matchIndustry
+    const matchType = !typeFilter || (c.partner_type || 'referral_collab') === typeFilter
+    return (c.status === 'active_partner' || c.status === 'past_partner') && matchSearch && matchIndustry && matchType
   })
+
+  // ── "B2B Today" action queue — follow-ups due or overdue ──
+  const todayStr = new Date().toISOString().split('T')[0]
+  const dueItems = contacts
+    .filter(c => c.next_action_date && c.next_action_date <= todayStr
+      && c.status !== 'not_interested' && c.status !== 'past_partner')
+    .filter(c => !queueAssignee || c.assigned_to === queueAssignee)
+    .sort((a, b) => a.next_action_date.localeCompare(b.next_action_date))
+  const userName = (id) => users.find(u => u.id === id)?.name
 
   if (loading) return (
     <div className="flex items-center justify-center h-64">
@@ -1460,6 +1492,49 @@ export default function B2bPage() {
 
       {error && <div className="mb-4 bg-red-50 border border-red-300 text-red-700 text-sm rounded-lg px-4 py-3">{error}</div>}
 
+      {/* B2B Today — follow-ups due / overdue */}
+      <div className="mb-6 bg-white border border-orange-200 rounded-xl overflow-hidden shadow-sm">
+        <div className="bg-orange-50 px-4 py-3 flex items-center justify-between border-b border-orange-100 gap-3">
+          <h2 className="text-sm font-bold text-orange-800 flex items-center gap-2">
+            <Clock size={15} /> B2B Today
+            {dueItems.length > 0 && <span className="bg-orange-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">{dueItems.length} due</span>}
+          </h2>
+          <select value={queueAssignee} onChange={e => setQueueAssignee(e.target.value)}
+            className="text-xs border border-orange-200 rounded-lg px-2 py-1 bg-white text-gray-700">
+            <option value="">Everyone</option>
+            {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>
+        </div>
+        {dueItems.length === 0 ? (
+          <p className="px-4 py-4 text-sm text-gray-400">No follow-ups due. Add a due date + next action on a business to schedule one.</p>
+        ) : (
+          <div className="divide-y divide-gray-100 max-h-72 overflow-y-auto">
+            {dueItems.map(c => {
+              const overdue = c.next_action_date < todayStr
+              const who = userName(c.assigned_to)
+              const daysOver = Math.round((new Date(todayStr) - new Date(c.next_action_date + 'T00:00:00')) / 86400000)
+              return (
+                <button key={c.id} onClick={() => setModalContact(c)}
+                  className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-3 transition-colors">
+                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${overdue ? 'bg-red-500' : 'bg-orange-400'}`} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-gray-900 truncate">
+                      {c.business_name}
+                      {c.partner_type === 'corporate' && <span className="ml-1.5 text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full font-medium">Corporate</span>}
+                    </p>
+                    <p className="text-xs text-gray-500 truncate">{c.next_action || 'Follow up'}</p>
+                  </div>
+                  {who && <span className="text-xs text-gray-400 flex-shrink-0">{who}</span>}
+                  <span className={`text-xs font-semibold flex-shrink-0 ${overdue ? 'text-red-600' : 'text-orange-600'}`}>
+                    {overdue ? `${daysOver}d overdue` : 'Today'}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
       {/* Tabs */}
       <div className="flex gap-1 mb-5 border-b border-gray-200">
         {[{ key: 'pipeline', label: 'Pipeline' }, { key: 'partners', label: 'Active Partners' }].map(t => (
@@ -1479,6 +1554,13 @@ export default function B2bPage() {
           placeholder="Search by name, industry, email…"
           value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
         />
+        <select
+          className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-orange-500"
+          value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
+          <option value="">All types</option>
+          <option value="referral_collab">Referral / Collab</option>
+          <option value="corporate">Corporate</option>
+        </select>
         <select
           className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-orange-500"
           value={industryFilter} onChange={e => setIndustryFilter(e.target.value)}>
