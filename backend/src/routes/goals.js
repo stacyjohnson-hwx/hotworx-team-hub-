@@ -90,14 +90,19 @@ async function getMonthlyShiftCounts(month, year, studioId) {
 }
 
 async function getStudioGoalTargets(month, year, studioId) {
-  const { data } = await db()
-    .from('studio_goals')
-    .select('eft_target, memberships_target, retail_target')
-    .eq('studio_id', studioId)
-    .eq('month', month)
-    .eq('year', year)
-    .maybeSingle()
-  return data || {}
+  const [{ data: g }, { data: t }] = await Promise.all([
+    db().from('studio_goals')
+      .select('eft_target, memberships_target, retail_target, total_leads_target')
+      .eq('studio_id', studioId).eq('month', month).eq('year', year).maybeSingle(),
+    db().from('studio_trends')
+      .select('leads')
+      .eq('studio_id', studioId).eq('month', month).eq('year', year).maybeSingle(),
+  ])
+  return {
+    ...(g || {}),
+    total_leads_target: (g && g.total_leads_target) || 145, // studio monthly lead goal
+    total_leads_actual: t?.leads ?? 0,
+  }
 }
 
 async function getStudioTrends(month, year, studioId) {
@@ -243,17 +248,19 @@ router.get('/personal', authenticate, async (req, res) => {
     }])
   }
 
-  // Owner/manager: all users merged with goals
-  const [{ data: { users }, error: uErr }, inactiveIds] = await Promise.all([
+  // Owner/manager: members of THIS studio merged with goals
+  const [{ data: { users }, error: uErr }, inactiveIds, { data: memberRows }] = await Promise.all([
     db().auth.admin.listUsers(),
     getInactiveUserIds(),
+    db().from('user_studios').select('user_id, role').eq('studio_id', req.studio.id),
   ])
   if (uErr) return res.status(500).json({ error: uErr.message })
 
-  const studioUsers = users.filter(u =>
-    ['tsa', 'manager', 'owner'].includes(u.app_metadata?.role) &&
-    !inactiveIds.has(u.id)
-  )
+  // Per-studio role lookup — scopes the list to actual studio members (no global/placeholder accounts)
+  const roleByUser = {}
+  for (const m of memberRows || []) roleByUser[m.user_id] = m.role
+
+  const studioUsers = users.filter(u => roleByUser[u.id] && !inactiveIds.has(u.id))
 
   const { data: goalsData, error: gErr } = await db()
     .from('personal_goals').select('*').eq('studio_id', req.studio.id).eq('month', month).eq('year', year)
@@ -270,11 +277,11 @@ router.get('/personal', authenticate, async (req, res) => {
   for (const g of goalsData) goalsMap[g.tsa_id] = g
 
   // Total hours across TSA + manager only (owner excluded from goal distribution)
-  const nonOwners = studioUsers.filter(u => u.app_metadata?.role !== 'owner')
+  const nonOwners = studioUsers.filter(u => roleByUser[u.id] !== 'owner')
   const totalHours = nonOwners.reduce((sum, u) => sum + (hoursMap[u.id] || 0), 0)
 
   const result = studioUsers.map(u => {
-    const userRole = u.app_metadata?.role
+    const userRole = roleByUser[u.id]
     const goals = goalsMap[u.id] || { ...PERSONAL_GOAL_DEFAULTS, tsa_id: u.id, studio_id: req.studio.id, month: Number(month), year: Number(year) }
     const commission = calcCommission(goals, userRole, studioData)
 

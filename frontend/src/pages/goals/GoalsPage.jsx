@@ -1462,10 +1462,10 @@ function MyGoals({ month, year }) {
       })()}
 
       {/* Studio Goals context */}
-      {(st.memberships_target > 0 || st.retail_target > 0) && (
+      {(st.memberships_target > 0 || st.retail_target > 0 || st.total_leads_target > 0) && (
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <h2 className="text-sm font-semibold text-gray-700 mb-3">Studio Team Goals</h2>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {st.memberships_target > 0 && (
               <div className="text-center border border-gray-100 rounded-xl p-3">
                 <p className="text-xs text-gray-500 mb-1">Team Members Goal</p>
@@ -1478,6 +1478,22 @@ function MyGoals({ month, year }) {
                 <p className="text-lg font-bold text-gray-900">${Number(st.retail_target).toLocaleString()}</p>
               </div>
             )}
+            {st.total_leads_target > 0 && (() => {
+              const actual = Number(st.total_leads_actual) || 0
+              const goal   = Number(st.total_leads_target) || 0
+              const pct    = goal > 0 ? Math.min(100, Math.round((actual / goal) * 100)) : 0
+              const met    = actual >= goal
+              return (
+                <div className="text-center border border-gray-100 rounded-xl p-3">
+                  <p className="text-xs text-gray-500 mb-1">Team Leads Goal</p>
+                  <p className="text-lg font-bold text-gray-900">{goal}</p>
+                  <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden mt-2">
+                    <div className={`h-full rounded-full transition-all ${met ? 'bg-green-500' : 'bg-blue-600'}`} style={{ width: `${pct}%` }} />
+                  </div>
+                  <p className="text-[11px] text-gray-500 mt-1">{actual} / {goal} · {pct}%</p>
+                </div>
+              )
+            })()}
           </div>
         </div>
       )}
