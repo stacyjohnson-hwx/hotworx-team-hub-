@@ -9,16 +9,20 @@ import LeaderboardTab from './LeaderboardTab'
 import OutreachTab    from '../OutreachTab'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
+// TSAs: Leads, Outreach, Map (no Campaigns, no Leaderboard)
 const TSA_TABS = [
-  { id: 'missions',  label: 'Missions', icon: Target,   shortLabel: 'Missions' },
-  { id: 'plays',     label: 'Plays',    icon: BookOpen, shortLabel: 'Plays'    },
+  { id: 'leads',     label: 'Leads',    icon: Target,   shortLabel: 'Leads'    },
   { id: 'outreach',  label: 'Outreach', icon: Phone,    shortLabel: 'Outreach' },
   { id: 'map',       label: 'Map',      icon: Map,      shortLabel: 'Map'      },
 ]
 
+// Managers/Owners: Campaigns + the TSA tabs + Leaderboard
 const ALL_TABS = [
-  ...TSA_TABS,
-  { id: 'leaderboard', label: 'Leaderboard', icon: Trophy, shortLabel: 'Board' },
+  { id: 'campaigns',   label: 'Campaigns',   icon: BookOpen, shortLabel: 'Campaigns' },
+  { id: 'leads',       label: 'Leads',       icon: Target,   shortLabel: 'Leads'     },
+  { id: 'outreach',    label: 'Outreach',    icon: Phone,    shortLabel: 'Outreach'  },
+  { id: 'map',         label: 'Map',         icon: Map,      shortLabel: 'Map'       },
+  { id: 'leaderboard', label: 'Leaderboard', icon: Trophy,   shortLabel: 'Board'     },
 ]
 
 // Derive an employee ID from the logged-in user's first name
@@ -81,7 +85,7 @@ export default function LeadGenHQ() {
 
   const defaultTab = saved.activeTab && tabs.find(t => t.id === saved.activeTab)
     ? saved.activeTab
-    : 'missions'
+    : 'leads'
 
   const [activeTab,       setActiveTab]       = useState(defaultTab)
   const [activeEmployeeId, setActiveEmployeeId] = useState(
@@ -256,8 +260,8 @@ export default function LeadGenHQ() {
 
       {/* ── Tab Content ───────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto" onClick={() => setShowEmployeePicker(false)}>
-        {activeTab === 'missions'    && <MissionsTab    employee={employee} onPointsEarned={handlePointsEarned} onStreakUpdate={handleStreakUpdate} />}
-        {activeTab === 'plays'       && <PlaysTab       employee={employee} />}
+        {activeTab === 'leads'       && <MissionsTab    employee={employee} onPointsEarned={handlePointsEarned} onStreakUpdate={handleStreakUpdate} />}
+        {activeTab === 'campaigns'   && <PlaysTab       employee={employee} />}
         {activeTab === 'outreach'    && <OutreachTab />}
         {activeTab === 'map'         && <MapTab         employee={employee} />}
         {activeTab === 'leaderboard' && <LeaderboardTab employee={employee} employees={employees} />}
