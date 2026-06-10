@@ -7,7 +7,6 @@ import { StudioSwitcher } from '@/components/StudioSwitcher'
 import {
   LayoutDashboard,
   Calendar,
-  Clock,
   Target,
   TrendingUp,
   BarChart2,
@@ -35,7 +34,6 @@ import {
 const allNavItems = [
   { to: '/dashboard',      label: 'Dashboard',       icon: LayoutDashboard, roles: ['owner', 'manager', 'tsa'] },
   { to: '/schedule',       label: 'Schedule',         icon: Calendar,        roles: ['owner', 'manager', 'tsa'] },
-  { to: '/availability',   label: 'Availability',     icon: Clock,           roles: ['owner', 'manager', 'tsa'] },
   { to: '/goals',          label: 'Goals',            icon: Target,          roles: ['owner', 'manager', 'tsa'] },
   { to: '/leads',          label: 'Growth',           icon: TrendingUp,      roles: ['owner', 'manager', 'tsa'] },
   { to: '/cleaning',       label: 'Tasks',            icon: CheckSquare,     roles: ['owner', 'manager', 'tsa'] },
@@ -45,7 +43,7 @@ const allNavItems = [
   { to: '/b2b',            label: 'B2B Outreach',     icon: Building2,       roles: ['owner', 'manager', 'tsa'] },
   { to: '/orders',         label: 'Orders',           icon: ShoppingCart,    roles: ['owner', 'manager', 'tsa'] },
   { to: '/eod',            label: 'EOD Checkout',     icon: ClipboardCheck,  roles: ['owner', 'manager', 'tsa'] },
-  { to: '/timeoff',        label: 'Time Off',         icon: CalendarOff,     roles: ['owner', 'manager', 'tsa'] },
+  { to: '/timeoff',        label: 'Time Off & Availability', icon: CalendarOff, roles: ['owner', 'manager', 'tsa'] },
   { to: '/sops',           label: 'SOPs',             icon: BookOpen,        roles: ['owner', 'manager', 'tsa'] },
   { to: '/training',       label: 'Training',         icon: GraduationCap,   roles: ['owner', 'manager', 'tsa'] },
   { to: '/maintenance',    label: 'Maintenance',       icon: Wrench,          roles: ['owner', 'manager', 'tsa'] },

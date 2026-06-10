@@ -3,6 +3,8 @@ import { Plus, Check, X, Trash2, RefreshCw, ChevronDown } from 'lucide-react'
 import { apiGet, apiPost, apiPatch, apiDelete } from '@/hooks/useApi'
 import { useRole } from '@/hooks/useRole'
 import { useAuth } from '@/contexts/AuthContext'
+import { useStudio } from '@/contexts/StudioContext'
+import { MyAvailability, TeamAvailability } from '@/pages/availability/AvailabilityPage'
 
 const STATUS_STYLES = {
   pending:  'bg-yellow-100 text-yellow-700',
@@ -19,7 +21,10 @@ function formatDateRange(start, end) {
 
 export default function TimeOffPage() {
   const { isOwnerOrManager } = useRole()
+  const { currentStudio } = useStudio()
+  const studioId = currentStudio?.id
   const [tab, setTab] = useState(isOwnerOrManager ? 'requests' : 'mine')
+  const isAvailabilityTab = tab === 'availability' || tab === 'team-availability'
   const [requests, setRequests] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -67,72 +72,89 @@ export default function TimeOffPage() {
   const pending = requests.filter(r => r.status === 'pending')
   const mine = requests // for TSA this is already filtered server-side
 
+  const containerWidth = isAvailabilityTab ? 'max-w-5xl' : 'max-w-2xl'
+
   return (
-    <div className="max-w-2xl mx-auto">
+    <div className={`${containerWidth} mx-auto`}>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Time Off</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Time Off &amp; Availability</h1>
           <p className="text-sm text-gray-500 mt-0.5">
-            {isOwnerOrManager ? 'Review requests and manage team availability.' : 'Submit and track your time-off requests.'}
+            {isOwnerOrManager ? 'Review requests and see when the team can work.' : 'Request time off and set when you can work.'}
           </p>
         </div>
-        <button onClick={() => setShowForm(true)}
-          className="flex items-center gap-2 bg-red-600 text-white text-sm font-medium px-3 py-2 rounded-lg hover:bg-red-600-hover transition-colors">
-          <Plus className="w-4 h-4" /> Request
-        </button>
+        {!isAvailabilityTab && (
+          <button onClick={() => setShowForm(true)}
+            className="flex items-center gap-2 bg-red-600 text-white text-sm font-medium px-3 py-2 rounded-lg hover:bg-red-600-hover transition-colors">
+            <Plus className="w-4 h-4" /> Request
+          </button>
+        )}
       </div>
 
       {/* Tabs */}
-      {isOwnerOrManager && (
-        <div className="flex gap-1 mb-6 border-b border-gray-200">
-          <TabBtn active={tab === 'requests'} onClick={() => setTab('requests')}>
-            Pending {pending.length > 0 && <span className="ml-1.5 bg-red-600 text-white text-xs px-1.5 py-0.5 rounded-full">{pending.length}</span>}
-          </TabBtn>
-          <TabBtn active={tab === 'all'} onClick={() => setTab('all')}>All Requests</TabBtn>
-          <TabBtn active={tab === 'mine'} onClick={() => setTab('mine')}>My Requests</TabBtn>
-        </div>
-      )}
+      <div className="flex gap-1 mb-6 border-b border-gray-200 flex-wrap">
+        {isOwnerOrManager && (
+          <>
+            <TabBtn active={tab === 'requests'} onClick={() => setTab('requests')}>
+              Pending {pending.length > 0 && <span className="ml-1.5 bg-red-600 text-white text-xs px-1.5 py-0.5 rounded-full">{pending.length}</span>}
+            </TabBtn>
+            <TabBtn active={tab === 'all'} onClick={() => setTab('all')}>All Requests</TabBtn>
+          </>
+        )}
+        <TabBtn active={tab === 'mine'} onClick={() => setTab('mine')}>My Requests</TabBtn>
+        <TabBtn active={tab === 'availability'} onClick={() => setTab('availability')}>My Availability</TabBtn>
+        {isOwnerOrManager && (
+          <TabBtn active={tab === 'team-availability'} onClick={() => setTab('team-availability')}>Team Availability</TabBtn>
+        )}
+      </div>
 
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm mb-4">{error}</div>
       )}
 
-      {loading ? (
-        <div className="flex items-center justify-center py-16 text-gray-400">
-          <RefreshCw className="w-5 h-5 animate-spin mr-2" /> Loading…
-        </div>
-      ) : (
-        <>
-          {(tab === 'requests') && (
-            <RequestList
-              requests={pending}
-              showActions={isOwnerOrManager}
-              showName={true}
-              emptyMsg="No pending requests."
-              onReview={handleReview}
-              onDelete={handleDelete}
-            />
-          )}
-          {(tab === 'all') && (
-            <RequestList
-              requests={requests}
-              showActions={isOwnerOrManager}
-              showName={true}
-              emptyMsg="No requests yet."
-              onReview={handleReview}
-              onDelete={handleDelete}
-            />
-          )}
-          {(tab === 'mine' || !isOwnerOrManager) && (
-            <RequestList
-              requests={mine}
-              showActions={false}
-              showName={false}
-              emptyMsg="You haven't submitted any requests."
-              onDelete={handleDelete}
-            />
-          )}
-        </>
+      {/* Availability tabs render their own components (independent of time-off loading) */}
+      {tab === 'availability' && <MyAvailability studioId={studioId} />}
+      {tab === 'team-availability' && isOwnerOrManager && <TeamAvailability studioId={studioId} />}
+
+      {/* Time-off request tabs */}
+      {!isAvailabilityTab && (
+        loading ? (
+          <div className="flex items-center justify-center py-16 text-gray-400">
+            <RefreshCw className="w-5 h-5 animate-spin mr-2" /> Loading…
+          </div>
+        ) : (
+          <>
+            {(tab === 'requests') && (
+              <RequestList
+                requests={pending}
+                showActions={isOwnerOrManager}
+                showName={true}
+                emptyMsg="No pending requests."
+                onReview={handleReview}
+                onDelete={handleDelete}
+              />
+            )}
+            {(tab === 'all') && (
+              <RequestList
+                requests={requests}
+                showActions={isOwnerOrManager}
+                showName={true}
+                emptyMsg="No requests yet."
+                onReview={handleReview}
+                onDelete={handleDelete}
+              />
+            )}
+            {(tab === 'mine') && (
+              <RequestList
+                requests={mine}
+                showActions={false}
+                showName={false}
+                emptyMsg="You haven't submitted any requests."
+                onDelete={handleDelete}
+              />
+            )}
+          </>
+        )
       )}
 
       {showForm && (

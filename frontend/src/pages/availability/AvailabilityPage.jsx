@@ -25,7 +25,7 @@ function dayLabel(d) {
 }
 
 // ─── My Availability editor ───────────────────────────────────────────────────
-function MyAvailability({ studioId }) {
+export function MyAvailability({ studioId }) {
   const [days, setDays] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -165,7 +165,7 @@ function MyAvailability({ studioId }) {
 }
 
 // ─── Team availability (read-only, owner/manager) ────────────────────────────
-function TeamAvailability({ studioId }) {
+export function TeamAvailability({ studioId }) {
   const [members, setMembers] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)

@@ -11,7 +11,6 @@ import EodPage from '@/pages/eod/EodPage'
 import GoalsPage from '@/pages/goals/GoalsPage'
 import LeadsPage from '@/pages/leads/LeadsPage'
 import SchedulePage from '@/pages/schedule/SchedulePage'
-import AvailabilityPage from '@/pages/availability/AvailabilityPage'
 import TimeOffPage from '@/pages/timeoff/TimeOffPage'
 import StudioTrendsPage from '@/pages/studio-trends/StudioTrendsPage'
 import B2bPage from '@/pages/b2b/B2bPage'
@@ -84,7 +83,6 @@ function AppRoutes() {
 
         {/* Modules — built milestone by milestone */}
         <Route path="/schedule"  element={<SchedulePage />} />
-        <Route path="/availability" element={<AvailabilityPage />} />
         <Route path="/goals"     element={<GoalsPage />} />
         <Route path="/leads"     element={<LeadsPage />} />
         <Route
