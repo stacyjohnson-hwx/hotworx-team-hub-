@@ -92,8 +92,9 @@ router.put('/contacts/:id', authenticate, requireStudio, async (req, res) => {
     .update({
       business_name, contact_name, phone, email, address, industry,
       website, social_handle, logo_url,
-      status, discount_desc, discount_ongoing, next_action, next_action_date,
-      notes, assigned_to,
+      status, discount_desc, discount_ongoing, next_action,
+      next_action_date: next_action_date || null, // empty string → null (DATE column)
+      notes, assigned_to: assigned_to || null,
       latitude: latitude || null,
       longitude: longitude || null,
       updated_at: new Date().toISOString(),

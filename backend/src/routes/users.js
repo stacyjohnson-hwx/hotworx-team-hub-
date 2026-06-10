@@ -254,7 +254,11 @@ router.patch('/:id/deactivate', authenticate, requireRole('owner', 'manager'), a
     const supabase = adminClient()
     const { error } = await supabase.auth.admin.updateUserById(id, { ban_duration: '876000h' })
     if (error) return res.status(400).json({ error: error.message })
-    await supabase.from('user_profiles').update({ is_active: false }).eq('id', id)
+    // Upsert: many users have no profile row yet, so UPDATE alone would be a no-op
+    const { error: profileError } = await supabase
+      .from('user_profiles')
+      .upsert({ id, is_active: false }, { onConflict: 'id' })
+    if (profileError) return res.status(400).json({ error: profileError.message })
     res.json({ success: true })
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -268,7 +272,10 @@ router.patch('/:id/reactivate', authenticate, requireRole('owner', 'manager'), a
     const supabase = adminClient()
     const { error } = await supabase.auth.admin.updateUserById(id, { ban_duration: 'none' })
     if (error) return res.status(400).json({ error: error.message })
-    await supabase.from('user_profiles').update({ is_active: true }).eq('id', id)
+    const { error: profileError } = await supabase
+      .from('user_profiles')
+      .upsert({ id, is_active: true }, { onConflict: 'id' })
+    if (profileError) return res.status(400).json({ error: profileError.message })
     res.json({ success: true })
   } catch (err) {
     res.status(500).json({ error: err.message })
