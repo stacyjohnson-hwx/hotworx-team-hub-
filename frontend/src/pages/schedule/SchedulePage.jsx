@@ -5,17 +5,16 @@ import { useRole } from '@/hooks/useRole'
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
 
-function mondayOf(date) {
+// Week runs Sunday → Saturday
+function startOfWeek(date) {
   const d = new Date(date)
-  const day = d.getDay()
-  d.setDate(d.getDate() + (day === 0 ? -6 : 1 - day))
+  d.setDate(d.getDate() - d.getDay()) // back up to Sunday
   return d
 }
 
-function sundayOf(date) {
+function endOfWeek(date) {
   const d = new Date(date)
-  const day = d.getDay()
-  if (day !== 0) d.setDate(d.getDate() + (7 - day))
+  d.setDate(d.getDate() + (6 - d.getDay())) // forward to Saturday
   return d
 }
 
@@ -44,8 +43,8 @@ function dateInRange(dateStr, start, end) {
 function getMonthGrid(year, month) {
   const firstDay = new Date(year, month, 1)
   const lastDay  = new Date(year, month + 1, 0)
-  const gridStart = mondayOf(firstDay)
-  const gridEnd   = sundayOf(lastDay)
+  const gridStart = startOfWeek(firstDay)
+  const gridEnd   = endOfWeek(lastDay)
   const days = []
   const cur = new Date(gridStart)
   while (cur <= gridEnd) { days.push(new Date(cur)); cur.setDate(cur.getDate() + 1) }
@@ -72,7 +71,7 @@ function fmtHours(mins) {
   return h % 1 === 0 ? `${h}h` : `${h.toFixed(1)}h`
 }
 
-const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 // ─── Promo layout helpers ─────────────────────────────────────────────────────
 
@@ -174,7 +173,7 @@ export default function SchedulePage() {
   const [view, setView] = useState('week')
 
   // Week view state
-  const [weekStart, setWeekStart] = useState(() => toDateStr(mondayOf(new Date())))
+  const [weekStart, setWeekStart] = useState(() => toDateStr(startOfWeek(new Date())))
 
   // Month view state
   const today = toDateStr(new Date())
@@ -234,7 +233,7 @@ export default function SchedulePage() {
   function prevWeek() { setWeekStart(toDateStr(addDays(new Date(weekStart + 'T00:00:00'), -7))) }
   function nextWeek() { setWeekStart(toDateStr(addDays(new Date(weekStart + 'T00:00:00'), 7))) }
   function goToToday() {
-    if (view === 'week') setWeekStart(toDateStr(mondayOf(new Date())))
+    if (view === 'week') setWeekStart(toDateStr(startOfWeek(new Date())))
     else setMonthYear({ month: new Date().getMonth(), year: new Date().getFullYear() })
   }
 
