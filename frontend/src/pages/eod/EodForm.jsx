@@ -298,7 +298,7 @@ function StatPill({ label, value, icon: Icon, color }) {
   )
 }
 
-function ShiftAtAGlance() {
+function ShiftAtAGlance({ missionTitles = [], onToggleMission }) {
   const [cleaning, setCleaning]   = useState(null)
   const [loading,  setLoading]    = useState(true)
 
@@ -363,10 +363,29 @@ function ShiftAtAGlance() {
       <div className="bg-[#1A1A1A] px-4 py-3 flex items-center gap-2">
         <Sparkles size={14} className="text-[#E8611A]" />
         <h3 className="text-xs font-bold tracking-widest text-white uppercase">Shift at a Glance</h3>
-        <span className="ml-auto text-[10px] text-white/40">Auto-populated · read only</span>
+        <span className="ml-auto text-[10px] text-white/40">Auto-populated</span>
       </div>
 
       <div className="bg-gray-50 p-4 space-y-4">
+        {/* ── Lead Generation (from Growth HQ) ── */}
+        <div>
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Lead Generation</p>
+          {missionTitles.length === 0 ? (
+            <p className="text-xs text-gray-400 italic">Nothing logged yet today. Complete items in <strong>Growth → Leads</strong> and they'll appear here.</p>
+          ) : (
+            <div className="space-y-1">
+              {missionTitles.map((title, i) => (
+                <button key={i} type="button" onClick={() => onToggleMission?.(title)}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-left bg-orange-50 border border-orange-200 text-orange-800 hover:bg-orange-100 transition-colors">
+                  <span className="flex-shrink-0 w-4 h-4 rounded-full bg-orange-500 text-white flex items-center justify-center text-[10px]">✓</span>
+                  <span className="font-medium flex-1">{title}</span>
+                  <span className="text-orange-400 flex-shrink-0">tap to remove</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
         {loading ? (
           <div className="flex items-center justify-center py-6">
             <div className="w-5 h-5 border-2 border-gray-300 border-t-[#E8611A] rounded-full animate-spin" />
@@ -768,35 +787,8 @@ export default function EodForm({ submittedShifts, onSubmitted }) {
             </div>
           </Section>
 
-          {/* Missions (Growth HQ) — auto-populated from Growth HQ Missions tab */}
-          <Section title="Missions Completed" badge={missionTitles.length > 0 ? `${missionTitles.length}` : null}>
-            {missionTitles.length === 0 ? (
-              <p className="text-xs text-gray-400">
-                No missions completed yet today in Growth HQ. Complete missions in the <strong>Growth → Missions</strong> tab and they'll appear here automatically.
-              </p>
-            ) : (
-              <>
-                <p className="text-xs text-gray-400 -mt-1 mb-2">Auto-filled from Growth HQ. Tap to remove any that don't apply to this shift.</p>
-                <div className="space-y-1">
-                  {missionTitles.map((title, i) => (
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() => toggleMissionTitle(title)}
-                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-left bg-orange-50 border border-orange-200 text-orange-800 hover:bg-orange-100 transition-colors"
-                    >
-                      <span className="flex-shrink-0 w-5 h-5 rounded-full border-2 border-orange-500 bg-orange-500 text-white flex items-center justify-center text-xs">✓</span>
-                      <span className="font-medium flex-1">{title}</span>
-                      <span className="text-orange-400 text-xs">tap to remove</span>
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </Section>
-
-          {/* Shift at a Glance */}
-          <ShiftAtAGlance />
+          {/* Shift at a Glance — includes Lead Generation, Cleaning, Operations */}
+          <ShiftAtAGlance missionTitles={missionTitles} onToggleMission={toggleMissionTitle} />
 
           {/* Maintenance & Escalations */}
           <MaintenanceEscalationsSection />
