@@ -591,12 +591,20 @@ function ContactCard({ contact, users, isOwnerOrManager, onEdit, onDelete, onLog
         )}
       </div>
 
-      {/* History toggle */}
-      <button onClick={handleExpand}
-        className="w-full flex items-center justify-between px-4 py-2.5 border-t border-gray-100 text-xs font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-50 transition-colors">
-        <span>{expanded ? 'Hide' : 'Show'} interaction history</span>
-        {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-      </button>
+      {/* Action row: Log Outreach + History toggle */}
+      <div className="flex items-stretch border-t border-gray-100">
+        {isOwnerOrManager && (
+          <button onClick={() => onLogInteraction(contact, handleInteractionLogged)}
+            className="flex items-center justify-center gap-1.5 px-4 py-2.5 text-xs font-bold text-orange-600 hover:bg-orange-50 transition-colors border-r border-gray-100">
+            <MessageSquare size={14} /> Log Outreach
+          </button>
+        )}
+        <button onClick={handleExpand}
+          className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 text-xs font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-50 transition-colors">
+          <span>{expanded ? 'Hide' : 'Show'} interaction history</span>
+          {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </button>
+      </div>
 
       {expanded && (
         <div className="px-4 pb-4 space-y-1 border-t border-gray-100 bg-gray-50">
@@ -1445,7 +1453,7 @@ export default function B2bPage() {
         {isOwnerOrManager && (
           <button onClick={() => setModalContact(false)}
             className="flex items-center gap-2 px-5 py-2.5 bg-orange-500 hover:bg-orange-600 text-white text-sm font-bold rounded-lg transition-colors shadow-sm">
-            <Plus size={16} /> Add Contact
+            <Plus size={16} /> Add Outreach
           </button>
         )}
       </div>
