@@ -323,7 +323,7 @@ router.put('/personal/:tsaId', requireRole('owner', 'manager'), async (req, res)
       ...fields,
       updated_by: req.user.id,
       updated_at: new Date().toISOString(),
-    }, { onConflict: 'studio_id,tsa_id,month,year' })
+    }, { onConflict: 'tsa_id,month,year' }) // matches the personal_goals unique constraint
     .select()
     .single()
 
