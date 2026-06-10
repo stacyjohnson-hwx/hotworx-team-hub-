@@ -849,7 +849,6 @@ function PersonalGoalModal({ member, month, year, onSaved, onClose }) {
             <SectionHeader icon={TrendingUp} label="Bonus Overrides" />
             <div className="grid grid-cols-2 gap-3">
               <NumField label="ITB Bonus Override" prefix="$" value={form.itb_bonus_override} onChange={v => setF('itb_bonus_override', v)} placeholder="Auto" />
-              {isManager && <NumField label="Net EFT Bonus Override" prefix="$" value={form.net_eft_bonus_override} onChange={v => setF('net_eft_bonus_override', v)} placeholder="Auto" />}
               <div className="col-span-2">
                 <label className="block text-xs font-medium text-gray-700 mb-1">Override Note</label>
                 <input type="text" value={form.itb_bonus_note} onChange={e => setF('itb_bonus_note', e.target.value)}
@@ -1516,23 +1515,8 @@ function CommissionBreakdown({ commission: c, isManager }) {
         <CommLine label={`EFT Commission (${pct(c.eft_rate)} — ${c.eft_exceeds ? '✓ Above quota' : 'Below quota'})`}
           value={fmt$(c.eft_commission)} highlight={c.eft_exceeds} />
         <CommLine label="PIF Commission (5% / 10%)" value={fmt$(c.pif_commission)} />
-        {isManager ? (
-          <>
-            <CommLine
-              label={`Retail (4%${c.rm_qualifies ? ' — ✓ $5k met' : ' — below $5k min'})`}
-              value={fmt$(c.retail_bonus)} highlight={c.rm_qualifies && c.retail_bonus > 0} />
-            <CommLine
-              label="Membership Cash (4%)"
-              value={fmt$(c.mbr_cash_bonus)} highlight={c.rm_qualifies && c.mbr_cash_bonus > 0} />
-            <CommLine label="ITB Bonus (studio In The Bank)" value={fmt$(c.itb_bonus)} highlight={c.itb_bonus > 0} />
-            <CommLine label="Net EFT Tier Bonus" value={fmt$(c.net_eft_bonus)} highlight={c.net_eft_bonus > 0} />
-          </>
-        ) : (
-          <>
-            <CommLine label={`Retail Commission (${pct(c.retail_rate)})`} value={fmt$(c.retail_commission)} />
-            <CommLine label="ITB Bonus" value={fmt$(c.itb_bonus)} highlight={c.itb_bonus > 0} />
-          </>
-        )}
+        <CommLine label={`Retail Commission (${pct(c.retail_rate)})`} value={fmt$(c.retail_commission)} />
+        <CommLine label="ITB Bonus" value={fmt$(c.itb_bonus)} highlight={c.itb_bonus > 0} />
         <div className="border-t border-gray-200 pt-2 mt-2 flex justify-between items-center">
           <p className="text-sm font-bold text-gray-900">Total Est. Commission</p>
           <p className="text-lg font-bold text-red-600">{fmt$(c.total)}</p>
