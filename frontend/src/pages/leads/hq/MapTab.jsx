@@ -1241,16 +1241,23 @@ export default function MapTab() {
     const hit = nearestActivityForNeighborhood(n, activities)
     return hit && getIntensity(hit.dateCompleted) !== 'stale'
   }).length
-  const coveredBiz = bizMapItems.filter(b => {
+  // Split businesses → apartments vs everything else
+  const isApartment = (b) => (b.industry || '').toLowerCase().includes('apart')
+  const apartmentItems = bizListItems.filter(isApartment)
+  const businessItems  = bizListItems.filter(b => !isApartment(b))
+  const coveredOf = (list) => list.filter(b => b.lat && b.lng).filter(b => {
     const hit = nearestActivity(b.lat, b.lng, activities, 0.25)
     return hit && getIntensity(hit.dateCompleted) !== 'stale'
   }).length
+  const coveredApt = coveredOf(apartmentItems)
+  const coveredBiz = coveredOf(businessItems)
 
   // Filtered list
   const searchLc = search.toLowerCase()
+  const baseBiz = listTab === 'apartments' ? apartmentItems : businessItems
   const listItems = listTab === 'neighborhoods'
     ? neighborhoods.filter(n => n.name.toLowerCase().includes(searchLc))
-    : bizListItems.filter(b =>
+    : baseBiz.filter(b =>
         (b.name     || '').toLowerCase().includes(searchLc) ||
         (b.industry || '').toLowerCase().includes(searchLc) ||
         (b.address  || '').toLowerCase().includes(searchLc)
@@ -1456,11 +1463,18 @@ export default function MapTab() {
                   {coveredNbh}/{neighborhoods.length}
                 </span>
               </button>
+              <button onClick={() => { setListTab('apartments'); setSearch('') }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${listTab==='apartments' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                <Building2 size={11} /> Apartments
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${listTab==='apartments' ? 'bg-orange-100 text-orange-600' : 'bg-gray-200 text-gray-500'}`}>
+                  {coveredApt}/{apartmentItems.length}
+                </span>
+              </button>
               <button onClick={() => { setListTab('businesses'); setSearch('') }}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${listTab==='businesses' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
                 <Building2 size={11} /> Businesses
                 <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${listTab==='businesses' ? 'bg-orange-100 text-orange-600' : 'bg-gray-200 text-gray-500'}`}>
-                  {coveredBiz}/{bizListItems.length}
+                  {coveredBiz}/{businessItems.length}
                 </span>
               </button>
             </div>
@@ -1489,18 +1503,18 @@ export default function MapTab() {
 
         {/* List items */}
         <div className="px-4 py-1">
-          {listTab === 'businesses' && b2bLoading ? (
+          {listTab !== 'neighborhoods' && b2bLoading ? (
             <div className="flex items-center justify-center py-8 gap-2 text-gray-400">
               <Loader2 size={16} className="animate-spin" />
-              <span className="text-sm">Loading businesses…</span>
+              <span className="text-sm">Loading {listTab}…</span>
             </div>
           ) : listItems.length === 0 ? (
             <p className="text-sm text-gray-400 text-center py-6">
               {search
                 ? 'No results.'
-                : listTab === 'businesses'
-                  ? 'No businesses with coordinates yet — add addresses in the B2B Tracker.'
-                  : 'No neighborhoods match.'}
+                : listTab === 'neighborhoods'
+                  ? 'No neighborhoods match.'
+                  : `No ${listTab} with coordinates yet — add addresses in the B2B Tracker.`}
             </p>
           ) : (
             listItems.map(item => (
@@ -1513,7 +1527,7 @@ export default function MapTab() {
                 onDelete={listTab === 'neighborhoods' && isOwnerOrManager ? delNeighborhood : undefined}
                 onShowHistory={listTab === 'neighborhoods' ? handleShowNbhHistory : undefined}
                 onLogActivity={listTab === 'neighborhoods' ? handleLogForNbh : undefined}
-                onViewBiz={listTab === 'businesses' ? handleViewBiz : undefined}
+                onViewBiz={listTab !== 'neighborhoods' ? handleViewBiz : undefined}
               />
             ))
           )}
