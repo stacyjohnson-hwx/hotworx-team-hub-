@@ -115,8 +115,8 @@ function calcManagerCommission(personal, studioData = {}) {
 }
 
 // ─── Unified entry point ───────────────────────────────────────────────────
+// Everyone (TSAs and managers) is on the TSA commission structure.
 function calcCommission(personalGoals, role, studioData) {
-  if (role === 'manager') return calcManagerCommission(personalGoals, studioData || {})
   return calcTSACommission(personalGoals)
 }
 

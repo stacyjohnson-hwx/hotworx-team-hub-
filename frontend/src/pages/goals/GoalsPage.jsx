@@ -16,53 +16,7 @@ function calcCommission(goals, role, studioData = {}) {
   const p6     = Number(goals.pif_6mo)       || 0
   const p12    = Number(goals.pif_12mo)      || 0
 
-  if (role === 'manager') {
-    const quota         = MANAGER_QUOTA
-    const eft_exceeds   = eft > quota
-    const eft_rate      = eft_exceeds ? 0.30 : 0.15
-    const eft_comm      = pos * eft_rate
-    const pif_comm      = p6 * 0.05 + p12 * 0.10
-    const retail_amt    = Number(studioData.retail) || 0
-    const mbr_cash_amt  = Number(studioData.membership_cash) || 0
-    const rm_total      = retail_amt + mbr_cash_amt
-    const rm_qualifies  = rm_total >= 5000
-    const rm_bonus      = rm_qualifies ? round2(rm_total * 0.04) : 0
-    const retail_bonus  = rm_qualifies ? round2(retail_amt * 0.04) : 0
-    const mbr_cash_bonus = rm_qualifies ? round2(mbr_cash_amt * 0.04) : 0
-
-    let itb_bonus
-    if (goals.itb_bonus_override != null && goals.itb_bonus_override !== '') {
-      itb_bonus = Number(goals.itb_bonus_override)
-    } else {
-      const itb  = Number(studioData.in_the_bank) || 0
-      const goal = Number(studioData.itb_goal)    || 0
-      if (goal > 0 && itb >= goal * 1.10) itb_bonus = 500
-      else if (goal > 0 && itb >= goal)   itb_bonus = 200
-      else                                itb_bonus = 0
-    }
-
-    let net_eft_bonus
-    if (goals.net_eft_bonus_override != null && goals.net_eft_bonus_override !== '') {
-      net_eft_bonus = Number(goals.net_eft_bonus_override)
-    } else {
-      const neft = Number(studioData.net_eft) || 0
-      if      (neft >= 50000) net_eft_bonus = 1200
-      else if (neft >= 45000) net_eft_bonus = 900
-      else if (neft >= 30000) net_eft_bonus = 700
-      else if (neft >= 20000) net_eft_bonus = 500
-      else if (neft >= 15000) net_eft_bonus = 350
-      else                    net_eft_bonus = 0
-    }
-
-    return {
-      type: 'manager', eft_rate, eft_exceeds, eft_quota: quota,
-      eft_commission: round2(eft_comm), pif_commission: round2(pif_comm),
-      rm_bonus, rm_total: round2(rm_total), rm_qualifies, retail_bonus, mbr_cash_bonus,
-      itb_bonus, net_eft_bonus,
-      total: round2(eft_comm + pif_comm + rm_bonus + itb_bonus + net_eft_bonus),
-    }
-  }
-
+  // Everyone (TSAs and managers) uses the TSA commission structure
   // TSA
   const quota       = TSA_QUOTA
   const eft_exceeds = eft > quota
