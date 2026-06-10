@@ -581,41 +581,50 @@ const BULK_FIELDS = [
   { key: 'texts_made',        label: 'Texts' },
 ]
 
+// Input state holds raw strings so the fields are fully editable; 0 shows as blank.
 function pickBulkFields(m) {
   const o = {}
-  for (const f of BULK_FIELDS) o[f.key] = Number(m[f.key]) || 0
+  for (const f of BULK_FIELDS) {
+    const v = Number(m[f.key]) || 0
+    o[f.key] = v ? String(v) : ''
+  }
   return o
 }
 
 function BulkGoalEntry({ team, month, year, onSavedAll, onClose }) {
+  // Only managers + TSAs — owners aren't scheduled/goaled here
+  const members = team.filter(m => m.tsa_role !== 'owner')
+
   const [rows, setRows] = useState(() =>
-    Object.fromEntries(team.map(m => [m.tsa_id, pickBulkFields(m)]))
+    Object.fromEntries(members.map(m => [m.tsa_id, pickBulkFields(m)]))
   )
   const [initial] = useState(() =>
-    Object.fromEntries(team.map(m => [m.tsa_id, pickBulkFields(m)]))
+    Object.fromEntries(members.map(m => [m.tsa_id, pickBulkFields(m)]))
   )
   const [statusMap, setStatusMap] = useState({}) // tsa_id -> 'saving'|'saved'|'error'
   const [savingAll, setSavingAll] = useState(false)
   const [error, setError] = useState(null)
 
   const setCell = (tsaId, key, val) => {
-    setRows(prev => ({ ...prev, [tsaId]: { ...prev[tsaId], [key]: val === '' ? 0 : Number(val) } }))
+    setRows(prev => ({ ...prev, [tsaId]: { ...prev[tsaId], [key]: val } }))
     setStatusMap(prev => ({ ...prev, [tsaId]: undefined }))
   }
 
   const isDirty = (tsaId) =>
-    BULK_FIELDS.some(f => Number(rows[tsaId][f.key]) !== Number(initial[tsaId][f.key]))
+    BULK_FIELDS.some(f => (Number(rows[tsaId][f.key]) || 0) !== (Number(initial[tsaId][f.key]) || 0))
 
-  const dirtyCount = team.filter(m => isDirty(m.tsa_id)).length
+  const dirtyCount = members.filter(m => isDirty(m.tsa_id)).length
 
   async function saveAll() {
-    const dirtyIds = team.map(m => m.tsa_id).filter(isDirty)
+    const dirtyIds = members.map(m => m.tsa_id).filter(isDirty)
     if (!dirtyIds.length) { onClose(); return }
     setSavingAll(true); setError(null)
     const results = await Promise.all(dirtyIds.map(async id => {
       setStatusMap(s => ({ ...s, [id]: 'saving' }))
       try {
-        const saved = await apiPut(`/api/goals/personal/${id}`, { month, year, ...rows[id] })
+        const payload = { month, year }
+        for (const f of BULK_FIELDS) payload[f.key] = Number(rows[id][f.key]) || 0
+        const saved = await apiPut(`/api/goals/personal/${id}`, payload)
         setStatusMap(s => ({ ...s, [id]: 'saved' }))
         return saved
       } catch (e) {
@@ -658,7 +667,7 @@ function BulkGoalEntry({ team, month, year, onSavedAll, onClose }) {
               </tr>
             </thead>
             <tbody>
-              {team.map(m => {
+              {members.map(m => {
                 const st = statusMap[m.tsa_id]
                 return (
                   <tr key={m.tsa_id} className={`border-b border-gray-100 ${st === 'error' ? 'bg-red-50' : st === 'saved' ? 'bg-green-50' : ''}`}>
@@ -672,7 +681,8 @@ function BulkGoalEntry({ team, month, year, onSavedAll, onClose }) {
                       <td key={f.key} className="px-1 py-1.5">
                         <input
                           type="number"
-                          value={rows[m.tsa_id][f.key] || ''}
+                          inputMode="decimal"
+                          value={rows[m.tsa_id][f.key]}
                           onChange={e => setCell(m.tsa_id, f.key, e.target.value)}
                           placeholder="0"
                           className="w-[72px] px-2 py-1.5 border border-gray-300 rounded-md text-center focus:outline-none focus:ring-2 focus:ring-red-600/30 focus:border-red-600"
