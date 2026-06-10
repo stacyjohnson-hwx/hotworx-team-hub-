@@ -163,7 +163,7 @@ export default function TerritoryTab({ users = [] }) {
   useEffect(() => { load() }, [load])
 
   const handleDelete = async (id) => {
-    if (!confirm('Remove this zone from the territory tracker?')) return
+    if (!confirm('Remove this zone from the canvassing list?')) return
     await apiDelete(`/api/territories/${id}`)
     setZones(prev => prev.filter(z => z.id !== id))
   }

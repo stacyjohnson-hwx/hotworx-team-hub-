@@ -1527,7 +1527,7 @@ export default function B2bPage() {
 
       {/* Tabs */}
       <div className="flex gap-1 mb-5 border-b border-gray-200">
-        {[{ key: 'pipeline', label: 'Pipeline' }, { key: 'partners', label: 'Active Partners' }, { key: 'territory', label: 'Territory' }, { key: 'map', label: 'Map' }].map(t => (
+        {[{ key: 'pipeline', label: 'Pipeline' }, { key: 'partners', label: 'Active Partners' }, { key: 'territory', label: 'Canvassing' }, { key: 'map', label: 'Map' }].map(t => (
           <button key={t.key} onClick={() => { setTab(t.key); if (t.key === 'partners') setStatusFilter('') }}
             className={`px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${
               tab === t.key ? 'border-orange-500 text-orange-500' : 'border-transparent text-gray-500 hover:text-gray-800'
