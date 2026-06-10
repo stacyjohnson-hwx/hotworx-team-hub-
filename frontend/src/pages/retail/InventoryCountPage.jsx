@@ -5,6 +5,7 @@ import { apiGet, apiPut, apiPost } from '@/hooks/useApi'
 import {
   CheckCircle, Circle, AlertCircle, Camera, Flag, ArrowLeft,
   Package, Check, X, DollarSign, TrendingDown, TrendingUp, Calendar, History, Save, Upload,
+  Search, ChevronUp, ChevronDown, ChevronsUpDown,
 } from 'lucide-react'
 import { InventoryImportModal } from './InventoryImportModal'
 
@@ -20,6 +21,10 @@ export default function InventoryCountPage() {
   const [countMonth, setCountMonth] = useState(new Date().getMonth() + 1)
   const [countYear, setCountYear] = useState(new Date().getFullYear())
   const [showImportModal, setShowImportModal] = useState(false)
+  const [search, setSearch] = useState('')
+  const [filterCategory, setFilterCategory] = useState('')
+  const [sortBy, setSortBy] = useState('product_name') // 'product_name' | 'expected' | 'category'
+  const [sortDir, setSortDir] = useState('asc') // 'asc' | 'desc'
 
   useEffect(() => {
     if (currentStudio?.id) {
@@ -106,6 +111,51 @@ export default function InventoryCountPage() {
   const counted = entries.filter(e => e.actual_quantity !== null).length
   const total = entries.length
   const progress = total > 0 ? Math.round(counted / total * 100) : 0
+
+  // Unique category list for the filter dropdown
+  const categories = Array.from(
+    new Set(entries.map(e => e.sku?.category?.name).filter(Boolean))
+  ).sort((a, b) => a.localeCompare(b))
+
+  // Toggle sort: clicking the active column flips direction, otherwise switch column (asc)
+  const toggleSort = (column) => {
+    if (sortBy === column) {
+      setSortDir(prev => (prev === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortBy(column)
+      setSortDir('asc')
+    }
+  }
+
+  const SortIcon = ({ column }) => {
+    if (sortBy !== column) return <ChevronsUpDown size={14} className="text-gray-300" />
+    return sortDir === 'asc'
+      ? <ChevronUp size={14} className="text-red-600" />
+      : <ChevronDown size={14} className="text-red-600" />
+  }
+
+  // Derived list for display only — saving still operates on the full `entries` array
+  const displayEntries = entries
+    .filter(e => {
+      const matchesSearch = !search ||
+        e.sku?.product_name?.toLowerCase().includes(search.toLowerCase()) ||
+        e.sku?.sku_code?.toLowerCase().includes(search.toLowerCase())
+      const matchesCategory = !filterCategory ||
+        (e.sku?.category?.name || 'Uncategorized') === filterCategory
+      return matchesSearch && matchesCategory
+    })
+    .sort((a, b) => {
+      let cmp = 0
+      if (sortBy === 'expected') {
+        cmp = (a.expected_quantity || 0) - (b.expected_quantity || 0)
+      } else if (sortBy === 'category') {
+        cmp = (a.sku?.category?.name || 'Uncategorized')
+          .localeCompare(b.sku?.category?.name || 'Uncategorized')
+      } else {
+        cmp = (a.sku?.product_name || '').localeCompare(b.sku?.product_name || '')
+      }
+      return sortDir === 'asc' ? cmp : -cmp
+    })
 
   if (loading) {
     return <div className="p-8 text-center text-gray-500">Loading inventory...</div>
@@ -198,21 +248,75 @@ export default function InventoryCountPage() {
       {/* Count Table */}
       <div className="px-6 py-6">
         <div className="max-w-7xl mx-auto">
+          {/* Search & Filter Toolbar */}
+          {entries.length > 0 && (
+            <div className="flex flex-col sm:flex-row gap-3 mb-4">
+              <div className="relative flex-1">
+                <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="Search product name or SKU..."
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-600/30"
+                />
+              </div>
+              <select
+                value={filterCategory}
+                onChange={e => setFilterCategory(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-600/30 min-w-[180px]"
+              >
+                <option value="">All Categories</option>
+                {categories.map(cat => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+              {(search || filterCategory) && (
+                <button
+                  onClick={() => { setSearch(''); setFilterCategory('') }}
+                  className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-1.5"
+                >
+                  <X size={16} /> Clear
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Showing count when filtered */}
+          {entries.length > 0 && displayEntries.length !== entries.length && (
+            <p className="text-sm text-gray-500 mb-2">
+              Showing {displayEntries.length} of {entries.length} items
+            </p>
+          )}
+
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
             <div className="overflow-x-auto" style={{ maxHeight: 'calc(100vh - 350px)' }}>
               <table className="w-full">
                 <thead className="bg-gray-50 border-b-2 border-gray-200 sticky top-0">
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-20">Image</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Product Name</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      <button onClick={() => toggleSort('product_name')} className="flex items-center gap-1 hover:text-gray-900 uppercase tracking-wider">
+                        Product Name <SortIcon column="product_name" />
+                      </button>
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-40">
+                      <button onClick={() => toggleSort('category')} className="flex items-center gap-1 hover:text-gray-900 uppercase tracking-wider">
+                        Category <SortIcon column="category" />
+                      </button>
+                    </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-32">SKU</th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider w-24">Expected</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider w-24">
+                      <button onClick={() => toggleSort('expected')} className="flex items-center gap-1 hover:text-gray-900 uppercase tracking-wider ml-auto">
+                        Expected <SortIcon column="expected" />
+                      </button>
+                    </th>
                     <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider w-32">Actual Count</th>
                     <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider w-24">Variance</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 bg-white">
-                  {entries.map(entry => {
+                  {displayEntries.map(entry => {
                     const variance = entry.actual_quantity !== null ? entry.actual_quantity - entry.expected_quantity : null
                     return (
                       <tr key={entry.id} className={`hover:bg-gray-50 transition-colors ${variance !== null && variance !== 0 ? 'bg-amber-50/30' : ''}`}>
@@ -227,7 +331,11 @@ export default function InventoryCountPage() {
                         </td>
                         <td className="px-4 py-3">
                           <p className="text-gray-900 font-medium">{entry.sku?.product_name}</p>
-                          <p className="text-xs text-gray-500 mt-1">{entry.sku?.category?.name || 'Uncategorized'}</p>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="inline-block px-2 py-0.5 bg-gray-100 text-gray-700 rounded-full text-xs font-medium">
+                            {entry.sku?.category?.name || 'Uncategorized'}
+                          </span>
                         </td>
                         <td className="px-4 py-3 text-gray-600 font-mono text-xs">{entry.sku?.sku_code}</td>
                         <td className="px-4 py-3 text-right">
@@ -267,6 +375,19 @@ export default function InventoryCountPage() {
                 <p className="text-sm text-gray-500">
                   Import inventory from the Catalog tab first
                 </p>
+              </div>
+            )}
+
+            {entries.length > 0 && displayEntries.length === 0 && (
+              <div className="p-16 text-center text-gray-500">
+                <Search size={64} className="mx-auto text-gray-300 mb-4" />
+                <p className="text-lg font-semibold text-gray-700 mb-2">No items match your filters</p>
+                <button
+                  onClick={() => { setSearch(''); setFilterCategory('') }}
+                  className="text-sm text-red-600 hover:underline mt-1"
+                >
+                  Clear filters
+                </button>
               </div>
             )}
           </div>
