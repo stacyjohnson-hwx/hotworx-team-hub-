@@ -620,10 +620,10 @@ function BulkGoalEntry({ team, month, year, onSavedAll, onClose }) {
   const dirtyCount = members.filter(m => isDirty(m.tsa_id)).length
 
   async function saveAll() {
-    const dirtyIds = members.map(m => m.tsa_id).filter(isDirty)
-    if (!dirtyIds.length) { onClose(); return }
     setSavingAll(true); setError(null)
-    const results = await Promise.all(dirtyIds.map(async id => {
+    const errors = []
+    const results = await Promise.all(members.map(async m => {
+      const id = m.tsa_id
       setStatusMap(s => ({ ...s, [id]: 'saving' }))
       try {
         const payload = { month, year }
@@ -633,13 +633,13 @@ function BulkGoalEntry({ team, month, year, onSavedAll, onClose }) {
         return saved
       } catch (e) {
         setStatusMap(s => ({ ...s, [id]: 'error' }))
+        errors.push(`${m.tsa_name}: ${e.message || 'failed'}`)
         return null
       }
     }))
     setSavingAll(false)
-    const ok = results.filter(Boolean)
-    onSavedAll(ok)
-    if (ok.length < dirtyIds.length) setError('Some rows failed to save — check the red rows and retry.')
+    onSavedAll(results.filter(Boolean))
+    if (errors.length) setError(`Could not save — ${errors[0]}`)
   }
 
   const monthLabel = new Date(year, month - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
@@ -708,16 +708,16 @@ function BulkGoalEntry({ team, month, year, onSavedAll, onClose }) {
         {/* Footer */}
         <div className="flex items-center justify-between gap-3 p-5 border-t border-gray-100">
           <span className="text-xs text-gray-500">
-            {dirtyCount > 0 ? `${dirtyCount} row${dirtyCount !== 1 ? 's' : ''} changed` : 'No changes yet'}
+            {dirtyCount > 0 ? `${dirtyCount} row${dirtyCount !== 1 ? 's' : ''} changed` : 'Enter numbers, then Save All'}
           </span>
           <div className="flex gap-3">
             <button onClick={onClose}
               className="px-5 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50">
               Close
             </button>
-            <button onClick={saveAll} disabled={savingAll || dirtyCount === 0}
+            <button onClick={saveAll} disabled={savingAll}
               className="flex items-center gap-2 px-6 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-sm font-bold rounded-lg">
-              {savingAll ? <><RefreshCw size={15} className="animate-spin" /> Saving…</> : <>Save All ({dirtyCount})</>}
+              {savingAll ? <><RefreshCw size={15} className="animate-spin" /> Saving…</> : <>Save All</>}
             </button>
           </div>
         </div>
