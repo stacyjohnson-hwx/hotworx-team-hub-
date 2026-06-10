@@ -41,7 +41,6 @@ export default function InventoryCountPage() {
         // Create new session for this month
         session = await apiPost('/api/retail/counts', {
           count_date: `${monthKey}-01`,
-          count_type: 'monthly',
         }, currentStudio.id)
       }
 
@@ -52,6 +51,7 @@ export default function InventoryCountPage() {
       setEntries(sessionData.entries || [])
     } catch (err) {
       console.error('Failed to load:', err)
+      alert(`Failed to load inventory count: ${err.message}`)
     } finally {
       setLoading(false)
     }
