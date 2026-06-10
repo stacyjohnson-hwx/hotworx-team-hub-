@@ -39,11 +39,15 @@ router.get('/:id', authenticate, requireStudio, async (req, res) => {
       sku:sku_master(id, sku_code, product_name, image_url, has_sizes, retail_price, category:product_categories(name))
     `)
     .eq('session_id', req.params.id)
-    .order('sku.product_name')
 
   if (entriesError) return res.status(500).json({ error: entriesError.message })
 
-  res.json({ ...session, entries })
+  // Sort by product name (can't order by nested relation in the query)
+  const sortedEntries = (entries || []).sort((a, b) =>
+    (a.sku?.product_name || '').localeCompare(b.sku?.product_name || '')
+  )
+
+  res.json({ ...session, entries: sortedEntries })
 })
 
 // ─── POST /api/retail/counts ────────────────────────────────────────────────
