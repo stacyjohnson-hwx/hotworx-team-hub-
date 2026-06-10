@@ -237,15 +237,17 @@ function buildHtml(dateStr, submissions, outreachByUser, tasksByUser) {
 </html>`
 }
 
-async function fetchSubmissionsForDate(dateStr) {
+async function fetchSubmissionsForDate(dateStr, studioId) {
   const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 
-  // Fetch EOD submissions
-  const { data: submissions, error } = await db
+  // Fetch EOD submissions (scoped to the studio when provided)
+  let subQuery = db
     .from('eod_submissions')
     .select('*')
     .eq('shift_date', dateStr)
     .order('submitted_at')
+  if (studioId) subQuery = subQuery.eq('studio_id', studioId)
+  const { data: submissions, error } = await subQuery
 
   if (error) throw new Error(error.message)
   if (!submissions.length) return { submissions: [], outreachByUser: {}, cleaningByUser: {} }
@@ -317,15 +319,43 @@ async function fetchSubmissionsForDate(dateStr) {
   return { submissions: enrichedSubmissions, outreachByUser, tasksByUser }
 }
 
-async function sendEodEmail(dateStr) {
-  if (!process.env.RESEND_API_KEY) {
-    console.log('[EOD Email] RESEND_API_KEY not set — skipping email')
+// Gather the live email addresses of a studio's active owner + manager users
+async function getStudioRecipients(db, studioId) {
+  if (!studioId) return { emails: [], studioName: null }
+  const [{ data: members }, { data: inactive }, { data: studio }] = await Promise.all([
+    db.from('user_studios').select('user_id, role').eq('studio_id', studioId).in('role', ['owner', 'manager']),
+    db.from('user_profiles').select('id').eq('is_active', false),
+    db.from('studios').select('name').eq('id', studioId).maybeSingle(),
+  ])
+  const inactiveIds = new Set((inactive || []).map(r => r.id))
+  const emails = []
+  for (const m of (members || [])) {
+    if (inactiveIds.has(m.user_id)) continue
+    const { data } = await db.auth.admin.getUserById(m.user_id)
+    const email = data?.user?.email
+    if (email && !emails.includes(email)) emails.push(email)
+  }
+  return { emails, studioName: studio?.name || null }
+}
+
+async function sendEodEmail(dateStr, studioId) {
+  const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+
+  // Recipients = the studio's active owner + manager role users.
+  // Falls back to OWNER_EMAIL / MANAGER_EMAIL env vars if none are found.
+  const { emails, studioName } = await getStudioRecipients(db, studioId)
+  const recipients = emails.length
+    ? emails
+    : [process.env.OWNER_EMAIL, process.env.MANAGER_EMAIL].filter(Boolean)
+
+  if (!recipients.length) {
+    console.log('[EOD Email] No recipients (no active owner/manager and no env fallback) — skipping')
     return
   }
 
-  const { submissions, outreachByUser, tasksByUser } = await fetchSubmissionsForDate(dateStr)
+  const { submissions, outreachByUser, tasksByUser } = await fetchSubmissionsForDate(dateStr, studioId)
   const html = buildHtml(dateStr, submissions, outreachByUser, tasksByUser)
-  const recipients = [process.env.OWNER_EMAIL, process.env.MANAGER_EMAIL].filter(Boolean)
+  const studioLabel = studioName || process.env.STUDIO_NAME || 'HOTWORX Pewaukee'
 
   const dateLabel = new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
@@ -334,7 +364,7 @@ async function sendEodEmail(dateStr) {
   try {
     await sendViaBestAvailable({
       to: recipients,
-      subject: `${process.env.STUDIO_NAME || 'HOTWORX Pewaukee'} — EOD Report ${dateLabel}`,
+      subject: `${studioLabel} — EOD Report ${dateLabel}`,
       html,
     })
     console.log(`[EOD Email] Sent for ${dateStr} to ${recipients.join(', ')}`)

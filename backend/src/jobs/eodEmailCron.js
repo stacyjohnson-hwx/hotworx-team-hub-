@@ -1,4 +1,5 @@
 const cron = require('node-cron')
+const { createClient } = require('@supabase/supabase-js')
 const { sendEodEmail } = require('../services/eodEmail')
 
 function todayInChicago() {
@@ -11,7 +12,12 @@ function startEodCron() {
     const date = todayInChicago()
     console.log(`[EOD Cron] Running nightly digest for ${date}`)
     try {
-      await sendEodEmail(date)
+      // One digest per studio → that studio's active owner + manager users
+      const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+      const { data: studios } = await db.from('studios').select('id')
+      for (const s of (studios || [])) {
+        await sendEodEmail(date, s.id)
+      }
     } catch (err) {
       console.error('[EOD Cron] Error:', err.message)
     }

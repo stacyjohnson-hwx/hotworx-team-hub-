@@ -181,7 +181,7 @@ router.post('/', async (req, res) => {
 
   // Send email immediately on mid and closing shifts
   if (shift_type === 'mid' || shift_type === 'closing') {
-    sendEodEmail(date).catch(err => console.error('[EOD] Email error:', err.message))
+    sendEodEmail(date, req.studio.id).catch(err => console.error('[EOD] Email error:', err.message))
   }
 
   res.status(201).json(data)
@@ -204,7 +204,7 @@ router.delete('/:id', requireRole('owner', 'manager'), async (req, res) => {
 router.post('/send-digest', requireRole('owner', 'manager'), async (req, res) => {
   const date = req.body.date || todayInChicago()
   try {
-    await sendEodEmail(date)
+    await sendEodEmail(date, req.studio.id)
     res.json({ ok: true, date })
   } catch (err) {
     res.status(500).json({ error: err.message })
