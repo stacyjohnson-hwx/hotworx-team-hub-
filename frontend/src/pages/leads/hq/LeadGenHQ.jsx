@@ -1,11 +1,10 @@
 import { useState, useEffect } from 'react'
-import { Target, BookOpen, Map, Trophy, ChevronDown, Flame, Zap, Phone } from 'lucide-react'
+import { Target, BookOpen, Map, ChevronDown, Flame, Zap, Phone } from 'lucide-react'
 import { EMPLOYEES, getRank } from '../data/mockData'
 import { useAuth } from '@/contexts/AuthContext'
 import MissionsTab    from './MissionsTab'
 import PlaysTab       from './PlaysTab'
 import MapTab         from './MapTab'
-import LeaderboardTab from './LeaderboardTab'
 import OutreachTab    from '../OutreachTab'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -16,13 +15,12 @@ const TSA_TABS = [
   { id: 'map',       label: 'Map',      icon: Map,      shortLabel: 'Map'      },
 ]
 
-// Managers/Owners: Campaigns + the TSA tabs + Leaderboard
+// Managers/Owners: Campaigns + the TSA tabs (team ranking lives in Goals → Team Performance)
 const ALL_TABS = [
   { id: 'campaigns',   label: 'Campaigns',   icon: BookOpen, shortLabel: 'Campaigns' },
   { id: 'leads',       label: 'Leads',       icon: Target,   shortLabel: 'Leads'     },
   { id: 'outreach',    label: 'Outreach',    icon: Phone,    shortLabel: 'Outreach'  },
   { id: 'map',         label: 'Map',         icon: Map,      shortLabel: 'Map'       },
-  { id: 'leaderboard', label: 'Leaderboard', icon: Trophy,   shortLabel: 'Board'     },
 ]
 
 // Derive an employee ID from the logged-in user's first name
@@ -188,7 +186,6 @@ export default function LeadGenHQ() {
         {activeTab === 'campaigns'   && <PlaysTab       employee={employee} />}
         {activeTab === 'outreach'    && <OutreachTab />}
         {activeTab === 'map'         && <MapTab         employee={employee} />}
-        {activeTab === 'leaderboard' && <LeaderboardTab employee={employee} employees={employees} />}
       </div>
     </div>
   )
