@@ -1123,17 +1123,40 @@ function HolidayForm({ date, onSave, onClose }) {
 
 // ─── Shift form modal ─────────────────────────────────────────────────────────
 
+// Studio operating hours by weekday (0=Sun … 6=Sat). Sunday closed.
+const STUDIO_HOURS = {
+  0: null,
+  1: { start: '11:00', end: '20:00' }, // Mon
+  2: { start: '11:00', end: '20:00' }, // Tue
+  3: { start: '11:00', end: '20:00' }, // Wed
+  4: { start: '11:00', end: '20:00' }, // Thu
+  5: { start: '09:00', end: '18:00' }, // Fri
+  6: { start: '09:00', end: '14:00' }, // Sat
+}
+function hoursForDate(dateStr) {
+  if (!dateStr) return null
+  return STUDIO_HOURS[new Date(dateStr + 'T00:00:00').getDay()]
+}
+
 function ShiftForm({ shift, defaultDate, users, onSaved, onClose }) {
   const isEdit = !!shift
   const [saving, setSaving] = useState(false)
   const [error,  setError]  = useState(null)
+  const initialHours = !shift ? hoursForDate(defaultDate) : null
   const [form,   setForm]   = useState({
     tsa_id:     shift?.tsa_id     || (users[0]?.id || ''),
     shift_date: shift?.shift_date || defaultDate || '',
-    start_time: shift?.start_time?.slice(0, 5) || '09:00',
-    end_time:   shift?.end_time?.slice(0, 5)   || '15:00',
+    start_time: shift?.start_time?.slice(0, 5) || initialHours?.start || '09:00',
+    end_time:   shift?.end_time?.slice(0, 5)   || initialHours?.end   || '15:00',
     notes:      shift?.notes || '',
   })
+
+  // When adding a shift, snap times to the studio's standard hours for that day
+  useEffect(() => {
+    if (isEdit) return
+    const h = hoursForDate(form.shift_date)
+    if (h) setForm(p => ({ ...p, start_time: h.start, end_time: h.end }))
+  }, [form.shift_date])
   const [suggestions, setSuggestions] = useState([])
   const [loadingSugg, setLoadingSugg] = useState(false)
 

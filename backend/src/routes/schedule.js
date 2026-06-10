@@ -226,14 +226,15 @@ router.get('/suggestions', requireRole('owner', 'manager'), async (req, res) => 
   const weekEnd = addDaysStr(weekStart, 6)
 
   try {
-    // 1. Studio members
+    // 1. Studio members — only schedulable roles (managers + TSAs, not owners)
     const { data: memberRows, error: memErr } = await db()
       .from('user_studios')
       .select('user_id, role')
       .eq('studio_id', req.studio.id)
+      .in('role', ['manager', 'tsa'])
     if (memErr) return res.status(500).json({ error: memErr.message })
     const memberIds = [...new Set((memberRows || []).map(m => m.user_id))]
-    if (!memberIds.length) return res.json([])
+    if (!memberIds.length) return res.json({ shift_hours: shiftHours, day: dayName, candidates: [] })
 
     // 2. Availability for this day-of-week
     const { data: availRows } = await db()
