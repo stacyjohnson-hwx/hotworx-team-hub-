@@ -1222,11 +1222,19 @@ function ActionItemRow({ action, onPushToTodo, onDelete }) {
   const [pushing,     setPushing]     = useState(false)
   const [pushed,      setPushed]      = useState(action.pushed_to_todo)
   const [showPicker,  setShowPicker]  = useState(false)
+  const [managers,    setManagers]    = useState([])
 
-  const handlePush = async (listTarget) => {
+  const openPicker = async () => {
+    setShowPicker(true)
+    if (!managers.length) {
+      try { const m = await apiGet('/api/todo/managers'); setManagers(Array.isArray(m) ? m : []) } catch {}
+    }
+  }
+
+  const handlePush = async (target) => {
     setPushing(true)
     setShowPicker(false)
-    try { await onPushToTodo(action.id, listTarget); setPushed(true) }
+    try { await onPushToTodo(action.id, target); setPushed(true) }
     catch {} finally { setPushing(false) }
   }
 
@@ -1245,13 +1253,15 @@ function ActionItemRow({ action, onPushToTodo, onDelete }) {
             <CheckSquare size={12} /> In To-Do
           </span>
         ) : showPicker ? (
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 flex-wrap justify-end">
             <span className="text-xs text-gray-500 mr-0.5">To:</span>
-            <button onClick={() => handlePush('manager')} disabled={pushing}
-              className="text-xs font-semibold px-2 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50">
-              Manager
-            </button>
-            <button onClick={() => handlePush('owner')} disabled={pushing}
+            {managers.map(m => (
+              <button key={m.id} onClick={() => handlePush({ list_target: 'manager', assigned_to: m.id })} disabled={pushing}
+                className="text-xs font-semibold px-2 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50">
+                {m.name}
+              </button>
+            ))}
+            <button onClick={() => handlePush({ list_target: 'owner', assigned_to: '' })} disabled={pushing}
               className="text-xs font-semibold px-2 py-1 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50">
               Owner
             </button>
@@ -1261,7 +1271,7 @@ function ActionItemRow({ action, onPushToTodo, onDelete }) {
             </button>
           </div>
         ) : (
-          <button onClick={() => setShowPicker(true)} disabled={pushing}
+          <button onClick={openPicker} disabled={pushing}
             className="flex items-center gap-1 text-xs font-medium text-red-600 hover:text-red-700 hover:bg-red-50 px-2 py-1 rounded-lg transition-colors disabled:opacity-50">
             {pushing ? <Loader size={11} className="animate-spin" /> : <ArrowRight size={11} />}
             Push to To-Do
@@ -1448,8 +1458,8 @@ function SessionsTab({ newSession }) {
     setSessions(prev => prev.filter(s => s.id !== id))
   }
 
-  const handlePushToTodo = async (actionId, listTarget) => {
-    const res = await apiPost(`/api/coaching/actions/${actionId}/push-to-todo`, { list_target: listTarget })
+  const handlePushToTodo = async (actionId, target) => {
+    const res = await apiPost(`/api/coaching/actions/${actionId}/push-to-todo`, target)
     setSessions(prev => prev.map(s => ({
       ...s,
       action_items: (s.action_items || []).map(a =>

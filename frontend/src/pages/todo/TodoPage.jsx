@@ -47,17 +47,19 @@ const AREAS = [
   { value: 'admin',  label: 'Admin'    },
 ]
 
-function TodoModal({ item, defaultList, onSave, onClose }) {
+function TodoModal({ item, defaultTarget, managers, onSave, onClose }) {
   const [form, setForm] = useState(item ? {
     title:       item.title || '',
     notes:       item.notes || '',
     due_date:    item.due_date || '',
     priority:    item.priority || 'medium',
     area:        item.area || '',
-    list_target: item.list_target || defaultList || 'manager',
+    list_target: item.list_target || 'manager',
+    assigned_to: item.assigned_to || '',
   } : {
     title: '', notes: '', due_date: '', priority: 'medium', area: '',
-    list_target: defaultList || 'manager',
+    list_target: defaultTarget?.list_target || 'manager',
+    assigned_to: defaultTarget?.assigned_to || '',
   })
   const [saving, setSaving] = useState(false)
   const [error, setError]   = useState('')
@@ -103,28 +105,31 @@ function TodoModal({ item, defaultList, onSave, onClose }) {
             </div>
           )}
 
-          {/* List selector */}
+          {/* Whose list */}
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-2">Add to List</label>
-            <div className="flex gap-2">
-              {LISTS.map(l => {
-                const Icon = l.icon
+            <label className="block text-xs font-medium text-gray-600 mb-2">Add to whose list</label>
+            <div className="flex gap-2 flex-wrap">
+              {managers.map(m => {
+                const active = form.list_target !== 'owner' && form.assigned_to === m.id
                 return (
-                  <button
-                    key={l.value}
-                    type="button"
-                    onClick={() => set('list_target', l.value)}
-                    className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg border text-sm font-semibold transition-all ${
-                      form.list_target === l.value
-                        ? `${l.light} ring-2 ring-offset-1 ring-current`
-                        : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <Icon size={14} />
-                    {l.value === 'manager' ? 'Manager' : 'Owner'}
+                  <button key={m.id} type="button"
+                    onClick={() => setForm(f => ({ ...f, list_target: 'manager', assigned_to: m.id }))}
+                    className={`flex items-center gap-1.5 py-2 px-3 rounded-lg border text-sm font-semibold transition-all ${
+                      active ? 'bg-blue-50 text-blue-700 border-blue-300 ring-2 ring-offset-1 ring-blue-400'
+                             : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
+                    }`}>
+                    <Users size={14} /> {m.name}
                   </button>
                 )
               })}
+              <button type="button"
+                onClick={() => setForm(f => ({ ...f, list_target: 'owner', assigned_to: '' }))}
+                className={`flex items-center gap-1.5 py-2 px-3 rounded-lg border text-sm font-semibold transition-all ${
+                  form.list_target === 'owner' ? 'bg-red-50 text-red-700 border-red-300 ring-2 ring-offset-1 ring-red-400'
+                                               : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
+                }`}>
+                <Shield size={14} /> Owner
+              </button>
             </div>
           </div>
 
@@ -292,9 +297,8 @@ function TodoItem({ item, onToggle, onEdit, onDelete }) {
 }
 
 // ─── List Section ─────────────────────────────────────────────────────────────
-function ListSection({ listKey, items, onAdd, onToggle, onEdit, onDelete }) {
+function ListSection({ meta, items, onAdd, onToggle, onEdit, onDelete }) {
   const [showDone, setShowDone] = useState(false)
-  const meta    = listMeta(listKey)
   const Icon    = meta.icon
   const open    = items.filter(i => i.status === 'open')
   const done    = items.filter(i => i.status === 'done')
@@ -318,7 +322,7 @@ function ListSection({ listKey, items, onAdd, onToggle, onEdit, onDelete }) {
           </div>
         </div>
         <button
-          onClick={() => onAdd(listKey)}
+          onClick={onAdd}
           className={`flex items-center gap-1.5 px-3 py-1.5 ${meta.bg} hover:opacity-90 text-white text-xs font-semibold rounded-lg transition-all shadow-sm`}
         >
           <Plus size={13} /> Add Task
@@ -381,15 +385,20 @@ function ListSection({ listKey, items, onAdd, onToggle, onEdit, onDelete }) {
 export default function TodoPage() {
   const { isOwnerOrManager } = useRole()
   const [items, setItems]     = useState([])
+  const [managers, setManagers] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState('')
-  // modal: null = closed, { defaultList } = new, item obj = edit
+  // modal: null = closed, { defaultTarget } = new, { item } = edit
   const [modal, setModal]     = useState(null)
 
   const load = useCallback(async () => {
     try {
-      const data = await apiGet('/api/todo')
+      const [data, mgrs] = await Promise.all([
+        apiGet('/api/todo'),
+        apiGet('/api/todo/managers').catch(() => []),
+      ])
       setItems(data)
+      setManagers(Array.isArray(mgrs) ? mgrs : [])
     } catch (err) {
       setError(err.message)
     } finally {
@@ -412,8 +421,29 @@ export default function TodoPage() {
     )
   }
 
-  const managerItems = items.filter(i => i.list_target === 'owner' ? false : true)  // 'manager' or null/legacy
-  const ownerItems   = items.filter(i => i.list_target === 'owner')
+  // Build a section per manager + an Owner list + an Unassigned catch-all (legacy)
+  const ownerItems  = items.filter(i => i.list_target === 'owner')
+  const unassigned  = items.filter(i => i.list_target !== 'owner' && !i.assigned_to)
+  const sections = [
+    ...managers.map(m => ({
+      key: m.id,
+      meta: { label: m.name, icon: Users, bg: 'bg-blue-600' },
+      items: items.filter(i => i.list_target !== 'owner' && i.assigned_to === m.id),
+      target: { list_target: 'manager', assigned_to: m.id },
+    })),
+    ...(unassigned.length ? [{
+      key: 'unassigned',
+      meta: { label: 'Unassigned', icon: Users, bg: 'bg-gray-500' },
+      items: unassigned,
+      target: { list_target: 'manager', assigned_to: '' },
+    }] : []),
+    {
+      key: 'owner',
+      meta: { label: 'Owner To-Do', icon: Shield, bg: 'bg-red-600' },
+      items: ownerItems,
+      target: { list_target: 'owner', assigned_to: '' },
+    },
+  ]
 
   const handleSave = (saved) => {
     setItems(prev => {
@@ -448,7 +478,7 @@ export default function TodoPage() {
           <CheckSquare size={22} className="text-red-600" /> To-Do Lists
         </h1>
         <p className="text-gray-500 text-sm mt-0.5">
-          Manager and Owner task lists — visible to both roles, add to either.
+          A list per manager plus the Owner list — visible to managers and the owner.
         </p>
       </div>
 
@@ -458,31 +488,27 @@ export default function TodoPage() {
         </div>
       )}
 
-      {/* Two list sections side by side */}
+      {/* One section per manager + Owner (+ Unassigned if any legacy items) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <ListSection
-          listKey="manager"
-          items={managerItems}
-          onAdd={(list) => setModal({ defaultList: list })}
-          onToggle={handleToggle}
-          onEdit={(item) => setModal({ item })}
-          onDelete={handleDelete}
-        />
-        <ListSection
-          listKey="owner"
-          items={ownerItems}
-          onAdd={(list) => setModal({ defaultList: list })}
-          onToggle={handleToggle}
-          onEdit={(item) => setModal({ item })}
-          onDelete={handleDelete}
-        />
+        {sections.map(sec => (
+          <ListSection
+            key={sec.key}
+            meta={sec.meta}
+            items={sec.items}
+            onAdd={() => setModal({ defaultTarget: sec.target })}
+            onToggle={handleToggle}
+            onEdit={(item) => setModal({ item })}
+            onDelete={handleDelete}
+          />
+        ))}
       </div>
 
       {/* Modal */}
       {modal !== null && (
         <TodoModal
           item={modal?.item || null}
-          defaultList={modal?.defaultList || modal?.item?.list_target || 'manager'}
+          defaultTarget={modal?.defaultTarget || { list_target: 'manager', assigned_to: '' }}
+          managers={managers}
           onSave={handleSave}
           onClose={() => setModal(null)}
         />

@@ -174,7 +174,7 @@ router.post('/actions/:id/push-to-todo', authenticate, requireStudio, requireRol
   if (action.pushed_to_todo) return res.status(400).json({ error: 'Already pushed to To-Do' })
 
   const session = action.coaching_sessions
-  const { due_date, list_target } = req.body
+  const { due_date, list_target, assigned_to } = req.body
   const target = ['manager', 'owner'].includes(list_target) ? list_target : 'manager'
 
   // Create the todo item
@@ -188,6 +188,7 @@ router.post('/actions/:id/push-to-todo', authenticate, requireStudio, requireRol
       status: 'open',
       source: 'coaching',
       list_target: target,
+      assigned_to: assigned_to || null,
       coaching_session_id: session?.id || null,
       created_by: req.user.id,
       studio_id: req.studio.id,

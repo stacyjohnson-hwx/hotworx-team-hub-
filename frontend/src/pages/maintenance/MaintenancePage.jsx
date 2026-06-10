@@ -170,8 +170,16 @@ function ResolveModal({ entry, onSave, onClose }) {
 
 function SendToTodo({ entry }) {
   const [state, setState] = useState('idle') // idle | picking | saving | done | error
+  const [managers, setManagers] = useState([])
 
-  const send = async (listTarget) => {
+  const openPicker = async () => {
+    setState('picking')
+    if (!managers.length) {
+      try { const m = await apiGet('/api/todo/managers'); setManagers(Array.isArray(m) ? m : []) } catch {}
+    }
+  }
+
+  const send = async (target) => {
     setState('saving')
     try {
       const areaNote = entry.area ? ` — ${entry.area}` : ''
@@ -180,7 +188,7 @@ function SendToTodo({ entry }) {
         notes: entry.description || null,
         priority: entry.priority || 'medium',
         source: 'manual',
-        list_target: listTarget,
+        ...target,
       })
       setState('done')
       setTimeout(() => setState('idle'), 2000)
@@ -198,12 +206,14 @@ function SendToTodo({ entry }) {
   if (state === 'error') return <span className="text-xs text-red-500 px-1">Failed</span>
   if (state === 'saving') return <span className="p-1.5"><Loader2 size={14} className="animate-spin text-gray-400" /></span>
   if (state === 'picking') return (
-    <div className="flex items-center gap-1">
-      <button onClick={() => send('manager')}
-        className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 border border-blue-200 rounded-full font-semibold hover:bg-blue-200 transition-colors">
-        Manager
-      </button>
-      <button onClick={() => send('owner')}
+    <div className="flex items-center gap-1 flex-wrap">
+      {managers.map(m => (
+        <button key={m.id} onClick={() => send({ list_target: 'manager', assigned_to: m.id })}
+          className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 border border-blue-200 rounded-full font-semibold hover:bg-blue-200 transition-colors">
+          {m.name}
+        </button>
+      ))}
+      <button onClick={() => send({ list_target: 'owner', assigned_to: '' })}
         className="text-xs px-2 py-0.5 bg-red-100 text-red-700 border border-red-200 rounded-full font-semibold hover:bg-red-200 transition-colors">
         Owner
       </button>
@@ -213,7 +223,7 @@ function SendToTodo({ entry }) {
     </div>
   )
   return (
-    <button onClick={() => setState('picking')} title="Add to Manager/Owner To-Do"
+    <button onClick={openPicker} title="Push to a manager's or owner's To-Do"
       className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
       <ListTodo size={15} />
     </button>
