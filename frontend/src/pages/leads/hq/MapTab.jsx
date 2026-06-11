@@ -1083,7 +1083,7 @@ function LocationRow({ item, type, activities, onFly, onDelete, onShowHistory, o
 }
 
 // ─── Main MapTab ──────────────────────────────────────────────────────────────
-export default function MapTab() {
+export default function MapTab({ focus } = {}) {
   const { currentStudio } = useStudio()
   const isOwnerOrManager = true // all roles can add/edit map activities and notes
   const [activities,       setActivities]       = useState(() => loadActivities())
@@ -1139,14 +1139,23 @@ export default function MapTab() {
     }
   }, [currentStudio?.id, currentStudio?.latitude, currentStudio?.longitude])
 
-  // Fetch B2B contacts from API (auto-populates the businesses list + map pins)
+  // Recenter on an externally-requested focus (e.g. "View on map" from Canvassing)
   useEffect(() => {
+    if (focus?.lat && focus?.lng) setMapCenter([parseFloat(focus.lat), parseFloat(focus.lng)])
+  }, [focus?.nonce, focus?.lat, focus?.lng])
+
+  // Fetch B2B contacts from API (auto-populates the businesses list + map pins).
+  // Studio-scoped and re-fetched whenever the active studio changes, so Madison
+  // never shows Pewaukee's apartments/businesses and vice-versa.
+  useEffect(() => {
+    if (!currentStudio?.id) return
     setB2bLoading(true)
-    apiGet('/api/b2b/contacts')
+    setB2bContacts([])
+    apiGet('/api/b2b/contacts', currentStudio.id)
       .then(data => setB2bContacts(Array.isArray(data) ? data : []))
       .catch(() => setB2bContacts([]))
       .finally(() => setB2bLoading(false))
-  }, [])
+  }, [currentStudio?.id])
 
   function handleMapClick(latlng) { setPendingCoords(latlng); setPlacingPin(false); setModal('activity') }
   function closeModal()           { setModal(null); setPendingCoords(null); setPlacingPin(false) }

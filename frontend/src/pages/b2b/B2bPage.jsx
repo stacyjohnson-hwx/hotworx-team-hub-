@@ -1372,6 +1372,7 @@ export default function B2bPage() {
   const [error, setError] = useState('')
   const [modalContact, setModalContact] = useState(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [mapFocus, setMapFocus] = useState(null)
   const [statusFilter, setStatusFilter] = useState('')
   const [industryFilter, setIndustryFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
@@ -1575,8 +1576,14 @@ export default function B2bPage() {
       {tab === 'partners' && (
         <ActivePartnersTab contacts={filteredPartners} users={users} isOwnerOrManager={isOwnerOrManager} onEdit={setModalContact} onDelete={handleDelete} onInteractionLogged={handleInteractionLogged} b2bSignals={b2bSignals} />
       )}
-      {tab === 'territory' && <TerritoryTab users={users} />}
-      {tab === 'map' && <MapTab />}
+      {tab === 'territory' && (
+        <TerritoryTab
+          users={users}
+          onViewOnMap={(z) => { setMapFocus({ lat: z.latitude, lng: z.longitude, name: z.name, nonce: Date.now() }); setTab('map') }}
+          onViewContact={(c) => { setSearchQuery(c.business_name || ''); setStatusFilter(''); setTypeFilter(''); setIndustryFilter(''); setTab('pipeline') }}
+        />
+      )}
+      {tab === 'map' && <MapTab focus={mapFocus} />}
 
       {modalContact !== null && (
         <ContactModal contact={modalContact || null} users={users} onSave={handleSave} onClose={() => setModalContact(null)} />

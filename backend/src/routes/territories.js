@@ -46,6 +46,15 @@ router.get('/', async (req, res) => {
   const today = new Date().toISOString().slice(0, 10)
   const nameMap = await nameMapFor(database, (zones || []).map(z => z.assigned_to))
 
+  // Linked B2B contacts (apartments live in both Canvassing and B2B)
+  const contactIds = [...new Set((zones || []).map(z => z.b2b_contact_id).filter(Boolean))]
+  const contactMap = {}
+  if (contactIds.length) {
+    const { data: contacts } = await database.from('b2b_contacts')
+      .select('id, business_name, phone, contact_name').in('id', contactIds)
+    for (const c of (contacts || [])) contactMap[c.id] = c
+  }
+
   const result = (zones || []).map(z => {
     const lastVisit = lastByZone[z.id] || null
     const base = lastVisit || z.created_at.slice(0, 10)
@@ -59,6 +68,7 @@ router.get('/', async (req, res) => {
     return {
       ...z,
       assigned_to_name: z.assigned_to ? (nameMap[z.assigned_to] || 'Team Member') : null,
+      b2b_contact: z.b2b_contact_id ? (contactMap[z.b2b_contact_id] || null) : null,
       last_visit: lastVisit,
       next_due: nextDue,
       status,
@@ -72,7 +82,7 @@ router.get('/', async (req, res) => {
 
 // ─── POST /api/territories ────────────────────────────────────────────────────
 router.post('/', async (req, res) => {
-  const { name, type, address, latitude, longitude, cadence_days, assigned_to, notes } = req.body
+  const { name, type, address, latitude, longitude, cadence_days, assigned_to, notes, b2b_contact_id } = req.body
   if (!name) return res.status(400).json({ error: 'name is required' })
 
   const { data, error } = await db()
@@ -87,6 +97,7 @@ router.post('/', async (req, res) => {
       cadence_days: parseInt(cadence_days) || 21,
       assigned_to: assigned_to || null,
       notes: notes || null,
+      b2b_contact_id: b2b_contact_id || null,
     })
     .select()
     .single()
@@ -97,7 +108,7 @@ router.post('/', async (req, res) => {
 
 // ─── PUT /api/territories/:id ─────────────────────────────────────────────────
 router.put('/:id', async (req, res) => {
-  const { name, type, address, latitude, longitude, cadence_days, assigned_to, notes } = req.body
+  const { name, type, address, latitude, longitude, cadence_days, assigned_to, notes, b2b_contact_id } = req.body
   const updates = { updated_at: new Date().toISOString() }
   if (name !== undefined) updates.name = name
   if (type !== undefined) updates.type = type === 'apartment' ? 'apartment' : 'neighborhood'
@@ -107,6 +118,7 @@ router.put('/:id', async (req, res) => {
   if (cadence_days !== undefined) updates.cadence_days = parseInt(cadence_days) || 21
   if (assigned_to !== undefined) updates.assigned_to = assigned_to || null
   if (notes !== undefined) updates.notes = notes || null
+  if (b2b_contact_id !== undefined) updates.b2b_contact_id = b2b_contact_id || null
 
   const { data, error } = await db()
     .from('territories').update(updates)

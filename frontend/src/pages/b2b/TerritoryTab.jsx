@@ -1,6 +1,12 @@
 import { useState, useEffect, useCallback } from 'react'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
-import { MapPin, Home, Building, Plus, X, Loader2, Check, Clock, CalendarClock, Trash2, Pencil } from 'lucide-react'
+import { MapPin, Home, Building, Plus, X, Loader2, Check, Clock, CalendarClock, Trash2, Pencil, Map as MapIcon, Phone, Link2 } from 'lucide-react'
+
+// Type badge styling so neighborhood vs apartment is unmistakable
+const TYPE_META = {
+  neighborhood: { label: 'Neighborhood', Icon: Home,     badge: 'bg-green-100 text-green-700 border-green-200', icon: 'text-green-600' },
+  apartment:    { label: 'Apartment',    Icon: Building,  badge: 'bg-blue-100 text-blue-700 border-blue-200',   icon: 'text-blue-600' },
+}
 
 const CADENCE_OPTIONS = [
   { value: 7,  label: 'Weekly' },
@@ -147,7 +153,7 @@ function ZoneModal({ zone, users, onSaved, onClose }) {
 }
 
 // ─── Territory tab ────────────────────────────────────────────────────────────
-export default function TerritoryTab({ users = [] }) {
+export default function TerritoryTab({ users = [], onViewOnMap, onViewContact }) {
   const [zones, setZones]     = useState([])
   const [loading, setLoading] = useState(true)
   const [typeFilter, setTypeFilter]   = useState('')
@@ -214,29 +220,62 @@ export default function TerritoryTab({ users = [] }) {
       <div className="space-y-2">
         {filtered.map(z => {
           const sm = statusMeta[z.status] || statusMeta.ok
-          const Icon = z.type === 'apartment' ? Building : Home
+          const tmeta = TYPE_META[z.type] || TYPE_META.neighborhood
+          const TIcon = tmeta.Icon
+          const hasCoords = z.latitude && z.longitude
           return (
-            <div key={z.id} className="bg-white border border-gray-200 rounded-xl px-4 py-3 flex items-center gap-3">
-              <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${sm.dot}`} />
-              <Icon size={16} className="text-gray-400 flex-shrink-0" />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-gray-900 truncate">{z.name}</p>
-                <p className="text-xs text-gray-500 flex items-center gap-2 flex-wrap">
-                  <span className="flex items-center gap-1"><CalendarClock size={11} /> {cadenceLabel(z.cadence_days)}</span>
-                  <span>· Last: {fmt(z.last_visit)}</span>
-                  <span>· Next: {fmt(z.next_due)}</span>
-                  {z.assigned_to_name && <span>· {z.assigned_to_name}</span>}
-                </p>
+            <div key={z.id} className="bg-white border border-gray-200 rounded-xl px-4 py-3">
+              <div className="flex items-center gap-3">
+                <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${sm.dot}`} />
+                <TIcon size={18} className={`flex-shrink-0 ${tmeta.icon}`} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-sm font-semibold text-gray-900 truncate">{z.name}</p>
+                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${tmeta.badge}`}>{tmeta.label}</span>
+                  </div>
+                  {z.address && (
+                    <p className="text-xs text-gray-500 flex items-center gap-1 mt-0.5 truncate"><MapPin size={11} className="flex-shrink-0" /> {z.address}</p>
+                  )}
+                  <p className="text-[11px] text-gray-400 flex items-center gap-2 flex-wrap mt-0.5">
+                    <span className="flex items-center gap-1"><CalendarClock size={11} /> {cadenceLabel(z.cadence_days)}</span>
+                    <span>· Last: {fmt(z.last_visit)}</span>
+                    <span>· Next: {fmt(z.next_due)}</span>
+                    {z.assigned_to_name && <span>· {z.assigned_to_name}</span>}
+                  </p>
+                </div>
+                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${sm.pill}`}>
+                  {z.status === 'overdue' ? `${z.days_overdue}d overdue` : sm.label}
+                </span>
+                <button onClick={() => setLogTarget(z)} title="Log a hit"
+                  className="flex items-center gap-1 px-2.5 py-1.5 bg-orange-50 text-orange-700 border border-orange-200 rounded-lg text-xs font-semibold hover:bg-orange-100 flex-shrink-0">
+                  <Check size={12} /> Log hit
+                </button>
+                <button onClick={() => setEditZone(z)} className="p-1.5 text-gray-400 hover:text-gray-700 flex-shrink-0"><Pencil size={13} /></button>
+                <button onClick={() => handleDelete(z.id)} className="p-1.5 text-gray-400 hover:text-red-500 flex-shrink-0"><Trash2 size={13} /></button>
               </div>
-              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${sm.pill}`}>
-                {z.status === 'overdue' ? `${z.days_overdue}d overdue` : sm.label}
-              </span>
-              <button onClick={() => setLogTarget(z)} title="Log a hit"
-                className="flex items-center gap-1 px-2.5 py-1.5 bg-orange-50 text-orange-700 border border-orange-200 rounded-lg text-xs font-semibold hover:bg-orange-100 flex-shrink-0">
-                <Check size={12} /> Log hit
-              </button>
-              <button onClick={() => setEditZone(z)} className="p-1.5 text-gray-400 hover:text-gray-700 flex-shrink-0"><Pencil size={13} /></button>
-              <button onClick={() => handleDelete(z.id)} className="p-1.5 text-gray-400 hover:text-red-500 flex-shrink-0"><Trash2 size={13} /></button>
+              {/* Map + B2B links */}
+              {(hasCoords || z.b2b_contact) && (
+                <div className="flex items-center gap-2 mt-2 pl-6 flex-wrap">
+                  {hasCoords && onViewOnMap && (
+                    <button onClick={() => onViewOnMap(z)}
+                      className="flex items-center gap-1 text-[11px] font-semibold text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 hover:bg-gray-100">
+                      <MapIcon size={11} /> View on map
+                    </button>
+                  )}
+                  {z.b2b_contact && (
+                    <button onClick={() => onViewContact && onViewContact(z.b2b_contact)}
+                      className="flex items-center gap-1 text-[11px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-2 py-1 hover:bg-blue-100">
+                      <Link2 size={11} /> B2B contact
+                    </button>
+                  )}
+                  {z.b2b_contact?.phone && (
+                    <a href={`tel:${z.b2b_contact.phone}`}
+                      className="flex items-center gap-1 text-[11px] font-medium text-green-700 bg-green-50 border border-green-200 rounded-lg px-2 py-1 hover:bg-green-100">
+                      <Phone size={11} /> {z.b2b_contact.phone}
+                    </a>
+                  )}
+                </div>
+              )}
             </div>
           )
         })}
