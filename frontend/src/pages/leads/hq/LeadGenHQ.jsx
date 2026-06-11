@@ -1,23 +1,26 @@
 import { useState, useEffect } from 'react'
-import { Target, BookOpen, ChevronDown, Flame, Zap, Phone } from 'lucide-react'
+import { Target, BookOpen, ChevronDown, Flame, Zap, Phone, Megaphone } from 'lucide-react'
 import { EMPLOYEES, getRank } from '../data/mockData'
 import { useAuth } from '@/contexts/AuthContext'
 import MissionsTab    from './MissionsTab'
 import PlaysTab       from './PlaysTab'
 import OutreachTab    from '../OutreachTab'
+import MarketingHub   from '@/pages/marketing/MarketingHub'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-// TSAs: Leads, Outreach (Map now lives in the B2B section)
+// TSAs: Marketing, Leads, Outreach
 const TSA_TABS = [
-  { id: 'leads',     label: 'Leads',    icon: Target,   shortLabel: 'Leads'    },
-  { id: 'outreach',  label: 'Outreach', icon: Phone,    shortLabel: 'Outreach' },
+  { id: 'marketing', label: 'Marketing', icon: Megaphone, shortLabel: 'Marketing' },
+  { id: 'leads',     label: 'Leads',     icon: Target,    shortLabel: 'Leads'     },
+  { id: 'outreach',  label: 'Outreach',  icon: Phone,     shortLabel: 'Outreach'  },
 ]
 
-// Managers/Owners: Campaigns + the TSA tabs
+// Managers/Owners: Marketing + Campaigns + the TSA tabs
 const ALL_TABS = [
-  { id: 'campaigns',   label: 'Campaigns',   icon: BookOpen, shortLabel: 'Campaigns' },
-  { id: 'leads',       label: 'Leads',       icon: Target,   shortLabel: 'Leads'     },
-  { id: 'outreach',    label: 'Outreach',    icon: Phone,    shortLabel: 'Outreach'  },
+  { id: 'marketing',   label: 'Marketing',   icon: Megaphone, shortLabel: 'Marketing' },
+  { id: 'campaigns',   label: 'Campaigns',   icon: BookOpen,  shortLabel: 'Campaigns' },
+  { id: 'leads',       label: 'Leads',       icon: Target,    shortLabel: 'Leads'     },
+  { id: 'outreach',    label: 'Outreach',    icon: Phone,     shortLabel: 'Outreach'  },
 ]
 
 // Derive an employee ID from the logged-in user's first name
@@ -80,7 +83,7 @@ export default function LeadGenHQ() {
 
   const defaultTab = saved.activeTab && tabs.find(t => t.id === saved.activeTab)
     ? saved.activeTab
-    : 'leads'
+    : 'marketing'
 
   const [activeTab,       setActiveTab]       = useState(defaultTab)
   const [activeEmployeeId, setActiveEmployeeId] = useState(
@@ -179,6 +182,7 @@ export default function LeadGenHQ() {
 
       {/* ── Tab Content ───────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto" onClick={() => setShowEmployeePicker(false)}>
+        {activeTab === 'marketing'   && <MarketingHub />}
         {activeTab === 'leads'       && <MissionsTab    employee={employee} onPointsEarned={handlePointsEarned} onStreakUpdate={handleStreakUpdate} />}
         {activeTab === 'campaigns'   && <PlaysTab       employee={employee} />}
         {activeTab === 'outreach'    && <OutreachTab />}
