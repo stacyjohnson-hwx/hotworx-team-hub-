@@ -139,4 +139,101 @@ router.delete('/tasks/:id', requireRole('owner', 'manager'), async (req, res) =>
   res.status(204).end()
 })
 
+// ─── Content Library ──────────────────────────────────────────────────────────
+
+async function staffNameMap(database, ids) {
+  const map = {}
+  for (const id of [...new Set(ids.filter(Boolean))]) {
+    const { data } = await database.auth.admin.getUserById(id)
+    map[id] = data?.user?.user_metadata?.full_name || data?.user?.email?.split('@')[0] || 'Team Member'
+  }
+  return map
+}
+
+// GET /api/marketing/content?category=&type=&staff_id=&status=&ready=
+router.get('/content', async (req, res) => {
+  const { category, type, staff_id, status, ready } = req.query
+  const database = db()
+  let q = database.from('marketing_content_assets').select('*')
+    .eq('studio_id', req.studio.id)
+    .neq('status', 'archived')
+    .order('uploaded_at', { ascending: false })
+  if (category) q = q.eq('category', category)
+  if (type)     q = q.eq('file_type', type)
+  if (staff_id) q = q.eq('staff_id', staff_id)
+  if (status)   q = q.eq('status', status)
+  if (ready === 'true') q = q.eq('ready_for_soci', true)
+
+  const { data, error } = await q
+  if (error) return res.status(500).json({ error: error.message })
+
+  const names = await staffNameMap(database, (data || []).map(a => a.staff_id))
+  const taskIds = [...new Set((data || []).map(a => a.task_id).filter(Boolean))]
+  let taskMap = {}
+  if (taskIds.length) {
+    const { data: tasks } = await database.from('marketing_tasks').select('id, title').in('id', taskIds)
+    for (const t of (tasks || [])) taskMap[t.id] = t.title
+  }
+  res.json((data || []).map(a => ({
+    ...a,
+    staff_name: names[a.staff_id] || 'Team Member',
+    task_title: a.task_id ? (taskMap[a.task_id] || null) : null,
+  })))
+})
+
+// POST /api/marketing/content — register an uploaded asset (after storage upload)
+router.post('/content', async (req, res) => {
+  const { file_url, file_path, file_type, category, member_name, caption, task_id, completion_id } = req.body
+  const { data, error } = await db()
+    .from('marketing_content_assets')
+    .insert({
+      studio_id: req.studio.id,
+      staff_id: req.user.id,
+      task_id: task_id || null,
+      completion_id: completion_id || null,
+      file_url: file_url || null,
+      file_path: file_path || null,
+      file_type: file_type || 'photo',
+      category: category || 'member_photos',
+      member_name: member_name || null,
+      caption: caption || null,
+    })
+    .select().single()
+  if (error) return res.status(500).json({ error: error.message })
+  res.status(201).json(data)
+})
+
+// PUT /api/marketing/content/:id — manager: approve/flag/archive, ready-for-soci, edits
+router.put('/content/:id', requireRole('owner', 'manager'), async (req, res) => {
+  const { status, ready_for_soci, posted_link, category, member_name, caption } = req.body
+  const updates = {}
+  if (status !== undefined)         updates.status = status
+  if (ready_for_soci !== undefined) updates.ready_for_soci = !!ready_for_soci
+  if (posted_link !== undefined)    updates.posted_link = posted_link || null
+  if (category !== undefined)       updates.category = category
+  if (member_name !== undefined)    updates.member_name = member_name || null
+  if (caption !== undefined)        updates.caption = caption || null
+
+  const { data, error } = await db()
+    .from('marketing_content_assets').update(updates)
+    .eq('id', req.params.id).eq('studio_id', req.studio.id)
+    .select().single()
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data)
+})
+
+// DELETE /api/marketing/content/:id — manager (also removes the storage file)
+router.delete('/content/:id', requireRole('owner', 'manager'), async (req, res) => {
+  const database = db()
+  const { data: asset } = await database.from('marketing_content_assets')
+    .select('file_path').eq('id', req.params.id).eq('studio_id', req.studio.id).maybeSingle()
+  if (asset?.file_path) {
+    await database.storage.from('marketing-content').remove([asset.file_path]).catch(() => {})
+  }
+  const { error } = await database.from('marketing_content_assets')
+    .delete().eq('id', req.params.id).eq('studio_id', req.studio.id)
+  if (error) return res.status(500).json({ error: error.message })
+  res.status(204).end()
+})
+
 module.exports = router
