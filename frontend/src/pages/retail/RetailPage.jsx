@@ -46,7 +46,7 @@ export default function RetailPage() {
     setLoading(true)
     try {
       const promises = [
-        apiGet('/api/retail/skus', currentStudio.id),
+        apiGet('/api/retail/skus?active=true', currentStudio.id),
         apiGet('/api/retail/categories', currentStudio.id),
         apiGet('/api/retail/vendors', currentStudio.id),
       ]
