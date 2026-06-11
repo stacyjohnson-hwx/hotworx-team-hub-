@@ -94,6 +94,16 @@ function CompetitorCard({ comp, isOwnerOrManager, onEdit, onDelete, onCompare, o
               <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${tm.color}`}>{tm.label}</span>
             </div>
             <p className="text-xs text-gray-500 mt-0.5">{comp.city}</p>
+            {comp.rating != null && (
+              <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                <Stars value={comp.rating} size={12} />
+                <span className="text-xs font-semibold text-gray-700">{comp.rating}</span>
+                {comp.review_count != null && <span className="text-[11px] text-gray-400">({Number(comp.review_count).toLocaleString()} reviews)</span>}
+                {comp.reviews_updated_at && (
+                  <span className="text-[10px] text-gray-300">· as of {new Date(comp.reviews_updated_at + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</span>
+                )}
+              </div>
+            )}
           </div>
           {isOwnerOrManager && (
             <div className="flex items-center gap-0.5 flex-shrink-0">
@@ -643,6 +653,7 @@ function EditCompetitorModal({ competitor, onClose, onSaved }) {
   const [form, setForm] = useState(competitor || {
     name:'', type:'gym', city:'', address:'', phone:'', website:'', instagram:'',
     logo_url:'', description:'', price_monthly:'', price_drop_in:'', price_trial:'',
+    rating:'', review_count:'', reviews_updated_at:'',
     their_strengths:[], our_advantages:[], notes:'',
   })
   const [saving,      setSaving]    = useState(false)
@@ -674,6 +685,9 @@ function EditCompetitorModal({ competitor, onClose, onSaved }) {
       const payload = { ...form,
         price_monthly: form.price_monthly ? parseFloat(form.price_monthly) : null,
         price_drop_in: form.price_drop_in ? parseFloat(form.price_drop_in) : null,
+        rating: form.rating ? parseFloat(form.rating) : null,
+        review_count: form.review_count ? parseInt(form.review_count) : null,
+        reviews_updated_at: form.reviews_updated_at || null,
         their_strengths: typeof form.their_strengths === 'string' ? form.their_strengths.split('\n').filter(Boolean) : form.their_strengths,
         our_advantages: typeof form.our_advantages === 'string' ? form.our_advantages.split('\n').filter(Boolean) : form.our_advantages,
       }
@@ -730,6 +744,9 @@ function EditCompetitorModal({ competitor, onClose, onSaved }) {
             <div><label className="block text-xs font-semibold text-gray-700 mb-1">Monthly Price $</label><input type="number" className={inp} value={form.price_monthly} onChange={e => set('price_monthly',e.target.value)} /></div>
             <div><label className="block text-xs font-semibold text-gray-700 mb-1">Drop-In $</label><input type="number" className={inp} value={form.price_drop_in} onChange={e => set('price_drop_in',e.target.value)} /></div>
             <div className="col-span-2"><label className="block text-xs font-semibold text-gray-700 mb-1">Trial Offer</label><input className={inp} value={form.price_trial} onChange={e => set('price_trial',e.target.value)} placeholder="First class free" /></div>
+            <div><label className="block text-xs font-semibold text-gray-700 mb-1">Rating (0–5)</label><input type="number" step="0.1" min="0" max="5" className={inp} value={form.rating} onChange={e => set('rating',e.target.value)} placeholder="4.6" /></div>
+            <div><label className="block text-xs font-semibold text-gray-700 mb-1"># Reviews</label><input type="number" className={inp} value={form.review_count} onChange={e => set('review_count',e.target.value)} placeholder="190" /></div>
+            <div className="col-span-2"><label className="block text-xs font-semibold text-gray-700 mb-1">Rating as of</label><input type="date" className={inp} value={form.reviews_updated_at || ''} onChange={e => set('reviews_updated_at',e.target.value)} /></div>
             <div className="col-span-2"><label className="block text-xs font-semibold text-gray-700 mb-1">Description</label><textarea rows={2} className={`${inp} resize-none`} value={form.description} onChange={e => set('description',e.target.value)} /></div>
             <div className="col-span-2"><label className="block text-xs font-semibold text-gray-700 mb-1">Their Strengths (one per line)</label><textarea rows={3} className={`${inp} resize-none`} value={Array.isArray(form.their_strengths) ? form.their_strengths.join('\n') : form.their_strengths} onChange={e => set('their_strengths',e.target.value)} /></div>
             <div className="col-span-2"><label className="block text-xs font-semibold text-gray-700 mb-1">Why HOTWORX Wins (one per line)</label><textarea rows={3} className={`${inp} resize-none`} value={Array.isArray(form.our_advantages) ? form.our_advantages.join('\n') : form.our_advantages} onChange={e => set('our_advantages',e.target.value)} /></div>
