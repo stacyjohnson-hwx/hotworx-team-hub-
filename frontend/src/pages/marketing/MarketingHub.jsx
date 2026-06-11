@@ -8,6 +8,7 @@ import {
   ListTodo, Images, X, Download, Trash2, CheckCheck, Send, Play, Quote,
   Trophy, Flame, RefreshCw, Gift, Check,
   BarChart3, Settings, Plus, Pencil, Copy, Flag, Archive, Star,
+  Lightbulb, Power, ExternalLink,
 } from 'lucide-react'
 
 const CATEGORY_STYLE = {
@@ -569,30 +570,127 @@ function TaskManager() {
 
   const onSaved = () => { setModal(null); load() }
   const duplicate = async (t) => { await apiPost('/api/marketing/tasks', { ...t, title: `${t.title} (copy)` }); load() }
-  const del = async (id) => { if (!confirm('Delete this task?')) return; await apiDelete(`/api/marketing/tasks/${id}`); setTasks(prev => prev.filter(t => t.id !== id)) }
+  const toggleActive = async (t) => { const u = await apiPut(`/api/marketing/tasks/${t.id}`, { active: !t.active }); setTasks(prev => prev.map(x => x.id === t.id ? u : x)) }
 
+  const activeCount = tasks.filter(t => t.active).length
   if (loading) return <div className="flex items-center justify-center py-12"><Loader2 size={22} className="animate-spin text-gray-300" /></div>
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <p className="text-xs text-gray-500">{tasks.length} active task{tasks.length !== 1 ? 's' : ''}.</p>
+        <p className="text-xs text-gray-500">{activeCount} active{tasks.length - activeCount > 0 ? ` · ${tasks.length - activeCount} inactive` : ''}.</p>
         <button onClick={() => setModal(false)} className="flex items-center gap-1.5 text-xs font-semibold text-white bg-[#E8611A] rounded-lg px-3 py-1.5 hover:bg-orange-600"><Plus size={13} /> New task</button>
       </div>
       <div className="space-y-2">
         {tasks.map(t => (
-          <div key={t.id} className="bg-white border border-gray-200 rounded-xl px-4 py-3 flex items-center gap-3">
+          <div key={t.id} className={`bg-white border rounded-xl px-4 py-3 flex items-center gap-3 ${t.active ? 'border-gray-200' : 'border-gray-200 opacity-50'}`}>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-gray-900 truncate">{t.title}</p>
+              <p className="text-sm font-semibold text-gray-900 truncate flex items-center gap-2">
+                {t.title}
+                {!t.active && <span className="text-[9px] font-bold bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded-full">INACTIVE</span>}
+                {t.type === 'seasonal' && <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">SEASONAL</span>}
+              </p>
               <p className="text-[10px] text-gray-400 capitalize">{t.type.replace('_', '-')} · {t.category} · {ROLE_TARGETS.find(r => r.v === t.role_target)?.l || t.role_target} · {t.cadence}</p>
             </div>
             <span className="text-xs font-bold text-[#E8611A] flex-shrink-0">+{t.point_value}</span>
+            <button onClick={() => toggleActive(t)} className={`p-1.5 ${t.active ? 'text-green-500 hover:text-gray-500' : 'text-gray-300 hover:text-green-500'}`} title={t.active ? 'Deactivate' : 'Activate'}><Power size={14} /></button>
             <button onClick={() => setModal(t)} className="p-1.5 text-gray-400 hover:text-gray-700" title="Edit"><Pencil size={13} /></button>
             <button onClick={() => duplicate(t)} className="p-1.5 text-gray-400 hover:text-gray-700" title="Duplicate"><Copy size={13} /></button>
-            <button onClick={() => del(t.id)} className="p-1.5 text-gray-400 hover:text-red-500" title="Delete"><Trash2 size={13} /></button>
           </div>
         ))}
       </div>
       {modal !== null && <TaskEditModal task={modal || null} onSaved={onSaved} onClose={() => setModal(null)} />}
+    </div>
+  )
+}
+
+// ─── Idea Board (Phase 5) ─────────────────────────────────────────────────────
+const IDEA_CATS = [
+  { v: 'social', l: 'Social' }, { v: 'reel', l: 'Reel' }, { v: 'tiktok', l: 'TikTok' },
+  { v: 'campaign', l: 'Campaign' }, { v: 'other', l: 'Other' },
+]
+const IDEA_STATUS = {
+  pending:            { label: 'New',          cls: 'bg-gray-100 text-gray-600' },
+  reviewed:           { label: 'Reviewed',     cls: 'bg-blue-100 text-blue-700' },
+  approved:           { label: 'Approved',     cls: 'bg-green-100 text-green-700' },
+  added_to_calendar:  { label: 'Added to SOCi', cls: 'bg-[#E8611A]/10 text-[#E8611A]' },
+  dismissed:          { label: 'Dismissed',    cls: 'bg-gray-100 text-gray-400' },
+}
+const IDEA_STATUS_ORDER = ['pending', 'reviewed', 'approved', 'added_to_calendar', 'dismissed']
+
+function IdeaBoard() {
+  const { isOwnerOrManager, userId } = useRole()
+  const [ideas, setIdeas] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [form, setForm] = useState({ text: '', category: 'social', reference_url: '' })
+  const [saving, setSaving] = useState(false)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try { setIdeas(await apiGet('/api/marketing/ideas')) } catch {} finally { setLoading(false) }
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  const submit = async () => {
+    if (!form.text.trim()) return
+    setSaving(true)
+    try {
+      const created = await apiPost('/api/marketing/ideas', form)
+      setIdeas(prev => [{ ...created, staff_name: 'You' }, ...prev])
+      setForm({ text: '', category: 'social', reference_url: '' })
+    } catch {} finally { setSaving(false) }
+  }
+  const setStatus = async (id, status) => { try { const u = await apiPut(`/api/marketing/ideas/${id}`, { status }); setIdeas(prev => prev.map(i => i.id === id ? { ...i, ...u } : i)) } catch {} }
+  const del = async (id) => { try { await apiDelete(`/api/marketing/ideas/${id}`); setIdeas(prev => prev.filter(i => i.id !== id)) } catch {} }
+  const inp = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E8611A]/30 focus:border-[#E8611A]'
+
+  return (
+    <div>
+      {/* Submit */}
+      <div className="bg-white border border-gray-200 rounded-xl p-3 mb-4 space-y-2">
+        <textarea rows={2} className={`${inp} resize-none`} placeholder="Share a content idea, caption, or trend you spotted…" value={form.text} onChange={e => setForm(f => ({ ...f, text: e.target.value }))} />
+        <div className="flex gap-2">
+          <select className={`${inp} w-auto`} value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}>{IDEA_CATS.map(c => <option key={c.v} value={c.v}>{c.l}</option>)}</select>
+          <input className={`${inp} flex-1`} placeholder="Reference link (optional)" value={form.reference_url} onChange={e => setForm(f => ({ ...f, reference_url: e.target.value }))} />
+          <button onClick={submit} disabled={saving || !form.text.trim()} className="px-4 py-2 bg-[#E8611A] hover:bg-orange-600 text-white text-sm font-bold rounded-lg disabled:opacity-50 flex items-center gap-1.5">{saving ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Submit</button>
+        </div>
+      </div>
+
+      {loading ? <div className="flex items-center justify-center py-10"><Loader2 size={22} className="animate-spin text-gray-300" /></div>
+        : ideas.length === 0 ? <div className="text-center py-10 text-gray-400"><Lightbulb size={26} className="mx-auto mb-2 opacity-30" /><p className="text-sm">No ideas yet — be the first to drop one.</p></div>
+        : (
+          <div className="space-y-2">
+            {ideas.map(i => {
+              const st = IDEA_STATUS[i.status] || IDEA_STATUS.pending
+              const canDelete = isOwnerOrManager || i.staff_id === userId
+              return (
+                <div key={i.id} className={`bg-white border border-gray-200 rounded-xl p-3 ${i.status === 'dismissed' ? 'opacity-60' : ''}`}>
+                  <div className="flex items-start gap-2">
+                    <Lightbulb size={15} className="text-[#E8611A] flex-shrink-0 mt-0.5" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm text-gray-800 leading-snug">{i.text}</p>
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        <span className="text-[10px] text-gray-400 capitalize">{i.category}</span>
+                        <span className="text-[10px] text-gray-300">· {i.staff_name}</span>
+                        {i.reference_url && <a href={i.reference_url} target="_blank" rel="noreferrer" className="text-[10px] text-blue-500 flex items-center gap-0.5"><ExternalLink size={9} /> link</a>}
+                      </div>
+                    </div>
+                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${st.cls}`}>{st.label}</span>
+                  </div>
+                  {(isOwnerOrManager || canDelete) && (
+                    <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-50 flex-wrap">
+                      {isOwnerOrManager && (
+                        <select value={i.status} onChange={e => setStatus(i.id, e.target.value)} className="text-[11px] border border-gray-200 rounded-lg px-2 py-1 bg-white text-gray-600">
+                          {IDEA_STATUS_ORDER.map(s => <option key={s} value={s}>{IDEA_STATUS[s].label}</option>)}
+                        </select>
+                      )}
+                      {canDelete && <button onClick={() => del(i.id)} className="ml-auto p-1 text-gray-300 hover:text-red-500"><Trash2 size={13} /></button>}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
     </div>
   )
 }
@@ -604,6 +702,7 @@ export default function MarketingHub() {
   const TABS = [
     { id: 'tasks',       label: 'My Tasks',        icon: ListTodo },
     { id: 'library',     label: 'Content Library', icon: Images },
+    { id: 'ideas',       label: 'Ideas',           icon: Lightbulb },
     { id: 'leaderboard', label: 'Leaderboard',     icon: Trophy },
     ...(isOwnerOrManager ? [
       { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
@@ -630,6 +729,7 @@ export default function MarketingHub() {
       </div>
       {sub === 'tasks' && <MyTasks />}
       {sub === 'library' && <ContentLibrary />}
+      {sub === 'ideas' && <IdeaBoard />}
       {sub === 'leaderboard' && <Leaderboard />}
       {sub === 'dashboard' && isOwnerOrManager && <Dashboard />}
       {sub === 'review' && isOwnerOrManager && <ReviewQueue />}

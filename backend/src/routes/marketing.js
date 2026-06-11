@@ -376,10 +376,10 @@ router.get('/dashboard', requireRole('owner', 'manager'), async (req, res) => {
   })
 })
 
-// GET /api/marketing/tasks/all — manager: every task (incl. point values) for management
+// GET /api/marketing/tasks/all — manager: every task incl. inactive (to activate/deactivate)
 router.get('/tasks/all', requireRole('owner', 'manager'), async (req, res) => {
   const { data, error } = await db().from('marketing_tasks')
-    .select('*').eq('studio_id', req.studio.id).eq('active', true).order('type').order('created_at')
+    .select('*').eq('studio_id', req.studio.id).order('type').order('created_at')
   if (error) return res.status(500).json({ error: error.message })
   res.json(data)
 })
@@ -391,6 +391,53 @@ router.post('/content/batch-approve', requireRole('owner', 'manager'), async (re
     .eq('studio_id', req.studio.id).eq('status', 'pending')
   if (error) return res.status(500).json({ error: error.message })
   res.json({ ok: true })
+})
+
+// ─── Idea submissions (Phase 5) ───────────────────────────────────────────────
+
+// GET /api/marketing/ideas — shared idea board for the studio
+router.get('/ideas', async (req, res) => {
+  const database = db()
+  const { data, error } = await database.from('marketing_ideas')
+    .select('*').eq('studio_id', req.studio.id).order('submitted_at', { ascending: false })
+  if (error) return res.status(500).json({ error: error.message })
+  const names = await staffNameMap(database, (data || []).map(i => i.staff_id))
+  res.json((data || []).map(i => ({ ...i, staff_name: names[i.staff_id] || 'Team Member' })))
+})
+
+// POST /api/marketing/ideas — any staff can submit
+router.post('/ideas', async (req, res) => {
+  const { text, category, reference_url } = req.body
+  if (!text || !text.trim()) return res.status(400).json({ error: 'idea text is required' })
+  const { data, error } = await db().from('marketing_ideas')
+    .insert({
+      studio_id: req.studio.id, staff_id: req.user.id,
+      text: text.trim(), category: category || 'other', reference_url: reference_url || null,
+    })
+    .select().single()
+  if (error) return res.status(500).json({ error: error.message })
+  res.status(201).json(data)
+})
+
+// PUT /api/marketing/ideas/:id — manager: set review status
+router.put('/ideas/:id', requireRole('owner', 'manager'), async (req, res) => {
+  const { status } = req.body
+  const { data, error } = await db().from('marketing_ideas')
+    .update({ status }).eq('id', req.params.id).eq('studio_id', req.studio.id)
+    .select().single()
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data)
+})
+
+// DELETE /api/marketing/ideas/:id — manager or the submitter
+router.delete('/ideas/:id', async (req, res) => {
+  const database = db()
+  const isManager = req.role === 'owner' || req.role === 'manager'
+  let q = database.from('marketing_ideas').delete().eq('id', req.params.id).eq('studio_id', req.studio.id)
+  if (!isManager) q = q.eq('staff_id', req.user.id)
+  const { error } = await q
+  if (error) return res.status(500).json({ error: error.message })
+  res.status(204).end()
 })
 
 module.exports = router
