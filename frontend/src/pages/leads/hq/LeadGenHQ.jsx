@@ -1,27 +1,19 @@
 import { useState, useEffect } from 'react'
-import { Target, BookOpen, ChevronDown, Flame, Zap, Phone, Megaphone } from 'lucide-react'
+import { ChevronDown, Flame, Zap, Megaphone, Sprout } from 'lucide-react'
 import { EMPLOYEES, getRank } from '../data/mockData'
 import { useAuth } from '@/contexts/AuthContext'
-import MissionsTab    from './MissionsTab'
-import PlaysTab       from './PlaysTab'
-import OutreachTab    from '../OutreachTab'
 import MarketingHub   from '@/pages/marketing/MarketingHub'
+import LeadGenHub     from '@/pages/leadgen/LeadGenHub'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-// TSAs: Marketing, Leads, Outreach
+// Two clean hubs for everyone: Marketing and Lead Gen.
+// (Lead Gen folds in the old Campaigns/Plays as its Idea Bank, the daily Leads
+//  tasks as "My Lead Gen", and Outreach as a sub-tab.)
 const TSA_TABS = [
   { id: 'marketing', label: 'Marketing', icon: Megaphone, shortLabel: 'Marketing' },
-  { id: 'leads',     label: 'Leads',     icon: Target,    shortLabel: 'Leads'     },
-  { id: 'outreach',  label: 'Outreach',  icon: Phone,     shortLabel: 'Outreach'  },
+  { id: 'leadgen',   label: 'Lead Gen',  icon: Sprout,    shortLabel: 'Lead Gen'  },
 ]
-
-// Managers/Owners: Marketing + Campaigns + the TSA tabs
-const ALL_TABS = [
-  { id: 'marketing',   label: 'Marketing',   icon: Megaphone, shortLabel: 'Marketing' },
-  { id: 'campaigns',   label: 'Campaigns',   icon: BookOpen,  shortLabel: 'Campaigns' },
-  { id: 'leads',       label: 'Leads',       icon: Target,    shortLabel: 'Leads'     },
-  { id: 'outreach',    label: 'Outreach',    icon: Phone,     shortLabel: 'Outreach'  },
-]
+const ALL_TABS = TSA_TABS
 
 // Derive an employee ID from the logged-in user's first name
 function getEmployeeIdFromProfile(profile) {
@@ -183,9 +175,7 @@ export default function LeadGenHQ() {
       {/* ── Tab Content ───────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto" onClick={() => setShowEmployeePicker(false)}>
         {activeTab === 'marketing'   && <MarketingHub />}
-        {activeTab === 'leads'       && <MissionsTab    employee={employee} onPointsEarned={handlePointsEarned} onStreakUpdate={handleStreakUpdate} />}
-        {activeTab === 'campaigns'   && <PlaysTab       employee={employee} />}
-        {activeTab === 'outreach'    && <OutreachTab />}
+        {activeTab === 'leadgen'     && <LeadGenHub />}
       </div>
     </div>
   )
