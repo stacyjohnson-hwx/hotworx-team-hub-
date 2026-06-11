@@ -319,4 +319,78 @@ router.put('/settings', requireRole('owner', 'manager'), async (req, res) => {
   res.json(data)
 })
 
+// ─── Manager dashboard + content review (Phase 4) ─────────────────────────────
+
+// GET /api/marketing/dashboard — weekly manager metrics
+router.get('/dashboard', requireRole('owner', 'manager'), async (req, res) => {
+  const database = db()
+  const wkStart = weekStartStr()
+  const [{ data: members }, { data: inactive }, { data: tasks }, { data: completions }, { data: assets }] = await Promise.all([
+    database.from('user_studios').select('user_id, role').eq('studio_id', req.studio.id),
+    database.from('user_profiles').select('id').eq('is_active', false),
+    database.from('marketing_tasks').select('id, title, role_target, point_value').eq('studio_id', req.studio.id).eq('active', true),
+    database.from('marketing_task_completions').select('task_id, staff_id, points_awarded, completion_date, completed_at, task:marketing_tasks(title)').eq('studio_id', req.studio.id).gte('completion_date', wkStart),
+    database.from('marketing_content_assets').select('id, staff_id, status, uploaded_at').eq('studio_id', req.studio.id).neq('status', 'archived'),
+  ])
+
+  const inactiveIds = new Set((inactive || []).map(r => r.id))
+  const memberList = (members || []).filter(m => !inactiveIds.has(m.user_id))
+  const compl = completions || []
+
+  // Completion rate = completed (staff,task) pairs / eligible (staff,task) pairs this week
+  let expectedPairs = 0
+  for (const t of (tasks || [])) {
+    expectedPairs += memberList.filter(m => {
+      if (!t.role_target || t.role_target === 'all') return true
+      if (t.role_target === 'manager') return m.role === 'owner' || m.role === 'manager'
+      if (t.role_target === 'tsa' || t.role_target === 'staff') return m.role === 'tsa'
+      return true
+    }).length
+  }
+  const donePairs = new Set(compl.map(c => `${c.task_id}|${c.staff_id}`)).size
+  const completionRate = expectedPairs > 0 ? Math.round((donePairs / expectedPairs) * 100) : 0
+
+  const reviewsRequested  = compl.filter(c => (c.task?.title || '').toLowerCase().includes('google review')).length
+  const referralsRequested = compl.filter(c => (c.task?.title || '').toLowerCase().includes('referral')).length
+  const contentThisWeek = (assets || []).filter(a => (a.uploaded_at || '').slice(0, 10) >= wkStart).length
+  const pendingReview = (assets || []).filter(a => a.status === 'pending').length
+
+  // Top performer this week
+  const pts = {}
+  for (const c of compl) pts[c.staff_id] = (pts[c.staff_id] || 0) + (c.points_awarded || 0)
+  let topId = null, topPts = 0
+  for (const [id, p] of Object.entries(pts)) if (p > topPts) { topPts = p; topId = id }
+  let topPerformer = null
+  if (topId) {
+    const names = await staffNameMap(database, [topId])
+    topPerformer = { name: names[topId], points: topPts }
+  }
+
+  res.json({
+    completion_rate: completionRate,
+    content_this_week: contentThisWeek,
+    reviews_requested: reviewsRequested,
+    referrals_requested: referralsRequested,
+    pending_review: pendingReview,
+    top_performer: topPerformer,
+  })
+})
+
+// GET /api/marketing/tasks/all — manager: every task (incl. point values) for management
+router.get('/tasks/all', requireRole('owner', 'manager'), async (req, res) => {
+  const { data, error } = await db().from('marketing_tasks')
+    .select('*').eq('studio_id', req.studio.id).eq('active', true).order('type').order('created_at')
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data)
+})
+
+// POST /api/marketing/content/batch-approve — approve all pending assets
+router.post('/content/batch-approve', requireRole('owner', 'manager'), async (req, res) => {
+  const { error } = await db().from('marketing_content_assets')
+    .update({ status: 'approved' })
+    .eq('studio_id', req.studio.id).eq('status', 'pending')
+  if (error) return res.status(500).json({ error: error.message })
+  res.json({ ok: true })
+})
+
 module.exports = router

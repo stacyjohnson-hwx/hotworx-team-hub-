@@ -7,6 +7,7 @@ import {
   CheckCircle2, Circle, Loader2, Camera, Megaphone, ChevronDown, ChevronUp,
   ListTodo, Images, X, Download, Trash2, CheckCheck, Send, Play, Quote,
   Trophy, Flame, RefreshCw, Gift, Check,
+  BarChart3, Settings, Plus, Pencil, Copy, Flag, Archive, Star,
 } from 'lucide-react'
 
 const CATEGORY_STYLE = {
@@ -405,13 +406,210 @@ function Leaderboard() {
   )
 }
 
+// ─── Manager Dashboard ────────────────────────────────────────────────────────
+function MetricCard({ label, value, sub, icon: Icon, color = 'text-gray-900' }) {
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl p-4">
+      <div className="flex items-center gap-2 mb-1">
+        <Icon size={14} className="text-gray-400" />
+        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">{label}</p>
+      </div>
+      <p className={`text-2xl font-black ${color}`}>{value}</p>
+      {sub && <p className="text-[11px] text-gray-400 mt-0.5">{sub}</p>}
+    </div>
+  )
+}
+
+function Dashboard() {
+  const [d, setD] = useState(null)
+  const [loading, setLoading] = useState(true)
+  useEffect(() => { apiGet('/api/marketing/dashboard').then(setD).catch(() => {}).finally(() => setLoading(false)) }, [])
+  if (loading) return <div className="flex items-center justify-center py-12"><Loader2 size={22} className="animate-spin text-gray-300" /></div>
+  if (!d) return null
+  return (
+    <div>
+      <p className="text-xs text-gray-500 mb-4">This week's marketing activity across the team.</p>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <MetricCard label="Completion rate" value={`${d.completion_rate}%`} sub="of assigned tasks" icon={BarChart3} color="text-[#E8611A]" />
+        <MetricCard label="Content uploaded" value={d.content_this_week} sub="this week" icon={Images} />
+        <MetricCard label="Reviews requested" value={d.reviews_requested} sub="Google reviews" icon={Star} />
+        <MetricCard label="Referrals requested" value={d.referrals_requested} sub="this week" icon={Send} />
+        <MetricCard label="Pending review" value={d.pending_review} sub="content awaiting approval" icon={Flag} color={d.pending_review > 0 ? 'text-amber-600' : 'text-gray-900'} />
+        <MetricCard label="Top performer" value={d.top_performer?.name || '—'} sub={d.top_performer ? `${d.top_performer.points} pts` : 'no activity yet'} icon={Trophy} />
+      </div>
+    </div>
+  )
+}
+
+// ─── Content Review Queue ─────────────────────────────────────────────────────
+function ReviewQueue() {
+  const [assets, setAssets] = useState([])
+  const [loading, setLoading] = useState(true)
+  const load = useCallback(async () => {
+    setLoading(true)
+    try { setAssets(await apiGet('/api/marketing/content?status=pending')) } catch {} finally { setLoading(false) }
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  const act = async (id, patch) => { try { await apiPut(`/api/marketing/content/${id}`, patch); setAssets(prev => prev.filter(a => a.id !== id)) } catch {} }
+  const batchApprove = async () => { await apiPost('/api/marketing/content/batch-approve', {}); load() }
+
+  if (loading) return <div className="flex items-center justify-center py-12"><Loader2 size={22} className="animate-spin text-gray-300" /></div>
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-xs text-gray-500">{assets.length} item{assets.length !== 1 ? 's' : ''} awaiting review.</p>
+        {assets.length > 0 && <button onClick={batchApprove} className="flex items-center gap-1.5 text-xs font-semibold text-white bg-blue-600 rounded-lg px-3 py-1.5 hover:bg-blue-700"><CheckCheck size={13} /> Approve all</button>}
+      </div>
+      {assets.length === 0 ? (
+        <div className="text-center py-12 text-gray-400"><CheckCircle2 size={28} className="mx-auto mb-2 opacity-30" /><p className="text-sm">All caught up — nothing to review.</p></div>
+      ) : (
+        <div className="space-y-2">
+          {assets.map(a => (
+            <div key={a.id} className="bg-white border border-gray-200 rounded-xl p-3 flex items-center gap-3">
+              <div className="w-14 h-14 rounded-lg bg-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0">
+                {a.file_type === 'photo' && a.file_url ? <img src={a.file_url} alt="" className="w-full h-full object-cover" />
+                  : a.file_type === 'video' ? <Play size={18} className="text-gray-400" />
+                  : <Quote size={16} className="text-gray-300" />}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-gray-900 truncate">{catLabel(a.category)}{a.member_name ? ` · ${a.member_name}` : ''}</p>
+                {a.caption && <p className="text-xs text-gray-500 truncate">"{a.caption}"</p>}
+                <p className="text-[10px] text-gray-400">{a.staff_name}{a.task_title ? ` · ${a.task_title}` : ''}</p>
+              </div>
+              <button onClick={() => act(a.id, { status: 'approved' })} title="Approve" className="p-2 text-green-600 hover:bg-green-50 rounded-lg"><Check size={16} /></button>
+              <button onClick={() => act(a.id, { status: 'archived' })} title="Archive" className="p-2 text-gray-400 hover:bg-gray-100 rounded-lg"><Archive size={15} /></button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Task Manager (create / edit / duplicate / delete) ────────────────────────
+const TASK_TYPES = [{ v: 'studio_wide', l: 'Studio-Wide' }, { v: 'role', l: 'Role-Specific' }, { v: 'seasonal', l: 'Seasonal / Campaign' }]
+const TASK_CATS  = ['content', 'engagement', 'social', 'community', 'retention']
+const ROLE_TARGETS = [{ v: 'all', l: 'Everyone' }, { v: 'manager', l: 'Managers' }, { v: 'tsa', l: 'TSAs' }]
+const CADENCES = [{ v: 'daily', l: 'Daily' }, { v: 'weekly', l: 'Weekly' }, { v: 'shift', l: 'Per shift' }]
+
+function TaskEditModal({ task, onSaved, onClose }) {
+  const [f, setF] = useState({
+    title: task?.title || '', description: task?.description || '',
+    type: task?.type || 'studio_wide', category: task?.category || 'content',
+    role_target: task?.role_target || 'all', point_value: task?.point_value ?? 10,
+    required_uploads: task?.required_uploads ?? 0, cadence: task?.cadence || 'daily',
+    required_fields: Array.isArray(task?.required_fields) ? task.required_fields : [],
+  })
+  const [saving, setSaving] = useState(false)
+  const set = (k, v) => setF(s => ({ ...s, [k]: v }))
+  const inp = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E8611A]/30 focus:border-[#E8611A]'
+
+  const addField = () => setF(s => ({ ...s, required_fields: [...s.required_fields, { key: `field_${s.required_fields.length + 1}`, label: '', required: false }] }))
+  const setField = (i, k, v) => setF(s => ({ ...s, required_fields: s.required_fields.map((x, idx) => idx === i ? { ...x, [k]: v, ...(k === 'label' ? { key: v.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || `field_${i}` } : {}) } : x) }))
+  const rmField = (i) => setF(s => ({ ...s, required_fields: s.required_fields.filter((_, idx) => idx !== i) }))
+
+  const save = async () => {
+    if (!f.title.trim()) return
+    setSaving(true)
+    try {
+      const payload = { ...f, required_fields: f.required_fields.filter(x => x.label.trim()) }
+      const saved = task?.id ? await apiPut(`/api/marketing/tasks/${task.id}`, payload) : await apiPost('/api/marketing/tasks', payload)
+      onSaved(saved)
+    } catch { setSaving(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 sticky top-0 bg-white">
+          <h2 className="font-semibold text-gray-900">{task ? 'Edit task' : 'New task'}</h2>
+          <button onClick={onClose}><X size={18} className="text-gray-400" /></button>
+        </div>
+        <div className="p-5 space-y-3">
+          <div><label className="block text-xs font-medium text-gray-600 mb-1">Title *</label><input className={inp} value={f.title} onChange={e => set('title', e.target.value)} autoFocus /></div>
+          <div><label className="block text-xs font-medium text-gray-600 mb-1">Description</label><textarea rows={2} className={`${inp} resize-none`} value={f.description} onChange={e => set('description', e.target.value)} /></div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="block text-xs font-medium text-gray-600 mb-1">Type</label><select className={inp} value={f.type} onChange={e => set('type', e.target.value)}>{TASK_TYPES.map(t => <option key={t.v} value={t.v}>{t.l}</option>)}</select></div>
+            <div><label className="block text-xs font-medium text-gray-600 mb-1">Category</label><select className={inp} value={f.category} onChange={e => set('category', e.target.value)}>{TASK_CATS.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
+            <div><label className="block text-xs font-medium text-gray-600 mb-1">For</label><select className={inp} value={f.role_target} onChange={e => set('role_target', e.target.value)}>{ROLE_TARGETS.map(r => <option key={r.v} value={r.v}>{r.l}</option>)}</select></div>
+            <div><label className="block text-xs font-medium text-gray-600 mb-1">Cadence</label><select className={inp} value={f.cadence} onChange={e => set('cadence', e.target.value)}>{CADENCES.map(c => <option key={c.v} value={c.v}>{c.l}</option>)}</select></div>
+            <div><label className="block text-xs font-medium text-gray-600 mb-1">Points</label><input type="number" className={inp} value={f.point_value} onChange={e => set('point_value', e.target.value)} /></div>
+            <div><label className="block text-xs font-medium text-gray-600 mb-1">Required uploads</label><input type="number" min="0" className={inp} value={f.required_uploads} onChange={e => set('required_uploads', e.target.value)} /></div>
+          </div>
+          <div>
+            <div className="flex items-center justify-between mb-1"><label className="text-xs font-medium text-gray-600">Text fields to collect</label><button onClick={addField} className="text-xs text-[#E8611A] font-semibold">+ Add field</button></div>
+            {f.required_fields.map((x, i) => (
+              <div key={i} className="flex items-center gap-2 mb-1.5">
+                <input placeholder="Field label (e.g. Member name)" className={`${inp} flex-1`} value={x.label} onChange={e => setField(i, 'label', e.target.value)} />
+                <label className="flex items-center gap-1 text-xs text-gray-500"><input type="checkbox" checked={x.required} onChange={e => setField(i, 'required', e.target.checked)} /> req</label>
+                <button onClick={() => rmField(i)} className="text-gray-400 hover:text-red-500"><X size={14} /></button>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-100 bg-gray-50 sticky bottom-0">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 font-medium">Cancel</button>
+          <button onClick={save} disabled={saving || !f.title.trim()} className="px-5 py-2 bg-[#E8611A] hover:bg-orange-600 text-white text-sm font-bold rounded-lg disabled:opacity-50 flex items-center gap-2">{saving && <Loader2 size={14} className="animate-spin" />} {task ? 'Save' : 'Add task'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function TaskManager() {
+  const [tasks, setTasks] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [modal, setModal] = useState(null) // null | false (new) | task (edit)
+  const load = useCallback(async () => {
+    setLoading(true)
+    try { setTasks(await apiGet('/api/marketing/tasks/all')) } catch {} finally { setLoading(false) }
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  const onSaved = () => { setModal(null); load() }
+  const duplicate = async (t) => { await apiPost('/api/marketing/tasks', { ...t, title: `${t.title} (copy)` }); load() }
+  const del = async (id) => { if (!confirm('Delete this task?')) return; await apiDelete(`/api/marketing/tasks/${id}`); setTasks(prev => prev.filter(t => t.id !== id)) }
+
+  if (loading) return <div className="flex items-center justify-center py-12"><Loader2 size={22} className="animate-spin text-gray-300" /></div>
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-xs text-gray-500">{tasks.length} active task{tasks.length !== 1 ? 's' : ''}.</p>
+        <button onClick={() => setModal(false)} className="flex items-center gap-1.5 text-xs font-semibold text-white bg-[#E8611A] rounded-lg px-3 py-1.5 hover:bg-orange-600"><Plus size={13} /> New task</button>
+      </div>
+      <div className="space-y-2">
+        {tasks.map(t => (
+          <div key={t.id} className="bg-white border border-gray-200 rounded-xl px-4 py-3 flex items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-gray-900 truncate">{t.title}</p>
+              <p className="text-[10px] text-gray-400 capitalize">{t.type.replace('_', '-')} · {t.category} · {ROLE_TARGETS.find(r => r.v === t.role_target)?.l || t.role_target} · {t.cadence}</p>
+            </div>
+            <span className="text-xs font-bold text-[#E8611A] flex-shrink-0">+{t.point_value}</span>
+            <button onClick={() => setModal(t)} className="p-1.5 text-gray-400 hover:text-gray-700" title="Edit"><Pencil size={13} /></button>
+            <button onClick={() => duplicate(t)} className="p-1.5 text-gray-400 hover:text-gray-700" title="Duplicate"><Copy size={13} /></button>
+            <button onClick={() => del(t.id)} className="p-1.5 text-gray-400 hover:text-red-500" title="Delete"><Trash2 size={13} /></button>
+          </div>
+        ))}
+      </div>
+      {modal !== null && <TaskEditModal task={modal || null} onSaved={onSaved} onClose={() => setModal(null)} />}
+    </div>
+  )
+}
+
 // ─── Marketing Hub shell ──────────────────────────────────────────────────────
 export default function MarketingHub() {
+  const { isOwnerOrManager } = useRole()
   const [sub, setSub] = useState('tasks')
   const TABS = [
     { id: 'tasks',       label: 'My Tasks',        icon: ListTodo },
     { id: 'library',     label: 'Content Library', icon: Images },
     { id: 'leaderboard', label: 'Leaderboard',     icon: Trophy },
+    ...(isOwnerOrManager ? [
+      { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
+      { id: 'review',    label: 'Review',    icon: Flag },
+      { id: 'manage',    label: 'Tasks',     icon: Settings },
+    ] : []),
   ]
   return (
     <div className="p-4 max-w-3xl mx-auto">
@@ -433,6 +631,9 @@ export default function MarketingHub() {
       {sub === 'tasks' && <MyTasks />}
       {sub === 'library' && <ContentLibrary />}
       {sub === 'leaderboard' && <Leaderboard />}
+      {sub === 'dashboard' && isOwnerOrManager && <Dashboard />}
+      {sub === 'review' && isOwnerOrManager && <ReviewQueue />}
+      {sub === 'manage' && isOwnerOrManager && <TaskManager />}
     </div>
   )
 }
