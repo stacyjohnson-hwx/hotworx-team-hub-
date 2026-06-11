@@ -30,17 +30,21 @@ router.get('/', authenticate, async (req, res) => {
 
   if (category) query = query.eq('category', category)
 
-  const [{ data: resources, error }, { data: completions }, userMap] = await Promise.all([
+  const [{ data: resources, error }, { data: completions }, userMap, { data: inactive }] = await Promise.all([
     query,
     db.from('training_completions').select('resource_id, user_id, completed_at'),
     buildUserMap(db),
+    db.from('user_profiles').select('id').eq('is_active', false),
   ])
 
   if (error) return res.status(500).json({ error: error.message })
 
-  // Group completions by resource_id
+  const inactiveIds = new Set((inactive || []).map(r => r.id))
+
+  // Group completions by resource_id (excluding deactivated team members)
   const completionMap = {}
   for (const c of completions || []) {
+    if (inactiveIds.has(c.user_id)) continue
     if (!completionMap[c.resource_id]) completionMap[c.resource_id] = []
     completionMap[c.resource_id].push({
       user_id: c.user_id,

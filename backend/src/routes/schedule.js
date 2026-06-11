@@ -226,14 +226,14 @@ router.get('/suggestions', requireRole('owner', 'manager'), async (req, res) => 
   const weekEnd = addDaysStr(weekStart, 6)
 
   try {
-    // 1. Studio members — only schedulable roles (managers + TSAs, not owners)
-    const { data: memberRows, error: memErr } = await db()
-      .from('user_studios')
-      .select('user_id, role')
-      .eq('studio_id', req.studio.id)
-      .in('role', ['manager', 'tsa'])
+    // 1. Studio members — only schedulable roles (managers + TSAs, not owners), active only
+    const [{ data: memberRows, error: memErr }, { data: inactive }] = await Promise.all([
+      db().from('user_studios').select('user_id, role').eq('studio_id', req.studio.id).in('role', ['manager', 'tsa']),
+      db().from('user_profiles').select('id').eq('is_active', false),
+    ])
     if (memErr) return res.status(500).json({ error: memErr.message })
-    const memberIds = [...new Set((memberRows || []).map(m => m.user_id))]
+    const inactiveIds = new Set((inactive || []).map(r => r.id))
+    const memberIds = [...new Set((memberRows || []).map(m => m.user_id))].filter(id => !inactiveIds.has(id))
     if (!memberIds.length) return res.json({ shift_hours: shiftHours, day: dayName, candidates: [] })
 
     // 2. Availability for this day-of-week
