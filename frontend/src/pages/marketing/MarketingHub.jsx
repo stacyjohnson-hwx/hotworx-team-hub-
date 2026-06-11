@@ -6,6 +6,7 @@ import { useRole } from '@/hooks/useRole'
 import {
   CheckCircle2, Circle, Loader2, Camera, Megaphone, ChevronDown, ChevronUp,
   ListTodo, Images, X, Download, Trash2, CheckCheck, Send, Play, Quote,
+  Trophy, Flame, RefreshCw, Gift, Check,
 } from 'lucide-react'
 
 const CATEGORY_STYLE = {
@@ -309,12 +310,108 @@ function ContentLibrary() {
   )
 }
 
+// ─── Leaderboard + weekly summary view ───────────────────────────────────────
+function Leaderboard() {
+  const { isOwnerOrManager, userId } = useRole()
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [editingReward, setEditingReward] = useState(false)
+  const [rewardDraft, setRewardDraft] = useState('')
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try { const d = await apiGet('/api/marketing/leaderboard'); setData(d); setRewardDraft(d.reward_label || '') } catch {} finally { setLoading(false) }
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  const reset = async () => {
+    if (!confirm('Reset the weekly leaderboard to 0? (All-time points are kept.)')) return
+    await apiPost('/api/marketing/leaderboard/reset', {}); load()
+  }
+  const saveReward = async () => {
+    await apiPut('/api/marketing/settings', { weekly_reward_label: rewardDraft })
+    setEditingReward(false); load()
+  }
+
+  if (loading) return <div className="flex items-center justify-center py-12"><Loader2 size={22} className="animate-spin text-gray-300" /></div>
+  if (!data) return null
+  const { rows = [], me = {}, team = {}, reward_label } = data
+
+  return (
+    <div className="space-y-4">
+      {/* Your week */}
+      <div className="bg-[#1A1A1A] rounded-xl p-4 text-white">
+        <p className="text-[10px] font-bold uppercase tracking-widest text-[#E8611A] mb-2">Your week</p>
+        <div className="grid grid-cols-4 gap-2 text-center">
+          <div><p className="text-xl font-black text-[#E8611A]">{me.weekly_points || 0}</p><p className="text-[10px] text-white/50">points</p></div>
+          <div><p className="text-xl font-black">{me.tasks_this_week || 0}</p><p className="text-[10px] text-white/50">tasks</p></div>
+          <div><p className="text-xl font-black">{me.content_this_week || 0}</p><p className="text-[10px] text-white/50">content</p></div>
+          <div><p className="text-xl font-black flex items-center justify-center gap-1"><Flame size={14} className="text-[#E8611A]" />{me.streak || 0}</p><p className="text-[10px] text-white/50">wk streak</p></div>
+        </div>
+      </div>
+
+      {/* Weekly reward */}
+      <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 flex items-center gap-2">
+        <Gift size={16} className="text-[#E8611A] flex-shrink-0" />
+        {editingReward ? (
+          <div className="flex items-center gap-2 flex-1">
+            <input value={rewardDraft} onChange={e => setRewardDraft(e.target.value)} placeholder='e.g. "$10 bonus" or "Free session"'
+              className="flex-1 border border-orange-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#E8611A]/30" />
+            <button onClick={saveReward} className="p-1.5 text-green-600"><Check size={16} /></button>
+            <button onClick={() => setEditingReward(false)} className="p-1.5 text-gray-400"><X size={16} /></button>
+          </div>
+        ) : (
+          <>
+            <p className="text-sm text-orange-800 flex-1">
+              <span className="font-semibold">This week's reward:</span> {reward_label || <span className="text-orange-400 italic">not set</span>}
+            </p>
+            {isOwnerOrManager && <button onClick={() => setEditingReward(true)} className="text-xs font-semibold text-[#E8611A] hover:underline">Edit</button>}
+          </>
+        )}
+      </div>
+
+      {/* Team totals + reset */}
+      <div className="flex items-center justify-between text-xs text-gray-500">
+        <span>Team this week: <strong className="text-gray-800">{team.points || 0}</strong> pts · {team.tasks || 0} tasks · {team.content || 0} content</span>
+        {isOwnerOrManager && <button onClick={reset} className="flex items-center gap-1 text-gray-400 hover:text-gray-700"><RefreshCw size={12} /> Reset week</button>}
+      </div>
+
+      {/* Leaderboard */}
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <div className="px-4 py-2.5 border-b border-gray-100 flex items-center gap-2">
+          <Trophy size={15} className="text-[#E8611A]" /><p className="text-sm font-bold text-gray-900">Leaderboard</p>
+          <span className="ml-auto text-[10px] text-gray-400">weekly · resets Sunday</span>
+        </div>
+        <div className="divide-y divide-gray-50">
+          {rows.length === 0 && <p className="px-4 py-6 text-sm text-gray-400 text-center">No points logged yet this week.</p>}
+          {rows.map((r, i) => {
+            const isMe = r.staff_id === userId
+            const medal = ['🥇', '🥈', '🥉'][i]
+            return (
+              <div key={r.staff_id} className={`flex items-center gap-3 px-4 py-2.5 ${isMe ? 'bg-orange-50' : ''}`}>
+                <span className="w-6 text-center text-sm font-bold text-gray-400">{medal || `#${i + 1}`}</span>
+                <div className="w-7 h-7 rounded-full bg-[#E8611A] flex items-center justify-center text-white text-xs font-bold flex-shrink-0">{r.name[0]}</div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-gray-900 truncate">{r.name}{isMe && <span className="text-[10px] text-orange-500 ml-1">(you)</span>}</p>
+                  <p className="text-[10px] text-gray-400">{r.all_time_points} all-time{r.streak > 0 ? ` · 🔥 ${r.streak} wk` : ''}</p>
+                </div>
+                <span className="text-base font-black text-[#E8611A] flex-shrink-0">{r.weekly_points}</span>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Marketing Hub shell ──────────────────────────────────────────────────────
 export default function MarketingHub() {
   const [sub, setSub] = useState('tasks')
   const TABS = [
-    { id: 'tasks',   label: 'My Tasks',        icon: ListTodo },
-    { id: 'library', label: 'Content Library', icon: Images },
+    { id: 'tasks',       label: 'My Tasks',        icon: ListTodo },
+    { id: 'library',     label: 'Content Library', icon: Images },
+    { id: 'leaderboard', label: 'Leaderboard',     icon: Trophy },
   ]
   return (
     <div className="p-4 max-w-3xl mx-auto">
@@ -333,7 +430,9 @@ export default function MarketingHub() {
           )
         })}
       </div>
-      {sub === 'tasks' ? <MyTasks /> : <ContentLibrary />}
+      {sub === 'tasks' && <MyTasks />}
+      {sub === 'library' && <ContentLibrary />}
+      {sub === 'leaderboard' && <Leaderboard />}
     </div>
   )
 }

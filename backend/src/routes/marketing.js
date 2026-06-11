@@ -236,4 +236,87 @@ router.delete('/content/:id', requireRole('owner', 'manager'), async (req, res) 
   res.status(204).end()
 })
 
+// ─── Leaderboard + weekly summary (Phase 3) ──────────────────────────────────
+
+// GET /api/marketing/leaderboard — weekly + all-time points, your summary, team totals
+router.get('/leaderboard', async (req, res) => {
+  const database = db()
+  const wkStart = weekStartStr()
+
+  const [{ data: members }, { data: inactive }, { data: settings }, { data: completions }, { data: assets }] = await Promise.all([
+    database.from('user_studios').select('user_id, role').eq('studio_id', req.studio.id),
+    database.from('user_profiles').select('id').eq('is_active', false),
+    database.from('marketing_settings').select('*').eq('studio_id', req.studio.id).maybeSingle(),
+    database.from('marketing_task_completions').select('staff_id, points_awarded, completion_date, completed_at').eq('studio_id', req.studio.id),
+    database.from('marketing_content_assets').select('staff_id, uploaded_at').eq('studio_id', req.studio.id).neq('status', 'archived'),
+  ])
+
+  const inactiveIds = new Set((inactive || []).map(r => r.id))
+  const memberIds = [...new Set((members || []).map(m => m.user_id).filter(id => !inactiveIds.has(id)))]
+  const resetAt = settings?.leaderboard_reset_at ? settings.leaderboard_reset_at.slice(0, 10) : null
+  const effStart = resetAt && resetAt > wkStart ? resetAt : wkStart
+
+  const compl = completions || []
+  const names = await staffNameMap(database, memberIds)
+
+  // Weekly streak: consecutive Sundays back from this week with >=1 completion
+  function streakFor(staffId) {
+    const weeks = new Set(compl.filter(c => c.staff_id === staffId).map(c => {
+      const d = new Date(c.completion_date + 'T00:00:00'); d.setDate(d.getDate() - d.getDay())
+      return d.toISOString().slice(0, 10)
+    }))
+    let streak = 0
+    const cur = new Date(wkStart + 'T00:00:00')
+    // allow the streak to count from this week or last week
+    if (!weeks.has(wkStart)) cur.setDate(cur.getDate() - 7)
+    while (weeks.has(cur.toISOString().slice(0, 10))) { streak++; cur.setDate(cur.getDate() - 7) }
+    return streak
+  }
+
+  const rows = memberIds.map(id => {
+    const mine = compl.filter(c => c.staff_id === id)
+    const weekly = mine.filter(c => (c.completed_at || '').slice(0, 10) >= effStart).reduce((s, c) => s + (c.points_awarded || 0), 0)
+    const allTime = mine.reduce((s, c) => s + (c.points_awarded || 0), 0)
+    const tasksThisWeek = mine.filter(c => c.completion_date >= wkStart).length
+    const contentThisWeek = (assets || []).filter(a => a.staff_id === id && (a.uploaded_at || '').slice(0, 10) >= wkStart).length
+    return {
+      staff_id: id, name: names[id] || 'Team Member',
+      weekly_points: weekly, all_time_points: allTime,
+      tasks_this_week: tasksThisWeek, content_this_week: contentThisWeek,
+      streak: streakFor(id),
+    }
+  }).sort((a, b) => b.weekly_points - a.weekly_points || b.all_time_points - a.all_time_points)
+
+  const me = rows.find(r => r.staff_id === req.user.id) || { weekly_points: 0, all_time_points: 0, tasks_this_week: 0, content_this_week: 0, streak: 0 }
+  const team = rows.reduce((acc, r) => ({
+    tasks: acc.tasks + r.tasks_this_week,
+    content: acc.content + r.content_this_week,
+    points: acc.points + r.weekly_points,
+  }), { tasks: 0, content: 0, points: 0 })
+
+  res.json({
+    week_start: wkStart,
+    reward_label: settings?.weekly_reward_label || null,
+    rows, me, team,
+  })
+})
+
+// POST /api/marketing/leaderboard/reset — manager: reset the weekly board
+router.post('/leaderboard/reset', requireRole('owner', 'manager'), async (req, res) => {
+  const { error } = await db().from('marketing_settings')
+    .upsert({ studio_id: req.studio.id, leaderboard_reset_at: new Date().toISOString(), updated_at: new Date().toISOString() }, { onConflict: 'studio_id' })
+  if (error) return res.status(500).json({ error: error.message })
+  res.json({ ok: true })
+})
+
+// PUT /api/marketing/settings — manager: set the weekly reward label
+router.put('/settings', requireRole('owner', 'manager'), async (req, res) => {
+  const { weekly_reward_label } = req.body
+  const { data, error } = await db().from('marketing_settings')
+    .upsert({ studio_id: req.studio.id, weekly_reward_label: weekly_reward_label || null, updated_at: new Date().toISOString() }, { onConflict: 'studio_id' })
+    .select().single()
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data)
+})
+
 module.exports = router
