@@ -4,6 +4,14 @@ import { useAuth } from '@/contexts/AuthContext'
 
 const StudioContext = createContext(null)
 
+// Per-studio accent so you can tell at a glance which studio is active.
+// Pewaukee (WI0009) = brand red; Madison (WI0021) = orange.
+const STUDIO_ACCENTS = {
+  WI0021: { accent: '#E8611A', soft: 'rgba(232,97,26,0.18)' }, // Madison — orange
+}
+const DEFAULT_ACCENT = { accent: '#C8102E', soft: 'rgba(200,16,46,0.16)' } // Pewaukee — red
+export const studioAccent = (code) => STUDIO_ACCENTS[code] || DEFAULT_ACCENT
+
 export function StudioProvider({ children }) {
   const { session } = useAuth()
   const [studios, setStudios] = useState([])
@@ -77,6 +85,7 @@ export function StudioProvider({ children }) {
           latitude: studio.latitude,
           longitude: studio.longitude,
           userRole: userStudio?.role,
+          color: studioAccent(studio.code).accent,
         }
       }).sort((a, b) => a.code.localeCompare(b.code))
 
@@ -101,6 +110,15 @@ export function StudioProvider({ children }) {
       setLoading(false)
     }
   }
+
+  // Paint the active studio's accent onto CSS variables so the sidebar/switcher
+  // visibly flip color (Pewaukee red ↔ Madison orange).
+  useEffect(() => {
+    const { accent, soft } = studioAccent(currentStudio?.code)
+    const root = document.documentElement
+    root.style.setProperty('--studio-accent', accent)
+    root.style.setProperty('--studio-accent-soft', soft)
+  }, [currentStudio])
 
   function switchStudio(studioId) {
     const studio = studios.find(s => s.id === studioId)

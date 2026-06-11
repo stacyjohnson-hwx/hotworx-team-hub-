@@ -47,8 +47,9 @@ export function StudioSwitcher() {
       <button
         onClick={() => setOpen(!open)}
         className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-900 hover:bg-gray-800 transition-colors border border-gray-800 text-left"
+        style={{ borderLeft: `3px solid ${currentStudio.color || '#C8102E'}` }}
       >
-        <Building2 size={16} className="text-red-600 flex-shrink-0" />
+        <Building2 size={16} className="flex-shrink-0" style={{ color: currentStudio.color || '#C8102E' }} />
         <div className="flex-1 min-w-0">
           <p className="text-xs font-semibold text-white truncate">{currentStudio.name}</p>
           <p className="text-[10px] text-gray-500">{currentStudio.code}</p>
@@ -67,7 +68,7 @@ export function StudioSwitcher() {
               }}
               className="w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-800 transition-colors text-left"
             >
-              <Building2 size={14} className={studio.id === currentStudio.id ? 'text-red-600' : 'text-gray-600'} />
+              <Building2 size={14} className="flex-shrink-0" style={{ color: studio.id === currentStudio.id ? (studio.color || '#C8102E') : '#4b5563' }} />
               <div className="flex-1 min-w-0">
                 <p className={`text-xs font-semibold truncate ${studio.id === currentStudio.id ? 'text-white' : 'text-gray-300'}`}>
                   {studio.name}
@@ -75,7 +76,7 @@ export function StudioSwitcher() {
                 <p className="text-[10px] text-gray-500">{studio.code}</p>
               </div>
               {studio.id === currentStudio.id && (
-                <Check size={14} className="text-red-600 flex-shrink-0" />
+                <Check size={14} className="flex-shrink-0" style={{ color: studio.color || '#C8102E' }} />
               )}
             </button>
           ))}

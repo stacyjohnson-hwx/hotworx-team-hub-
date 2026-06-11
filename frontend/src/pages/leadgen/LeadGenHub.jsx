@@ -1,10 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
 import { useRole } from '@/hooks/useRole'
-import OutreachTab from '@/pages/leads/OutreachTab'
 import {
   CheckCircle2, Circle, Loader2, ChevronDown, ChevronUp, Sprout, ListTodo,
-  Library, Lightbulb, Phone, Power, Plus, Pencil, Trash2, X, Check, ArrowUpCircle,
+  Library, Lightbulb, Power, Plus, Pencil, Trash2, X, Check, ArrowUpCircle,
   Home, Building2, Users, Calendar, Globe, Target,
 } from 'lucide-react'
 
@@ -253,14 +252,13 @@ export default function LeadGenHub() {
   const { isOwnerOrManager } = useRole()
   const [sub, setSub] = useState('tasks')
   const TABS = [
-    { id: 'tasks',     label: 'My Lead Gen', icon: ListTodo },
+    { id: 'tasks',     label: 'My Tasks',    icon: ListTodo },
     ...(isOwnerOrManager ? [{ id: 'bank', label: 'Idea Bank', icon: Library }] : []),
     { id: 'ideas',     label: 'Suggestions', icon: Lightbulb },
-    { id: 'outreach',  label: 'Outreach',    icon: Phone },
   ]
   return (
     <div className="p-4 max-w-3xl mx-auto">
-      <div className="flex items-center gap-2 mb-3"><Sprout size={18} className="text-[#E8611A]" /><h2 className="text-base font-bold text-gray-900">Lead Gen Hub</h2></div>
+      <div className="flex items-center gap-2 mb-3"><Sprout size={18} className="text-[#E8611A]" /><h2 className="text-base font-bold text-gray-900">Member Growth</h2></div>
       <div className="flex gap-1 mb-4 bg-gray-100 rounded-lg p-0.5 w-fit flex-wrap">
         {TABS.map(t => { const Icon = t.icon; return (
           <button key={t.id} onClick={() => setSub(t.id)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${sub === t.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
@@ -271,7 +269,6 @@ export default function LeadGenHub() {
       {sub === 'tasks' && <MyLeadGen />}
       {sub === 'bank' && isOwnerOrManager && <IdeaBank />}
       {sub === 'ideas' && <Suggestions />}
-      {sub === 'outreach' && <OutreachTab />}
     </div>
   )
 }

@@ -118,7 +118,7 @@ export function Sidebar({ onNavigate }) {
     <aside className="flex flex-col w-56 h-full bg-gray-950 border-r border-gray-800">
       {/* Logo */}
       <div className="flex items-center gap-3 px-4 py-5 border-b border-gray-800">
-        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-red-600 flex items-center justify-center">
+        <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: 'var(--studio-accent, #C8102E)' }}>
           <span className="text-white text-sm font-bold">H</span>
         </div>
         <div className="overflow-hidden">
@@ -154,7 +154,7 @@ export function Sidebar({ onNavigate }) {
                       className={({ isActive }) =>
                         `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
                           isActive
-                            ? 'bg-red-950 text-red-600 font-medium'
+                            ? 'font-medium bg-[var(--studio-accent-soft)] text-[var(--studio-accent)]'
                             : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
                         }`
                       }

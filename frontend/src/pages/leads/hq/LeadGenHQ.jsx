@@ -1,17 +1,19 @@
 import { useState, useEffect } from 'react'
-import { ChevronDown, Flame, Zap, Megaphone, Sprout } from 'lucide-react'
+import { ChevronDown, Flame, Zap, Megaphone, Sprout, Phone } from 'lucide-react'
 import { EMPLOYEES, getRank } from '../data/mockData'
 import { useAuth } from '@/contexts/AuthContext'
 import MarketingHub   from '@/pages/marketing/MarketingHub'
 import LeadGenHub     from '@/pages/leadgen/LeadGenHub'
+import OutreachTab    from '../OutreachTab'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-// Two clean hubs for everyone: Marketing and Lead Gen.
-// (Lead Gen folds in the old Campaigns/Plays as its Idea Bank, the daily Leads
-//  tasks as "My Lead Gen", and Outreach as a sub-tab.)
+// Three top-line tabs for everyone: Marketing, Member Growth, and Outreach.
+// (Member Growth folds in the old Campaigns/Plays as its Idea Bank and the daily
+//  Leads tasks as "My Tasks". Outreach is now its own top tab.)
 const TSA_TABS = [
-  { id: 'marketing', label: 'Marketing', icon: Megaphone, shortLabel: 'Marketing' },
-  { id: 'leadgen',   label: 'Lead Gen',  icon: Sprout,    shortLabel: 'Lead Gen'  },
+  { id: 'marketing', label: 'Marketing',     icon: Megaphone, shortLabel: 'Marketing' },
+  { id: 'leadgen',   label: 'Member Growth', icon: Sprout,    shortLabel: 'Growth'    },
+  { id: 'outreach',  label: 'Outreach',      icon: Phone,     shortLabel: 'Outreach'  },
 ]
 const ALL_TABS = TSA_TABS
 
@@ -176,6 +178,7 @@ export default function LeadGenHQ() {
       <div className="flex-1 overflow-y-auto" onClick={() => setShowEmployeePicker(false)}>
         {activeTab === 'marketing'   && <MarketingHub />}
         {activeTab === 'leadgen'     && <LeadGenHub />}
+        {activeTab === 'outreach'    && <OutreachTab />}
       </div>
     </div>
   )
