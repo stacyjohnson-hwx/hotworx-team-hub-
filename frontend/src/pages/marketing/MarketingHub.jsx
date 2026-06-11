@@ -392,7 +392,9 @@ function Leaderboard() {
             return (
               <div key={r.staff_id} className={`flex items-center gap-3 px-4 py-2.5 ${isMe ? 'bg-orange-50' : ''}`}>
                 <span className="w-6 text-center text-sm font-bold text-gray-400">{medal || `#${i + 1}`}</span>
-                <div className="w-7 h-7 rounded-full bg-[#E8611A] flex items-center justify-center text-white text-xs font-bold flex-shrink-0">{r.name[0]}</div>
+                {r.avatar_url
+                  ? <img src={r.avatar_url} alt={r.name} className="w-7 h-7 rounded-full object-cover flex-shrink-0" />
+                  : <div className="w-7 h-7 rounded-full bg-[#E8611A] flex items-center justify-center text-white text-xs font-bold flex-shrink-0">{r.name[0]}</div>}
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold text-gray-900 truncate">{r.name}{isMe && <span className="text-[10px] text-orange-500 ml-1">(you)</span>}</p>
                   <p className="text-[10px] text-gray-400">{r.all_time_points} all-time{r.streak > 0 ? ` · 🔥 ${r.streak} wk` : ''}</p>

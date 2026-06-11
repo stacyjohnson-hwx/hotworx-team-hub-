@@ -259,6 +259,13 @@ router.get('/leaderboard', async (req, res) => {
   const compl = completions || []
   const names = await staffNameMap(database, memberIds)
 
+  // Profile photos for each member (avatar_url on user_profiles)
+  const avatarMap = {}
+  if (memberIds.length) {
+    const { data: profileRows } = await database.from('user_profiles').select('id, avatar_url').in('id', memberIds)
+    for (const p of (profileRows || [])) avatarMap[p.id] = p.avatar_url || null
+  }
+
   // Weekly streak: consecutive Sundays back from this week with >=1 completion
   function streakFor(staffId) {
     const weeks = new Set(compl.filter(c => c.staff_id === staffId).map(c => {
@@ -280,7 +287,7 @@ router.get('/leaderboard', async (req, res) => {
     const tasksThisWeek = mine.filter(c => c.completion_date >= wkStart).length
     const contentThisWeek = (assets || []).filter(a => a.staff_id === id && (a.uploaded_at || '').slice(0, 10) >= wkStart).length
     return {
-      staff_id: id, name: names[id] || 'Team Member',
+      staff_id: id, name: names[id] || 'Team Member', avatar_url: avatarMap[id] || null,
       weekly_points: weekly, all_time_points: allTime,
       tasks_this_week: tasksThisWeek, content_this_week: contentThisWeek,
       streak: streakFor(id),
