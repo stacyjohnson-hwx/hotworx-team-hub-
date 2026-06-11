@@ -11,18 +11,26 @@ daily operations tool for studio owners, managers, and TSA staff.
 ## CRITICAL: Production Deployment
 
 **This app is LIVE in production on Vercel + Railway. DO NOT use localhost URLs.**
+**The ONLY way to ship is `git push` to `main` on GitHub — never "deploy to local."**
 
-- **Frontend (Vercel):** Auto-deploys from `main` branch on GitHub
-- **Backend (Railway):** Auto-deploys from `main` branch on GitHub
-- **Frontend URL:** Check Vercel dashboard for actual URL
-- **Backend URL:** `https://hotworx-team-hub-production.up.railway.app`
+- **Frontend (Vercel):** Auto-deploys from `main` on GitHub
+  - **Correct Vercel project:** `hotworx-team` → **`https://hotworx-team.vercel.app`** ← the real app
+  - ⚠️ **DO NOT confuse with the Vercel project named `hotworx-team-hub`** — that project is a
+    *different, unrelated site (Walk Your Plans / "WYP")*. If a preview shows "WYP", you are
+    looking at the wrong Vercel project. The local `.vercel/project.json` may also point at the
+    wrong (`hotworx-team-hub`) project — ignore it for deploys; the GitHub→`hotworx-team`
+    integration is what actually ships this app.
+- **Backend (Railway):** Auto-deploys from `main` on GitHub
+  - **Backend URL:** `https://hotworx-team-hub-production.up.railway.app`
+- **GitHub repo:** `stacyjohnson-hwx/hotworx-team-hub-`
 
-**When debugging issues:**
-1. Check Railway dashboard for backend logs and deployment status
-2. Check Vercel dashboard for frontend deployment status
-3. Verify Railway backend is responding (not 502 error)
-4. DO NOT test against localhost unless explicitly asked
-5. All code changes auto-deploy when pushed to `main`
+**Deploy workflow (do this after EVERY change):**
+1. `git add <files>` → `git commit -m "…"` → `git push` (to `main`). Confirm the push output shows `… -> main`.
+2. Run `git log origin/main..HEAD` — it must be **empty** (proves nothing is stuck local-only).
+3. Verify the change on **`https://hotworx-team.vercel.app`** (NOT the `hotworx-team-hub` Vercel project).
+4. If a feature isn't live: check the Vercel **`hotworx-team`** project's latest deployment for a **build failure**
+   (a failed build freezes the site on the previous version), and check Railway for 502s.
+5. DO NOT test against localhost unless explicitly asked.
 
 ---
 
