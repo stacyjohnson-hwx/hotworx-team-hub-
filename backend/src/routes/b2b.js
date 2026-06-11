@@ -37,6 +37,36 @@ router.get('/contacts', authenticate, requireStudio, async (req, res) => {
 })
 
 // ─── POST /api/b2b/contacts ──────────────────────────────────────────────────
+// When a B2B contact is an Apartment, mirror it into the Canvassing tracker as a
+// linked territory — once. No-op if a linked zone already exists; if an unlinked
+// same-named apartment zone exists, link it instead of creating a duplicate.
+async function ensureApartmentTerritory(db, contact) {
+  try {
+    if (!contact || !(contact.industry || '').toLowerCase().includes('apart')) return
+    const { data: linked } = await db.from('territories')
+      .select('id').eq('studio_id', contact.studio_id).eq('b2b_contact_id', contact.id).limit(1)
+    if (linked && linked.length) return // already linked
+
+    const { data: sameName } = await db.from('territories')
+      .select('id').eq('studio_id', contact.studio_id).eq('type', 'apartment')
+      .is('b2b_contact_id', null).ilike('name', contact.business_name).limit(1)
+    if (sameName && sameName.length) {
+      await db.from('territories').update({
+        b2b_contact_id: contact.id,
+        address: contact.address || null,
+        latitude: contact.latitude || null,
+        longitude: contact.longitude || null,
+      }).eq('id', sameName[0].id)
+      return
+    }
+    await db.from('territories').insert({
+      studio_id: contact.studio_id, name: contact.business_name, type: 'apartment',
+      address: contact.address || null, latitude: contact.latitude || null, longitude: contact.longitude || null,
+      cadence_days: 21, b2b_contact_id: contact.id, active: true,
+    })
+  } catch (e) { /* non-fatal: contact still saved even if territory mirror fails */ }
+}
+
 router.post('/contacts', authenticate, requireStudio, async (req, res) => {
   const {
     business_name, contact_name, phone, email, address, industry,
@@ -76,6 +106,7 @@ router.post('/contacts', authenticate, requireStudio, async (req, res) => {
     .single()
 
   if (error) return res.status(500).json({ error: error.message })
+  await ensureApartmentTerritory(supabase(), data)
   res.status(201).json(data)
 })
 
@@ -106,6 +137,7 @@ router.put('/contacts/:id', authenticate, requireStudio, async (req, res) => {
     .single()
 
   if (error) return res.status(500).json({ error: error.message })
+  await ensureApartmentTerritory(supabase(), data)
   res.json(data)
 })
 
