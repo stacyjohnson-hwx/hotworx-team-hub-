@@ -207,7 +207,7 @@ router.get('/analytics', async (req, res) => {
     dateRange.push(d.toISOString().slice(0, 10))
   }
 
-  const [tasksRes, completionsRes, userMapRes] = await Promise.all([
+  const [tasksRes, completionsRes, userMapRes, inactiveRes] = await Promise.all([
     db.from('cleaning_tasks').select('*').eq('active', true),
     db.from('cleaning_completions')
       .select('task_id, completed_by, completion_date')
@@ -215,7 +215,9 @@ router.get('/analytics', async (req, res) => {
       .gte('completion_date', fromStr)
       .lte('completion_date', toStr),
     buildUserMap(db),
+    db.from('user_profiles').select('id').eq('is_active', false),
   ])
+  const inactiveIds = new Set((inactiveRes?.data || []).map(r => r.id))
 
   if (tasksRes.error)       return res.status(500).json({ error: tasksRes.error.message })
   if (completionsRes.error) return res.status(500).json({ error: completionsRes.error.message })
@@ -267,6 +269,7 @@ router.get('/analytics', async (req, res) => {
     userTotals[uid].taskSet.add(c.task_id)
   }
   const userStats = Object.values(userTotals)
+    .filter(u => !inactiveIds.has(u.userId)) // hide deactivated employees from the leaderboard
     .map(u => ({ userId: u.userId, name: u.name, count: u.count, uniqueTasks: u.taskSet.size }))
     .sort((a, b) => b.count - a.count)
 
