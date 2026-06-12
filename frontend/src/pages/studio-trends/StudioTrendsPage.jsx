@@ -179,6 +179,7 @@ function DataEntryTab({ month: initialMonth, year: initialYear }) {
       const result = await apiPut('/api/studio-trends', {
         ...data,
         net_eft_increase: (Number(data.eft_increase) || 0) - (Number(data.eft_decrease) || 0),
+        net_income: (Number(data.in_the_bank) || 0) - (Number(data.expenses) || 0),
         month: entryMonth,
         year: entryYear,
       }, currentStudio.id)
@@ -193,6 +194,7 @@ function DataEntryTab({ month: initialMonth, year: initialYear }) {
   }
 
   const netEftChange = (Number(data.eft_increase) || 0) - (Number(data.eft_decrease) || 0)
+  const netIncome    = (Number(data.in_the_bank) || 0) - (Number(data.expenses) || 0)
   const convRate  = pct(data.red_appts_held, data.leads)
   const showRate  = pct(data.red_appts_held, data.red_appts_booked)
   const netMembers = (data.new_members || 0) - (data.cancellations || 0)
@@ -231,7 +233,13 @@ function DataEntryTab({ month: initialMonth, year: initialYear }) {
           <NumInput label="In The Bank"      value={data.in_the_bank}      onChange={v => set('in_the_bank', v)}      isCurrency />
           <NumInput label="ITB Goal"         value={data.itb_goal}         onChange={v => set('itb_goal', v)}         isCurrency />
           <NumInput label="Expenses"         value={data.expenses}         onChange={v => set('expenses', v)}         isCurrency />
-          <NumInput label="Net Income"       value={data.net_income}       onChange={v => set('net_income', v)}       isCurrency />
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Net Income</label>
+            <div className="w-full bg-gray-50 border border-gray-200 rounded-lg py-2 px-3 text-sm font-medium" style={{ color: netIncome >= 0 ? '#15803d' : '#dc2626' }}>
+              {fmt$(netIncome)}
+              <span className="text-xs text-gray-400 font-normal ml-1">In The Bank − Expenses</span>
+            </div>
+          </div>
         </div>
       </SectionCard>
 
@@ -392,7 +400,7 @@ function TableTab() {
               </tr>
               <tr className="bg-gray-50 border-b border-gray-200">
                 <th className="sticky left-0 bg-gray-50 text-left px-3 py-2.5 text-gray-700 font-semibold whitespace-nowrap">Month</th>
-                {['Vending','Retail','Rewards','Refunds','Memb. Cash','EFT Inc.','EFT Dec.','Monthly EFT','EFT Change','In The Bank','Net Income'].map((h,i) => (
+                {['Vending','Retail','Rewards','Refunds','Memb. Cash','EFT Inc.','EFT Dec.','Monthly EFT','EFT Change','In The Bank','Expenses','Net Income'].map((h,i) => (
                   <th key={h} className={`text-right px-3 py-2.5 text-gray-600 font-semibold whitespace-nowrap ${i===0?'border-l border-gray-200':''}`}>{h}</th>
                 ))}
                 {['Leads','Red Bkd','Red Held','New Mbrs','Cancels','Total Mbrs','Net Mbr Chg'].map((h,i) => (
@@ -440,6 +448,7 @@ function TableTab() {
                     <td className={td}>{fmt$(r.net_eft)}</td>
                     <td className={`text-right px-3 py-2.5 whitespace-nowrap font-medium ${(r.net_eft_increase||0) >= 0 ? 'text-green-700' : 'text-red-600'}`}>{(r.net_eft_increase||0) >= 0 ? '+' : ''}{fmt$(r.net_eft_increase)}</td>
                     <td className={td}>{fmt$(r.in_the_bank)}</td>
+                    <td className={td}>{fmt$(r.expenses)}</td>
                     <td className={`text-right px-3 py-2.5 whitespace-nowrap font-medium ${(r.net_income||0) >= 0 ? 'text-green-700' : 'text-red-600'}`}>{fmt$(r.net_income)}</td>
                     <td className={tdL}>{fmtN(r.leads)}</td>
                     <td className={td}>{fmtN(r.red_appts_booked)}</td>
