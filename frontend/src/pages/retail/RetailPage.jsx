@@ -26,6 +26,8 @@ export default function RetailPage() {
   const [filterCategory, setFilterCategory] = useState('')
   const [filterTopSellers, setFilterTopSellers] = useState(false)
   const [hideZeroInventory, setHideZeroInventory] = useState(false)
+  const [sortKey, setSortKey] = useState(null)
+  const [sortDir, setSortDir] = useState('asc')
   const [showModal, setShowModal] = useState(false)
   const [editingSku, setEditingSku] = useState(null)
   const [showImportModal, setShowImportModal] = useState(false)
@@ -123,6 +125,28 @@ export default function RetailPage() {
     const matchesInventory = !hideZeroInventory || (s.inventory && s.inventory.quantity_on_hand > 0)
     return matchesSearch && matchesCategory && matchesTopSeller && matchesInventory
   })
+
+  // ── Column sorting ──────────────────────────────────────────────────────────
+  const toggleSort = (key) => {
+    if (sortKey === key) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
+    else { setSortKey(key); setSortDir('asc') }
+  }
+  const catName = (s) => categories.find(c => c.id === s.category_id)?.name || ''
+  const SORT_VAL = {
+    sku:       s => (s.sku_code || '').toLowerCase(),
+    name:      s => (s.product_name || '').toLowerCase(),
+    category:  s => catName(s).toLowerCase(),
+    retail:    s => parseFloat(s.retail_price) || 0,
+    wholesale: s => parseFloat(s.wholesale_cost) || 0,
+  }
+  const sortedSkus = sortKey
+    ? [...filteredSkus].sort((a, b) => {
+        const va = SORT_VAL[sortKey](a), vb = SORT_VAL[sortKey](b)
+        const cmp = typeof va === 'number' ? va - vb : String(va).localeCompare(String(vb))
+        return sortDir === 'asc' ? cmp : -cmp
+      })
+    : filteredSkus
+  const sortArrow = (key) => (sortKey === key ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '')
 
   if (loading) {
     return (
@@ -261,7 +285,7 @@ export default function RetailPage() {
           {/* Product Grid View */}
           {viewMode === 'grid' && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredSkus.map(sku => (
+              {sortedSkus.map(sku => (
                 <ProductCard
                   key={sku.id}
                   sku={sku}
@@ -280,11 +304,11 @@ export default function RetailPage() {
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">SKU</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Product Name</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Category</th>
-                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Retail</th>
-                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Wholesale</th>
+                      <th onClick={() => toggleSort('sku')} className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer select-none hover:text-gray-900">SKU{sortArrow('sku')}</th>
+                      <th onClick={() => toggleSort('name')} className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer select-none hover:text-gray-900">Product Name{sortArrow('name')}</th>
+                      <th onClick={() => toggleSort('category')} className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer select-none hover:text-gray-900">Category{sortArrow('category')}</th>
+                      <th onClick={() => toggleSort('retail')} className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer select-none hover:text-gray-900">Retail{sortArrow('retail')}</th>
+                      <th onClick={() => toggleSort('wholesale')} className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer select-none hover:text-gray-900">Wholesale{sortArrow('wholesale')}</th>
                       <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Sizes</th>
                       {isOwnerOrManager && (
                         <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider w-24">Actions</th>
@@ -292,7 +316,7 @@ export default function RetailPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
-                    {filteredSkus.map(sku => (
+                    {sortedSkus.map(sku => (
                       <tr key={sku.id} className="hover:bg-gray-50 transition-colors">
                         <td className="px-4 py-3 font-mono text-xs text-gray-900 font-semibold">{sku.sku_code}</td>
                         <td className="px-4 py-3 text-gray-900">
