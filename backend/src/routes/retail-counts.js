@@ -10,14 +10,35 @@ const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SER
 // ─── GET /api/retail/counts ─────────────────────────────────────────────────
 // List all count sessions for current studio
 router.get('/', authenticate, requireStudio, async (req, res) => {
-  const { data, error } = await db()
+  const database = db()
+  const { data: sessions, error } = await database
     .from('inventory_count_sessions')
     .select('*')
     .eq('studio_id', req.studio.id)
     .order('count_date', { ascending: false })
 
   if (error) return res.status(500).json({ error: error.message })
-  res.json(data)
+
+  // Compute progress LIVE from the entries (matches the resume/count screen exactly,
+  // instead of trusting the denormalized items_counted/total_items columns, which can drift).
+  const ids = (sessions || []).map(s => s.id)
+  const totals = {}, counted = {}
+  if (ids.length) {
+    const { data: entries } = await database
+      .from('inventory_count_entries')
+      .select('session_id, actual_quantity')
+      .in('session_id', ids)
+    for (const e of (entries || [])) {
+      totals[e.session_id] = (totals[e.session_id] || 0) + 1
+      if (e.actual_quantity !== null) counted[e.session_id] = (counted[e.session_id] || 0) + 1
+    }
+  }
+
+  res.json((sessions || []).map(s => ({
+    ...s,
+    total_items: totals[s.id] ?? s.total_items ?? 0,
+    items_counted: counted[s.id] ?? s.items_counted ?? 0,
+  })))
 })
 
 // ─── GET /api/retail/counts/:id ─────────────────────────────────────────────
