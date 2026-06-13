@@ -377,4 +377,61 @@ async function sendEmail({ to, subject, html }) {
   await sendViaBestAvailable({ to, subject, html })
 }
 
-module.exports = { sendEodEmail, sendEmail }
+// Diagnose the email setup and send a test message. Returns a plain-English result
+// so the owner can see exactly what's wrong (no creds, bad password, no recipients…).
+async function diagnoseEmail(studioId) {
+  const result = {
+    transport: (process.env.EMAIL_USER && process.env.EMAIL_PASS) ? 'gmail'
+      : (process.env.RESEND_API_KEY ? 'resend' : 'none'),
+    email_user: process.env.EMAIL_USER || null,
+    has_password: !!process.env.EMAIL_PASS,
+    password_length: process.env.EMAIL_PASS ? process.env.EMAIL_PASS.length : 0,
+    recipients: [],
+    verified: false,
+    sent: false,
+    ok: false,
+    message: '',
+  }
+
+  try {
+    const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+    const { emails } = await getStudioRecipients(db, studioId)
+    result.recipients = emails.length ? emails : [process.env.OWNER_EMAIL, process.env.MANAGER_EMAIL].filter(Boolean)
+  } catch (e) { result.message = 'Could not load recipients: ' + e.message }
+
+  const transport = createTransport()
+  if (!transport) {
+    result.message = 'Gmail is not configured. Set EMAIL_USER and EMAIL_PASS (Gmail App Password) in Railway and let it redeploy.'
+    return result
+  }
+
+  try {
+    await transport.verify()
+    result.verified = true
+  } catch (e) {
+    result.message = 'Gmail login was rejected (check the App Password — it must be the 16-char one with no spaces, and 2-Step Verification must be on). Details: ' + e.message
+    return result
+  }
+
+  if (!result.recipients.length) {
+    result.message = 'Email login works, but there are no recipients — no active owner/manager email found and no OWNER_EMAIL/MANAGER_EMAIL fallback set.'
+    return result
+  }
+
+  try {
+    await transport.sendMail({
+      from: `"${process.env.STUDIO_NAME || 'HOTWORX Team Hub'}" <${process.env.EMAIL_USER}>`,
+      to: result.recipients.join(', '),
+      subject: 'HOTWORX Team Hub — Email test ✅',
+      html: '<div style="font-family:sans-serif;font-size:15px;color:#1a1a1a"><p>🎉 <strong>Your EOD checkout email is working!</strong></p><p>This is a test from the HOTWORX Team Hub. If you can read this, Mid and Closing checkout reports will now arrive here automatically.</p></div>',
+    })
+    result.sent = true
+    result.ok = true
+    result.message = `Test email sent to ${result.recipients.join(', ')}. Check the inbox (and spam, first time).`
+  } catch (e) {
+    result.message = 'Login worked but sending failed: ' + e.message
+  }
+  return result
+}
+
+module.exports = { sendEodEmail, sendEmail, diagnoseEmail }

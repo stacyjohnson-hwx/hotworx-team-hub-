@@ -4,13 +4,23 @@ const { createClient } = require('@supabase/supabase-js')
 const authenticate = require('../middleware/authMiddleware')
 const { requireRole } = require('../middleware/roleGuard')
 const { requireStudio } = require('../middleware/studioMiddleware')
-const { sendEodEmail } = require('../services/eodEmail')
+const { sendEodEmail, diagnoseEmail } = require('../services/eodEmail')
 const { todayInChicago } = require('../jobs/eodEmailCron')
 
 const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 
 // Apply studio middleware to all routes
 router.use(authenticate, requireStudio)
+
+// ─── POST /api/eod/test-email — owner/manager: diagnose + send a test email ──
+router.post('/test-email', requireRole('owner', 'manager'), async (req, res) => {
+  try {
+    const result = await diagnoseEmail(req.studio.id)
+    res.json(result)
+  } catch (err) {
+    res.status(500).json({ ok: false, message: err.message })
+  }
+})
 
 // ─── GET /api/eod?date=YYYY-MM-DD  OR  ?from=YYYY-MM-DD&to=YYYY-MM-DD ─────────
 // Owner/Manager: all submissions; TSA: their own only
