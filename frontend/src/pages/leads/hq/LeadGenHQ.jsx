@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ChevronDown, Flame, Zap, Megaphone, Sprout, Phone } from 'lucide-react'
+import { ChevronDown, Flame, Zap, Megaphone, Sprout, Phone, ListChecks } from 'lucide-react'
 import { EMPLOYEES, getRank } from '../data/mockData'
 import { useAuth } from '@/contexts/AuthContext'
 import MarketingHub   from '@/pages/marketing/MarketingHub'
@@ -11,12 +11,15 @@ import MyShift        from '@/pages/growth/MyShift'
 // MANAGER planning tabs: Content (content tasks/library/ideas), Marketing
 // (growth plays/idea bank), and Outreach. TSAs don't see these — they get the
 // unified "My Shift" screen instead.
-const TSA_TABS = [
-  { id: 'marketing', label: 'Content',   icon: Megaphone, shortLabel: 'Content'   },
-  { id: 'leadgen',   label: 'Marketing', icon: Sprout,    shortLabel: 'Marketing' },
-  { id: 'outreach',  label: 'Outreach',  icon: Phone,     shortLabel: 'Outreach'  },
+// Managers get the unified "My Tasks" execution list (same as TSAs' My Shift)
+// PLUS the planning hubs. TSAs are routed straight to My Shift (no tabs).
+const ALL_TABS = [
+  { id: 'myshift',   label: 'My Tasks',  icon: ListChecks, shortLabel: 'My Tasks'  },
+  { id: 'marketing', label: 'Content',   icon: Megaphone,  shortLabel: 'Content'   },
+  { id: 'leadgen',   label: 'Marketing', icon: Sprout,     shortLabel: 'Marketing' },
+  { id: 'outreach',  label: 'Outreach',  icon: Phone,      shortLabel: 'Outreach'  },
 ]
-const ALL_TABS = TSA_TABS
+const TSA_TABS = ALL_TABS
 
 // Derive an employee ID from the logged-in user's first name
 function getEmployeeIdFromProfile(profile) {
@@ -78,7 +81,7 @@ export default function LeadGenHQ() {
 
   const defaultTab = saved.activeTab && tabs.find(t => t.id === saved.activeTab)
     ? saved.activeTab
-    : 'marketing'
+    : 'myshift'
 
   const [activeTab,       setActiveTab]       = useState(defaultTab)
   const [activeEmployeeId, setActiveEmployeeId] = useState(
@@ -186,6 +189,7 @@ export default function LeadGenHQ() {
 
       {/* ── Tab Content ───────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto" onClick={() => setShowEmployeePicker(false)}>
+        {activeTab === 'myshift'     && <MyShift />}
         {activeTab === 'marketing'   && <MarketingHub />}
         {activeTab === 'leadgen'     && <LeadGenHub />}
         {activeTab === 'outreach'    && <OutreachTab />}

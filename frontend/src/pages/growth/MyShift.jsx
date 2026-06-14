@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useStudio } from '@/contexts/StudioContext'
 import {
   CheckCircle2, Circle, Loader2, Camera, ChevronDown, ChevronUp, X, Play,
-  Trophy, Flame, Gift, Lightbulb, Image as ImageIcon, Sprout, Plus,
+  Trophy, Flame, Gift, Lightbulb, Image as ImageIcon, Sprout, Plus, Phone, MessageSquare,
 } from 'lucide-react'
 
 // Each task is tagged by which engine it came from.
@@ -213,6 +213,65 @@ function UploadContentModal({ studioId, onClose, onSaved }) {
   )
 }
 
+// ─── Interactive Outreach widget — log calls/texts right from the dashboard ───
+function OutreachWidget() {
+  const [tiles, setTiles] = useState([])
+  const [logs, setLogs]   = useState({}) // tile_id -> { calls, texts }
+  const [loading, setLoading] = useState(true)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const [t, l] = await Promise.all([
+        apiGet('/api/outreach/tiles').catch(() => []),
+        apiGet('/api/outreach/logs').catch(() => []),
+      ])
+      setTiles(t || [])
+      const map = {}
+      ;(l || []).forEach(r => { map[r.tile_id] = { calls: r.calls_made || 0, texts: r.texts_made || 0 } })
+      setLogs(map)
+    } catch {} finally { setLoading(false) }
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  const bump = async (tileId, field) => {
+    const cur = logs[tileId] || { calls: 0, texts: 0 }
+    const next = { ...cur, [field]: (cur[field] || 0) + 1 }
+    setLogs(prev => ({ ...prev, [tileId]: next })) // optimistic
+    try { await apiPost('/api/outreach/logs/upsert', { tile_id: tileId, calls_made: next.calls, texts_made: next.texts }) }
+    catch { setLogs(prev => ({ ...prev, [tileId]: cur })) } // revert on failure
+  }
+
+  if (loading || !tiles.length) return null
+  const totalCalls = Object.values(logs).reduce((s, v) => s + (v.calls || 0), 0)
+  const totalTexts = Object.values(logs).reduce((s, v) => s + (v.texts || 0), 0)
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden mt-5">
+      <div className="px-4 py-2.5 border-b border-gray-100 flex items-center gap-2">
+        <Phone size={15} className="text-[#E8611A]" /><p className="text-sm font-bold text-gray-900">Outreach today</p>
+        <span className="ml-auto text-[11px] text-gray-500">{totalCalls} calls · {totalTexts} texts</span>
+      </div>
+      <div className="divide-y divide-gray-50">
+        {tiles.map(t => {
+          const v = logs[t.id] || { calls: 0, texts: 0 }
+          return (
+            <div key={t.id} className="flex items-center gap-2 px-4 py-2.5">
+              <p className="text-sm text-gray-800 truncate flex-1">{t.title}</p>
+              <button onClick={() => bump(t.id, 'calls')} className="flex items-center gap-1 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-2 py-1 hover:bg-blue-100">
+                <Phone size={11} /> {v.calls} <Plus size={10} />
+              </button>
+              <button onClick={() => bump(t.id, 'texts')} className="flex items-center gap-1 text-xs font-semibold text-green-700 bg-green-50 border border-green-200 rounded-lg px-2 py-1 hover:bg-green-100">
+                <MessageSquare size={11} /> {v.texts} <Plus size={10} />
+              </button>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ─── My Shift (TSA unified view) ──────────────────────────────────────────────
 export default function MyShift() {
   const { currentStudio } = useStudio()
@@ -301,6 +360,9 @@ export default function MyShift() {
             </>}
           </div>
         )}
+
+      {/* Outreach (interactive) */}
+      <OutreachWidget />
 
       {/* Leaderboard */}
       {top.length > 0 && (
