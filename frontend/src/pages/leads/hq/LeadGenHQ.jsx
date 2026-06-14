@@ -5,15 +5,16 @@ import { useAuth } from '@/contexts/AuthContext'
 import MarketingHub   from '@/pages/marketing/MarketingHub'
 import LeadGenHub     from '@/pages/leadgen/LeadGenHub'
 import OutreachTab    from '../OutreachTab'
+import MyShift        from '@/pages/growth/MyShift'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-// Three top-line tabs for everyone: Marketing, Member Growth, and Outreach.
-// (Member Growth folds in the old Campaigns/Plays as its Idea Bank and the daily
-//  Leads tasks as "My Tasks". Outreach is now its own top tab.)
+// MANAGER planning tabs: Content (content tasks/library/ideas), Marketing
+// (growth plays/idea bank), and Outreach. TSAs don't see these — they get the
+// unified "My Shift" screen instead.
 const TSA_TABS = [
-  { id: 'marketing', label: 'Marketing',     icon: Megaphone, shortLabel: 'Marketing' },
-  { id: 'leadgen',   label: 'Member Growth', icon: Sprout,    shortLabel: 'Growth'    },
-  { id: 'outreach',  label: 'Outreach',      icon: Phone,     shortLabel: 'Outreach'  },
+  { id: 'marketing', label: 'Content',   icon: Megaphone, shortLabel: 'Content'   },
+  { id: 'leadgen',   label: 'Marketing', icon: Sprout,    shortLabel: 'Marketing' },
+  { id: 'outreach',  label: 'Outreach',  icon: Phone,     shortLabel: 'Outreach'  },
 ]
 const ALL_TABS = TSA_TABS
 
@@ -129,6 +130,15 @@ export default function LeadGenHQ() {
       saveState({ employeeOverrides: overrides })
       return updated
     })
+  }
+
+  // TSAs get the simple unified "My Shift" screen — no planning tabs.
+  if (isTsa) {
+    return (
+      <div className="rounded-2xl border border-orange-200 overflow-hidden bg-white shadow-sm flex flex-col flex-1">
+        <MyShift />
+      </div>
+    )
   }
 
   return (

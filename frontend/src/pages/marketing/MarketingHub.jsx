@@ -716,7 +716,7 @@ export default function MarketingHub() {
     <div className="p-4 max-w-3xl mx-auto">
       <div className="flex items-center gap-2 mb-3">
         <Megaphone size={18} className="text-[#E8611A]" />
-        <h2 className="text-base font-bold text-gray-900">Marketing Hub</h2>
+        <h2 className="text-base font-bold text-gray-900">Content</h2>
       </div>
       <div className="flex gap-1 mb-4 bg-gray-100 rounded-lg p-0.5 w-fit">
         {TABS.map(t => {

@@ -243,12 +243,13 @@ router.get('/leaderboard', async (req, res) => {
   const database = db()
   const wkStart = weekStartStr()
 
-  const [{ data: members }, { data: inactive }, { data: settings }, { data: completions }, { data: assets }] = await Promise.all([
+  const [{ data: members }, { data: inactive }, { data: settings }, { data: completions }, { data: assets }, { data: leadgenCompletions }] = await Promise.all([
     database.from('user_studios').select('user_id, role').eq('studio_id', req.studio.id),
     database.from('user_profiles').select('id').eq('is_active', false),
     database.from('marketing_settings').select('*').eq('studio_id', req.studio.id).maybeSingle(),
     database.from('marketing_task_completions').select('staff_id, points_awarded, completion_date, completed_at').eq('studio_id', req.studio.id),
     database.from('marketing_content_assets').select('staff_id, uploaded_at').eq('studio_id', req.studio.id).neq('status', 'archived'),
+    database.from('leadgen_completions').select('staff_id, points_awarded, completion_date, completed_at').eq('studio_id', req.studio.id),
   ])
 
   const inactiveIds = new Set((inactive || []).map(r => r.id))
@@ -256,7 +257,8 @@ router.get('/leaderboard', async (req, res) => {
   const resetAt = settings?.leaderboard_reset_at ? settings.leaderboard_reset_at.slice(0, 10) : null
   const effStart = resetAt && resetAt > wkStart ? resetAt : wkStart
 
-  const compl = completions || []
+  // Combined points: Content (marketing) + Marketing (leadgen) task completions
+  const compl = [...(completions || []), ...(leadgenCompletions || [])]
   const names = await staffNameMap(database, memberIds)
 
   // Profile photos for each member (avatar_url on user_profiles)
