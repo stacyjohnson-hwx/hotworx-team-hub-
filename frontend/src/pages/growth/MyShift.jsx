@@ -156,6 +156,63 @@ function IdeaModal({ onClose, onSaved }) {
   )
 }
 
+// ─── Upload-content modal (free-form, not tied to a task) ─────────────────────
+function UploadContentModal({ studioId, onClose, onSaved }) {
+  const [files, setFiles] = useState([])      // local File objects (uploaded on confirm)
+  const [memberName, setMemberName] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const fileRef = useRef(null)
+
+  const addFiles = (e) => { setFiles(prev => [...prev, ...Array.from(e.target.files || [])]); if (fileRef.current) fileRef.current.value = '' }
+  const removeFile = (i) => setFiles(prev => prev.filter((_, idx) => idx !== i))
+
+  const upload = async () => {
+    if (!files.length) return
+    setSaving(true); setError('')
+    try {
+      for (const file of files) {
+        const isVideo = file.type.startsWith('video')
+        const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+        const path = `${studioId}/library/${Date.now()}-${safe}`
+        const { error: upErr } = await supabase.storage.from('marketing-content').upload(path, file, { upsert: false, contentType: file.type })
+        if (upErr) throw upErr
+        const { data: { publicUrl } } = supabase.storage.from('marketing-content').getPublicUrl(path)
+        await apiPost('/api/marketing/content', {
+          file_url: publicUrl, file_path: path, file_type: isVideo ? 'video' : 'photo',
+          category: isVideo ? 'member_videos' : 'member_photos', member_name: memberName || null,
+        })
+      }
+      onSaved()
+    } catch (e) { setError('Upload failed: ' + (e.message || 'try a smaller file')); setSaving(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-5" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-2 mb-3"><ImageIcon size={18} className="text-[#E8611A]" /><h2 className="font-semibold text-gray-900">Upload content</h2></div>
+        <p className="text-xs text-gray-500 mb-3">Add member photos, videos, or moments to the content library — anytime, no task needed.</p>
+        <div className="flex gap-2 flex-wrap mb-3">
+          {files.map((f, i) => (
+            <div key={i} className="relative w-16 h-16 rounded-lg overflow-hidden border border-gray-200 bg-gray-100">
+              {f.type.startsWith('video') ? <div className="w-full h-full flex items-center justify-center"><Play size={18} className="text-gray-400" /></div> : <img src={URL.createObjectURL(f)} alt="" className="w-full h-full object-cover" />}
+              <button onClick={() => removeFile(i)} className="absolute top-0.5 right-0.5 bg-black/60 rounded-full p-0.5"><X size={10} className="text-white" /></button>
+            </div>
+          ))}
+          <button type="button" onClick={() => fileRef.current?.click()} className="w-16 h-16 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center text-gray-400 hover:border-[#E8611A] hover:text-[#E8611A]"><Camera size={18} /></button>
+          <input ref={fileRef} type="file" accept="image/*,video/*" capture="environment" multiple onChange={addFiles} className="hidden" />
+        </div>
+        <input value={memberName} onChange={e => setMemberName(e.target.value)} placeholder="Member name (optional)" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-[#E8611A]/30 focus:border-[#E8611A]" />
+        {error && <p className="text-xs text-red-600 mb-2">{error}</p>}
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 font-medium">Cancel</button>
+          <button onClick={upload} disabled={saving || !files.length} className="px-5 py-2 bg-[#E8611A] hover:bg-orange-600 text-white text-sm font-bold rounded-lg disabled:opacity-50 flex items-center gap-2">{saving ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Upload {files.length || ''}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── My Shift (TSA unified view) ──────────────────────────────────────────────
 export default function MyShift() {
   const { currentStudio } = useStudio()
@@ -165,6 +222,8 @@ export default function MyShift() {
   const [toast, setToast] = useState(null)
   const [ideaOpen, setIdeaOpen] = useState(false)
   const [ideaThanks, setIdeaThanks] = useState(false)
+  const [uploadOpen, setUploadOpen] = useState(false)
+  const [uploadThanks, setUploadThanks] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -218,10 +277,16 @@ export default function MyShift() {
         )}
       </div>
 
-      {/* Submit idea */}
-      <button onClick={() => setIdeaOpen(true)} className="w-full mb-4 flex items-center justify-center gap-2 py-2.5 bg-white border border-gray-300 text-gray-700 text-sm font-semibold rounded-xl hover:bg-gray-50">
-        <Lightbulb size={15} className="text-[#E8611A]" /> Submit an idea
-      </button>
+      {/* Quick actions: upload content + submit idea */}
+      <div className="grid grid-cols-2 gap-2 mb-4">
+        <button onClick={() => setUploadOpen(true)} className="flex items-center justify-center gap-2 py-2.5 bg-white border border-gray-300 text-gray-700 text-sm font-semibold rounded-xl hover:bg-gray-50">
+          <ImageIcon size={15} className="text-[#E8611A]" /> Upload content
+        </button>
+        <button onClick={() => setIdeaOpen(true)} className="flex items-center justify-center gap-2 py-2.5 bg-white border border-gray-300 text-gray-700 text-sm font-semibold rounded-xl hover:bg-gray-50">
+          <Lightbulb size={15} className="text-[#E8611A]" /> Submit an idea
+        </button>
+      </div>
+      {uploadThanks && <p className="text-xs text-green-600 text-center -mt-2 mb-3">✓ Content uploaded — thanks! It's in the library for the managers.</p>}
       {ideaThanks && <p className="text-xs text-green-600 text-center -mt-2 mb-3">✓ Thanks! Your idea was sent to the managers.</p>}
 
       {/* Tasks */}
@@ -259,6 +324,7 @@ export default function MyShift() {
       )}
 
       {ideaOpen && <IdeaModal onClose={() => setIdeaOpen(false)} onSaved={() => { setIdeaOpen(false); setIdeaThanks(true); setTimeout(() => setIdeaThanks(false), 3000) }} />}
+      {uploadOpen && <UploadContentModal studioId={currentStudio?.id} onClose={() => setUploadOpen(false)} onSaved={() => { setUploadOpen(false); setUploadThanks(true); setTimeout(() => setUploadThanks(false), 3500) }} />}
     </div>
   )
 }
