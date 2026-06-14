@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { CheckCircle, ExternalLink, AlertTriangle, Phone, MessageSquare, Sparkles, ClipboardCheck, Wrench, ShieldAlert, Loader2, GraduationCap, ShoppingCart } from 'lucide-react'
 import { apiGet, apiPost } from '@/hooks/useApi'
 import { useAuth } from '@/contexts/AuthContext'
@@ -591,6 +591,45 @@ export default function EodForm({ submittedShifts, onSubmitted }) {
   // Training the user marked complete today (pulled from the Training module)
   const [completedTraining, setCompletedTraining] = useState([])
 
+  // ── Save Progress (draft) ────────────────────────────────────────────────────
+  // Notes/data are kept safe on this device throughout the day, restored on return,
+  // and cleared once the shift is submitted.
+  const draftKey = user?.id ? `eod_draft_${user.id}_${new Date().toLocaleDateString('en-CA')}` : null
+  const [draftSaved, setDraftSaved] = useState(false)
+  const [restored, setRestored] = useState(false)
+  const draftLoaded = useRef(false)
+
+  // Restore a saved draft once, on first load
+  useEffect(() => {
+    if (!draftKey || draftLoaded.current) return
+    draftLoaded.current = true
+    try {
+      const raw = localStorage.getItem(draftKey)
+      if (raw) {
+        const d = JSON.parse(raw)
+        if (d.form) setForm(f => ({ ...f, ...d.form }))
+        if (Array.isArray(d.missionTitles)) setMissionTitles(d.missionTitles)
+        if (Array.isArray(d.completedTraining)) setCompletedTraining(d.completedTraining)
+        setRestored(true)
+      }
+    } catch {}
+  }, [draftKey])
+
+  // Auto-save as they type so notes are never lost even without clicking Save
+  useEffect(() => {
+    if (!draftKey || !draftLoaded.current) return
+    try { localStorage.setItem(draftKey, JSON.stringify({ form, missionTitles, completedTraining, savedAt: Date.now() })) } catch {}
+  }, [draftKey, form, missionTitles, completedTraining])
+
+  const saveProgress = () => {
+    if (!draftKey) return
+    try {
+      localStorage.setItem(draftKey, JSON.stringify({ form, missionTitles, completedTraining, savedAt: Date.now() }))
+      setRestored(false); setDraftSaved(true)
+      setTimeout(() => setDraftSaved(false), 2500)
+    } catch {}
+  }
+
   // Read missions fresh from localStorage — always pull at the moment of call
   function readMissionsFromStorage(profileArg) {
     try {
@@ -671,6 +710,7 @@ export default function EodForm({ submittedShifts, onSubmitted }) {
         completed_training: completedTraining,
       }
       await apiPost('/api/eod', payload)
+      if (draftKey) { try { localStorage.removeItem(draftKey) } catch {} }
       setSuccess(true)
       setMissionTitles([])
       onSubmitted()
@@ -812,10 +852,22 @@ export default function EodForm({ submittedShifts, onSubmitted }) {
             </div>
           </Section>
 
-          <button type="submit" disabled={saving}
-            className="w-full bg-red-600 text-white font-semibold py-3 rounded-xl hover:bg-red-600-hover transition-colors disabled:opacity-60 text-sm">
-            {saving ? 'Submitting…' : `Submit ${form.shift_type === 'mid' ? 'Mid' : 'Closing'} Shift EOD`}
-          </button>
+          {(draftSaved || restored) && (
+            <p className={`text-xs text-center font-medium ${draftSaved ? 'text-green-600' : 'text-blue-600'}`}>
+              {draftSaved ? '✓ Progress saved on this device' : '↩ Restored your saved progress from earlier today'}
+            </p>
+          )}
+          <div className="flex gap-2">
+            <button type="button" onClick={saveProgress}
+              className="flex-1 bg-white text-gray-700 font-semibold py-3 rounded-xl border border-gray-300 hover:bg-gray-50 transition-colors text-sm">
+              Save Progress
+            </button>
+            <button type="submit" disabled={saving}
+              className="flex-[2] bg-red-600 text-white font-semibold py-3 rounded-xl hover:bg-red-600-hover transition-colors disabled:opacity-60 text-sm">
+              {saving ? 'Submitting…' : `Submit ${form.shift_type === 'mid' ? 'Mid' : 'Closing'} Shift EOD`}
+            </button>
+          </div>
+          <p className="text-[11px] text-gray-400 text-center">Save Progress keeps your notes on this device — Submit sends the report &amp; email.</p>
         </>
       )}
     </form>
