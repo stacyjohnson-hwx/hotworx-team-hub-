@@ -16,8 +16,11 @@ router.use(authenticate, requireStudio)
 router.post('/test-email', requireRole('owner', 'manager'), async (req, res) => {
   try {
     const result = await diagnoseEmail(req.studio.id)
+    // Persist the diagnostic so it can be reviewed (no password is stored)
+    await db().from('email_test_results').insert({ studio_id: req.studio.id, result }).catch(() => {})
     res.json(result)
   } catch (err) {
+    await db().from('email_test_results').insert({ studio_id: req.studio.id, result: { ok: false, message: err.message } }).catch(() => {})
     res.status(500).json({ ok: false, message: err.message })
   }
 })
