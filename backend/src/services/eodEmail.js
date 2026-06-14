@@ -30,8 +30,38 @@ function gmailPorts() {
   return configured === 587 ? [587, 465] : [465, 587]
 }
 
+// SendGrid over HTTPS (port 443) — works on hosts that block SMTP (like Railway).
+// Verify a Single Sender (e.g. HOTWORXcheckout@gmail.com) in SendGrid, then set
+// SENDGRID_API_KEY (+ optional EMAIL_FROM) in Railway.
+function hasSendgrid() { return !!process.env.SENDGRID_API_KEY }
+function senderAddress() { return process.env.EMAIL_FROM || process.env.EMAIL_USER || 'HOTWORXcheckout@gmail.com' }
+
+async function sendViaSendgrid({ to, subject, html }) {
+  const fromName = process.env.STUDIO_NAME || 'HOTWORX Team Hub'
+  const toList = (Array.isArray(to) ? to : [to]).filter(Boolean)
+  const res = await fetch('https://api.sendgrid.com/v3/mail/send', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${process.env.SENDGRID_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      personalizations: [{ to: toList.map(email => ({ email })) }],
+      from: { email: senderAddress(), name: fromName },
+      subject,
+      content: [{ type: 'text/html', value: html }],
+    }),
+  })
+  if (res.status >= 200 && res.status < 300) return
+  const body = await res.text().catch(() => '')
+  throw new Error(`SendGrid ${res.status}: ${body.slice(0, 300)}`)
+}
+
 async function sendViaBestAvailable({ to, subject, html }) {
   const fromName  = process.env.STUDIO_NAME || 'HOTWORX Pewaukee'
+
+  if (hasSendgrid()) {
+    await sendViaSendgrid({ to, subject, html })
+    console.log('[Email] Sent via SendGrid to', Array.isArray(to) ? to.join(', ') : to)
+    return
+  }
 
   if (hasGmail()) {
     // Try each port; whichever connects first wins. Timeouts prevent hangs.
@@ -403,8 +433,9 @@ async function sendEmail({ to, subject, html }) {
 // so the owner can see exactly what's wrong (no creds, bad password, no recipients…).
 async function diagnoseEmail(studioId) {
   const result = {
-    transport: hasGmail() ? 'gmail' : (process.env.RESEND_API_KEY ? 'resend' : 'none'),
+    transport: hasSendgrid() ? 'sendgrid' : (hasGmail() ? 'gmail' : (process.env.RESEND_API_KEY ? 'resend' : 'none')),
     email_user: process.env.EMAIL_USER || null,
+    sender: senderAddress(),
     has_password: !!process.env.EMAIL_PASS,
     password_length: process.env.EMAIL_PASS ? process.env.EMAIL_PASS.length : 0,
     recipients: [],
@@ -421,8 +452,31 @@ async function diagnoseEmail(studioId) {
     result.recipients = emails.length ? emails : [process.env.OWNER_EMAIL, process.env.MANAGER_EMAIL].filter(Boolean)
   } catch (e) { result.message = 'Could not load recipients: ' + e.message }
 
+  // ── SendGrid (HTTPS — preferred; never hangs) ──────────────────────────────
+  if (hasSendgrid()) {
+    if (!result.recipients.length) {
+      result.message = 'SendGrid is set, but there are no recipients to send to.'
+      return result
+    }
+    try {
+      await sendViaSendgrid({
+        to: result.recipients,
+        subject: 'HOTWORX Team Hub — Email test ✅',
+        html: '<div style="font-family:sans-serif;font-size:15px;color:#1a1a1a"><p>🎉 <strong>Your EOD checkout email is working!</strong></p><p>Sent via SendGrid from the HOTWORX Team Hub. Mid and Closing checkout reports will now arrive here automatically.</p></div>',
+      })
+      result.verified = true; result.sent = true; result.ok = true
+      result.message = `Test email sent via SendGrid to ${result.recipients.join(', ')}. Check inbox (and spam the first time).`
+    } catch (e) {
+      const m = (e.message || '').toLowerCase()
+      if (m.includes('401') || m.includes('unauthorized')) result.message = 'SendGrid API key is invalid — re-copy the key into Railway as SENDGRID_API_KEY. Details: ' + e.message
+      else if (m.includes('403') || m.includes('verif') || m.includes('from address') || m.includes('sender')) result.message = `SendGrid rejected the sender "${senderAddress()}" — verify it as a Single Sender in SendGrid (or set EMAIL_FROM to a verified address). Details: ` + e.message
+      else result.message = 'SendGrid send failed: ' + e.message
+    }
+    return result
+  }
+
   if (!hasGmail()) {
-    result.message = 'Gmail is not configured — EMAIL_USER and EMAIL_PASS are not reaching the backend. Add both to the Railway BACKEND service and let it redeploy.'
+    result.message = 'No email is configured. Recommended: set SENDGRID_API_KEY (HTTPS — works on Railway). Details: SMTP (EMAIL_USER/EMAIL_PASS) is blocked on this host.'
     return result
   }
 
