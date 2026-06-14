@@ -371,13 +371,20 @@ async function fetchSubmissionsForDate(dateStr, studioId) {
   return { submissions: enrichedSubmissions, outreachByUser, tasksByUser }
 }
 
-// Gather the live email addresses of a studio's active owner + manager users
+// Per-studio dedicated manager inbox for EOD reports. This REPLACES managers'
+// personal emails — reports go to active owner-role users + this shared inbox.
+const STUDIO_MANAGER_EMAIL = {
+  WI0009: 'manager.wi0009@hotworx.net', // HOTWORX Pewaukee
+  // WI0021: 'manager.wi0021@hotworx.net', // HOTWORX Madison — add when ready
+}
+
+// Recipients = active OWNER-role users + the studio's dedicated manager inbox.
 async function getStudioRecipients(db, studioId) {
   if (!studioId) return { emails: [], studioName: null }
   const [{ data: members }, { data: inactive }, { data: studio }] = await Promise.all([
-    db.from('user_studios').select('user_id, role').eq('studio_id', studioId).in('role', ['owner', 'manager']),
+    db.from('user_studios').select('user_id, role').eq('studio_id', studioId).eq('role', 'owner'),
     db.from('user_profiles').select('id').eq('is_active', false),
-    db.from('studios').select('name').eq('id', studioId).maybeSingle(),
+    db.from('studios').select('name, code').eq('id', studioId).maybeSingle(),
   ])
   const inactiveIds = new Set((inactive || []).map(r => r.id))
   const emails = []
@@ -387,6 +394,9 @@ async function getStudioRecipients(db, studioId) {
     const email = data?.user?.email
     if (email && !emails.includes(email)) emails.push(email)
   }
+  // Dedicated manager inbox (not individual managers' personal emails)
+  const mgr = STUDIO_MANAGER_EMAIL[studio?.code]
+  if (mgr && !emails.includes(mgr)) emails.push(mgr)
   return { emails, studioName: studio?.name || null }
 }
 
