@@ -1,4 +1,5 @@
 const router = require('express').Router()
+const { diagnoseEmail } = require('../services/eodEmail')
 
 router.get('/', (req, res) => {
   res.json({
@@ -20,6 +21,19 @@ router.get('/email', (req, res) => {
     sender_domain: sender.includes('@') ? sender.split('@')[1] : null,
     sender_set: !!sender,
   })
+})
+
+// TEMP debug: run the real email diagnostic server-side (bypasses browser/auth).
+// Guarded by ?confirm=send so it isn't triggered casually. Remove after debugging.
+router.get('/email-test', async (req, res) => {
+  if (req.query.confirm !== 'send') return res.json({ hint: 'add ?confirm=send to run a real send test' })
+  const studioId = req.query.studio || '3abc6af6-37b8-4c13-b761-a92b5204ca25'
+  try {
+    const result = await diagnoseEmail(studioId)
+    res.json(result)
+  } catch (e) {
+    res.status(500).json({ ok: false, message: e.message, stack: (e.stack || '').split('\n').slice(0, 4) })
+  }
 })
 
 module.exports = router
