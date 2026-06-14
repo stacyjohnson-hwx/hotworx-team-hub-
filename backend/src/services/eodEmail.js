@@ -5,32 +5,54 @@ const { createClient } = require('@supabase/supabase-js')
 // ─── Transport: Gmail SMTP preferred, Resend fallback ─────────────────────────
 // Gmail SMTP sends to anyone. Resend sandbox only sends to the account owner.
 // Set EMAIL_USER + EMAIL_PASS (Gmail App Password) in Railway to unlock Gmail.
-function createTransport() {
-  if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
-    return nodemailer.createTransport({
-      host: 'smtp.gmail.com',
-      port: 465,
-      secure: true,
-      auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
-    })
-  }
-  return null // falls through to Resend
+function hasGmail() {
+  return !!(process.env.EMAIL_USER && process.env.EMAIL_PASS)
+}
+
+// Build a Gmail transport for a specific port, with hard timeouts so a blocked
+// SMTP port fails fast (≈8s) instead of hanging the request forever.
+function buildGmailTransport(port) {
+  return nodemailer.createTransport({
+    host: 'smtp.gmail.com',
+    port,
+    secure: port === 465,     // 465 = implicit SSL; 587 = STARTTLS
+    requireTLS: port === 587,
+    auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+    connectionTimeout: 8000,
+    greetingTimeout: 8000,
+    socketTimeout: 12000,
+  })
+}
+
+// Ports to try, configured port first (EMAIL_PORT), then the alternate.
+function gmailPorts() {
+  const configured = parseInt(process.env.EMAIL_PORT) || 465
+  return configured === 587 ? [587, 465] : [465, 587]
 }
 
 async function sendViaBestAvailable({ to, subject, html }) {
-  const transport = createTransport()
   const fromName  = process.env.STUDIO_NAME || 'HOTWORX Pewaukee'
 
-  if (transport) {
-    // Gmail SMTP — sends to any address, no domain restrictions
-    await transport.sendMail({
-      from: `"${fromName}" <${process.env.EMAIL_USER}>`,
-      to: Array.isArray(to) ? to.join(', ') : to,
-      subject,
-      html,
-    })
-    console.log('[Email] Sent via Gmail SMTP to', Array.isArray(to) ? to.join(', ') : to)
-    return
+  if (hasGmail()) {
+    // Try each port; whichever connects first wins. Timeouts prevent hangs.
+    let lastErr = null
+    for (const port of gmailPorts()) {
+      try {
+        const transport = buildGmailTransport(port)
+        await transport.sendMail({
+          from: `"${fromName}" <${process.env.EMAIL_USER}>`,
+          to: Array.isArray(to) ? to.join(', ') : to,
+          subject,
+          html,
+        })
+        console.log(`[Email] Sent via Gmail SMTP (port ${port}) to`, Array.isArray(to) ? to.join(', ') : to)
+        return
+      } catch (e) {
+        lastErr = e
+        console.warn(`[Email] Gmail port ${port} failed: ${e.message}`)
+      }
+    }
+    throw new Error(`Gmail send failed on ports ${gmailPorts().join('/')}: ${lastErr?.message || 'unknown'}`)
   }
 
   if (process.env.RESEND_API_KEY) {
@@ -381,8 +403,7 @@ async function sendEmail({ to, subject, html }) {
 // so the owner can see exactly what's wrong (no creds, bad password, no recipients…).
 async function diagnoseEmail(studioId) {
   const result = {
-    transport: (process.env.EMAIL_USER && process.env.EMAIL_PASS) ? 'gmail'
-      : (process.env.RESEND_API_KEY ? 'resend' : 'none'),
+    transport: hasGmail() ? 'gmail' : (process.env.RESEND_API_KEY ? 'resend' : 'none'),
     email_user: process.env.EMAIL_USER || null,
     has_password: !!process.env.EMAIL_PASS,
     password_length: process.env.EMAIL_PASS ? process.env.EMAIL_PASS.length : 0,
@@ -390,6 +411,7 @@ async function diagnoseEmail(studioId) {
     verified: false,
     sent: false,
     ok: false,
+    working_port: null,
     message: '',
   }
 
@@ -399,37 +421,47 @@ async function diagnoseEmail(studioId) {
     result.recipients = emails.length ? emails : [process.env.OWNER_EMAIL, process.env.MANAGER_EMAIL].filter(Boolean)
   } catch (e) { result.message = 'Could not load recipients: ' + e.message }
 
-  const transport = createTransport()
-  if (!transport) {
-    result.message = 'Gmail is not configured. Set EMAIL_USER and EMAIL_PASS (Gmail App Password) in Railway and let it redeploy.'
+  if (!hasGmail()) {
+    result.message = 'Gmail is not configured — EMAIL_USER and EMAIL_PASS are not reaching the backend. Add both to the Railway BACKEND service and let it redeploy.'
     return result
   }
 
-  try {
-    await transport.verify()
-    result.verified = true
-  } catch (e) {
-    result.message = 'Gmail login was rejected (check the App Password — it must be the 16-char one with no spaces, and 2-Step Verification must be on). Details: ' + e.message
-    return result
+  // Try each port (with timeouts so we never hang). Report the first that connects.
+  let lastErr = null
+  for (const port of gmailPorts()) {
+    try {
+      const transport = buildGmailTransport(port)
+      await transport.verify()
+      result.verified = true
+      result.working_port = port
+
+      if (!result.recipients.length) {
+        result.message = `Gmail login works (port ${port}) but there are no recipients to send to.`
+        return result
+      }
+      await transport.sendMail({
+        from: `"${process.env.STUDIO_NAME || 'HOTWORX Team Hub'}" <${process.env.EMAIL_USER}>`,
+        to: result.recipients.join(', '),
+        subject: 'HOTWORX Team Hub — Email test ✅',
+        html: '<div style="font-family:sans-serif;font-size:15px;color:#1a1a1a"><p>🎉 <strong>Your EOD checkout email is working!</strong></p><p>This is a test from the HOTWORX Team Hub. If you can read this, Mid and Closing checkout reports will now arrive here automatically.</p></div>',
+      })
+      result.sent = true
+      result.ok = true
+      result.message = `Test email sent via port ${port} to ${result.recipients.join(', ')}. Check inbox (and spam the first time).`
+      return result
+    } catch (e) {
+      lastErr = e
+    }
   }
 
-  if (!result.recipients.length) {
-    result.message = 'Email login works, but there are no recipients — no active owner/manager email found and no OWNER_EMAIL/MANAGER_EMAIL fallback set.'
-    return result
-  }
-
-  try {
-    await transport.sendMail({
-      from: `"${process.env.STUDIO_NAME || 'HOTWORX Team Hub'}" <${process.env.EMAIL_USER}>`,
-      to: result.recipients.join(', '),
-      subject: 'HOTWORX Team Hub — Email test ✅',
-      html: '<div style="font-family:sans-serif;font-size:15px;color:#1a1a1a"><p>🎉 <strong>Your EOD checkout email is working!</strong></p><p>This is a test from the HOTWORX Team Hub. If you can read this, Mid and Closing checkout reports will now arrive here automatically.</p></div>',
-    })
-    result.sent = true
-    result.ok = true
-    result.message = `Test email sent to ${result.recipients.join(', ')}. Check the inbox (and spam, first time).`
-  } catch (e) {
-    result.message = 'Login worked but sending failed: ' + e.message
+  // Both ports failed — classify the error for a clear next step.
+  const msg = (lastErr?.message || '').toLowerCase()
+  if (msg.includes('invalid login') || msg.includes('username and password') || msg.includes('badcredentials') || msg.includes('5.7.8')) {
+    result.message = 'Gmail rejected the login — the App Password is wrong. Use the 16-char App Password (no spaces) from an account with 2-Step Verification ON. Details: ' + lastErr.message
+  } else if (msg.includes('timeout') || msg.includes('etimedout') || msg.includes('econn') || msg.includes('greeting')) {
+    result.message = 'Could not connect to Gmail on port 465 or 587 — the host appears to be blocking outbound SMTP. We may need a different send method (e.g. an email API). Details: ' + lastErr.message
+  } else {
+    result.message = 'Gmail send failed on both ports. Details: ' + (lastErr?.message || 'unknown')
   }
   return result
 }
