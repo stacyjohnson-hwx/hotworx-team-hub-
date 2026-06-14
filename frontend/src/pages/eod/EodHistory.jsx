@@ -231,6 +231,9 @@ export default function EodHistory() {
                           hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago',
                         })}
                       </span>
+                      {sub.submitter_name && (
+                        <span className="text-xs font-semibold text-gray-700">· {sub.submitter_name}</span>
+                      )}
                     </div>
                     <button onClick={() => deleteSubmission(sub.id)} className="text-gray-400 hover:text-red-600 p-1">
                       <Trash2 className="w-4 h-4" />

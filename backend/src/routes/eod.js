@@ -47,6 +47,14 @@ router.get('/', async (req, res) => {
 
   // Attach completed tasks per submitter per date
   const userIds = [...new Set(submissions.map(s => s.submitted_by))]
+
+  // Resolve submitter names (who did each EOD)
+  const nameMap = {}
+  for (const uid of userIds) {
+    if (!uid) continue
+    const { data: u } = await db().auth.admin.getUserById(uid)
+    nameMap[uid] = u?.user?.user_metadata?.full_name || u?.user?.email?.split('@')[0] || 'Team Member'
+  }
   // Cleaning tasks are a shared studio checklist — fetch all completions for the
   // date range regardless of who checked them off, then key by date only.
   const { data: completions } = await db()
@@ -78,6 +86,7 @@ router.get('/', async (req, res) => {
     const tasks = tasksByDate[s.shift_date] || { cleaning: [], operations: [] }
     return {
       ...s,
+      submitter_name: nameMap[s.submitted_by] || 'Team Member',
       completed_cleaning: tasks.cleaning,
       completed_operations: tasks.operations,
       completed_missions: s.mission_titles || [],
