@@ -579,13 +579,21 @@ export default function ScorecardPage() {
             onChange={(v) => setDraft((d) => ({ ...d, [m.key]: v }))}
             onCommit={(v) => commitActual(m.key, v)}
             onGoalChange={onGoalChange}
-            subtext={m.key === 'net_members' && data.memberBreakdown ? (
-              <p className="mt-0.5 text-[11px] font-medium text-gray-500">
-                <span className="text-green-600">+{data.memberBreakdown.new} new</span>
-                <span className="mx-1 text-gray-300">·</span>
-                <span className="text-red-500">−{data.memberBreakdown.cancelled} cancelled</span>
-              </p>
-            ) : null}
+            subtext={
+              m.key === 'net_members' && data.memberBreakdown ? (
+                <p className="mt-0.5 text-[11px] font-medium text-gray-500">
+                  <span className="text-green-600">+{data.memberBreakdown.new} new</span>
+                  <span className="mx-1 text-gray-300">·</span>
+                  <span className="text-red-500">−{data.memberBreakdown.cancelled} cancelled</span>
+                </p>
+              ) : m.key === 'net_eft_increase' && data.eftBreakdown ? (
+                <p className="mt-0.5 text-[11px] font-medium text-gray-500">
+                  <span className="text-green-600">+{formatCurrency(data.eftBreakdown.increase)} inc</span>
+                  <span className="mx-1 text-gray-300">·</span>
+                  <span className="text-red-500">−{formatCurrency(data.eftBreakdown.decrease)} dec</span>
+                </p>
+              ) : null
+            }
           />
         ))}
       </div>

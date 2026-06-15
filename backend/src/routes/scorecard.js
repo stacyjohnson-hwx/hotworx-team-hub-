@@ -157,6 +157,8 @@ async function computeAutoValues(sb, studioId, year, month) {
       businessOfMonth,
       // New vs cancelled breakdown for the Net Members hero card.
       memberBreakdown: t ? { new: num(t.new_members), cancelled: num(t.cancellations), net: num(t.new_members) - num(t.cancellations) } : null,
+      // Increase vs decrease breakdown for the Net EFT Increase hero card.
+      eftBreakdown: t ? { increase: num(t.eft_increase), decrease: num(t.eft_decrease), net: num(t.eft_increase) - num(t.eft_decrease) } : null,
       // Marketing funnel (this month) — Leads → Booked → Showed → Closed.
       funnel: t ? {
         leads: num(t.leads),
