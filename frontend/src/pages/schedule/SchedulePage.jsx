@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { ChevronLeft, ChevronRight, Plus, Pencil, Trash2, RefreshCw, X, Flag, Calendar, LayoutGrid, MessageSquare, Tag, Sparkles, Check } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, Pencil, Trash2, RefreshCw, X, Flag, Calendar, LayoutGrid, MessageSquare, Tag, Sparkles, Check, Building2, ExternalLink } from 'lucide-react'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
 import { useRole } from '@/hooks/useRole'
 
@@ -383,6 +383,12 @@ export default function SchedulePage() {
         />
       )}
 
+      <BusinessOfMonthBanner
+        events={events}
+        activeMonth={view === 'month' ? monthYear.month : weekDays[0]?.getMonth()}
+        activeYear={view === 'month' ? monthYear.year : weekDays[0]?.getFullYear()}
+      />
+
       {formState && (
         <ShiftForm
           shift={formState.shift}
@@ -400,6 +406,53 @@ export default function SchedulePage() {
           onClose={() => setHolidayForm(null)}
         />
       )}
+    </div>
+  )
+}
+
+// ─── Business of the Month banner (below the calendar) ──────────────────────────
+
+function BusinessOfMonthBanner({ events, activeMonth, activeYear }) {
+  // Only show the Business of the Month for the month currently being viewed.
+  const boms = (events || []).filter(e => {
+    if (e.event_type !== 'business_of_the_month' || !e.start_date) return false
+    const d = new Date(e.start_date + 'T00:00:00')
+    return d.getMonth() === activeMonth && d.getFullYear() === activeYear
+  })
+  if (!boms.length) return null
+
+  const monthName = new Date(activeYear, activeMonth, 1).toLocaleDateString('en-US', { month: 'long' })
+
+  return (
+    <div className="mt-5 space-y-3">
+      {boms.map(e => {
+        const partner = (e.b2b_partners || [])[0] || null
+        const name = partner?.business_name || e.title?.replace(/^business of the month:?\s*/i, '') || e.title
+        const logo = partner?.logo_url
+        const website = partner?.website
+        return (
+          <div key={e.id} className="flex items-start gap-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
+            {logo ? (
+              <img src={logo} alt={name} className="w-16 h-16 rounded-lg object-contain bg-white border border-amber-100 flex-shrink-0" />
+            ) : (
+              <div className="w-16 h-16 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0">
+                <Building2 className="w-7 h-7 text-amber-600" />
+              </div>
+            )}
+            <div className="min-w-0 flex-1">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-amber-700">{monthName} Business of the Month</p>
+              <p className="text-base font-bold text-gray-900 leading-tight">{name}</p>
+              {e.description && <p className="text-sm text-gray-600 mt-1 whitespace-pre-line">{e.description}</p>}
+              {website && (
+                <a href={website.startsWith('http') ? website : `https://${website}`} target="_blank" rel="noreferrer"
+                   className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 hover:underline mt-1.5">
+                  Visit website <ExternalLink className="w-3 h-3" />
+                </a>
+              )}
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -486,7 +539,7 @@ function WeekGrid({ days, shifts, timeOffReqs, blockedDays, events, promotions, 
           const isToday    = dateStr === today
           const dayShifts  = shifts.filter(s => s.shift_date === dateStr).sort((a, b) => a.start_time.localeCompare(b.start_time))
           const dayTimeOff = timeOffReqs.filter(r => dateInRange(dateStr, r.start_date, r.end_date))
-          const dayEvents  = (events || []).filter(e => dateInRange(dateStr, e.start_date, e.end_date || e.start_date))
+          const dayEvents  = (events || []).filter(e => e.event_type !== 'business_of_the_month' && dateInRange(dateStr, e.start_date, e.end_date || e.start_date))
           const blocked    = blockedDays.find(b => b.block_date === dateStr)
 
           return (
@@ -624,7 +677,7 @@ function MonthGrid({ monthYear, shifts, timeOffReqs, blockedDays, events, promot
                   const inMonth    = dateStr >= currentMonthStart && dateStr <= currentMonthEnd
                   const dayShifts  = shifts.filter(s => s.shift_date === dateStr).sort((a, b) => a.start_time.localeCompare(b.start_time))
                   const dayTimeOff = timeOffReqs.filter(r => dateInRange(dateStr, r.start_date, r.end_date))
-                  const dayEvents  = (events || []).filter(e => dateInRange(dateStr, e.start_date, e.end_date || e.start_date))
+                  const dayEvents  = (events || []).filter(e => e.event_type !== 'business_of_the_month' && dateInRange(dateStr, e.start_date, e.end_date || e.start_date))
                   const blocked    = blockedDays.find(b => b.block_date === dateStr)
 
                   return (

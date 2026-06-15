@@ -18,7 +18,7 @@ async function attachPartners(events) {
   const ids = events.map(e => e.id)
   const { data } = await supabase()
     .from('event_b2b_contacts')
-    .select('event_id, b2b_contacts(id, business_name)')
+    .select('event_id, b2b_contacts(id, business_name, logo_url, website)')
     .in('event_id', ids)
   const map = {}
   for (const row of data || []) {
