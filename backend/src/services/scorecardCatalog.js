@@ -30,17 +30,17 @@ const GROUP_ORDER = ['sales', 'outreach', 'events', 'reputation', 'retention', '
 
 const CATALOG = [
   // ── Hero ───────────────────────────────────────────────────────────────
-  { key: 'net_eft_increase',     group: 'hero', label: 'Net EFT Increase',          type: 'currency', goal: 1500, source: 'SAIL',     note: 'Tiers: $1,000–1,299 / $1,300–1,499 / $1,500+' },
-  { key: 'new_members',          group: 'hero', label: 'New Members (team)',        type: 'number',   goal: 35,   source: 'SAIL',     note: 'Triggers team performance bonus' },
-  { key: 'close_rate',           group: 'hero', label: 'Close Rate (team avg)',     type: 'percent',  goal: 35,   source: 'SAIL',     note: 'Coach to 40%+' },
-  { key: 'five_star_reviews',    group: 'hero', label: '5-Star Reviews (new)',      type: 'number',   goal: 10,   source: 'reviews',  note: 'Owner-set target' },
-  { key: 'ig_follower_growth',   group: 'hero', label: 'Instagram Growth (net)',    type: 'number',   goal: 50,   source: 'ig',       note: 'Owner-set; net change, not total' },
+  { key: 'net_eft_increase',     group: 'hero', label: 'Net EFT Increase',          type: 'currency', goal: 1500, source: 'Studio Trends', auto: 'net_eft_increase',     note: 'EFT increase − decrease' },
+  { key: 'new_members',          group: 'hero', label: 'New Members (team)',        type: 'number',   goal: 35,   source: 'Studio Trends', auto: 'new_members',          note: 'From Studio Trends' },
+  { key: 'close_rate',           group: 'hero', label: 'Close Rate (team avg)',     type: 'percent',  goal: 35,   source: 'Studio Trends', auto: 'close_rate',           note: 'New members ÷ appts held' },
+  { key: 'five_star_reviews',    group: 'hero', label: '5-Star Reviews (Δ MoM)',    type: 'number',   goal: 10,   source: 'Studio Trends', auto: 'five_star_reviews_delta', note: 'This month − last month' },
+  { key: 'ig_follower_growth',   group: 'hero', label: 'Instagram Growth (Δ MoM)',  type: 'number',   goal: 50,   source: 'Studio Trends', auto: 'ig_growth_delta',      note: 'This month − last month' },
 
   // ── Sales Engine (Chrissy) ─────────────────────────────────────────────
-  { key: 'checkin_show_rate',    group: 'sales', label: 'Check-in Show Rate',       type: 'percent', goal: 80,  source: 'SAIL',  note: 'Confirmed appts that show' },
+  { key: 'checkin_show_rate',    group: 'sales', label: 'Check-in Show Rate',       type: 'percent', goal: 80,  source: 'Studio Trends', auto: 'checkin_show_rate', note: 'Appts held ÷ appts booked' },
   { key: 'sameday_cancel_saves', group: 'sales', label: 'Same-Day Cancel Saves',    type: 'percent', goal: 100, source: 'SAIL',  note: 'Attempt 100% — log every save' },
-  { key: 'sweat_elite_mix',      group: 'sales', label: 'Sweat Elite Mix',          type: 'percent', goal: 80,  source: 'SAIL',  note: '% of new memberships that are Elite' },
-  { key: 'attrition_rate',       group: 'sales', label: 'Attrition / Cancel Rate',  type: 'percent', goal: 4,   source: 'SAIL',  lowerIsBetter: true, note: 'Cancellations ÷ total members' },
+  { key: 'sweat_elite_mix',      group: 'sales', label: 'Sweat Elite Mix',          type: 'percent', goal: 80,  source: 'Studio Trends', auto: 'sweat_elite_mix', note: '% of new memberships that are Elite' },
+  { key: 'attrition_rate',       group: 'sales', label: 'Attrition / Cancel Rate',  type: 'percent', goal: 4,   source: 'Studio Trends', auto: 'attrition_rate', lowerIsBetter: true, note: 'Cancellations ÷ last month members' },
   { key: 'referrals_received',   group: 'sales', label: 'Referrals Received',       type: 'number',  goal: 10,  source: 'SAIL',  note: 'Owner-set target' },
   { key: 'training_trax_intros', group: 'sales', label: 'Training Trax Intros',     type: 'percent', goal: 100, source: 'SAIL',  note: '100% of new Elite within 30 days' },
   { key: 'outreach_per_shift',   group: 'sales', label: 'Outreach / Shift (calls+texts)', type: 'number', goal: 50, source: 'SAIL', note: 'Monthly avg per shift' },
@@ -55,10 +55,10 @@ const CATALOG = [
   { key: 'corporate_presentations', group: 'outreach', label: 'Corporate Presentations Held', type: 'number', goal: 1, source: 'events', note: '1 per month' },
 
   // ── Events & Community (Marisa) ────────────────────────────────────────
-  { key: 'events_held',          group: 'events', label: 'Events Held',             type: 'number', goal: 2, source: 'events', note: 'Owner-set; pulled from month' },
-  { key: 'promotions_run',       group: 'events', label: 'Promotions Run',          type: 'number', goal: 5, source: 'events', note: '≥1 outside + 4 studio-wide' },
-  { key: 'business_of_the_month',group: 'events', label: 'Business of the Month',   type: 'number', goal: 1, source: 'events', note: '1 per month' },
-  { key: 'influencer_visits',    group: 'events', label: 'Influencer Visits',       type: 'number', goal: 1, source: 'events', note: '1 per month' },
+  { key: 'events_held',          group: 'events', label: 'Events Held',             type: 'number', goal: 2, source: 'Events',  auto: 'events_held',          note: 'All events this month' },
+  { key: 'promotions_run',       group: 'events', label: 'Promotions Run',          type: 'number', goal: 5, source: 'Events',  auto: 'promotions_run',       note: '≥1 outside + 4 studio-wide' },
+  { key: 'business_of_the_month',group: 'events', label: 'Business of the Month',   type: 'number', goal: 1, source: 'Events',  auto: 'business_of_the_month', note: 'Event type this month' },
+  { key: 'influencer_visits',    group: 'events', label: 'Influencer Visits',       type: 'number', goal: 1, source: 'Events',  auto: 'influencer_visits',    note: 'Event type this month' },
 
   // ── Reputation & Reach (Marisa) ────────────────────────────────────────
   { key: 'reviews_responded_24h',group: 'reputation', label: 'Reviews Responded < 24h', type: 'percent', goal: 100, source: 'manual', note: 'Standard from JD' },
@@ -74,8 +74,7 @@ const CATALOG = [
 
   // ── Facility & Ops (Marisa) ────────────────────────────────────────────
   { key: 'cleaning_compliance',  group: 'facility', label: 'Cleaning Checklist Compliance', type: 'percent', goal: 100, source: 'manual', note: 'Full compliance' },
-  { key: 'inventory_orders_ontime', group: 'facility', label: 'Inventory Orders On Time',   type: 'percent', goal: 100, source: 'manual', note: 'Mondays / 4–5 per mo' },
-  { key: 'equipment_issues_open',group: 'facility', label: 'Equipment / Heater Issues Open', type: 'number', goal: 0, source: 'manual', lowerIsBetter: true, note: '0 open is the goal' },
+  { key: 'open_maintenance_issues', group: 'facility', label: 'Open Maintenance Issues', type: 'number', goal: 0, source: 'Maintenance', auto: 'open_maintenance_issues', lowerIsBetter: true, note: 'Open + in-progress items' },
   { key: 'manual_inventory_count', group: 'facility', label: 'Manual Inventory Count Done', type: 'boolean', goal: 1, source: 'manual', note: 'Yes / No — last business day' },
 ]
 

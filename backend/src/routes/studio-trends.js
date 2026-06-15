@@ -12,7 +12,7 @@ const DEFAULTS = {
   membership_cash: 0, net_eft: 0, eft_increase: 0, eft_decrease: 0,
   net_eft_increase: 0, in_the_bank: 0, itb_goal: 0, expenses: 0, net_income: 0,
   leads: 0, red_appts_booked: 0, red_appts_held: 0,
-  new_members: 0, cancellations: 0, total_member_count: 0,
+  new_members: 0, cancellations: 0, total_member_count: 0, sweat_elite_pct: 0,
   instagram_followers: 0, facebook_followers: 0, tiktok_followers: 0,
   five_star_reviews: 0, calls_made: 0, texts_made: 0, manager_notes: '',
 }

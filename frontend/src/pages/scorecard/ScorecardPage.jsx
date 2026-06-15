@@ -7,7 +7,9 @@ import { formatCurrency, formatMonthYear } from '@/lib/utils'
 import {
   CheckCircle2, AlertTriangle, XCircle, MinusCircle,
   Printer, Settings2, ClipboardCheck, Loader2, Save, RotateCcw,
+  ChevronUp, ChevronDown, ExternalLink, Building2,
 } from 'lucide-react'
+import { Link } from 'react-router-dom'
 
 // ── Status logic ────────────────────────────────────────────────────────────
 // Color thresholds come from the API (editable constants, not hard-coded here).
@@ -69,6 +71,10 @@ function formatGoal(metric) {
 
 // ── Editable actual input ─────────────────────────────────────────────────────
 function ActualInput({ metric, value, readOnly, large, onChange, onCommit }) {
+  // Auto-pulled metrics are read-only: render the value as static text.
+  if (readOnly) {
+    return <span className={`font-bold text-gray-900 ${large ? 'text-2xl' : 'text-sm'}`}>{formatValue(metric.type, value)}</span>
+  }
   if (metric.type === 'boolean') {
     const on = Number(value) === 1
     return (
@@ -121,7 +127,10 @@ function HeroCard({ metric, status, draft, readOnly, editGoals, onChange, onComm
   const meta = STATUS_META[status]
   return (
     <div className={`scorecard-card rounded-2xl border ${meta.border} ${meta.bg} p-4 flex flex-col`}>
-      <p className="text-xs font-semibold uppercase tracking-wide text-gray-600 leading-tight min-h-[2rem]">{metric.label}</p>
+      <p className="text-xs font-semibold uppercase tracking-wide text-gray-600 leading-tight min-h-[2rem] flex items-start gap-1">
+        <span className="flex-1">{metric.label}</span>
+        {metric.auto && <span className="text-[8px] font-bold bg-gray-200 text-gray-500 px-1 py-0.5 rounded" title="Pulled automatically">AUTO</span>}
+      </p>
       <div className="mt-2">
         <ActualInput metric={metric} value={draft} readOnly={readOnly} large onChange={onChange} onCommit={onCommit} />
       </div>
@@ -148,19 +157,28 @@ function HeroCard({ metric, status, draft, readOnly, editGoals, onChange, onComm
 }
 
 // ── Supporting metric row ─────────────────────────────────────────────────────
-function MetricRow({ metric, status, draft, readOnly, editGoals, onChange, onCommit, onGoalChange, onLowerToggle }) {
+function MetricRow({ metric, status, draft, readOnly, editGoals, onChange, onCommit, onGoalChange, onLowerToggle,
+                     expandList, expanded, onToggle, accessory }) {
   const meta = STATUS_META[status]
   return (
-    <div className="scorecard-card flex items-center justify-between gap-3 py-2.5 border-b border-gray-100 last:border-0">
+   <div className="scorecard-card border-b border-gray-100 last:border-0">
+    <div className="flex items-center justify-between gap-3 py-2.5">
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className={`w-2 h-2 rounded-full flex-shrink-0 ${meta.dot}`} />
           <p className="text-sm font-medium text-gray-800 truncate">{metric.label}</p>
+          {metric.auto && <span className="text-[8px] font-bold bg-gray-200 text-gray-500 px-1 py-0.5 rounded flex-shrink-0" title="Pulled automatically">AUTO</span>}
+          {expandList && (
+            <button onClick={onToggle} className="text-gray-400 hover:text-gray-600 flex-shrink-0" title="Show details">
+              {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+            </button>
+          )}
         </div>
         <p className="text-[11px] text-gray-400 pl-4 truncate">
           {metric.note ? `${metric.note} · ` : ''}<span className="uppercase">{metric.source}</span>
           {metric.lowerIsBetter ? ' · lower is better' : ''}
         </p>
+        {accessory}
       </div>
 
       <div className="flex items-center gap-3 flex-shrink-0">
@@ -187,6 +205,46 @@ function MetricRow({ metric, status, draft, readOnly, editGoals, onChange, onCom
         <span className={`text-[11px] font-semibold ${meta.text} w-16 text-right hidden md:inline`}>{statusLabel(metric, status)}</span>
       </div>
     </div>
+
+    {expandList && expanded && (
+      <div className="pl-4 pb-2.5 -mt-1 space-y-1">
+        {expandList.length === 0 ? (
+          <p className="text-[11px] text-gray-400 italic">Nothing logged this month yet.</p>
+        ) : expandList.map((it) => (
+          <div key={it.id} className="flex items-center gap-2 text-[11px] text-gray-500">
+            <span className="w-1 h-1 rounded-full bg-gray-300 flex-shrink-0" />
+            <span className="text-gray-700 font-medium truncate">{it.title}</span>
+            {it.start_date && <span className="text-gray-400">· {new Date(it.start_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>}
+            {it.event_type && <span className="text-gray-400 capitalize">· {String(it.event_type).replace(/_/g, ' ')}</span>}
+            {it.promo_type && <span className="text-gray-400 capitalize">· {String(it.promo_type).replace(/_/g, ' ')}</span>}
+          </div>
+        ))}
+      </div>
+    )}
+   </div>
+  )
+}
+
+// ── Business of the Month card (accessory under that metric row) ───────────────
+function BusinessOfMonthCard({ bom }) {
+  return (
+    <div className="ml-4 mt-2 flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+      {bom.logo_url ? (
+        <img src={bom.logo_url} alt={bom.business_name} className="w-9 h-9 rounded-md object-cover flex-shrink-0 bg-white" />
+      ) : (
+        <div className="w-9 h-9 rounded-md bg-amber-100 flex items-center justify-center flex-shrink-0"><Building2 size={16} className="text-amber-600" /></div>
+      )}
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold text-gray-900 truncate">{bom.business_name}</p>
+        <div className="flex items-center gap-3 text-[11px]">
+          <Link to="/b2b" className="text-amber-700 font-medium hover:underline inline-flex items-center gap-0.5">B2B card</Link>
+          {bom.website && (
+            <a href={bom.website.startsWith('http') ? bom.website : `https://${bom.website}`} target="_blank" rel="noreferrer"
+               className="text-gray-500 hover:underline inline-flex items-center gap-0.5">Website <ExternalLink size={10} /></a>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -203,6 +261,7 @@ export default function ScorecardPage() {
   const [error, setError] = useState(null)
   const [saveState, setSaveState] = useState('idle') // idle | saving | saved | error
   const [editGoals, setEditGoals] = useState(false)
+  const [expanded, setExpanded] = useState({})     // metric_key -> bool
   const goalEdits = useRef({})                     // metric_key -> { goal, lower_is_better }
 
   const studioId = currentStudio?.id
@@ -360,9 +419,9 @@ export default function ScorecardPage() {
           <HeroCard
             key={m.key}
             metric={m}
-            status={computeStatus({ ...m, actual: draft[m.key] }, thresholds)}
-            draft={draft[m.key]}
-            readOnly={false}
+            status={computeStatus({ ...m, actual: m.auto ? m.actual : draft[m.key] }, thresholds)}
+            draft={m.auto ? m.actual : draft[m.key]}
+            readOnly={!!m.auto}
             editGoals={editGoals}
             onChange={(v) => setDraft((d) => ({ ...d, [m.key]: v }))}
             onCommit={(v) => commitActual(m.key, v)}
@@ -384,20 +443,31 @@ export default function ScorecardPage() {
                 <span className="text-[10px] text-gray-400">{g.owner}</span>
               </div>
               <div>
-                {metrics.map((m) => (
-                  <MetricRow
-                    key={m.key}
-                    metric={m}
-                    status={computeStatus({ ...m, actual: draft[m.key] }, thresholds)}
-                    draft={draft[m.key]}
-                    readOnly={false}
-                    editGoals={editGoals}
-                    onChange={(v) => setDraft((d) => ({ ...d, [m.key]: v }))}
-                    onCommit={(v) => commitActual(m.key, v)}
-                    onGoalChange={onGoalChange}
-                    onLowerToggle={onLowerToggle}
-                  />
-                ))}
+                {metrics.map((m) => {
+                  const val = m.auto ? m.actual : draft[m.key]
+                  const expandList = m.key === 'events_held' ? (data.eventsThisMonth || [])
+                    : m.key === 'promotions_run' ? (data.promosThisMonth || [])
+                    : null
+                  const bom = m.key === 'business_of_the_month' ? data.businessOfMonth : null
+                  return (
+                    <MetricRow
+                      key={m.key}
+                      metric={m}
+                      status={computeStatus({ ...m, actual: val }, thresholds)}
+                      draft={val}
+                      readOnly={!!m.auto}
+                      editGoals={editGoals}
+                      onChange={(v) => setDraft((d) => ({ ...d, [m.key]: v }))}
+                      onCommit={(v) => commitActual(m.key, v)}
+                      onGoalChange={onGoalChange}
+                      onLowerToggle={onLowerToggle}
+                      expandList={expandList}
+                      expanded={!!expanded[m.key]}
+                      onToggle={() => setExpanded((s) => ({ ...s, [m.key]: !s[m.key] }))}
+                      accessory={bom ? <BusinessOfMonthCard bom={bom} /> : null}
+                    />
+                  )
+                })}
               </div>
             </section>
           )
@@ -407,7 +477,7 @@ export default function ScorecardPage() {
       {/* Footer / data-source legend */}
       <div className="mt-6 pt-4 border-t border-gray-200 text-[11px] text-gray-400 leading-relaxed">
         <p className="font-medium text-gray-500 mb-1">Data sources</p>
-        <p>All metrics are manual entry in v1. Source labels (SAIL, IG, REVIEWS, B2B, EVENTS, MANUAL) indicate where each number comes from and signal a future importer — the tool does not pull live data yet.</p>
+        <p>Metrics tagged <span className="font-semibold text-gray-500">AUTO</span> pull live from other Team Hub modules (Studio Trends, Events, Maintenance) — enter those numbers in their own screens. The rest are manual entry here. Source labels show where each number comes from.</p>
         <p className="mt-1">
           Color status: <span className="text-green-600 font-medium">green ≥100% of goal</span> · <span className="text-amber-600 font-medium">amber 80–99%</span> · <span className="text-red-600 font-medium">red &lt;80%</span> (inverted for “lower is better” metrics).
         </p>

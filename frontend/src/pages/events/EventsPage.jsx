@@ -18,6 +18,8 @@ const EVENT_TYPES = [
   { value: 'corporate',   label: 'Corporate',   color: 'bg-purple-100 text-purple-800 border-purple-300' },
   { value: 'partnership', label: 'Partnership', color: 'bg-orange-100 text-orange-800 border-orange-300' },
   { value: 'online',      label: 'Online',      color: 'bg-sky-100 text-sky-800 border-sky-300' },
+  { value: 'business_of_the_month', label: 'Business of the Month', color: 'bg-amber-100 text-amber-800 border-amber-300' },
+  { value: 'influencer_visit',      label: 'Influencer Visit',      color: 'bg-pink-100 text-pink-800 border-pink-300' },
   { value: 'other',       label: 'Other',       color: 'bg-gray-100 text-gray-700 border-gray-300' },
 ]
 

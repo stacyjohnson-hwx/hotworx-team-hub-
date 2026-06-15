@@ -45,9 +45,80 @@ function resolveMetrics(goalRows, actuals) {
       goal,
       lowerIsBetter,
       actual,
+      auto: m.auto || null,        // computeKey when the value is pulled, not entered
       isHero: m.group === 'hero',
     }
   })
+}
+
+// Pull values that feed auto metrics from other modules (Studio Trends, Events,
+// Promotions, Maintenance). Returns { values: { computeKey -> number|null }, extras }.
+async function computeAutoValues(sb, studioId, year, month) {
+  const pm = month === 1 ? 12 : month - 1
+  const py = month === 1 ? year - 1 : year
+  const round = (n, d = 0) => { const f = 10 ** d; return Math.round(n * f) / f }
+
+  const [thisT, prevT, evRes, promoRes, maintRes] = await Promise.all([
+    sb.from('studio_trends').select('*').eq('studio_id', studioId).eq('year', year).eq('month', month).maybeSingle(),
+    sb.from('studio_trends').select('*').eq('studio_id', studioId).eq('year', py).eq('month', pm).maybeSingle(),
+    sb.from('events').select('id, title, start_date, event_type').eq('studio_id', studioId).eq('year', year).eq('month', month).order('start_date'),
+    sb.from('promotions').select('id, title, promo_type, start_date').eq('studio_id', studioId).eq('year', year).eq('month', month).order('start_date'),
+    sb.from('maintenance_logs').select('id, status').eq('studio_id', studioId).in('status', ['open', 'in_progress']),
+  ])
+
+  const t = thisT.data || null
+  const prev = prevT.data || null
+  const events = evRes.data || []
+  const promos = promoRes.data || []
+  const openMaint = (maintRes.data || []).length
+
+  const num = (v) => (v == null ? 0 : Number(v))
+  const bomEvents = events.filter(e => e.event_type === 'business_of_the_month')
+  const influencerEvents = events.filter(e => e.event_type === 'influencer_visit')
+
+  const values = {
+    net_eft_increase:       t ? num(t.eft_increase) - num(t.eft_decrease) : null,
+    new_members:            t ? num(t.new_members) : null,
+    close_rate:             t && num(t.red_appts_held) > 0 ? round(num(t.new_members) / num(t.red_appts_held) * 100) : (t ? 0 : null),
+    checkin_show_rate:      t && num(t.red_appts_booked) > 0 ? round(num(t.red_appts_held) / num(t.red_appts_booked) * 100) : (t ? 0 : null),
+    sweat_elite_mix:        t ? num(t.sweat_elite_pct) : null,
+    attrition_rate:         t && prev && num(prev.total_member_count) > 0 ? round(num(t.cancellations) / num(prev.total_member_count) * 100, 1) : null,
+    five_star_reviews_delta: t ? num(t.five_star_reviews) - num(prev?.five_star_reviews) : null,
+    ig_growth_delta:        t ? num(t.instagram_followers) - num(prev?.instagram_followers) : null,
+    events_held:            events.length,
+    promotions_run:         promos.length,
+    business_of_the_month:  bomEvents.length,
+    influencer_visits:      influencerEvents.length,
+    open_maintenance_issues: openMaint,
+  }
+
+  // Business-of-the-Month card: first such event + its linked B2B contact (logo).
+  let businessOfMonth = null
+  if (bomEvents.length) {
+    const ev = bomEvents[0]
+    const { data: links } = await sb
+      .from('event_b2b_contacts')
+      .select('b2b_contacts(id, business_name, logo_url, website)')
+      .eq('event_id', ev.id)
+      .limit(1)
+    const c = links && links[0] && links[0].b2b_contacts
+    businessOfMonth = {
+      event_title: ev.title,
+      business_name: c?.business_name || ev.title,
+      logo_url: c?.logo_url || null,
+      website: c?.website || null,
+      b2b_contact_id: c?.id || null,
+    }
+  }
+
+  return {
+    values,
+    extras: {
+      eventsThisMonth: events,
+      promosThisMonth: promos,
+      businessOfMonth,
+    },
+  }
 }
 
 // GET /api/scorecard/:year/:month — resolved metrics + review state for a month.
@@ -70,10 +141,23 @@ router.get('/:year/:month', authenticate, requireStudio, requireRole('owner', 'm
       reviewedByName = prof?.name || null
     }
 
+    // Resolve manual actuals, then override auto metrics with pulled values.
+    const metrics = resolveMetrics(goalRows, monthRow?.actuals || {})
+    let extras = { eventsThisMonth: [], promosThisMonth: [], businessOfMonth: null }
+    try {
+      const auto = await computeAutoValues(sb, req.studio.id, year, month)
+      extras = auto.extras
+      for (const m of metrics) {
+        if (m.auto && auto.values[m.auto] !== undefined) m.actual = auto.values[m.auto]
+      }
+    } catch (e) {
+      console.error('[scorecard] auto-compute failed:', e.message)
+    }
+
     res.json({
       year,
       month,
-      metrics: resolveMetrics(goalRows, monthRow?.actuals || {}),
+      metrics,
       heroKeys: HERO_KEYS,
       groups: GROUPS,
       groupOrder: GROUP_ORDER,
@@ -82,6 +166,7 @@ router.get('/:year/:month', authenticate, requireStudio, requireRole('owner', 'm
       reviewedByName,
       reviewedAt: monthRow?.reviewed_at || null,
       updatedAt: monthRow?.updated_at || null,
+      ...extras,
     })
   }))
 

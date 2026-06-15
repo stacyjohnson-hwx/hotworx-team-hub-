@@ -252,6 +252,7 @@ function DataEntryTab({ month: initialMonth, year: initialYear }) {
           <NumInput label="New Members"        value={data.new_members}        onChange={v => set('new_members', v)} />
           <NumInput label="Cancellations"      value={data.cancellations}      onChange={v => set('cancellations', v)} />
           <NumInput label="Total Member Count" value={data.total_member_count} onChange={v => set('total_member_count', v)} />
+          <NumInput label="Sweat Elite %"      value={data.sweat_elite_pct}    onChange={v => set('sweat_elite_pct', v)} />
         </div>
         <div className="mt-3 flex gap-4 flex-wrap">
           <span className="text-xs text-gray-500">Lead conversion: <strong className="text-gray-700">{convRate}%</strong></span>
