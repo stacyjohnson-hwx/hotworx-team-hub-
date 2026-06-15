@@ -11,16 +11,16 @@ const {
 
 const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 
-// Ensure the tables exist before any DB op. Returns a clear 503 if persistence
-// isn't reachable (e.g. DATABASE_URL not configured) instead of a cryptic error.
+// Best-effort: try to auto-create the tables via the direct pg connection
+// (DATABASE_URL). If that connection isn't available in this environment, we do
+// NOT block — the tables may already exist (created via the Supabase SQL editor),
+// and all reads/writes below go through the Supabase service client regardless.
+// If the tables genuinely don't exist, the Supabase queries surface a clear error.
 async function withSchema(res, fn) {
   try {
     await ensureScorecardSchema()
   } catch (err) {
-    return res.status(503).json({
-      error: 'Scorecard storage is not initialized yet. Please try again shortly.',
-      detail: err.message,
-    })
+    console.warn('[scorecard] auto-bootstrap unavailable, continuing via Supabase client:', err.message)
   }
   return fn()
 }
