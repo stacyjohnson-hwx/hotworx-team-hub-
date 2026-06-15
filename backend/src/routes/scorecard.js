@@ -110,6 +110,7 @@ async function computeAutoValues(sb, studioId, year, month) {
   const values = {
     net_eft_increase:       t ? num(t.eft_increase) - num(t.eft_decrease) : null,
     new_members:            t ? num(t.new_members) : null,
+    net_members:            t ? num(t.new_members) - num(t.cancellations) : null,
     in_the_bank:            t ? num(t.in_the_bank) : null,
     itb_goal:               t ? num(t.itb_goal) : null,
     close_rate:             t && num(t.red_appts_held) > 0 ? round(num(t.new_members) / num(t.red_appts_held) * 100) : (t ? 0 : null),
@@ -154,6 +155,8 @@ async function computeAutoValues(sb, studioId, year, month) {
       bomEventsThisMonth: bomEvents,
       influencerEventsThisMonth: influencerEvents,
       businessOfMonth,
+      // New vs cancelled breakdown for the Net Members hero card.
+      memberBreakdown: t ? { new: num(t.new_members), cancelled: num(t.cancellations), net: num(t.new_members) - num(t.cancellations) } : null,
       // Marketing funnel (this month) — Leads → Booked → Showed → Closed.
       funnel: t ? {
         leads: num(t.leads),

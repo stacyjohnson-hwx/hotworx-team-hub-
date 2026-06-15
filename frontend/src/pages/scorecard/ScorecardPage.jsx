@@ -178,7 +178,7 @@ function ActualInput({ metric, value, readOnly, large, onChange, onCommit }) {
 }
 
 // ── Hero card ─────────────────────────────────────────────────────────────────
-function HeroCard({ metric, status, draft, readOnly, editGoals, onChange, onCommit, onGoalChange }) {
+function HeroCard({ metric, status, draft, readOnly, editGoals, onChange, onCommit, onGoalChange, subtext }) {
   const meta = STATUS_META[status]
   return (
     <div className={`scorecard-card rounded-2xl border ${meta.border} ${meta.bg} p-4 flex flex-col`}>
@@ -189,6 +189,7 @@ function HeroCard({ metric, status, draft, readOnly, editGoals, onChange, onComm
       <div className="mt-1">
         <ActualInput metric={metric} value={draft} readOnly={readOnly} large onChange={onChange} onCommit={onCommit} />
       </div>
+      {subtext}
       <ProgressBar pct={progressFill({ ...metric, actual: draft })} status={status} className="h-1.5 mt-2" />
       <div className="mt-2 flex items-center justify-between text-xs">
         {editGoals && !metric.autoGoal ? (
@@ -239,7 +240,7 @@ function MetricRow({ metric, status, draft, readOnly, editGoals, onChange, onCom
       </div>
 
       <div className="flex items-center gap-3 flex-shrink-0">
-        {hasGoal && (editGoals ? (
+        {hasGoal && (editGoals && !metric.autoGoal ? (
           <div className="flex items-center gap-1 text-xs text-gray-500">
             <span>Goal</span>
             <input
@@ -578,6 +579,13 @@ export default function ScorecardPage() {
             onChange={(v) => setDraft((d) => ({ ...d, [m.key]: v }))}
             onCommit={(v) => commitActual(m.key, v)}
             onGoalChange={onGoalChange}
+            subtext={m.key === 'net_members' && data.memberBreakdown ? (
+              <p className="mt-0.5 text-[11px] font-medium text-gray-500">
+                <span className="text-green-600">+{data.memberBreakdown.new} new</span>
+                <span className="mx-1 text-gray-300">·</span>
+                <span className="text-red-500">−{data.memberBreakdown.cancelled} cancelled</span>
+              </p>
+            ) : null}
           />
         ))}
       </div>

@@ -32,7 +32,7 @@ const GROUP_ORDER = ['sales', 'outreach', 'events', 'reputation', 'retention', '
 const CATALOG = [
   // ── Hero ───────────────────────────────────────────────────────────────
   { key: 'net_eft_increase',     group: 'hero', label: 'Net EFT Increase',          type: 'currency', goal: 1500, source: 'Studio Trends', auto: 'net_eft_increase',     note: 'EFT increase − decrease' },
-  { key: 'new_members',          group: 'hero', label: 'New Members (team)',        type: 'number',   goal: 35,   source: 'Studio Trends', auto: 'new_members',          note: 'From Studio Trends' },
+  { key: 'net_members',          group: 'hero', label: 'Net Members',              type: 'number',   goal: 35,   source: 'Studio Trends', auto: 'net_members',          note: 'New − cancelled this month' },
   { key: 'in_the_bank',          group: 'hero', label: 'In The Bank',              type: 'currency', goal: 0,    source: 'Studio Trends', auto: 'in_the_bank', autoGoal: 'itb_goal', note: 'vs monthly ITB goal' },
   { key: 'five_star_reviews',    group: 'hero', label: '5-Star Reviews (Δ MoM)',    type: 'number',   goal: 10,   source: 'Studio Trends', auto: 'five_star_reviews_delta', note: 'This month − last month' },
   { key: 'ig_follower_growth',   group: 'hero', label: 'Instagram Growth (Δ MoM)',  type: 'number',   goal: 50,   source: 'Studio Trends', auto: 'ig_growth_delta',      note: 'This month − last month' },
@@ -66,10 +66,10 @@ const CATALOG = [
   { key: 'overall_star_rating',  group: 'reputation', label: 'Overall Star Rating',  type: 'rating', goal: 4.8, source: 'reviews', note: 'Owner-set; Google/FB/Yelp snapshot' },
 
   // ── Retention & Experience (Marisa) ────────────────────────────────────
-  { key: 'new_member_week1',     group: 'retention', label: 'New-Member Week-1 Check-ins', type: 'number', goal: 50, source: 'manual', note: 'Count of new members checked in week 1' },
+  { key: 'new_member_week1',     group: 'retention', label: 'New-Member Week-1 Check-ins', type: 'number', goal: 50, autoGoal: 'new_members', source: 'manual', note: 'Count checked in · goal = new members' },
   { key: 'atrisk_winback',       group: 'retention', label: 'At-Risk Win-Back (14-day)',   type: 'percent', goal: 100, source: 'manual', note: '100% of lapsing members' },
   { key: 'newsletter_sent',      group: 'retention', label: 'Monthly Newsletter Sent',     type: 'boolean', goal: 1,   source: 'manual', note: 'Yes / No' },
-  { key: 'thankyou_cards',       group: 'retention', label: 'Thank-You Cards w/ $5 Cert',  type: 'number', goal: 50, source: 'manual', note: 'Count of cards sent' },
+  { key: 'thankyou_cards',       group: 'retention', label: 'Thank-You Cards w/ $5 Cert',  type: 'number', goal: 50, autoGoal: 'new_members', source: 'manual', note: 'Count of cards · goal = new members' },
 
   // ── Facility & Ops (Marisa) ────────────────────────────────────────────
   { key: 'cleaning_compliance',  group: 'facility', label: 'Cleaning Checklist Compliance', type: 'percent', goal: 100, source: 'Cleaning', auto: 'cleaning_compliance', note: 'Tasks completed ÷ due (month to date)' },
