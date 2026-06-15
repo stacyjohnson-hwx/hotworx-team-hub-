@@ -139,6 +139,23 @@ router.delete('/tasks/:id', requireRole('owner', 'manager'), async (req, res) =>
   res.status(204).end()
 })
 
+// ─── GET /api/marketing/my-completions — titles of tasks the current user
+// completed on a given date (content + marketing), for the EOD summary ─────────
+router.get('/my-completions', async (req, res) => {
+  const database = db()
+  const date = req.query.date || new Date().toISOString().slice(0, 10)
+  const [{ data: mc }, { data: lc }] = await Promise.all([
+    database.from('marketing_task_completions').select('marketing_tasks(title)')
+      .eq('studio_id', req.studio.id).eq('staff_id', req.user.id).eq('completion_date', date),
+    database.from('leadgen_completions').select('leadgen_plays(title)')
+      .eq('studio_id', req.studio.id).eq('staff_id', req.user.id).eq('completion_date', date),
+  ])
+  const titles = []
+  for (const r of (mc || [])) if (r.marketing_tasks?.title) titles.push(r.marketing_tasks.title)
+  for (const r of (lc || [])) if (r.leadgen_plays?.title) titles.push(r.leadgen_plays.title)
+  res.json([...new Set(titles)])
+})
+
 // ─── Content Library ──────────────────────────────────────────────────────────
 
 async function staffNameMap(database, ids) {

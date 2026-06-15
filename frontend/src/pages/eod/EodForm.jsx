@@ -367,11 +367,11 @@ function ShiftAtAGlance({ missionTitles = [], onToggleMission }) {
       </div>
 
       <div className="bg-gray-50 p-4 space-y-4">
-        {/* ── Lead Generation (from Growth HQ) ── */}
+        {/* ── Marketing (tasks completed in My Tasks) ── */}
         <div>
-          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Lead Generation</p>
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Marketing</p>
           {missionTitles.length === 0 ? (
-            <p className="text-xs text-gray-400 italic">Nothing logged yet today. Complete items in <strong>Growth → Leads</strong> and they'll appear here.</p>
+            <p className="text-xs text-gray-400 italic">No marketing tasks completed yet today. Finish tasks in <strong>Growth → My Tasks</strong> and they'll appear here.</p>
           ) : (
             <div className="space-y-1">
               {missionTitles.map((title, i) => (
@@ -630,38 +630,24 @@ export default function EodForm({ submittedShifts, onSubmitted }) {
     } catch {}
   }
 
-  // Read missions fresh from localStorage — always pull at the moment of call
-  function readMissionsFromStorage(profileArg) {
-    try {
-      const todayStr  = new Date().toLocaleDateString('en-CA')
-      const state     = JSON.parse(localStorage.getItem('leadgenhq_missions') || '{}')
-      const firstName = (profileArg ?? profile)?.name?.trim().split(' ')[0]?.toLowerCase() || ''
-      const empData   = state[firstName] || {}
-      const titles    = []
-      for (const completions of Object.values(empData)) {
-        const todayComp = completions.find(c => c.date === todayStr && c.title)
-        if (todayComp && !titles.includes(todayComp.title)) titles.push(todayComp.title)
-      }
-      return titles
-    } catch { return [] }
-  }
-
-  // Re-read on mount, on profile load, and whenever the user returns to this tab/window
+  // Pull today's completed Marketing tasks (from "My Tasks") for the EOD summary.
+  // Refreshes on mount and whenever the user returns to the tab.
   useEffect(() => {
-    if (!profile) return
-    setMissionTitles(readMissionsFromStorage(profile))
-
-    function onVisible() {
-      if (document.visibilityState === 'visible') setMissionTitles(readMissionsFromStorage(profile))
+    async function loadCompleted() {
+      try {
+        const titles = await apiGet('/api/marketing/my-completions')
+        if (Array.isArray(titles)) setMissionTitles(titles)
+      } catch {}
     }
+    loadCompleted()
+    function onVisible() { if (document.visibilityState === 'visible') loadCompleted() }
     document.addEventListener('visibilitychange', onVisible)
     window.addEventListener('focus', onVisible)
     return () => {
       document.removeEventListener('visibilitychange', onVisible)
       window.removeEventListener('focus', onVisible)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile])
+  }, [])
 
   function toggleMissionTitle(title) {
     setMissionTitles(prev =>
@@ -685,15 +671,8 @@ export default function EodForm({ submittedShifts, onSubmitted }) {
     setSaving(true)
     setError(null)
     try {
-      // Always read missions fresh from localStorage at submit time — catches any missions
-      // completed after the form was opened (e.g. user went to Growth HQ then came back)
-      const freshMissions = readMissionsFromStorage()
-      // Merge: keep any manual removals the user made in the UI, but also include any
-      // new missions completed since the form opened
-      const finalMissions = [
-        ...missionTitles,
-        ...freshMissions.filter(t => !missionTitles.includes(t)),
-      ]
+      // Completed Marketing tasks from "My Tasks" (already loaded into missionTitles)
+      const finalMissions = missionTitles
       const payload = {
         ...form,
         drawer_start: parseFloat(form.drawer_start) || 0,

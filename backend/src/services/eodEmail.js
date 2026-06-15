@@ -182,7 +182,7 @@ function buildShiftBlock(row_data, outreachSummary, tasksByUser) {
   // Missions section HTML
   const missionsRows = missionItems.length
     ? missionItems.map(label => `<tr><td colspan="2" style="padding:2px 0;font-size:12px;color:#374151;">✅ ${label}</td></tr>`).join('')
-    : `<tr><td colspan="2" style="padding:5px 0;font-size:13px;color:#9ca3af;">No missions logged today.</td></tr>`
+    : `<tr><td colspan="2" style="padding:5px 0;font-size:13px;color:#9ca3af;">No marketing tasks completed today.</td></tr>`
 
   return `
   <div style="margin-bottom:24px;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
@@ -231,7 +231,7 @@ function buildShiftBlock(row_data, outreachSummary, tasksByUser) {
         ${sectionHeader('Operations Completed')}
         ${operationsRows}
 
-        ${sectionHeader('Missions Completed')}
+        ${sectionHeader('Marketing')}
         ${missionsRows}
 
         ${sectionHeader('Training Completed')}
