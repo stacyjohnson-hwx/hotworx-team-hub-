@@ -20,6 +20,8 @@ const EVENT_TYPES = [
   { value: 'online',      label: 'Online',      color: 'bg-sky-100 text-sky-800 border-sky-300' },
   { value: 'business_of_the_month', label: 'Business of the Month', color: 'bg-amber-100 text-amber-800 border-amber-300' },
   { value: 'influencer_visit',      label: 'Influencer Visit',      color: 'bg-pink-100 text-pink-800 border-pink-300' },
+  { value: 'pop_up',      label: 'Pop Up',      color: 'bg-teal-100 text-teal-800 border-teal-300' },
+  { value: 'team',        label: 'Team',        color: 'bg-indigo-100 text-indigo-800 border-indigo-300' },
   { value: 'other',       label: 'Other',       color: 'bg-gray-100 text-gray-700 border-gray-300' },
 ]
 
@@ -29,6 +31,7 @@ const PROMO_TYPES = [
   { value: 'referral',     label: 'Referral' },
   { value: 'flash_sale',   label: 'Flash Sale' },
   { value: 'bundle',       label: 'Bundle' },
+  { value: 'hotworx',      label: 'HOTWORX' },
   { value: 'other',        label: 'Other' },
 ]
 

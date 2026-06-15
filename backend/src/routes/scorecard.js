@@ -57,13 +57,19 @@ async function computeAutoValues(sb, studioId, year, month) {
   const pm = month === 1 ? 12 : month - 1
   const py = month === 1 ? year - 1 : year
   const round = (n, d = 0) => { const f = 10 ** d; return Math.round(n * f) / f }
+  const pad = (n) => String(n).padStart(2, '0')
+  const lastDay = new Date(year, month, 0).getDate()
+  const monthStart = `${year}-${pad(month)}-01`
+  const monthEnd = `${year}-${pad(month)}-${pad(lastDay)}`
 
-  const [thisT, prevT, evRes, promoRes, maintRes] = await Promise.all([
+  const [thisT, prevT, evRes, promoRes, maintRes, taskRes, compRes] = await Promise.all([
     sb.from('studio_trends').select('*').eq('studio_id', studioId).eq('year', year).eq('month', month).maybeSingle(),
     sb.from('studio_trends').select('*').eq('studio_id', studioId).eq('year', py).eq('month', pm).maybeSingle(),
     sb.from('events').select('id, title, start_date, event_type').eq('studio_id', studioId).eq('year', year).eq('month', month).order('start_date'),
     sb.from('promotions').select('id, title, promo_type, start_date').eq('studio_id', studioId).eq('year', year).eq('month', month).order('start_date'),
     sb.from('maintenance_logs').select('id, status').eq('studio_id', studioId).in('status', ['open', 'in_progress']),
+    sb.from('cleaning_tasks').select('*').eq('active', true),
+    sb.from('cleaning_completions').select('task_id, completion_date').eq('studio_id', studioId).gte('completion_date', monthStart).lte('completion_date', monthEnd),
   ])
 
   const t = thisT.data || null
@@ -75,6 +81,12 @@ async function computeAutoValues(sb, studioId, year, month) {
   const num = (v) => (v == null ? 0 : Number(v))
   const bomEvents = events.filter(e => e.event_type === 'business_of_the_month')
   const influencerEvents = events.filter(e => e.event_type === 'influencer_visit')
+  // Events Held excludes "Team" events; Promotions Run excludes "HOTWORX" promos.
+  const countedEvents = events.filter(e => e.event_type !== 'team')
+  const countedPromos = promos.filter(p => p.promo_type !== 'hotworx')
+
+  // Cleaning compliance, month-to-date: expected task occurrences vs completed.
+  const cleaningPct = computeCleaningCompliance(taskRes.data || [], compRes.data || [], year, month, lastDay)
 
   const values = {
     net_eft_increase:       t ? num(t.eft_increase) - num(t.eft_decrease) : null,
@@ -85,11 +97,12 @@ async function computeAutoValues(sb, studioId, year, month) {
     attrition_rate:         t && prev && num(prev.total_member_count) > 0 ? round(num(t.cancellations) / num(prev.total_member_count) * 100, 1) : null,
     five_star_reviews_delta: t ? num(t.five_star_reviews) - num(prev?.five_star_reviews) : null,
     ig_growth_delta:        t ? num(t.instagram_followers) - num(prev?.instagram_followers) : null,
-    events_held:            events.length,
-    promotions_run:         promos.length,
+    events_held:            countedEvents.length,
+    promotions_run:         countedPromos.length,
     business_of_the_month:  bomEvents.length,
     influencer_visits:      influencerEvents.length,
     open_maintenance_issues: openMaint,
+    cleaning_compliance:    cleaningPct,
   }
 
   // Business-of-the-Month card: first such event + its linked B2B contact (logo).
@@ -114,11 +127,53 @@ async function computeAutoValues(sb, studioId, year, month) {
   return {
     values,
     extras: {
-      eventsThisMonth: events,
-      promosThisMonth: promos,
+      eventsThisMonth: countedEvents,
+      promosThisMonth: countedPromos,
+      bomEventsThisMonth: bomEvents,
+      influencerEventsThisMonth: influencerEvents,
       businessOfMonth,
     },
   }
+}
+
+// Replicates the cleaning module's "task active on date" rule so compliance
+// matches what the Cleaning screen shows.
+function cleaningTaskActiveOnDate(task, dateStr) {
+  const d = new Date(dateStr)
+  switch (task.frequency) {
+    case 'daily':     return true
+    case 'weekly':    return task.day_of_week === d.getDay()
+    case 'monthly':   return task.day_of_month === d.getDate()
+    case 'quarterly': return Array.isArray(task.quarterly_dates) && task.quarterly_dates.includes(dateStr)
+    case 'one_off':   return task.one_off_date === dateStr
+    default:          return false
+  }
+}
+
+// Month-to-date compliance: of every task occurrence that should have happened
+// from the 1st through today (or the full month, if past), what % were completed.
+function computeCleaningCompliance(tasks, completions, year, month, lastDay) {
+  const pad = (n) => String(n).padStart(2, '0')
+  const now = new Date()
+  const curY = now.getFullYear(), curM = now.getMonth() + 1, curD = now.getDate()
+  let endDay
+  if (year > curY || (year === curY && month > curM)) endDay = 0           // future month
+  else if (year < curY || (year === curY && month < curM)) endDay = lastDay // past month
+  else endDay = Math.min(curD, lastDay)                                     // current month
+  if (endDay === 0 || !tasks.length) return null
+
+  const done = new Set(completions.map(c => `${c.task_id}|${c.completion_date}`))
+  let expected = 0, completed = 0
+  for (let day = 1; day <= endDay; day++) {
+    const dateStr = `${year}-${pad(month)}-${pad(day)}`
+    for (const task of tasks) {
+      if (cleaningTaskActiveOnDate(task, dateStr)) {
+        expected++
+        if (done.has(`${task.id}|${dateStr}`)) completed++
+      }
+    }
+  }
+  return expected === 0 ? null : Math.round((completed / expected) * 100)
 }
 
 // GET /api/scorecard/:year/:month — resolved metrics + review state for a month.

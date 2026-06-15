@@ -447,6 +447,8 @@ export default function ScorecardPage() {
                   const val = m.auto ? m.actual : draft[m.key]
                   const expandList = m.key === 'events_held' ? (data.eventsThisMonth || [])
                     : m.key === 'promotions_run' ? (data.promosThisMonth || [])
+                    : m.key === 'business_of_the_month' ? (data.bomEventsThisMonth || [])
+                    : m.key === 'influencer_visits' ? (data.influencerEventsThisMonth || [])
                     : null
                   const bom = m.key === 'business_of_the_month' ? data.businessOfMonth : null
                   return (

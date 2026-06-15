@@ -72,7 +72,7 @@ const CATALOG = [
   { key: 'thankyou_cards',       group: 'retention', label: 'Thank-You Cards w/ $5 Cert',  type: 'percent', goal: 100, source: 'manual', note: '100% of new members' },
 
   // ── Facility & Ops (Marisa) ────────────────────────────────────────────
-  { key: 'cleaning_compliance',  group: 'facility', label: 'Cleaning Checklist Compliance', type: 'percent', goal: 100, source: 'manual', note: 'Full compliance' },
+  { key: 'cleaning_compliance',  group: 'facility', label: 'Cleaning Checklist Compliance', type: 'percent', goal: 100, source: 'Cleaning', auto: 'cleaning_compliance', note: 'Tasks completed ÷ due (month to date)' },
   { key: 'open_maintenance_issues', group: 'facility', label: 'Open Maintenance Issues', type: 'number', goal: 0, source: 'Maintenance', auto: 'open_maintenance_issues', lowerIsBetter: true, note: 'Open + in-progress items' },
   { key: 'manual_inventory_count', group: 'facility', label: 'Manual Inventory Count Done', type: 'boolean', goal: 1, source: 'manual', note: 'Yes / No — last business day' },
 ]
