@@ -393,7 +393,7 @@ function TableTab() {
               <tr className="bg-gray-100 border-b border-gray-200">
                 <th className="sticky left-0 bg-gray-100 px-3 py-2" />
                 <th colSpan={11} className="text-center px-3 py-2 text-gray-500 font-semibold uppercase tracking-wide border-l border-gray-200">Financial</th>
-                <th colSpan={7}  className="text-center px-3 py-2 text-gray-500 font-semibold uppercase tracking-wide border-l border-gray-200">Membership</th>
+                <th colSpan={8}  className="text-center px-3 py-2 text-gray-500 font-semibold uppercase tracking-wide border-l border-gray-200">Membership</th>
                 <th colSpan={4}  className="text-center px-3 py-2 text-gray-500 font-semibold uppercase tracking-wide border-l border-gray-200">Conversion Rates</th>
                 <th colSpan={2}  className="text-center px-3 py-2 text-gray-500 font-semibold uppercase tracking-wide border-l border-gray-200">Activity</th>
                 <th colSpan={4}  className="text-center px-3 py-2 text-gray-500 font-semibold uppercase tracking-wide border-l border-gray-200">Social</th>
@@ -404,7 +404,7 @@ function TableTab() {
                 {['Vending','Retail','Rewards','Refunds','Memb. Cash','EFT Inc.','EFT Dec.','Monthly EFT','EFT Change','In The Bank','Expenses','Net Income'].map((h,i) => (
                   <th key={h} className={`text-right px-3 py-2.5 text-gray-600 font-semibold whitespace-nowrap ${i===0?'border-l border-gray-200':''}`}>{h}</th>
                 ))}
-                {['Leads','Red Bkd','Red Held','New Mbrs','Cancels','Total Mbrs','Net Mbr Chg'].map((h,i) => (
+                {['Leads','Red Bkd','Red Held','New Mbrs','Cancels','Total Mbrs','Elite %','Net Mbr Chg'].map((h,i) => (
                   <th key={h} className={`text-right px-3 py-2.5 text-gray-600 font-semibold whitespace-nowrap ${i===0?'border-l border-gray-200':''}`}>{h}</th>
                 ))}
                 {['Leads→Red','Bkd→Held','Red→Mbr','Lead→Mbr'].map((h,i) => (
@@ -457,6 +457,7 @@ function TableTab() {
                     <td className="text-right px-3 py-2.5 text-green-700 font-medium whitespace-nowrap">+{fmtN(r.new_members)}</td>
                     <td className="text-right px-3 py-2.5 text-red-600 font-medium whitespace-nowrap">-{fmtN(r.cancellations)}</td>
                     <td className={td}>{fmtN(r.total_member_count)}</td>
+                    <td className={td}>{(r.sweat_elite_pct || 0)}%</td>
                     <td className={`text-right px-3 py-2.5 whitespace-nowrap font-medium ${netMbr >= 0 ? 'text-green-700' : 'text-red-600'}`}>{netMbr >= 0 ? '+' : ''}{fmtN(netMbr)}</td>
                     <td className={`${td} border-l border-gray-100`}>{leadsToRed}%</td>
                     <td className={td}>{bkdToHeld}%</td>
