@@ -134,6 +134,13 @@ async function computeAutoValues(sb, studioId, year, month) {
       bomEventsThisMonth: bomEvents,
       influencerEventsThisMonth: influencerEvents,
       businessOfMonth,
+      // Marketing funnel (this month) — Leads → Booked → Showed → Closed.
+      funnel: t ? {
+        leads: num(t.leads),
+        booked: num(t.red_appts_booked),
+        showed: num(t.red_appts_held),
+        closed: num(t.new_members),
+      } : null,
     },
   }
 }

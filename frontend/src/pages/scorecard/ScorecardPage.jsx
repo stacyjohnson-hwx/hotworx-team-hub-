@@ -248,6 +248,99 @@ function BusinessOfMonthCard({ bom }) {
   )
 }
 
+// ── Marketing funnel ──────────────────────────────────────────────────────────
+// HOTWORX "Golden Ratio": 145 leads × 35% lead→member ≈ 50 members/month.
+const GOLDEN = { leads: 145, leadToMember: 35, members: 50 }
+const rate = (num, den) => (den > 0 ? Math.round((num / den) * 100) : null)
+
+function GoldenChip({ label, actual, goal, suffix = '', lowerBound }) {
+  // green ≥100% of goal, amber ≥80%, red below
+  let cls = 'bg-gray-100 text-gray-400'
+  if (actual != null) {
+    const ratio = goal > 0 ? actual / goal : 1
+    cls = ratio >= 1 ? 'bg-green-50 text-green-700 border-green-200'
+      : ratio >= 0.8 ? 'bg-amber-50 text-amber-700 border-amber-200'
+      : 'bg-red-50 text-red-700 border-red-200'
+  }
+  return (
+    <div className={`flex-1 rounded-lg border px-3 py-2 text-center ${cls}`}>
+      <p className="text-[10px] font-semibold uppercase tracking-wide opacity-70">{label}</p>
+      <p className="text-base font-bold leading-tight">
+        {actual == null ? '—' : `${actual}${suffix}`}
+        <span className="text-[11px] font-medium opacity-60"> / {goal}{suffix}</span>
+      </p>
+    </div>
+  )
+}
+
+function MarketingFunnel({ funnel }) {
+  if (!funnel) {
+    return (
+      <div className="scorecard-card bg-white rounded-xl border border-gray-200 p-4 mb-6">
+        <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-1">Marketing Funnel</h2>
+        <p className="text-xs text-gray-400">Enter this month’s Studio Trends (Leads, Red Appts Booked/Held, New Members) to see the funnel.</p>
+      </div>
+    )
+  }
+  const f = funnel
+  const stages = [
+    { label: 'Leads',   value: f.leads,  op: 0.5 },
+    { label: 'Booked',  value: f.booked, op: 0.67 },
+    { label: 'Showed',  value: f.showed, op: 0.84 },
+    { label: 'Closed (Members)', value: f.closed, op: 1 },
+  ]
+  const maxV = Math.max(f.leads, f.booked, f.showed, f.closed, 1)
+  const convs = [
+    rate(f.booked, f.leads),
+    rate(f.showed, f.booked),
+    rate(f.closed, f.showed),
+  ]
+  const leadToMember = rate(f.closed, f.leads)
+
+  return (
+    <div className="scorecard-card bg-white rounded-xl border border-gray-200 p-4 mb-6">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
+        <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Marketing Funnel</h2>
+        <span className="text-[11px] text-gray-400">Golden Ratio: <strong className="text-gray-600">145 leads → 35% → 50 members</strong></span>
+      </div>
+
+      <div className="space-y-1">
+        {stages.map((s, i) => (
+          <div key={s.label}>
+            <div className="flex items-center" style={{ minHeight: '2.25rem' }}>
+              <div
+                className="rounded-md flex items-center justify-between px-3 text-white transition-all"
+                style={{
+                  width: `${Math.max((s.value / maxV) * 100, 22)}%`,
+                  minHeight: '2.25rem',
+                  backgroundColor: 'var(--studio-accent)',
+                  opacity: s.op,
+                }}
+              >
+                <span className="text-xs font-semibold drop-shadow-sm">{s.label}</span>
+                <span className="text-base font-bold drop-shadow-sm">{(s.value || 0).toLocaleString()}</span>
+              </div>
+            </div>
+            {i < convs.length && (
+              <div className="flex items-center gap-1 pl-3 py-0.5 text-[11px] text-gray-400">
+                <ChevronDown size={11} />
+                <span><strong className="text-gray-500">{convs[i] == null ? '—' : `${convs[i]}%`}</strong> {['booked','showed','closed'][i]}</span>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Golden-ratio scorecard */}
+      <div className="flex gap-2 mt-3">
+        <GoldenChip label="Leads" actual={f.leads} goal={GOLDEN.leads} />
+        <GoldenChip label="Lead → Member" actual={leadToMember} goal={GOLDEN.leadToMember} suffix="%" />
+        <GoldenChip label="Members" actual={f.closed} goal={GOLDEN.members} />
+      </div>
+    </div>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function ScorecardPage() {
   const { selectedMonth } = useMonth()
@@ -429,6 +522,9 @@ export default function ScorecardPage() {
           />
         ))}
       </div>
+
+      {/* Marketing funnel */}
+      <MarketingFunnel funnel={data.funnel} />
 
       {/* Grouped sections */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
