@@ -138,6 +138,7 @@ function IdeaBank() {
   const [plays, setPlays] = useState([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState(null)
+  const [filter, setFilter] = useState('all')
   const load = useCallback(async () => {
     setLoading(true)
     try { setPlays(await apiGet('/api/leadgen/plays')) } catch {} finally { setLoading(false) }
@@ -147,6 +148,8 @@ function IdeaBank() {
   const toggle = async (p) => { const u = await apiPut(`/api/leadgen/plays/${p.id}`, { active: !p.active }); setPlays(prev => prev.map(x => x.id === p.id ? u : x)) }
   const del = async (id) => { if (!confirm('Remove this play from the bank?')) return; await apiDelete(`/api/leadgen/plays/${id}`); setPlays(prev => prev.filter(p => p.id !== id)) }
   const activeCount = plays.filter(p => p.active).length
+  const catCounts = plays.reduce((m, p) => { const k = CATS[p.category] ? p.category : 'in_studio'; m[k] = (m[k] || 0) + 1; return m }, {})
+  const visiblePlays = filter === 'all' ? plays : plays.filter(p => (CATS[p.category] ? p.category : 'in_studio') === filter)
   if (loading) return <div className="flex items-center justify-center py-12"><Loader2 size={22} className="animate-spin text-gray-300" /></div>
   return (
     <div>
@@ -154,8 +157,28 @@ function IdeaBank() {
         <p className="text-xs text-gray-500">{activeCount} active · {plays.length - activeCount} in the bank. Toggle <Power size={11} className="inline" /> to activate a play for your TSAs.</p>
         <button onClick={() => setModal(false)} className="flex items-center gap-1.5 text-xs font-semibold text-white bg-[#E8611A] rounded-lg px-3 py-1.5 hover:bg-orange-600"><Plus size={13} /> New play</button>
       </div>
+      {/* Category filter */}
+      <div className="flex flex-wrap gap-1.5 mb-4">
+        <button onClick={() => setFilter('all')}
+          className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-colors ${filter === 'all' ? 'bg-[#1A1A1A] text-white border-[#1A1A1A]' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'}`}>
+          All <span className="opacity-60">{plays.length}</span>
+        </button>
+        {CAT_KEYS.map(c => {
+          const Icon = CATS[c].icon
+          const count = catCounts[c] || 0
+          return (
+            <button key={c} onClick={() => setFilter(c)}
+              className={`flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-colors ${filter === c ? `${CATS[c].cls} border-transparent` : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'}`}>
+              <Icon size={11} /> {CATS[c].label} <span className="opacity-60">{count}</span>
+            </button>
+          )
+        })}
+      </div>
+      {visiblePlays.length === 0 && (
+        <div className="text-center py-10 text-gray-400"><Lightbulb size={24} className="mx-auto mb-2 opacity-30" /><p className="text-sm">No plays in this category yet.</p></div>
+      )}
       <div className="space-y-2">
-        {plays.map(p => {
+        {visiblePlays.map(p => {
           const cat = CATS[p.category] || CATS.in_studio
           return (
             <div key={p.id} className={`bg-white border rounded-xl px-4 py-3 flex items-center gap-3 ${p.active ? 'border-green-200' : 'border-gray-200'}`}>

@@ -23,3 +23,48 @@ body {
   width: 100%;
   min-height: 100svh;
 }
+
+/* ── Scorecard PDF / print export ──────────────────────────────────────────
+   When printing the Monthly Scorecard, hide the app chrome (sidebar, top bar,
+   bottom nav, and any control marked .no-print) so only the scorecard prints. */
+@media print {
+  aside,
+  header,
+  nav,
+  .no-print {
+    display: none !important;
+  }
+  main {
+    overflow: visible !important;
+    padding: 0 !important;
+  }
+  html, body, #root {
+    height: auto !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+  }
+  .scorecard-print {
+    padding: 0 !important;
+  }
+  /* Render inputs as plain text in the export */
+  .scorecard-print input {
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    padding: 0 !important;
+    -webkit-appearance: none;
+    appearance: none;
+    color: #111827 !important;
+  }
+  .scorecard-print input::-webkit-outer-spin-button,
+  .scorecard-print input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  .scorecard-card {
+    break-inside: avoid;
+  }
+  @page {
+    margin: 0.5in;
+  }
+}

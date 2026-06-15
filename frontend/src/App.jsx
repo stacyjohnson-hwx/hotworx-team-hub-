@@ -13,6 +13,7 @@ import LeadsPage from '@/pages/leads/LeadsPage'
 import SchedulePage from '@/pages/schedule/SchedulePage'
 import TimeOffPage from '@/pages/timeoff/TimeOffPage'
 import StudioTrendsPage from '@/pages/studio-trends/StudioTrendsPage'
+import ScorecardPage from '@/pages/scorecard/ScorecardPage'
 import B2bPage from '@/pages/b2b/B2bPage'
 import OrdersPage from '@/pages/orders/OrdersPage'
 import EventsPage from '@/pages/events/EventsPage'
@@ -90,6 +91,14 @@ function AppRoutes() {
           element={
             <RoleGuard allowedRoles={['owner', 'manager']}>
               <StudioTrendsPage />
+            </RoleGuard>
+          }
+        />
+        <Route
+          path="/scorecard"
+          element={
+            <RoleGuard allowedRoles={['owner', 'manager']}>
+              <ScorecardPage />
             </RoleGuard>
           }
         />

@@ -1,0 +1,417 @@
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { apiGet, apiPut, apiPost } from '@/hooks/useApi'
+import { useMonth } from '@/hooks/useMonth'
+import { useStudio } from '@/contexts/StudioContext'
+import { useRole } from '@/hooks/useRole'
+import { formatCurrency, formatMonthYear } from '@/lib/utils'
+import {
+  CheckCircle2, AlertTriangle, XCircle, MinusCircle,
+  Printer, Settings2, ClipboardCheck, Loader2, Save, RotateCcw,
+} from 'lucide-react'
+
+// ── Status logic ────────────────────────────────────────────────────────────
+// Color thresholds come from the API (editable constants, not hard-coded here).
+function computeStatus(metric, thresholds) {
+  const { actual, goal, type, lowerIsBetter } = metric
+  const g = { green: thresholds?.green ?? 1, amber: thresholds?.amber ?? 0.8 }
+
+  if (type === 'boolean') {
+    if (actual == null || actual === '') return 'empty'
+    return Number(actual) ? 'green' : 'red'
+  }
+  if (actual == null || actual === '') return 'empty'
+  const a = Number(actual)
+
+  if (lowerIsBetter) {
+    if (goal === 0) {
+      if (a <= 0) return 'green'
+      if (a <= 1) return 'amber'
+      return 'red'
+    }
+    const ratio = a / goal
+    if (ratio <= g.green) return 'green'
+    if (ratio <= 1.25) return 'amber'
+    return 'red'
+  }
+
+  if (!goal) return 'empty'
+  const ratio = a / goal
+  if (ratio >= g.green) return 'green'
+  if (ratio >= g.amber) return 'amber'
+  return 'red'
+}
+
+const STATUS_META = {
+  green: { label: 'On target',  Icon: CheckCircle2,  text: 'text-green-700', bg: 'bg-green-50',  border: 'border-green-200', dot: 'bg-green-500' },
+  amber: { label: 'Close',      Icon: AlertTriangle, text: 'text-amber-700', bg: 'bg-amber-50',  border: 'border-amber-200', dot: 'bg-amber-500' },
+  red:   { label: 'Off target', Icon: XCircle,       text: 'text-red-700',   bg: 'bg-red-50',    border: 'border-red-200',   dot: 'bg-red-500' },
+  empty: { label: 'No data',    Icon: MinusCircle,   text: 'text-gray-400',  bg: 'bg-gray-50',   border: 'border-gray-200',  dot: 'bg-gray-300' },
+}
+function statusLabel(metric, status) {
+  if (metric.type === 'boolean') return status === 'green' ? 'Met' : status === 'red' ? 'Not met' : 'No data'
+  return STATUS_META[status].label
+}
+
+// ── Value formatting ─────────────────────────────────────────────────────────
+function formatValue(type, v) {
+  if (v == null || v === '') return '—'
+  const n = Number(v)
+  if (type === 'currency') return formatCurrency(n)
+  if (type === 'percent') return `${n}%`
+  if (type === 'rating') return `${n.toFixed(1)}★`
+  if (type === 'boolean') return n ? 'Yes' : 'No'
+  return n.toLocaleString()
+}
+function formatGoal(metric) {
+  if (metric.type === 'boolean') return 'Yes'
+  return formatValue(metric.type, metric.goal)
+}
+
+// ── Editable actual input ─────────────────────────────────────────────────────
+function ActualInput({ metric, value, readOnly, large, onChange, onCommit }) {
+  if (metric.type === 'boolean') {
+    const on = Number(value) === 1
+    return (
+      <div className="inline-flex rounded-lg overflow-hidden border border-gray-300">
+        {['Yes', 'No'].map((opt, i) => {
+          const isOn = (i === 0) === on && value != null && value !== ''
+          return (
+            <button
+              key={opt}
+              type="button"
+              disabled={readOnly}
+              onClick={() => onCommit(i === 0 ? 1 : 0)}
+              className={`px-3 py-1 text-sm font-medium transition-colors ${
+                isOn
+                  ? (i === 0 ? 'bg-green-600 text-white' : 'bg-red-600 text-white')
+                  : 'bg-white text-gray-500 hover:bg-gray-50'
+              } ${i === 0 ? 'border-r border-gray-300' : ''} disabled:opacity-60`}
+            >
+              {opt}
+            </button>
+          )
+        })}
+      </div>
+    )
+  }
+  const prefix = metric.type === 'currency' ? '$' : null
+  const suffix = metric.type === 'percent' ? '%' : metric.type === 'rating' ? '★' : null
+  return (
+    <div className="relative inline-flex items-center">
+      {prefix && <span className={`absolute left-2 text-gray-400 ${large ? 'text-xl' : 'text-sm'}`}>{prefix}</span>}
+      <input
+        type="number"
+        step={metric.type === 'rating' ? '0.1' : '1'}
+        value={value ?? ''}
+        readOnly={readOnly}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={(e) => onCommit(e.target.value === '' ? null : Number(e.target.value))}
+        placeholder="—"
+        className={`bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-[var(--studio-accent)]/30 focus:border-[var(--studio-accent)] read-only:bg-gray-50 ${
+          large ? 'text-2xl font-bold w-full py-1' : 'text-sm w-24 py-1'
+        } ${prefix ? 'pl-6' : 'pl-2.5'} ${suffix ? 'pr-6' : 'pr-2'}`}
+      />
+      {suffix && <span className={`absolute right-2 text-gray-400 ${large ? 'text-lg' : 'text-sm'}`}>{suffix}</span>}
+    </div>
+  )
+}
+
+// ── Hero card ─────────────────────────────────────────────────────────────────
+function HeroCard({ metric, status, draft, readOnly, editGoals, onChange, onCommit, onGoalChange }) {
+  const meta = STATUS_META[status]
+  return (
+    <div className={`scorecard-card rounded-2xl border ${meta.border} ${meta.bg} p-4 flex flex-col`}>
+      <p className="text-xs font-semibold uppercase tracking-wide text-gray-600 leading-tight min-h-[2rem]">{metric.label}</p>
+      <div className="mt-2">
+        <ActualInput metric={metric} value={draft} readOnly={readOnly} large onChange={onChange} onCommit={onCommit} />
+      </div>
+      <div className="mt-2 flex items-center justify-between text-xs">
+        {editGoals ? (
+          <span className="flex items-center gap-1 text-gray-500">
+            Goal
+            <input
+              type="number" step={metric.type === 'rating' ? '0.1' : '1'}
+              defaultValue={metric.goal}
+              onChange={(e) => onGoalChange(metric.key, e.target.value)}
+              className="w-16 border border-gray-300 rounded px-1 py-0.5 text-gray-900"
+            />
+          </span>
+        ) : (
+          <span className="text-gray-500">Goal: <span className="font-semibold text-gray-700">{formatGoal(metric)}</span></span>
+        )}
+        <span className={`inline-flex items-center gap-1 font-semibold ${meta.text}`}>
+          <meta.Icon size={14} /> {statusLabel(metric, status)}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+// ── Supporting metric row ─────────────────────────────────────────────────────
+function MetricRow({ metric, status, draft, readOnly, editGoals, onChange, onCommit, onGoalChange, onLowerToggle }) {
+  const meta = STATUS_META[status]
+  return (
+    <div className="scorecard-card flex items-center justify-between gap-3 py-2.5 border-b border-gray-100 last:border-0">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${meta.dot}`} />
+          <p className="text-sm font-medium text-gray-800 truncate">{metric.label}</p>
+        </div>
+        <p className="text-[11px] text-gray-400 pl-4 truncate">
+          {metric.note ? `${metric.note} · ` : ''}<span className="uppercase">{metric.source}</span>
+          {metric.lowerIsBetter ? ' · lower is better' : ''}
+        </p>
+      </div>
+
+      <div className="flex items-center gap-3 flex-shrink-0">
+        {editGoals ? (
+          <div className="flex items-center gap-1 text-xs text-gray-500">
+            <span>Goal</span>
+            <input
+              type="number" step={metric.type === 'rating' ? '0.1' : '1'}
+              defaultValue={metric.goal}
+              onChange={(e) => onGoalChange(metric.key, e.target.value)}
+              className="w-16 border border-gray-300 rounded px-1 py-0.5 text-gray-900"
+            />
+            {metric.type !== 'boolean' && (
+              <label className="flex items-center gap-1 ml-1" title="Lower is better">
+                <input type="checkbox" defaultChecked={metric.lowerIsBetter} onChange={(e) => onLowerToggle(metric.key, e.target.checked)} />
+                <span className="text-[10px]">↓</span>
+              </label>
+            )}
+          </div>
+        ) : (
+          <span className="text-xs text-gray-400 hidden sm:inline">Goal: {formatGoal(metric)}</span>
+        )}
+        <ActualInput metric={metric} value={draft} readOnly={readOnly} onChange={onChange} onCommit={onCommit} />
+        <span className={`text-[11px] font-semibold ${meta.text} w-16 text-right hidden md:inline`}>{statusLabel(metric, status)}</span>
+      </div>
+    </div>
+  )
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
+export default function ScorecardPage() {
+  const { selectedMonth } = useMonth()
+  const { currentStudio } = useStudio()
+  const { isOwner } = useRole()
+  const { month, year } = selectedMonth
+
+  const [data, setData] = useState(null)
+  const [draft, setDraft] = useState({})          // metric_key -> actual (local, mirrors server)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [saveState, setSaveState] = useState('idle') // idle | saving | saved | error
+  const [editGoals, setEditGoals] = useState(false)
+  const goalEdits = useRef({})                     // metric_key -> { goal, lower_is_better }
+
+  const studioId = currentStudio?.id
+
+  const load = useCallback(async () => {
+    if (!studioId) return
+    setLoading(true); setError(null)
+    try {
+      const res = await apiGet(`/api/scorecard/${year}/${month}`, studioId)
+      setData(res)
+      const d = {}
+      for (const m of res.metrics) d[m.key] = m.actual
+      setDraft(d)
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setLoading(false)
+    }
+  }, [studioId, year, month])
+
+  useEffect(() => { load() }, [load])
+
+  const flashSaved = () => {
+    setSaveState('saved')
+    setTimeout(() => setSaveState((s) => (s === 'saved' ? 'idle' : s)), 1800)
+  }
+
+  const commitActual = async (key, value) => {
+    setDraft((d) => ({ ...d, [key]: value }))
+    setData((prev) => prev && { ...prev, metrics: prev.metrics.map((m) => m.key === key ? { ...m, actual: value } : m) })
+    try {
+      setSaveState('saving')
+      await apiPut(`/api/scorecard/${year}/${month}`, { actuals: { [key]: value } }, studioId)
+      flashSaved()
+    } catch (e) {
+      setSaveState('error'); setError(e.message)
+    }
+  }
+
+  const saveGoals = async () => {
+    const edits = goalEdits.current
+    const goals = Object.entries(edits).map(([metric_key, v]) => ({ metric_key, ...v }))
+    if (!goals.length) { setEditGoals(false); return }
+    try {
+      setSaveState('saving')
+      await apiPut('/api/scorecard/goals', { goals }, studioId)
+      goalEdits.current = {}
+      setEditGoals(false)
+      flashSaved()
+      await load()
+    } catch (e) {
+      setSaveState('error'); setError(e.message)
+    }
+  }
+
+  const onGoalChange = (key, val) => {
+    goalEdits.current[key] = { ...(goalEdits.current[key] || {}), goal: val === '' ? null : Number(val) }
+  }
+  const onLowerToggle = (key, checked) => {
+    goalEdits.current[key] = { ...(goalEdits.current[key] || {}), lower_is_better: checked }
+  }
+
+  const toggleReview = async () => {
+    const next = !data?.reviewedAt
+    try {
+      setSaveState('saving')
+      const res = await apiPost(`/api/scorecard/${year}/${month}/review`, { reviewed: next }, studioId)
+      setData((prev) => prev && { ...prev, reviewedAt: res.reviewed_at, reviewedBy: res.reviewed_by, reviewedByName: next ? 'You' : null })
+      flashSaved()
+    } catch (e) {
+      setSaveState('error'); setError(e.message)
+    }
+  }
+
+  if (loading && !data) {
+    return (
+      <div className="flex items-center justify-center py-24 text-gray-400">
+        <Loader2 className="animate-spin mr-2" size={18} /> Loading scorecard…
+      </div>
+    )
+  }
+  if (error && !data) {
+    return (
+      <div className="max-w-xl mx-auto mt-12 bg-red-50 border border-red-200 rounded-xl p-6 text-center">
+        <p className="text-red-700 font-medium mb-1">Couldn’t load the scorecard</p>
+        <p className="text-red-600 text-sm">{error}</p>
+        <button onClick={load} className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg text-sm">Try again</button>
+      </div>
+    )
+  }
+
+  const thresholds = data?.thresholds
+  const heroMetrics = data?.metrics.filter((m) => m.isHero) || []
+  const groupOrder = data?.groupOrder || []
+  const groups = data?.groups || {}
+  const reviewedDate = data?.reviewedAt ? new Date(data.reviewedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null
+
+  return (
+    <div className="scorecard-print max-w-6xl mx-auto pb-12">
+      {/* Header */}
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-5">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Monthly Studio Scorecard</h1>
+          <p className="text-sm text-gray-500">
+            {currentStudio?.name || 'HOTWORX'} · <span className="font-medium text-gray-700">{formatMonthYear(month, year)}</span>
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2 no-print">
+          {saveState === 'saving' && <span className="text-xs text-gray-400 flex items-center gap-1"><Loader2 size={12} className="animate-spin" /> Saving…</span>}
+          {saveState === 'saved' && <span className="text-xs text-green-600 flex items-center gap-1"><CheckCircle2 size={12} /> Saved</span>}
+
+          {isOwner && (editGoals ? (
+            <>
+              <button onClick={saveGoals} className="px-3 py-1.5 rounded-lg text-sm font-medium text-white flex items-center gap-1" style={{ backgroundColor: 'var(--studio-accent)' }}>
+                <Save size={14} /> Save goals
+              </button>
+              <button onClick={() => { goalEdits.current = {}; setEditGoals(false) }} className="px-3 py-1.5 rounded-lg text-sm text-gray-600 border border-gray-300 flex items-center gap-1">
+                Cancel
+              </button>
+            </>
+          ) : (
+            <button onClick={() => setEditGoals(true)} className="px-3 py-1.5 rounded-lg text-sm text-gray-700 border border-gray-300 hover:bg-gray-50 flex items-center gap-1">
+              <Settings2 size={14} /> Edit goals
+            </button>
+          ))}
+
+          {isOwner && (
+            <button
+              onClick={toggleReview}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1 border ${
+                data?.reviewedAt ? 'bg-green-50 text-green-700 border-green-200' : 'text-gray-700 border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              {data?.reviewedAt ? <><RotateCcw size={14} /> Reviewed</> : <><ClipboardCheck size={14} /> Mark reviewed</>}
+            </button>
+          )}
+
+          <button onClick={() => window.print()} className="px-3 py-1.5 rounded-lg text-sm font-medium text-white flex items-center gap-1" style={{ backgroundColor: 'var(--studio-accent)' }}>
+            <Printer size={14} /> Export PDF
+          </button>
+        </div>
+      </div>
+
+      {/* Review status banner */}
+      {data?.reviewedAt && (
+        <div className="mb-4 text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-1.5 inline-flex items-center gap-1.5">
+          <CheckCircle2 size={13} /> Reviewed{data.reviewedByName ? ` by ${data.reviewedByName}` : ''}{reviewedDate ? ` · ${reviewedDate}` : ''}
+        </div>
+      )}
+
+      {/* Hero row */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
+        {heroMetrics.map((m) => (
+          <HeroCard
+            key={m.key}
+            metric={m}
+            status={computeStatus({ ...m, actual: draft[m.key] }, thresholds)}
+            draft={draft[m.key]}
+            readOnly={false}
+            editGoals={editGoals}
+            onChange={(v) => setDraft((d) => ({ ...d, [m.key]: v }))}
+            onCommit={(v) => commitActual(m.key, v)}
+            onGoalChange={onGoalChange}
+          />
+        ))}
+      </div>
+
+      {/* Grouped sections */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {groupOrder.map((gkey) => {
+          const metrics = data.metrics.filter((m) => m.group === gkey)
+          if (!metrics.length) return null
+          const g = groups[gkey] || {}
+          return (
+            <section key={gkey} className="scorecard-card bg-white rounded-xl border border-gray-200 p-4">
+              <div className="flex items-center justify-between mb-1">
+                <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide">{g.label}</h2>
+                <span className="text-[10px] text-gray-400">{g.owner}</span>
+              </div>
+              <div>
+                {metrics.map((m) => (
+                  <MetricRow
+                    key={m.key}
+                    metric={m}
+                    status={computeStatus({ ...m, actual: draft[m.key] }, thresholds)}
+                    draft={draft[m.key]}
+                    readOnly={false}
+                    editGoals={editGoals}
+                    onChange={(v) => setDraft((d) => ({ ...d, [m.key]: v }))}
+                    onCommit={(v) => commitActual(m.key, v)}
+                    onGoalChange={onGoalChange}
+                    onLowerToggle={onLowerToggle}
+                  />
+                ))}
+              </div>
+            </section>
+          )
+        })}
+      </div>
+
+      {/* Footer / data-source legend */}
+      <div className="mt-6 pt-4 border-t border-gray-200 text-[11px] text-gray-400 leading-relaxed">
+        <p className="font-medium text-gray-500 mb-1">Data sources</p>
+        <p>All metrics are manual entry in v1. Source labels (SAIL, IG, REVIEWS, B2B, EVENTS, MANUAL) indicate where each number comes from and signal a future importer — the tool does not pull live data yet.</p>
+        <p className="mt-1">
+          Color status: <span className="text-green-600 font-medium">green ≥100% of goal</span> · <span className="text-amber-600 font-medium">amber 80–99%</span> · <span className="text-red-600 font-medium">red &lt;80%</span> (inverted for “lower is better” metrics).
+        </p>
+      </div>
+    </div>
+  )
+}

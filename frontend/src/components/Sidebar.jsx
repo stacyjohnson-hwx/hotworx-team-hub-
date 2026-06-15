@@ -29,6 +29,7 @@ import {
   ShieldAlert,
   Swords,
   Package,
+  Gauge,
 } from 'lucide-react'
 
 // Sidebar organized into sections. Dashboard is pinned (no header); the footer
@@ -81,6 +82,7 @@ const NAV_SECTIONS = [
   {
     title: 'Insights',
     items: [
+      { to: '/scorecard',     label: 'Scorecard',     icon: Gauge,     roles: ['owner', 'manager'] },
       { to: '/studio-trends', label: 'Studio Trends', icon: BarChart2, roles: ['owner', 'manager'] },
       { to: '/advisor',       label: 'AI Advisor',    icon: Sparkles,  roles: ['owner', 'manager'] },
     ],

@@ -700,9 +700,8 @@ function IdeaBoard() {
 // ─── Marketing Hub shell ──────────────────────────────────────────────────────
 export default function MarketingHub() {
   const { isOwnerOrManager } = useRole()
-  const [sub, setSub] = useState('tasks')
+  const [sub, setSub] = useState('library')
   const TABS = [
-    { id: 'tasks',       label: 'My Tasks',        icon: ListTodo },
     { id: 'library',     label: 'Content Library', icon: Images },
     { id: 'ideas',       label: 'Ideas',           icon: Lightbulb },
     { id: 'leaderboard', label: 'Leaderboard',     icon: Trophy },
@@ -729,7 +728,6 @@ export default function MarketingHub() {
           )
         })}
       </div>
-      {sub === 'tasks' && <MyTasks />}
       {sub === 'library' && <ContentLibrary />}
       {sub === 'ideas' && <IdeaBoard />}
       {sub === 'leaderboard' && <Leaderboard />}
