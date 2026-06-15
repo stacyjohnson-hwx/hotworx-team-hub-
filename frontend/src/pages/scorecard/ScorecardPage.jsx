@@ -59,6 +59,31 @@ function statusLabel(metric, status) {
   return STATUS_META[status].label
 }
 
+// Fill % toward goal (0–100, clamped) for the progress bar.
+function progressFill(metric) {
+  const { actual, goal, type, lowerIsBetter } = metric
+  if (type === 'boolean') return Number(actual) ? 100 : 0
+  if (type === 'date' || type === 'text') return (actual == null || actual === '') ? 0 : 100
+  if (actual == null || actual === '') return 0
+  const a = Number(actual)
+  if (lowerIsBetter) {
+    if (goal === 0) return a <= 0 ? 100 : 0
+    return a <= goal ? 100 : Math.max(0, Math.round((goal / a) * 100))
+  }
+  if (!goal) return 0
+  return Math.min(100, Math.round((a / goal) * 100))
+}
+
+const FILL_COLOR = { green: 'bg-green-500', amber: 'bg-amber-500', red: 'bg-red-500', empty: 'bg-gray-200' }
+
+function ProgressBar({ pct, status, className = '' }) {
+  return (
+    <div className={`w-full bg-gray-100 rounded-full overflow-hidden ${className}`}>
+      <div className={`h-full rounded-full transition-all ${FILL_COLOR[status]}`} style={{ width: `${pct}%` }} />
+    </div>
+  )
+}
+
 // ── Value formatting ─────────────────────────────────────────────────────────
 function formatValue(type, v) {
   if (v == null || v === '') return '—'
@@ -81,7 +106,7 @@ function formatGoal(metric) {
 function ActualInput({ metric, value, readOnly, large, onChange, onCommit }) {
   // Auto-pulled metrics are read-only: render the value as static text.
   if (readOnly) {
-    return <span className={`font-bold text-gray-900 ${large ? 'text-2xl' : 'text-sm'}`}>{formatValue(metric.type, value)}</span>
+    return <span className={`font-bold text-gray-900 tracking-tight ${large ? 'text-3xl' : 'text-sm'}`}>{formatValue(metric.type, value)}</span>
   }
   if (metric.type === 'date') {
     return (
@@ -161,9 +186,10 @@ function HeroCard({ metric, status, draft, readOnly, editGoals, onChange, onComm
         <span className="flex-1">{metric.label}</span>
         {metric.auto && <span className="text-[8px] font-bold bg-gray-200 text-gray-500 px-1 py-0.5 rounded" title="Pulled automatically">AUTO</span>}
       </p>
-      <div className="mt-2">
+      <div className="mt-1">
         <ActualInput metric={metric} value={draft} readOnly={readOnly} large onChange={onChange} onCommit={onCommit} />
       </div>
+      <ProgressBar pct={progressFill({ ...metric, actual: draft })} status={status} className="h-1.5 mt-2" />
       <div className="mt-2 flex items-center justify-between text-xs">
         {editGoals && !metric.autoGoal ? (
           <span className="flex items-center gap-1 text-gray-500">
@@ -236,6 +262,8 @@ function MetricRow({ metric, status, draft, readOnly, editGoals, onChange, onCom
         <span className={`text-[11px] font-semibold ${meta.text} w-16 text-right hidden md:inline`}>{statusLabel(metric, status)}</span>
       </div>
     </div>
+
+    <ProgressBar pct={progressFill({ ...metric, actual: draft })} status={status} className="h-1 mb-2" />
 
     {expandList && expanded && (
       <div className="pl-4 pb-2.5 -mt-1 space-y-1">
