@@ -243,13 +243,14 @@ router.get('/leaderboard', async (req, res) => {
   const database = db()
   const wkStart = weekStartStr()
 
-  const [{ data: members }, { data: inactive }, { data: settings }, { data: completions }, { data: assets }, { data: leadgenCompletions }] = await Promise.all([
+  const [{ data: members }, { data: inactive }, { data: settings }, { data: completions }, { data: assets }, { data: leadgenCompletions }, { data: outreachLogs }] = await Promise.all([
     database.from('user_studios').select('user_id, role').eq('studio_id', req.studio.id),
     database.from('user_profiles').select('id').eq('is_active', false),
     database.from('marketing_settings').select('*').eq('studio_id', req.studio.id).maybeSingle(),
     database.from('marketing_task_completions').select('staff_id, points_awarded, completion_date, completed_at').eq('studio_id', req.studio.id),
     database.from('marketing_content_assets').select('staff_id, uploaded_at').eq('studio_id', req.studio.id).neq('status', 'archived'),
     database.from('leadgen_completions').select('staff_id, points_awarded, completion_date, completed_at').eq('studio_id', req.studio.id),
+    database.from('outreach_logs').select('tsa_id, calls_made, texts_made, log_date, outreach_tiles!inner(studio_id)').eq('outreach_tiles.studio_id', req.studio.id),
   ])
 
   const inactiveIds = new Set((inactive || []).map(r => r.id))
@@ -261,6 +262,17 @@ router.get('/leaderboard', async (req, res) => {
   // Combined points: Content (marketing) + Marketing (leadgen) task completions
   const compl = [...(completions || []), ...(leadgenCompletions || [])]
   const names = await staffNameMap(database, memberIds)
+
+  // Outreach points: 1 point per call + 1 per text logged
+  const POINTS_PER_OUTREACH = 1
+  const outreachPts = {} // staff_id -> { weekly, all }
+  for (const l of (outreachLogs || [])) {
+    const n = ((l.calls_made || 0) + (l.texts_made || 0)) * POINTS_PER_OUTREACH
+    if (!n) continue
+    if (!outreachPts[l.tsa_id]) outreachPts[l.tsa_id] = { weekly: 0, all: 0 }
+    outreachPts[l.tsa_id].all += n
+    if ((l.log_date || '') >= effStart) outreachPts[l.tsa_id].weekly += n
+  }
 
   // Profile photos for each member (avatar_url on user_profiles)
   const avatarMap = {}
@@ -285,8 +297,9 @@ router.get('/leaderboard', async (req, res) => {
 
   const allRows = memberIds.map(id => {
     const mine = compl.filter(c => c.staff_id === id)
-    const weekly = mine.filter(c => (c.completed_at || '').slice(0, 10) >= effStart).reduce((s, c) => s + (c.points_awarded || 0), 0)
-    const allTime = mine.reduce((s, c) => s + (c.points_awarded || 0), 0)
+    const out = outreachPts[id] || { weekly: 0, all: 0 }
+    const weekly = mine.filter(c => (c.completed_at || '').slice(0, 10) >= effStart).reduce((s, c) => s + (c.points_awarded || 0), 0) + out.weekly
+    const allTime = mine.reduce((s, c) => s + (c.points_awarded || 0), 0) + out.all
     const tasksThisWeek = mine.filter(c => c.completion_date >= wkStart).length
     const contentThisWeek = (assets || []).filter(a => a.staff_id === id && (a.uploaded_at || '').slice(0, 10) >= wkStart).length
     return {
