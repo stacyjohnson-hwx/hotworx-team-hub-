@@ -21,6 +21,9 @@ function computeStatus(metric, thresholds) {
     if (actual == null || actual === '') return 'empty'
     return Number(actual) ? 'green' : 'red'
   }
+  if (type === 'date' || type === 'text') {
+    return (actual == null || actual === '') ? 'empty' : 'green'
+  }
   if (actual == null || actual === '') return 'empty'
   const a = Number(actual)
 
@@ -51,12 +54,16 @@ const STATUS_META = {
 }
 function statusLabel(metric, status) {
   if (metric.type === 'boolean') return status === 'green' ? 'Met' : status === 'red' ? 'Not met' : 'No data'
+  if (metric.type === 'date')  return status === 'green' ? 'Held' : 'Not yet'
+  if (metric.type === 'text')  return status === 'green' ? 'Logged' : 'Not yet'
   return STATUS_META[status].label
 }
 
 // ── Value formatting ─────────────────────────────────────────────────────────
 function formatValue(type, v) {
   if (v == null || v === '') return '—'
+  if (type === 'text') return String(v)
+  if (type === 'date') return new Date(String(v) + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
   const n = Number(v)
   if (type === 'currency') return formatCurrency(n)
   if (type === 'percent') return `${n}%`
@@ -65,6 +72,7 @@ function formatValue(type, v) {
   return n.toLocaleString()
 }
 function formatGoal(metric) {
+  if (metric.type === 'date' || metric.type === 'text') return null  // no numeric goal
   if (metric.type === 'boolean') return 'Yes'
   return formatValue(metric.type, metric.goal)
 }
@@ -74,6 +82,28 @@ function ActualInput({ metric, value, readOnly, large, onChange, onCommit }) {
   // Auto-pulled metrics are read-only: render the value as static text.
   if (readOnly) {
     return <span className={`font-bold text-gray-900 ${large ? 'text-2xl' : 'text-sm'}`}>{formatValue(metric.type, value)}</span>
+  }
+  if (metric.type === 'date') {
+    return (
+      <input
+        type="date"
+        value={value || ''}
+        onChange={(e) => onCommit(e.target.value || null)}
+        className="bg-white border border-gray-300 rounded-lg text-sm text-gray-900 px-2 py-1 focus:outline-none focus:ring-2 focus:ring-[var(--studio-accent)]/30 focus:border-[var(--studio-accent)]"
+      />
+    )
+  }
+  if (metric.type === 'text') {
+    return (
+      <input
+        type="text"
+        value={value || ''}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={(e) => onCommit(e.target.value === '' ? null : e.target.value)}
+        placeholder="Add challenge…"
+        className="bg-white border border-gray-300 rounded-lg text-sm text-gray-900 px-2.5 py-1 w-48 focus:outline-none focus:ring-2 focus:ring-[var(--studio-accent)]/30 focus:border-[var(--studio-accent)]"
+      />
+    )
   }
   if (metric.type === 'boolean') {
     const on = Number(value) === 1
@@ -160,6 +190,7 @@ function HeroCard({ metric, status, draft, readOnly, editGoals, onChange, onComm
 function MetricRow({ metric, status, draft, readOnly, editGoals, onChange, onCommit, onGoalChange, onLowerToggle,
                      expandList, expanded, onToggle, accessory }) {
   const meta = STATUS_META[status]
+  const hasGoal = metric.type !== 'date' && metric.type !== 'text'
   return (
    <div className="scorecard-card border-b border-gray-100 last:border-0">
     <div className="flex items-center justify-between gap-3 py-2.5">
@@ -182,7 +213,7 @@ function MetricRow({ metric, status, draft, readOnly, editGoals, onChange, onCom
       </div>
 
       <div className="flex items-center gap-3 flex-shrink-0">
-        {editGoals ? (
+        {hasGoal && (editGoals ? (
           <div className="flex items-center gap-1 text-xs text-gray-500">
             <span>Goal</span>
             <input
@@ -200,7 +231,7 @@ function MetricRow({ metric, status, draft, readOnly, editGoals, onChange, onCom
           </div>
         ) : (
           <span className="text-xs text-gray-400 hidden sm:inline">Goal: {formatGoal(metric)}</span>
-        )}
+        ))}
         <ActualInput metric={metric} value={draft} readOnly={readOnly} onChange={onChange} onCommit={onCommit} />
         <span className={`text-[11px] font-semibold ${meta.text} w-16 text-right hidden md:inline`}>{statusLabel(metric, status)}</span>
       </div>

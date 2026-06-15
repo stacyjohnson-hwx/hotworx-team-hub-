@@ -23,10 +23,11 @@ const GROUPS = {
   reputation:{ label: 'Reputation & Reach',      owner: 'Marketing & Ops (Marisa)' },
   retention: { label: 'Retention & Experience',  owner: 'Marketing & Ops (Marisa)' },
   facility:  { label: 'Facility & Ops',          owner: 'Marketing & Ops (Marisa)' },
+  team:      { label: 'Team & Culture',          owner: 'Manager' },
 }
 
 // Display order of the grouped (non-hero) sections.
-const GROUP_ORDER = ['sales', 'outreach', 'events', 'reputation', 'retention', 'facility']
+const GROUP_ORDER = ['sales', 'outreach', 'events', 'reputation', 'retention', 'facility', 'team']
 
 const CATALOG = [
   // ── Hero ───────────────────────────────────────────────────────────────
@@ -38,7 +39,6 @@ const CATALOG = [
 
   // ── Sales Engine (Chrissy) ─────────────────────────────────────────────
   { key: 'checkin_show_rate',    group: 'sales', label: 'Check-in Show Rate',       type: 'percent', goal: 80,  source: 'Studio Trends', auto: 'checkin_show_rate', note: 'Appts held ÷ appts booked' },
-  { key: 'sameday_cancel_saves', group: 'sales', label: 'Same-Day Cancel Saves',    type: 'percent', goal: 100, source: 'SAIL',  note: 'Attempt 100% — log every save' },
   { key: 'sweat_elite_mix',      group: 'sales', label: 'Sweat Elite Mix',          type: 'percent', goal: 80,  source: 'Studio Trends', auto: 'sweat_elite_mix', note: '% of new memberships that are Elite' },
   { key: 'attrition_rate',       group: 'sales', label: 'Attrition / Cancel Rate',  type: 'percent', goal: 4,   source: 'Studio Trends', auto: 'attrition_rate', lowerIsBetter: true, note: 'Cancellations ÷ last month members' },
   { key: 'referrals_received',   group: 'sales', label: 'Referrals Received',       type: 'number',  goal: 10,  source: 'SAIL',  note: 'Owner-set target' },
@@ -66,15 +66,20 @@ const CATALOG = [
   { key: 'overall_star_rating',  group: 'reputation', label: 'Overall Star Rating',  type: 'rating', goal: 4.8, source: 'reviews', note: 'Owner-set; Google/FB/Yelp snapshot' },
 
   // ── Retention & Experience (Marisa) ────────────────────────────────────
-  { key: 'new_member_week1',     group: 'retention', label: 'New-Member Week-1 Check-ins', type: 'percent', goal: 100, source: 'manual', note: '100% of new members' },
+  { key: 'new_member_week1',     group: 'retention', label: 'New-Member Week-1 Check-ins', type: 'number', goal: 50, source: 'manual', note: 'Count of new members checked in week 1' },
   { key: 'atrisk_winback',       group: 'retention', label: 'At-Risk Win-Back (14-day)',   type: 'percent', goal: 100, source: 'manual', note: '100% of lapsing members' },
   { key: 'newsletter_sent',      group: 'retention', label: 'Monthly Newsletter Sent',     type: 'boolean', goal: 1,   source: 'manual', note: 'Yes / No' },
-  { key: 'thankyou_cards',       group: 'retention', label: 'Thank-You Cards w/ $5 Cert',  type: 'percent', goal: 100, source: 'manual', note: '100% of new members' },
+  { key: 'thankyou_cards',       group: 'retention', label: 'Thank-You Cards w/ $5 Cert',  type: 'number', goal: 50, source: 'manual', note: 'Count of cards sent' },
 
   // ── Facility & Ops (Marisa) ────────────────────────────────────────────
   { key: 'cleaning_compliance',  group: 'facility', label: 'Cleaning Checklist Compliance', type: 'percent', goal: 100, source: 'Cleaning', auto: 'cleaning_compliance', note: 'Tasks completed ÷ due (month to date)' },
   { key: 'open_maintenance_issues', group: 'facility', label: 'Open Maintenance Issues', type: 'number', goal: 0, source: 'Maintenance', auto: 'open_maintenance_issues', lowerIsBetter: true, note: 'Open + in-progress items' },
   { key: 'manual_inventory_count', group: 'facility', label: 'Manual Inventory Count Done', type: 'boolean', goal: 1, source: 'manual', note: 'Yes / No — last business day' },
+
+  // ── Team & Culture (Manager) ───────────────────────────────────────────
+  { key: 'team_outing',      group: 'team', label: 'Team Outing Held',  type: 'date', source: 'manual', note: 'Date held' },
+  { key: 'team_meeting',     group: 'team', label: 'Team Meeting Held', type: 'date', source: 'manual', note: 'Date held' },
+  { key: 'monthly_challenge', group: 'team', label: 'Monthly Challenge', type: 'text', source: 'manual', note: 'Describe this month’s challenge' },
 ]
 
 const HERO_KEYS = CATALOG.filter(m => m.group === 'hero').map(m => m.key)
