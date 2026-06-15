@@ -4,7 +4,6 @@ import { EMPLOYEES, getRank } from '../data/mockData'
 import { useAuth } from '@/contexts/AuthContext'
 import MarketingHub   from '@/pages/marketing/MarketingHub'
 import LeadGenHub     from '@/pages/leadgen/LeadGenHub'
-import OutreachTab    from '../OutreachTab'
 import MyShift        from '@/pages/growth/MyShift'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -17,7 +16,6 @@ const ALL_TABS = [
   { id: 'myshift',   label: 'My Tasks',  icon: ListChecks, shortLabel: 'My Tasks'  },
   { id: 'marketing', label: 'Content',   icon: Megaphone,  shortLabel: 'Content'   },
   { id: 'leadgen',   label: 'Marketing', icon: Sprout,     shortLabel: 'Marketing' },
-  { id: 'outreach',  label: 'Outreach',  icon: Phone,      shortLabel: 'Outreach'  },
 ]
 const TSA_TABS = ALL_TABS
 
@@ -192,7 +190,6 @@ export default function LeadGenHQ() {
         {activeTab === 'myshift'     && <MyShift />}
         {activeTab === 'marketing'   && <MarketingHub />}
         {activeTab === 'leadgen'     && <LeadGenHub />}
-        {activeTab === 'outreach'    && <OutreachTab />}
       </div>
     </div>
   )

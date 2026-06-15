@@ -249,26 +249,11 @@ function Suggestions() {
 
 // ─── Lead Gen Hub shell ───────────────────────────────────────────────────────
 export default function LeadGenHub() {
-  const { isOwnerOrManager } = useRole()
-  const [sub, setSub] = useState('tasks')
-  const TABS = [
-    { id: 'tasks',     label: 'My Tasks',    icon: ListTodo },
-    ...(isOwnerOrManager ? [{ id: 'bank', label: 'Idea Bank', icon: Library }] : []),
-    { id: 'ideas',     label: 'Suggestions', icon: Lightbulb },
-  ]
   return (
     <div className="p-4 max-w-3xl mx-auto">
-      <div className="flex items-center gap-2 mb-3"><Sprout size={18} className="text-[#E8611A]" /><h2 className="text-base font-bold text-gray-900">Marketing</h2></div>
-      <div className="flex gap-1 mb-4 bg-gray-100 rounded-lg p-0.5 w-fit flex-wrap">
-        {TABS.map(t => { const Icon = t.icon; return (
-          <button key={t.id} onClick={() => setSub(t.id)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${sub === t.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
-            <Icon size={13} /> {t.label}
-          </button>
-        )})}
-      </div>
-      {sub === 'tasks' && <MyLeadGen />}
-      {sub === 'bank' && isOwnerOrManager && <IdeaBank />}
-      {sub === 'ideas' && <Suggestions />}
+      <div className="flex items-center gap-2 mb-1"><Sprout size={18} className="text-[#E8611A]" /><h2 className="text-base font-bold text-gray-900">Marketing — Idea Bank</h2></div>
+      <p className="text-xs text-gray-500 mb-4">Build your library of growth plays. Toggle one <strong>Active</strong> to push it to everyone's My Tasks.</p>
+      <IdeaBank />
     </div>
   )
 }
