@@ -77,8 +77,8 @@ const CATALOG = [
   { key: 'manual_inventory_count', group: 'facility', label: 'Manual Inventory Count Done', type: 'boolean', goal: 1, source: 'manual', note: 'Yes / No — last business day' },
 
   // ── Team & Culture (Manager) ───────────────────────────────────────────
-  { key: 'team_outing',      group: 'team', label: 'Team Outing Held',  type: 'date', source: 'manual', note: 'Date held' },
-  { key: 'team_meeting',     group: 'team', label: 'Team Meeting Held', type: 'date', source: 'manual', note: 'Date held' },
+  { key: 'team_outing',      group: 'team', label: 'Team Outing Held',  type: 'date', source: 'Events', auto: 'team_outing_date',  note: 'Team event with “outing” in title' },
+  { key: 'team_meeting',     group: 'team', label: 'Team Meeting Held', type: 'date', source: 'Events', auto: 'team_meeting_date', note: 'Team event with “meeting” in title' },
   { key: 'monthly_challenge', group: 'team', label: 'Monthly Challenge', type: 'text', source: 'manual', note: 'Describe this month’s challenge' },
 ]
 

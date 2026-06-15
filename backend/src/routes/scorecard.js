@@ -98,6 +98,11 @@ async function computeAutoValues(sb, studioId, year, month) {
   const countedEvents = events.filter(e => e.event_type !== 'team')
   const countedPromos = promos.filter(p => p.promo_type !== 'hotworx')
 
+  // Team & Culture: pull dates from Team events titled "…meeting…" / "…outing…".
+  const teamEvents = events.filter(e => e.event_type === 'team')
+  const teamMeeting = teamEvents.find(e => /meeting/i.test(e.title || ''))
+  const teamOuting = teamEvents.find(e => /outing/i.test(e.title || ''))
+
   // Cleaning compliance, month-to-date: expected task occurrences vs completed.
   const cleaningPct = computeCleaningCompliance(taskRes.data || [], compRes.data || [], year, month, lastDay)
 
@@ -126,6 +131,8 @@ async function computeAutoValues(sb, studioId, year, month) {
     open_maintenance_issues: openMaint,
     cleaning_compliance:    cleaningPct,
     outreach_per_shift:     outreachPerShift,
+    team_meeting_date:      teamMeeting?.start_date || null,
+    team_outing_date:       teamOuting?.start_date || null,
   }
 
   // Business-of-the-Month card: first such event + its linked B2B contact (logo).
