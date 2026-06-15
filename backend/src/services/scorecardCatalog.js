@@ -42,7 +42,6 @@ const CATALOG = [
   { key: 'sweat_elite_mix',      group: 'sales', label: 'Sweat Elite Mix',          type: 'percent', goal: 80,  source: 'Studio Trends', auto: 'sweat_elite_mix', note: '% of new memberships that are Elite' },
   { key: 'attrition_rate',       group: 'sales', label: 'Attrition / Cancel Rate',  type: 'percent', goal: 4,   source: 'Studio Trends', auto: 'attrition_rate', lowerIsBetter: true, note: 'Cancellations ÷ last month members' },
   { key: 'referrals_received',   group: 'sales', label: 'Referrals Received',       type: 'number',  goal: 10,  source: 'SAIL',  note: 'Owner-set target' },
-  { key: 'training_trax_intros', group: 'sales', label: 'Training Trax Intros',     type: 'percent', goal: 100, source: 'SAIL',  note: '100% of new Elite within 30 days' },
   { key: 'outreach_per_shift',   group: 'sales', label: 'Outreach / Shift (calls+texts)', type: 'number', goal: 50, source: 'SAIL', note: 'Monthly avg per shift' },
 
   // ── Outreach & Lead Gen (Marisa) ───────────────────────────────────────
