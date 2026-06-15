@@ -165,7 +165,7 @@ function HeroCard({ metric, status, draft, readOnly, editGoals, onChange, onComm
         <ActualInput metric={metric} value={draft} readOnly={readOnly} large onChange={onChange} onCommit={onCommit} />
       </div>
       <div className="mt-2 flex items-center justify-between text-xs">
-        {editGoals ? (
+        {editGoals && !metric.autoGoal ? (
           <span className="flex items-center gap-1 text-gray-500">
             Goal
             <input

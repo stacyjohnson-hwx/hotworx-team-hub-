@@ -33,7 +33,7 @@ const CATALOG = [
   // ── Hero ───────────────────────────────────────────────────────────────
   { key: 'net_eft_increase',     group: 'hero', label: 'Net EFT Increase',          type: 'currency', goal: 1500, source: 'Studio Trends', auto: 'net_eft_increase',     note: 'EFT increase − decrease' },
   { key: 'new_members',          group: 'hero', label: 'New Members (team)',        type: 'number',   goal: 35,   source: 'Studio Trends', auto: 'new_members',          note: 'From Studio Trends' },
-  { key: 'close_rate',           group: 'hero', label: 'Close Rate (team avg)',     type: 'percent',  goal: 35,   source: 'Studio Trends', auto: 'close_rate',           note: 'New members ÷ appts held' },
+  { key: 'in_the_bank',          group: 'hero', label: 'In The Bank',              type: 'currency', goal: 0,    source: 'Studio Trends', auto: 'in_the_bank', autoGoal: 'itb_goal', note: 'vs monthly ITB goal' },
   { key: 'five_star_reviews',    group: 'hero', label: '5-Star Reviews (Δ MoM)',    type: 'number',   goal: 10,   source: 'Studio Trends', auto: 'five_star_reviews_delta', note: 'This month − last month' },
   { key: 'ig_follower_growth',   group: 'hero', label: 'Instagram Growth (Δ MoM)',  type: 'number',   goal: 50,   source: 'Studio Trends', auto: 'ig_growth_delta',      note: 'This month − last month' },
 

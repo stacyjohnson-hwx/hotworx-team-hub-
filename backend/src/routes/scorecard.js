@@ -46,6 +46,7 @@ function resolveMetrics(goalRows, actuals) {
       lowerIsBetter,
       actual,
       auto: m.auto || null,        // computeKey when the value is pulled, not entered
+      autoGoal: m.autoGoal || null, // computeKey when the GOAL is pulled (e.g. ITB goal)
       isHero: m.group === 'hero',
     }
   })
@@ -93,6 +94,8 @@ async function computeAutoValues(sb, studioId, year, month) {
   const values = {
     net_eft_increase:       t ? num(t.eft_increase) - num(t.eft_decrease) : null,
     new_members:            t ? num(t.new_members) : null,
+    in_the_bank:            t ? num(t.in_the_bank) : null,
+    itb_goal:               t ? num(t.itb_goal) : null,
     close_rate:             t && num(t.red_appts_held) > 0 ? round(num(t.new_members) / num(t.red_appts_held) * 100) : (t ? 0 : null),
     checkin_show_rate:      t && num(t.red_appts_booked) > 0 ? round(num(t.red_appts_held) / num(t.red_appts_booked) * 100) : (t ? 0 : null),
     sweat_elite_mix:        t ? num(t.sweat_elite_pct) : null,
@@ -213,6 +216,7 @@ router.get('/:year/:month', authenticate, requireStudio, requireRole('owner', 'm
       extras = auto.extras
       for (const m of metrics) {
         if (m.auto && auto.values[m.auto] !== undefined) m.actual = auto.values[m.auto]
+        if (m.autoGoal && auto.values[m.autoGoal] != null) m.goal = auto.values[m.autoGoal]
       }
     } catch (e) {
       console.error('[scorecard] auto-compute failed:', e.message)
