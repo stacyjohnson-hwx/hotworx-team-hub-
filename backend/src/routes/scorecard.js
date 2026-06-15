@@ -63,7 +63,16 @@ async function computeAutoValues(sb, studioId, year, month) {
   const monthStart = `${year}-${pad(month)}-01`
   const monthEnd = `${year}-${pad(month)}-${pad(lastDay)}`
 
-  const [thisT, prevT, evRes, promoRes, maintRes, taskRes, compRes] = await Promise.all([
+  // Month-to-date end (today for the current month, full month if past, none if future).
+  const now = new Date()
+  const curY = now.getFullYear(), curM = now.getMonth() + 1, curD = now.getDate()
+  let endDay
+  if (year > curY || (year === curY && month > curM)) endDay = 0
+  else if (year < curY || (year === curY && month < curM)) endDay = lastDay
+  else endDay = Math.min(curD, lastDay)
+  const shiftEnd = endDay === 0 ? '1900-01-01' : `${year}-${pad(month)}-${pad(endDay)}`
+
+  const [thisT, prevT, evRes, promoRes, maintRes, taskRes, compRes, shiftRes] = await Promise.all([
     sb.from('studio_trends').select('*').eq('studio_id', studioId).eq('year', year).eq('month', month).maybeSingle(),
     sb.from('studio_trends').select('*').eq('studio_id', studioId).eq('year', py).eq('month', pm).maybeSingle(),
     // Filter by actual date (matches the Events page) so events/promos dated in a
@@ -73,6 +82,7 @@ async function computeAutoValues(sb, studioId, year, month) {
     sb.from('maintenance_logs').select('id, status').eq('studio_id', studioId).in('status', ['open', 'in_progress']),
     sb.from('cleaning_tasks').select('*').eq('active', true),
     sb.from('cleaning_completions').select('task_id, completion_date').eq('studio_id', studioId).gte('completion_date', monthStart).lte('completion_date', monthEnd),
+    sb.from('shifts').select('id').eq('studio_id', studioId).gte('shift_date', monthStart).lte('shift_date', shiftEnd),
   ])
 
   const t = thisT.data || null
@@ -91,6 +101,12 @@ async function computeAutoValues(sb, studioId, year, month) {
   // Cleaning compliance, month-to-date: expected task occurrences vs completed.
   const cleaningPct = computeCleaningCompliance(taskRes.data || [], compRes.data || [], year, month, lastDay)
 
+  // Outreach per shift = (calls + texts this month) ÷ shifts scheduled to date.
+  const shiftsToDate = (shiftRes.data || []).length
+  const outreachPerShift = t
+    ? (shiftsToDate > 0 ? round((num(t.calls_made) + num(t.texts_made)) / shiftsToDate) : null)
+    : null
+
   const values = {
     net_eft_increase:       t ? num(t.eft_increase) - num(t.eft_decrease) : null,
     new_members:            t ? num(t.new_members) : null,
@@ -108,6 +124,7 @@ async function computeAutoValues(sb, studioId, year, month) {
     influencer_visits:      influencerEvents.length,
     open_maintenance_issues: openMaint,
     cleaning_compliance:    cleaningPct,
+    outreach_per_shift:     outreachPerShift,
   }
 
   // Business-of-the-Month card: first such event + its linked B2B contact (logo).
