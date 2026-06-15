@@ -432,8 +432,6 @@ export default function MyShift() {
           {uploadThanks && <p className="text-xs text-green-600 text-center">✓ Content uploaded — thanks! It's in the library for the managers.</p>}
           {ideaThanks && <p className="text-xs text-green-600 text-center">✓ Thanks! Your idea was sent to the managers.</p>}
 
-          <OutreachWidget />
-
           {top.length > 0 && (
             <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
               <div className="px-4 py-2.5 border-b border-gray-100 flex items-center gap-2"><Trophy size={15} className="text-[#E8611A]" /><p className="text-sm font-bold text-gray-900">Leaderboard</p><span className="ml-auto text-[10px] text-gray-400">this week</span></div>
@@ -453,6 +451,8 @@ export default function MyShift() {
               </div>
             </div>
           )}
+
+          <OutreachWidget />
         </div>
       </div>
 
