@@ -121,7 +121,12 @@ function makeItem(text, isDefault = false) {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-function todayStr() { return new Date().toISOString().slice(0, 10) }
+// Local calendar date (NOT UTC) — toISOString() would roll to the next day in the
+// evening for US time zones and throw off "Today/Tomorrow" chips.
+function ymdLocal(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+function todayStr() { return ymdLocal(new Date()) }
 
 // Meeting types that recur weekly: when their agenda is converted to notes, the
 // next week's agenda is auto-created at the same time.
@@ -129,7 +134,7 @@ const RECURRING_TYPES = ['manager_meeting', '1_on_1', 'coaching_call']
 function addDaysStr(dateStr, days) {
   const d = new Date((dateStr || todayStr()) + 'T00:00:00')
   d.setDate(d.getDate() + days)
-  return d.toISOString().slice(0, 10)
+  return ymdLocal(d)
 }
 
 function fmtDate(str) {
@@ -313,7 +318,7 @@ function AgendaModal({ agenda, onSave, onClose }) {
 
           {/* Title + Date + Time row */}
           <div className="grid grid-cols-6 gap-3">
-            <div className="col-span-3">
+            <div className="col-span-2">
               <label className="block text-xs font-medium text-gray-600 mb-1">
                 Meeting Title <span className="text-red-400">*</span>
               </label>
@@ -331,16 +336,16 @@ function AgendaModal({ agenda, onSave, onClose }) {
                 type="date"
                 value={meetingDate}
                 onChange={e => setMeetingDate(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-500"
+                className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-500"
               />
             </div>
-            <div className="col-span-1">
+            <div className="col-span-2">
               <label className="block text-xs font-medium text-gray-600 mb-1">Time</label>
               <input
                 type="time"
                 value={meetingTime}
                 onChange={e => setMeetingTime(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-500"
+                className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-500"
               />
             </div>
           </div>
