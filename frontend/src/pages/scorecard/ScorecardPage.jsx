@@ -249,12 +249,7 @@ function MetricRow({ metric, status, draft, readOnly, editGoals, onChange, onCom
               onChange={(e) => onGoalChange(metric.key, e.target.value)}
               className="w-16 border border-gray-300 rounded px-1 py-0.5 text-gray-900"
             />
-            {metric.type !== 'boolean' && (
-              <label className="flex items-center gap-1 ml-1" title="Lower is better">
-                <input type="checkbox" defaultChecked={metric.lowerIsBetter} onChange={(e) => onLowerToggle(metric.key, e.target.checked)} />
-                <span className="text-[10px]">↓</span>
-              </label>
-            )}
+            {metric.lowerIsBetter && <span className="text-[10px] text-gray-400 ml-1" title="Lower is better">↓ lower is better</span>}
           </div>
         ) : (
           <span className="text-xs text-gray-400 hidden sm:inline">Goal: {formatGoal(metric)}</span>

@@ -33,7 +33,9 @@ function resolveMetrics(goalRows, actuals) {
   return CATALOG.map((m) => {
     const ov = overrides[m.key] || {}
     const goal = ov.goal != null ? Number(ov.goal) : m.goal
-    const lowerIsBetter = ov.lower_is_better != null ? ov.lower_is_better : !!m.lowerIsBetter
+    // "lower is better" is intrinsic to the metric (attrition, open issues) — always
+    // from the catalog, never from an owner override (which could wrongly flip colors).
+    const lowerIsBetter = !!m.lowerIsBetter
     const actual = actuals && actuals[m.key] != null ? actuals[m.key] : null
     return {
       key: m.key,
