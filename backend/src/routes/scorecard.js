@@ -72,7 +72,7 @@ async function computeAutoValues(sb, studioId, year, month) {
   else endDay = Math.min(curD, lastDay)
   const shiftEnd = endDay === 0 ? '1900-01-01' : `${year}-${pad(month)}-${pad(endDay)}`
 
-  const [thisT, prevT, evRes, promoRes, maintRes, taskRes, compRes, shiftRes] = await Promise.all([
+  const [thisT, prevT, evRes, promoRes, maintRes, taskRes, compRes, shiftRes, goalRes] = await Promise.all([
     sb.from('studio_trends').select('*').eq('studio_id', studioId).eq('year', year).eq('month', month).maybeSingle(),
     sb.from('studio_trends').select('*').eq('studio_id', studioId).eq('year', py).eq('month', pm).maybeSingle(),
     // Filter by actual date (matches the Events page) so events/promos dated in a
@@ -83,6 +83,7 @@ async function computeAutoValues(sb, studioId, year, month) {
     sb.from('cleaning_tasks').select('*').eq('active', true),
     sb.from('cleaning_completions').select('task_id, completion_date').eq('studio_id', studioId).gte('completion_date', monthStart).lte('completion_date', monthEnd),
     sb.from('shifts').select('id').eq('studio_id', studioId).gte('shift_date', monthStart).lte('shift_date', shiftEnd),
+    sb.from('studio_goals').select('memberships_target').eq('studio_id', studioId).eq('year', year).eq('month', month).maybeSingle(),
   ])
 
   const t = thisT.data || null
@@ -133,6 +134,8 @@ async function computeAutoValues(sb, studioId, year, month) {
     outreach_per_shift:     outreachPerShift,
     team_meeting_date:      teamMeeting?.start_date || null,
     team_outing_date:       teamOuting?.start_date || null,
+    // New-member goal sourced from the Goals page (studio_goals.memberships_target).
+    memberships_goal:       goalRes.data && Number(goalRes.data.memberships_target) > 0 ? Number(goalRes.data.memberships_target) : null,
   }
 
   // Business-of-the-Month card: first such event + its linked B2B contact (logo).

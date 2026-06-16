@@ -32,7 +32,7 @@ const GROUP_ORDER = ['sales', 'outreach', 'events', 'reputation', 'retention', '
 const CATALOG = [
   // ── Hero ───────────────────────────────────────────────────────────────
   { key: 'net_eft_increase',     group: 'hero', label: 'Net EFT Increase',          type: 'currency', goal: 1500, source: 'Studio Trends', auto: 'net_eft_increase',     note: 'EFT increase − decrease' },
-  { key: 'net_members',          group: 'hero', label: 'Net Members',              type: 'number',   goal: 35,   source: 'Studio Trends', auto: 'net_members',          note: 'New − cancelled this month' },
+  { key: 'net_members',          group: 'hero', label: 'Net Members',              type: 'number',   goal: 35,   source: 'Studio Trends', auto: 'net_members', autoGoal: 'memberships_goal', note: 'New − cancelled · goal from Goals page' },
   { key: 'in_the_bank',          group: 'hero', label: 'In The Bank',              type: 'currency', goal: 0,    source: 'Studio Trends', auto: 'in_the_bank', autoGoal: 'itb_goal', note: 'vs monthly ITB goal' },
   { key: 'five_star_reviews',    group: 'hero', label: '5-Star Reviews (Δ MoM)',    type: 'number',   goal: 10,   source: 'Studio Trends', auto: 'five_star_reviews_delta', note: 'This month − last month' },
   { key: 'ig_follower_growth',   group: 'hero', label: 'Instagram Growth (Δ MoM)',  type: 'number',   goal: 50,   source: 'Studio Trends', auto: 'ig_growth_delta',      note: 'This month − last month' },
