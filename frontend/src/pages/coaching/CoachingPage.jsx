@@ -123,6 +123,15 @@ function makeItem(text, isDefault = false) {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function todayStr() { return new Date().toISOString().slice(0, 10) }
 
+// Meeting types that recur weekly: when their agenda is converted to notes, the
+// next week's agenda is auto-created at the same time.
+const RECURRING_TYPES = ['manager_meeting', '1_on_1', 'coaching_call']
+function addDaysStr(dateStr, days) {
+  const d = new Date((dateStr || todayStr()) + 'T00:00:00')
+  d.setDate(d.getDate() + days)
+  return d.toISOString().slice(0, 10)
+}
+
 function fmtDate(str) {
   if (!str) return ''
   return new Date(str + 'T00:00:00').toLocaleDateString('en-US', {
@@ -894,9 +903,26 @@ function AgendaTab({ onConvert }) {
   }
 
   function handleConvertSave(savedSession) {
+    const converted = convertAgenda
     // Remove the agenda (it's now session notes)
-    handleDelete(convertAgenda.id)
+    handleDelete(converted.id)
     setConvertAgenda(null)
+    // For recurring meeting types, auto-create next week's agenda at the same time,
+    // carrying the standing agenda items forward (unchecked, no documents).
+    if (converted && RECURRING_TYPES.includes(converted.meetingType)) {
+      const next = {
+        id:          uid(),
+        meetingType: converted.meetingType,
+        meetingDate: addDaysStr(converted.meetingDate, 7),
+        meetingTime: converted.meetingTime || null,
+        title:       converted.title,
+        attendees:   converted.attendees || '',
+        items:       (converted.items || []).map(i => ({ id: uid(), text: i.text, checked: false, isDefault: i.isDefault })),
+        documents:   [],
+        createdAt:   new Date().toISOString(),
+      }
+      setAgendas(prev => [next, ...prev])
+    }
     // Bubble up so CoachingPage can switch to Session Notes tab
     onConvert(savedSession)
   }
