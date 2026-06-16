@@ -258,7 +258,48 @@ function buildShiftBlock(row_data, outreachSummary, tasksByUser) {
   </div>`
 }
 
-function buildHtml(dateStr, submissions, outreachByUser, tasksByUser) {
+function opsItem(text, meta) {
+  return `<tr><td style="padding:4px 0;font-size:13px;color:#374151;">${text}</td><td style="padding:4px 0;font-size:12px;color:#9ca3af;text-align:right;white-space:nowrap;">${meta || ''}</td></tr>`
+}
+function opsEmpty(label) {
+  return `<tr><td colspan="2" style="padding:4px 0;font-size:13px;color:#9ca3af;">${label}</td></tr>`
+}
+
+// Studio-level "Operations Watch" — open maintenance, open escalations, pending
+// orders. Rendered once per email (not per shift).
+function buildOpsSection(ops) {
+  if (!ops) return ''
+  const { maintenance = [], escalations = [], orders = [] } = ops
+
+  const maintRows = maintenance.length
+    ? maintenance.map(m => opsItem(`🔧 ${m.title}`, [m.area, m.priority, m.status === 'in_progress' ? 'in progress' : 'open'].filter(Boolean).join(' · '))).join('')
+    : opsEmpty('None open ✅')
+
+  const escRows = escalations.length
+    ? escalations.map(e => opsItem(`⚠️ ${e.title}`, [e.type, e.priority, e.member_name].filter(Boolean).join(' · '))).join('')
+    : opsEmpty('None open ✅')
+
+  const orderRows = orders.length
+    ? orders.map(o => opsItem(`📦 ${o.item_name}`, [o.quantity ? `Qty ${o.quantity}` : null, o.vendor].filter(Boolean).join(' · '))).join('')
+    : opsEmpty('None pending ✅')
+
+  return `
+  <div style="margin-bottom:24px;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
+    <div style="background:#1A1A1A;padding:12px 16px;font-size:14px;font-weight:700;color:#fff;">Operations Watch</div>
+    <div style="padding:12px 16px;">
+      <table style="width:100%;border-collapse:collapse;">
+        ${sectionHeader(`Open Maintenance (${maintenance.length})`)}
+        ${maintRows}
+        ${sectionHeader(`Open Escalations (${escalations.length})`)}
+        ${escRows}
+        ${sectionHeader(`Pending Orders (${orders.length})`)}
+        ${orderRows}
+      </table>
+    </div>
+  </div>`
+}
+
+function buildHtml(dateStr, submissions, outreachByUser, tasksByUser, ops) {
   const dateLabel = new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
   })
@@ -280,6 +321,7 @@ function buildHtml(dateStr, submissions, outreachByUser, tasksByUser) {
             outreachByUser[s.submitted_by] || null,
             tasksByUser[s.submitted_by]    || { cleaning: [], operations: [] }
           )).join('')}
+      ${buildOpsSection(ops)}
       <div style="margin-top:16px;padding-top:16px;border-top:1px solid #f3f4f6;font-size:12px;color:#9ca3af;text-align:center;">
         ${process.env.STUDIO_NAME} · ${process.env.STUDIO_ADDRESS} · Internal use only
       </div>
@@ -371,6 +413,22 @@ async function fetchSubmissionsForDate(dateStr, studioId) {
   return { submissions: enrichedSubmissions, outreachByUser, tasksByUser }
 }
 
+// Studio-level operations snapshot for the EOD email: open maintenance,
+// open escalations, and pending orders.
+async function fetchOpsSummary(db, studioId) {
+  if (!studioId) return { maintenance: [], escalations: [], orders: [] }
+  const [maint, esc, ord] = await Promise.all([
+    db.from('maintenance_logs').select('title, area, priority, status').eq('studio_id', studioId).in('status', ['open', 'in_progress']),
+    db.from('escalation_logs').select('title, type, priority, member_name, status').eq('studio_id', studioId).neq('status', 'resolved'),
+    db.from('orders').select('item_name, quantity, vendor, status').eq('studio_id', studioId).eq('status', 'pending'),
+  ])
+  return {
+    maintenance: maint.data || [],
+    escalations: esc.data || [],
+    orders: ord.data || [],
+  }
+}
+
 // Per-studio dedicated manager inbox for EOD reports. This REPLACES managers'
 // personal emails — reports go to active owner-role users + this shared inbox.
 const STUDIO_MANAGER_EMAIL = {
@@ -416,7 +474,8 @@ async function sendEodEmail(dateStr, studioId) {
   }
 
   const { submissions, outreachByUser, tasksByUser } = await fetchSubmissionsForDate(dateStr, studioId)
-  const html = buildHtml(dateStr, submissions, outreachByUser, tasksByUser)
+  const ops = await fetchOpsSummary(db, studioId)
+  const html = buildHtml(dateStr, submissions, outreachByUser, tasksByUser, ops)
   const studioLabel = studioName || process.env.STUDIO_NAME || 'HOTWORX Pewaukee'
 
   const dateLabel = new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', {
