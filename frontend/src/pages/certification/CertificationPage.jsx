@@ -461,11 +461,190 @@ function SkillEditor({ skillId, onBack }) {
   )
 }
 
+// ─── Coaching tracker (owner/manager) ──────────────────────────────────────────
+const DEV_STATUS = {
+  thriving:          { label: 'Thriving',          cls: 'bg-green-100 text-green-700 border-green-200' },
+  on_track:          { label: 'On Track',          cls: 'bg-blue-100 text-blue-700 border-blue-200' },
+  needs_improvement: { label: 'Needs Improvement', cls: 'bg-amber-100 text-amber-700 border-amber-200' },
+  at_risk:           { label: 'At Risk',           cls: 'bg-red-100 text-red-700 border-red-200' },
+}
+const SESSION_TYPES = [
+  { v: '1_on_1', l: '1:1' }, { v: 'role_play', l: 'Role-play' }, { v: 'ride_along', l: 'Floor observation' },
+  { v: 'review', l: 'Monthly review' }, { v: 'check_in', l: 'Quick check-in' },
+]
+const sessionLabel = v => SESSION_TYPES.find(t => t.v === v)?.l || v
+const OVERDUE_DAYS = 14
+
+function Sparkline({ values }) {
+  if (!values || values.length < 2) return <span className="text-[11px] text-gray-300">—</span>
+  const w = 80, h = 22, max = 5, min = 1
+  const pts = values.map((v, i) => {
+    const x = (i / (values.length - 1)) * (w - 4) + 2
+    const y = h - 2 - ((v - min) / (max - min)) * (h - 4)
+    return `${x},${y}`
+  }).join(' ')
+  const last = values[values.length - 1], first = values[0]
+  const color = last > first ? '#16a34a' : last < first ? '#dc2626' : '#6b7280'
+  return <svg width={w} height={h}><polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" /></svg>
+}
+
+function CoachingTracker() {
+  const [rows, setRows] = useState(null)
+  const [open, setOpen] = useState(null)  // employee_user_id
+  const load = useCallback(() => { apiGet('/api/certification/coaching/overview').then(setRows).catch(() => setRows([])) }, [])
+  useEffect(() => { load() }, [load])
+  if (!rows) return <Spinner />
+  if (!rows.length) return <p className="text-sm text-gray-400">No active team members in this studio yet.</p>
+
+  return (
+    <div>
+      <p className="text-xs text-gray-500 mb-3">One section per team member. Red “last met” = no coaching logged in {OVERDUE_DAYS}+ days.</p>
+      <div className="space-y-2">
+        {rows.map(r => {
+          const st = DEV_STATUS[r.status]
+          const overdue = r.days_since == null || r.days_since > OVERDUE_DAYS
+          return (
+            <button key={r.employee_user_id} onClick={() => setOpen(r.employee_user_id)}
+              className="w-full text-left bg-white border border-gray-200 rounded-xl px-4 py-3 hover:border-gray-300 transition-colors flex items-center gap-4">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-gray-900 truncate">{r.name}</span>
+                  {st ? <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${st.cls}`}>{st.label}</span>
+                      : <span className="text-[10px] text-gray-400 border border-gray-200 px-1.5 py-0.5 rounded-full">Status not set</span>}
+                </div>
+                <div className="flex items-center gap-3 mt-1 text-[11px] text-gray-400">
+                  <span className={overdue ? 'text-red-600 font-semibold' : ''}>
+                    {r.last_met ? `Last met ${r.days_since}d ago` : 'Never coached'}{overdue && r.last_met ? ' · overdue' : ''}
+                  </span>
+                  <span>· {r.sessions_30d} in 30d</span>
+                  <span>· {r.certified}/{r.total_skills} certified</span>
+                  {r.next_session_on && <span>· next {new Date(r.next_session_on + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>}
+                </div>
+              </div>
+              <Sparkline values={r.ratings} />
+              <ChevronRight size={16} className="text-gray-300 flex-shrink-0" />
+            </button>
+          )
+        })}
+      </div>
+      {open && <EmployeeCoachingModal employeeId={open} onClose={() => setOpen(null)} onChange={load} />}
+    </div>
+  )
+}
+
+function EmployeeCoachingModal({ employeeId, onClose, onChange }) {
+  const [data, setData] = useState(null)
+  const [skills, setSkills] = useState([])
+  const [adding, setAdding] = useState(false)
+  const [form, setForm] = useState({ met_on: new Date().toISOString().slice(0, 10), type: '1_on_1', rating: '', wins: '', focus: '', action_items: '', next_session_on: '', skill_id: '' })
+  const [savingStatus, setSavingStatus] = useState(false)
+
+  const load = useCallback(() => {
+    apiGet(`/api/certification/coaching/${employeeId}`).then(setData).catch(() => {})
+  }, [employeeId])
+  useEffect(() => { load() }, [load])
+  useEffect(() => { apiGet('/api/certification/library').then(lib => setSkills(lib.flatMap(c => c.skills || []))).catch(() => {}) }, [])
+
+  const inp = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--studio-accent)]/30 focus:border-[var(--studio-accent)]'
+
+  const setStatus = async (status) => {
+    setSavingStatus(true)
+    try { await apiPut(`/api/certification/coaching/${employeeId}/status`, { status, status_note: data?.status?.status_note || null }); await load(); onChange?.() }
+    finally { setSavingStatus(false) }
+  }
+  const addSession = async () => {
+    await apiPost(`/api/certification/coaching/${employeeId}/log`, {
+      ...form, rating: form.rating ? Number(form.rating) : null, skill_id: form.skill_id || null, next_session_on: form.next_session_on || null,
+    })
+    setForm({ met_on: new Date().toISOString().slice(0, 10), type: '1_on_1', rating: '', wins: '', focus: '', action_items: '', next_session_on: '', skill_id: '' })
+    setAdding(false); await load(); onChange?.()
+  }
+  const delSession = async (id) => { if (!confirm('Delete this session?')) return; await apiDelete(`/api/certification/coaching/log/${id}`); await load(); onChange?.() }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[92vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div>
+            <h2 className="font-semibold text-gray-900">{data?.name || 'Coaching'}</h2>
+            <p className="text-xs text-gray-400">Coaching & role-play history</p>
+          </div>
+          <button onClick={onClose}><X size={18} className="text-gray-400" /></button>
+        </div>
+
+        <div className="p-5 overflow-y-auto space-y-4">
+          {/* Development status */}
+          <div>
+            <p className="text-xs font-semibold text-gray-600 mb-1.5">Development status</p>
+            <div className="flex flex-wrap gap-1.5">
+              {Object.entries(DEV_STATUS).map(([k, v]) => (
+                <button key={k} disabled={savingStatus} onClick={() => setStatus(k)}
+                  className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-colors ${data?.status?.status === k ? v.cls : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'}`}>
+                  {v.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Add session */}
+          {adding ? (
+            <div className="border border-gray-200 rounded-lg p-3 space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                <div><label className="block text-[11px] text-gray-500 mb-0.5">Date</label><input type="date" className={inp} value={form.met_on} onChange={e => setForm(f => ({ ...f, met_on: e.target.value }))} /></div>
+                <div><label className="block text-[11px] text-gray-500 mb-0.5">Type</label><select className={inp} value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))}>{SESSION_TYPES.map(t => <option key={t.v} value={t.v}>{t.l}</option>)}</select></div>
+                <div><label className="block text-[11px] text-gray-500 mb-0.5">Performance (1–5)</label><select className={inp} value={form.rating} onChange={e => setForm(f => ({ ...f, rating: e.target.value }))}><option value="">—</option>{[1,2,3,4,5].map(n => <option key={n} value={n}>{n}</option>)}</select></div>
+                <div><label className="block text-[11px] text-gray-500 mb-0.5">Next session</label><input type="date" className={inp} value={form.next_session_on} onChange={e => setForm(f => ({ ...f, next_session_on: e.target.value }))} /></div>
+              </div>
+              <div><label className="block text-[11px] text-gray-500 mb-0.5">Focus skill (optional)</label><select className={inp} value={form.skill_id} onChange={e => setForm(f => ({ ...f, skill_id: e.target.value }))}><option value="">— none —</option>{skills.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+              <div><label className="block text-[11px] text-gray-500 mb-0.5">Wins</label><textarea rows={2} className={`${inp} resize-none`} value={form.wins} onChange={e => setForm(f => ({ ...f, wins: e.target.value }))} placeholder="What's going well…" /></div>
+              <div><label className="block text-[11px] text-gray-500 mb-0.5">Focus / gaps</label><textarea rows={2} className={`${inp} resize-none`} value={form.focus} onChange={e => setForm(f => ({ ...f, focus: e.target.value }))} placeholder="What to work on…" /></div>
+              <div><label className="block text-[11px] text-gray-500 mb-0.5">Commitments</label><textarea rows={2} className={`${inp} resize-none`} value={form.action_items} onChange={e => setForm(f => ({ ...f, action_items: e.target.value }))} placeholder="Agreed action items before next time…" /></div>
+              <div className="flex justify-end gap-2">
+                <button onClick={() => setAdding(false)} className="px-3 py-1.5 text-sm text-gray-600">Cancel</button>
+                <button onClick={addSession} className="px-4 py-1.5 text-sm font-semibold text-white rounded-lg flex items-center gap-1" style={{ backgroundColor: ACCENT }}><Save size={14} /> Log session</button>
+              </div>
+            </div>
+          ) : (
+            <button onClick={() => setAdding(true)} className="w-full flex items-center justify-center gap-1.5 py-2 border border-dashed border-gray-300 rounded-lg text-sm text-gray-600 hover:border-gray-400"><Plus size={15} /> Log a coaching session</button>
+          )}
+
+          {/* History */}
+          {!data ? <Spinner /> : data.log.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-4">No sessions logged yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {data.log.map(s => (
+                <div key={s.id} className="border border-gray-100 rounded-lg p-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="font-semibold text-gray-800">{new Date(s.met_on + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                      <span className="text-[11px] text-gray-400">{sessionLabel(s.type)}</span>
+                      {s.rating && <span className="text-[11px] font-bold text-gray-600">· {s.rating}/5</span>}
+                      {s.skill_name && <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">{s.skill_name}</span>}
+                    </div>
+                    <button onClick={() => delSession(s.id)} className="text-gray-300 hover:text-red-500"><Trash2 size={13} /></button>
+                  </div>
+                  {s.coach_name && <p className="text-[11px] text-gray-400 mt-0.5">Coach: {s.coach_name}</p>}
+                  {s.wins && <p className="text-xs text-gray-600 mt-1"><span className="text-green-600 font-medium">Wins:</span> {s.wins}</p>}
+                  {s.focus && <p className="text-xs text-gray-600 mt-0.5"><span className="text-amber-600 font-medium">Focus:</span> {s.focus}</p>}
+                  {s.action_items && <p className="text-xs text-gray-600 mt-0.5"><span className="text-blue-600 font-medium">Commitments:</span> {s.action_items}</p>}
+                  {s.next_session_on && <p className="text-[11px] text-gray-400 mt-1">Next: {new Date(s.next_session_on + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function Spinner() { return <div className="flex items-center justify-center py-16"><Loader2 className="animate-spin text-gray-300" size={22} /></div> }
 
 // ─── Page shell ──────────────────────────────────────────────────────────────
 const LEAD_TABS = [
   { id: 'matrix',  label: 'Matrix',     Icon: Grid3x3 },
+  { id: 'coaching',label: 'Coaching',   Icon: MessageSquare },
   { id: 'tests',   label: 'Live Tests', Icon: ClipboardList },
   { id: 'library', label: 'Library',    Icon: BookOpen },
 ]
@@ -495,6 +674,7 @@ export default function CertificationPage() {
             ))}
           </div>
           {tab === 'matrix' && <Matrix />}
+          {tab === 'coaching' && <CoachingTracker />}
           {tab === 'tests' && <PendingQueue />}
           {tab === 'library' && <Library />}
         </>

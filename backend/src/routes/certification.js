@@ -332,4 +332,106 @@ router.post('/feedback', canAuthor, async (req, res) => {
   res.status(201).json(data)
 })
 
+// ─── Coaching tracker (owner/manager only) ─────────────────────────────────────
+// Per-employee coaching log + development status. Answers: is 1:1 coaching
+// happening, who's improving, who's at risk.
+const daysSince = (d) => (d ? Math.floor((Date.now() - new Date(d + 'T00:00:00').getTime()) / 86400000) : null)
+
+router.get('/coaching/overview', canAuthor, async (req, res) => {
+  const sb = db()
+  const studioId = req.studio.id
+  const [team, { data: logs }, { data: statuses }, { data: statusRows }, { data: skills }] = await Promise.all([
+    activeTeamIds(sb, studioId),
+    sb.from('coaching_log').select('employee_user_id, met_on, rating, next_session_on').eq('studio_id', studioId).order('met_on', { ascending: false }),
+    sb.from('coaching_dev_status').select('employee_user_id, status, status_note').eq('studio_id', studioId),
+    sb.from('tsa_skill_status').select('tsa_user_id, status').eq('studio_id', studioId).eq('status', 'certified'),
+    sb.from('skill').select('id').eq('active', true),
+  ])
+  const names = await namesFor(sb, team)
+  const statusMap = {}; for (const s of statuses || []) statusMap[s.employee_user_id] = s
+  const certCount = {}; for (const r of statusRows || []) certCount[r.tsa_user_id] = (certCount[r.tsa_user_id] || 0) + 1
+  const totalSkills = (skills || []).length
+  const now = Date.now()
+  const within = (d, days) => d && (now - new Date(d + 'T00:00:00').getTime()) <= days * 86400000
+
+  const rows = team.map(id => {
+    const mine = (logs || []).filter(l => l.employee_user_id === id) // already desc by met_on
+    const last = mine[0]
+    const ratings = [...mine].reverse().filter(l => l.rating != null).map(l => l.rating).slice(-10)
+    return {
+      employee_user_id: id,
+      name: names[id] || 'Team Member',
+      last_met: last?.met_on || null,
+      days_since: daysSince(last?.met_on),
+      next_session_on: last?.next_session_on || null,
+      sessions_30d: mine.filter(l => within(l.met_on, 30)).length,
+      sessions_90d: mine.filter(l => within(l.met_on, 90)).length,
+      total_sessions: mine.length,
+      ratings,
+      status: statusMap[id]?.status || null,
+      status_note: statusMap[id]?.status_note || null,
+      certified: certCount[id] || 0,
+      total_skills: totalSkills,
+    }
+  })
+  res.json(rows)
+})
+
+router.get('/coaching/:employeeId', canAuthor, async (req, res) => {
+  const sb = db()
+  const [{ data: log }, { data: status }, { data: skills }] = await Promise.all([
+    sb.from('coaching_log').select('*').eq('studio_id', req.studio.id).eq('employee_user_id', req.params.employeeId).order('met_on', { ascending: false }),
+    sb.from('coaching_dev_status').select('*').eq('studio_id', req.studio.id).eq('employee_user_id', req.params.employeeId).maybeSingle(),
+    sb.from('skill').select('id, name'),
+  ])
+  const names = await namesFor(sb, [req.params.employeeId, ...new Set((log || []).map(l => l.coach_user_id).filter(Boolean))])
+  const skillName = {}; for (const s of skills || []) skillName[s.id] = s.name
+  res.json({
+    name: names[req.params.employeeId] || 'Team Member',
+    status: status || null,
+    log: (log || []).map(l => ({ ...l, skill_name: l.skill_id ? skillName[l.skill_id] : null, coach_name: names[l.coach_user_id] || null })),
+  })
+})
+
+router.post('/coaching/:employeeId/log', canAuthor, async (req, res) => {
+  const { met_on, type, skill_id, rating, wins, focus, action_items, next_session_on, coach_user_id } = req.body
+  const { data, error } = await db().from('coaching_log').insert({
+    studio_id: req.studio.id, employee_user_id: req.params.employeeId,
+    coach_user_id: coach_user_id || req.user.id,
+    met_on: met_on || new Date().toISOString().slice(0, 10),
+    type: type || '1_on_1', skill_id: skill_id || null,
+    rating: rating || null, wins: wins || null, focus: focus || null,
+    action_items: action_items || null, next_session_on: next_session_on || null,
+    created_by: req.user.id,
+  }).select().single()
+  if (error) return res.status(500).json({ error: error.message })
+  res.status(201).json(data)
+})
+
+router.put('/coaching/log/:id', canAuthor, async (req, res) => {
+  const { met_on, type, skill_id, rating, wins, focus, action_items, next_session_on } = req.body
+  const { data, error } = await db().from('coaching_log').update({
+    met_on, type, skill_id: skill_id || null, rating: rating || null, wins, focus, action_items, next_session_on: next_session_on || null,
+  }).eq('id', req.params.id).eq('studio_id', req.studio.id).select().single()
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data)
+})
+
+router.delete('/coaching/log/:id', canAuthor, async (req, res) => {
+  const { error } = await db().from('coaching_log').delete().eq('id', req.params.id).eq('studio_id', req.studio.id)
+  if (error) return res.status(500).json({ error: error.message })
+  res.status(204).end()
+})
+
+router.put('/coaching/:employeeId/status', canAuthor, async (req, res) => {
+  const { status, status_note } = req.body
+  const { data, error } = await db().from('coaching_dev_status').upsert({
+    studio_id: req.studio.id, employee_user_id: req.params.employeeId,
+    status: status || 'on_track', status_note: status_note || null,
+    updated_by: req.user.id, updated_at: new Date().toISOString(),
+  }, { onConflict: 'studio_id, employee_user_id' }).select().single()
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data)
+})
+
 module.exports = router
