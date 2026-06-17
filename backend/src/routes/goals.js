@@ -132,7 +132,7 @@ router.get('/studio', async (req, res) => {
     db().from('studio_trends').select(
       'leads,cancellations,total_member_count,new_members,' +
       'membership_cash,net_eft,eft_decrease,in_the_bank,itb_goal,' +
-      'eft_increase,retail'
+      'eft_increase,retail,red_appts_booked,red_appts_held'
     ).eq('studio_id', req.studio.id).eq('month', month).eq('year', year).maybeSingle(),
   ])
 
@@ -140,6 +140,10 @@ router.get('/studio', async (req, res) => {
 
   const base = goals || { ...STUDIO_GOAL_DEFAULTS, month: Number(month), year: Number(year), studio_id: req.studio.id }
   const t = trends || {}
+
+  // Rate actuals computed from studio_trends (matching the Studio Trends page).
+  const n = (v) => Number(v) || 0
+  const rate = (num, den) => (n(den) > 0 ? Math.round((n(num) / n(den)) * 100) : null)
 
   res.json({
     ...base,
@@ -156,6 +160,10 @@ router.get('/studio', async (req, res) => {
     eft_decrease_actual:  t.eft_decrease       ?? null,
     in_the_bank_actual:   t.in_the_bank        ?? null,
     itb_goal:             t.itb_goal           ?? null,
+    // Rate actuals (lead→member conversion, show rate, close rate)
+    conversion_rate_actual:    trends ? rate(t.new_members, t.leads) : base.conversion_rate_actual,
+    checkin_show_rate_actual:  trends ? rate(t.red_appts_held, t.red_appts_booked) : base.checkin_show_rate_actual,
+    close_rate_actual:         trends ? rate(t.new_members, t.red_appts_held) : base.close_rate_actual,
   })
 })
 
@@ -169,6 +177,7 @@ router.put('/studio', requireRole('owner', 'manager'), async (req, res) => {
     'total_leads_actual', 'cancellations_actual', 'total_members_actual',
     'new_members_actual', 'membership_cash', 'net_eft', 'eft_decrease_actual',
     'in_the_bank_actual', 'itb_goal',
+    'conversion_rate_actual', 'checkin_show_rate_actual', 'close_rate_actual',
   ]
   const safeFields = Object.fromEntries(
     Object.entries(fields).filter(([k]) => !READ_ONLY_FIELDS.includes(k))
