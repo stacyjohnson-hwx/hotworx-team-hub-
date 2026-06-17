@@ -23,9 +23,10 @@ async function namesFor(sb, ids) {
   return map
 }
 
-async function activeTsaIds(sb, studioId) {
+// The whole coaching team — managers + TSAs (owner excluded), active only.
+async function activeTeamIds(sb, studioId) {
   const [{ data: members }, { data: inactive }] = await Promise.all([
-    sb.from('user_studios').select('user_id, role').eq('studio_id', studioId).eq('role', 'tsa'),
+    sb.from('user_studios').select('user_id, role').eq('studio_id', studioId).in('role', ['tsa', 'manager']),
     sb.from('user_profiles').select('id').eq('is_active', false),
   ])
   const dead = new Set((inactive || []).map(r => r.id))
@@ -272,7 +273,7 @@ router.post('/skills/:id/demo', canAuthor, async (req, res) => {
 router.get('/matrix', canAuthor, async (req, res) => {
   const sb = db()
   const [tsaIds, { data: skills }, { data: statuses }] = await Promise.all([
-    activeTsaIds(sb, req.studio.id),
+    activeTeamIds(sb, req.studio.id),
     sb.from('skill').select('id, name, category_id').eq('active', true).order('sort_order'),
     sb.from('tsa_skill_status').select('tsa_user_id, skill_id, status').eq('studio_id', req.studio.id),
   ])
