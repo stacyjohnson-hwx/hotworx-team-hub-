@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Fragment } from 'react'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
 import { useRole } from '@/hooks/useRole'
 import {
@@ -302,9 +302,34 @@ function PendingQueue() {
 // ─── Lead/Owner: certification matrix ───────────────────────────────────────
 function Matrix() {
   const [data, setData] = useState(null)
-  useEffect(() => { apiGet('/api/certification/matrix').then(setData).catch(() => {}) }, [])
+  const [cats, setCats] = useState([])
+  useEffect(() => {
+    Promise.all([apiGet('/api/certification/matrix'), apiGet('/api/certification/library').catch(() => [])])
+      .then(([m, lib]) => { setData(m); setCats(lib) })
+      .catch(() => {})
+  }, [])
   if (!data) return <Spinner />
   if (!data.tsas.length) return <p className="text-sm text-gray-400">No active TSAs in this studio yet.</p>
+
+  const colCount = data.tsas.length + 2
+  const skillsByCat = {}
+  for (const sk of data.skills) (skillsByCat[sk.category_id] = skillsByCat[sk.category_id] || []).push(sk)
+  // Categories in library order; fall back to one untitled group if the library didn't load.
+  const groups = cats.length
+    ? cats.map(c => ({ name: c.name, skills: skillsByCat[c.id] || [] })).filter(g => g.skills.length)
+    : [{ name: null, skills: data.skills }]
+
+  const skillRow = (sk) => (
+    <tr key={sk.id} className="border-b border-gray-100">
+      <td className="sticky left-0 bg-white px-3 py-2 font-medium text-gray-800 whitespace-nowrap max-w-[220px] truncate">{sk.name}</td>
+      {data.tsas.map(t => {
+        const m = smeta(t.statuses[sk.id])
+        return <td key={t.tsa_user_id} className="px-2 py-2 text-center"><span className={`inline-block w-2.5 h-2.5 rounded-full ${m.dot}`} title={`${t.name}: ${m.label}`} /></td>
+      })}
+      <td className="px-3 py-2 text-center font-semibold border-l border-gray-100 text-gray-700">{data.rollup[sk.id]?.pct ?? 0}%</td>
+    </tr>
+  )
+
   return (
     <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
       <table className="min-w-full text-xs border-collapse">
@@ -316,15 +341,15 @@ function Matrix() {
           </tr>
         </thead>
         <tbody>
-          {data.skills.map(sk => (
-            <tr key={sk.id} className="border-b border-gray-100">
-              <td className="sticky left-0 bg-white px-3 py-2 font-medium text-gray-800 whitespace-nowrap max-w-[220px] truncate">{sk.name}</td>
-              {data.tsas.map(t => {
-                const m = smeta(t.statuses[sk.id])
-                return <td key={t.tsa_user_id} className="px-2 py-2 text-center"><span className={`inline-block w-2.5 h-2.5 rounded-full ${m.dot}`} title={`${t.name}: ${m.label}`} /></td>
-              })}
-              <td className="px-3 py-2 text-center font-semibold border-l border-gray-100 text-gray-700">{data.rollup[sk.id]?.pct ?? 0}%</td>
-            </tr>
+          {groups.map((g, gi) => (
+            <Fragment key={gi}>
+              {g.name && (
+                <tr className="bg-gray-100 border-b border-gray-200">
+                  <td colSpan={colCount} className="sticky left-0 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-500">{g.name}</td>
+                </tr>
+              )}
+              {g.skills.map(skillRow)}
+            </Fragment>
           ))}
         </tbody>
       </table>
