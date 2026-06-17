@@ -15,11 +15,21 @@ router.use(authenticate, requireStudio)
 const canAuthor = requireRole('owner', 'manager')
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
+// Display names from the Team section (user_profiles.full_name), with an auth
+// metadata / email fallback so a name always resolves.
 async function namesFor(sb, ids) {
   const map = {}
   if (!ids.length) return map
-  const { data } = await sb.from('user_profiles').select('id, name').in('id', ids)
-  for (const r of data || []) map[r.id] = r.name
+  const { data } = await sb.from('user_profiles').select('id, full_name').in('id', ids)
+  for (const r of data || []) if (r.full_name) map[r.id] = r.full_name
+  // Fallback for anyone missing a profile name.
+  for (const id of ids) {
+    if (map[id]) continue
+    try {
+      const { data: u } = await sb.auth.admin.getUserById(id)
+      map[id] = u?.user?.user_metadata?.full_name || u?.user?.email?.split('@')[0] || 'Team Member'
+    } catch { map[id] = 'Team Member' }
+  }
   return map
 }
 
@@ -229,7 +239,7 @@ router.get('/pending', canAuthor, async (req, res) => {
   const skillName = {}; for (const s of skills || []) skillName[s.id] = s.name
   const names = await namesFor(sb, [...new Set((rows || []).map(r => r.tsa_user_id))])
   res.json((rows || []).map(r => ({
-    tsa_user_id: r.tsa_user_id, tsa_name: names[r.tsa_user_id] || 'TSA',
+    tsa_user_id: r.tsa_user_id, tsa_name: names[r.tsa_user_id] || 'Team Member',
     skill_id: r.skill_id, skill_name: skillName[r.skill_id] || 'Skill',
     since: r.updated_at,
   })))
@@ -282,7 +292,7 @@ router.get('/matrix', canAuthor, async (req, res) => {
   for (const s of statuses || []) stat[`${s.tsa_user_id}|${s.skill_id}`] = s.status
 
   const tsas = tsaIds.map(id => ({
-    tsa_user_id: id, name: names[id] || 'TSA',
+    tsa_user_id: id, name: names[id] || 'Team Member',
     statuses: Object.fromEntries((skills || []).map(sk => [sk.id, stat[`${id}|${sk.id}`] || 'not_started'])),
   }))
   // Roll-up: % certified per skill across active TSAs
