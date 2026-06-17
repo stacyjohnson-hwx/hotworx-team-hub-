@@ -19,6 +19,7 @@ import OrdersPage from '@/pages/orders/OrdersPage'
 import EventsPage from '@/pages/events/EventsPage'
 import SopsPage from '@/pages/sops/SopsPage'
 import TrainingPage from '@/pages/training/TrainingPage'
+import CertificationPage from '@/pages/certification/CertificationPage'
 import TodoPage from '@/pages/todo/TodoPage'
 import CoachingPage from '@/pages/coaching/CoachingPage'
 import UsersPage from '@/pages/users/UsersPage'
@@ -110,6 +111,7 @@ function AppRoutes() {
         <Route path="/timeoff"   element={<TimeOffPage />} />
         <Route path="/sops"        element={<SopsPage />} />
         <Route path="/training"    element={<TrainingPage />} />
+        <Route path="/certification" element={<CertificationPage />} />
         <Route path="/maintenance"  element={<MaintenancePage />} />
         <Route path="/escalations"  element={<EscalationsPage />} />
         <Route path="/competitors"  element={<CompetitorsPage />} />

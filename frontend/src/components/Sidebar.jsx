@@ -30,6 +30,7 @@ import {
   Swords,
   Package,
   Gauge,
+  Award,
 } from 'lucide-react'
 
 // Sidebar organized into sections. Dashboard is pinned (no header); the footer
@@ -69,6 +70,7 @@ const NAV_SECTIONS = [
     items: [
       { to: '/sops',     label: 'SOPs',     icon: BookOpen,      roles: ['owner', 'manager', 'tsa'] },
       { to: '/training', label: 'Training', icon: GraduationCap, roles: ['owner', 'manager', 'tsa'] },
+      { to: '/certification', label: 'Sales Certification', icon: Award, roles: ['owner', 'manager', 'tsa'] },
     ],
   },
   {
