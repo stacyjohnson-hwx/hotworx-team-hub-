@@ -23,7 +23,7 @@ router.get('/', authenticate, async (req, res) => {
 
   let query = db
     .from('sops')
-    .select('id, title, category, version, created_by, updated_by, created_at, updated_at, pdf_path, video_url')
+    .select('id, title, category, version, created_by, updated_by, created_at, updated_at, pdf_path, video_url, content, status, visibility')
     .order('category')
     .order('title')
 
