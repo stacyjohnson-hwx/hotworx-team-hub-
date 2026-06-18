@@ -132,8 +132,23 @@ const inputCls = 'w-full rounded-lg border border-gray-300 bg-white text-gray-90
 
 function EventCard({ event, canEdit, onEdit, onDelete, rating, onRate, signal }) {
   const [expanded, setExpanded] = useState(false)
+  const [supplies, setSupplies] = useState(Array.isArray(event.supplies) ? event.supplies : [])
+  const [addedTodos, setAddedTodos] = useState({})
   const meta = eventTypeMeta(event.event_type)
   const past = isExpired(event.end_date || event.start_date)
+
+  const toggleSupply = async (id) => {
+    const next = supplies.map(s => s.id === id ? { ...s, checked: !s.checked } : s)
+    setSupplies(next)
+    try { await apiPut(`/api/events/${event.id}/supplies`, { supplies: next }) } catch { /* revert on error */ setSupplies(supplies) }
+  }
+  const addSupplyToTodo = async (item) => {
+    try {
+      await apiPost('/api/todo', { title: item.text, area: 'Events', source: 'event', notes: `For event: ${event.title}` })
+      setAddedTodos(p => ({ ...p, [item.id]: true }))
+    } catch { /* ignore */ }
+  }
+  const hasPlanning = event.goal || event.marketing_plan || supplies.length > 0
 
   return (
     <div className={`bg-white rounded-xl border shadow-sm overflow-hidden transition-opacity ${past ? 'opacity-60' : ''}`}>
@@ -217,12 +232,44 @@ function EventCard({ event, canEdit, onEdit, onDelete, rating, onRate, signal })
           </div>
         </div>
 
-        {expanded && (event.description || event.notes) && (
-          <div className="mt-3 pt-3 border-t border-gray-100 space-y-2">
+        {expanded && (event.description || event.notes || hasPlanning) && (
+          <div className="mt-3 pt-3 border-t border-gray-100 space-y-3">
             {event.description && <p className="text-sm text-gray-700">{event.description}</p>}
             {event.notes && (
               <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-600">
                 <span className="font-semibold text-gray-700">Notes: </span>{event.notes}
+              </div>
+            )}
+            {event.goal && (
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-0.5">Goal</p>
+                <p className="text-sm text-gray-700 whitespace-pre-line">{event.goal}</p>
+              </div>
+            )}
+            {event.marketing_plan && (
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-0.5">Marketing Plan</p>
+                <p className="text-sm text-gray-700 whitespace-pre-line">{event.marketing_plan}</p>
+              </div>
+            )}
+            {supplies.length > 0 && (
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-1">
+                  Supplies <span className="text-gray-400 normal-case">· {supplies.filter(s => s.checked).length}/{supplies.length} ready</span>
+                </p>
+                <div className="space-y-1">
+                  {supplies.map(s => (
+                    <div key={s.id} className="flex items-center gap-2 group">
+                      <input type="checkbox" checked={!!s.checked} disabled={!canEdit} onChange={() => toggleSupply(s.id)}
+                        className="w-4 h-4 rounded border-gray-300 text-orange-500 focus:ring-orange-500 disabled:opacity-50" />
+                      <span className={`flex-1 text-sm ${s.checked ? 'line-through text-gray-400' : 'text-gray-700'}`}>{s.text}</span>
+                      {canEdit && (addedTodos[s.id]
+                        ? <span className="text-[11px] text-green-600 font-medium flex-shrink-0">✓ on To-Do</span>
+                        : <button onClick={() => addSupplyToTodo(s)} className="text-[11px] text-orange-600 hover:underline flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">+ To-Do</button>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -243,7 +290,19 @@ function EventForm({ event, month, year, onSave, onClose }) {
     end_time: event?.end_time?.slice(0, 5) || '',
     location: event?.location || '',
     notes: event?.notes || '',
+    goal: event?.goal || '',
+    marketing_plan: event?.marketing_plan || '',
   })
+  // Supplies checklist: [{ id, text, checked }]
+  const [supplies, setSupplies] = useState(Array.isArray(event?.supplies) ? event.supplies : [])
+  const [newSupply, setNewSupply] = useState('')
+  const addSupply = () => {
+    const t = newSupply.trim(); if (!t) return
+    setSupplies(prev => [...prev, { id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, text: t, checked: false }])
+    setNewSupply('')
+  }
+  const toggleSupply = (id) => setSupplies(prev => prev.map(s => s.id === id ? { ...s, checked: !s.checked } : s))
+  const removeSupply = (id) => setSupplies(prev => prev.filter(s => s.id !== id))
   // Multi-select B2B partners: [{ id, business_name }]
   const [selectedPartners, setSelectedPartners] = useState(event?.b2b_partners || [])
   const [saving, setSaving] = useState(false)
@@ -287,7 +346,7 @@ function EventForm({ event, month, year, onSave, onClose }) {
     setSaving(true)
     setError('')
     try {
-      const payload = { ...form, month, year, b2b_contact_ids: selectedIds }
+      const payload = { ...form, month, year, b2b_contact_ids: selectedIds, supplies }
       const result = event
         ? await apiPut(`/api/events/${event.id}`, payload)
         : await apiPost('/api/events', payload)
@@ -400,6 +459,39 @@ function EventForm({ event, month, year, onSave, onClose }) {
         <FormField label="Internal Notes">
           <textarea className={inputCls} rows={2} value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Team prep notes, what to bring, etc." />
         </FormField>
+
+        {/* ── Planning ── */}
+        <div className="pt-3 border-t border-gray-100">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Planning</p>
+
+          <FormField label="Goal">
+            <textarea className={inputCls} rows={2} value={form.goal} onChange={e => set('goal', e.target.value)} placeholder="What does success look like? (e.g. 15 guest passes, 5 new sign-ups)" />
+          </FormField>
+
+          <FormField label="Marketing Plan">
+            <textarea className={inputCls} rows={3} value={form.marketing_plan} onChange={e => set('marketing_plan', e.target.value)} placeholder="How will you promote it? Channels, dates, who owns what…" />
+          </FormField>
+
+          <FormField label="Supplies">
+            <div className="space-y-1.5">
+              {supplies.map(s => (
+                <div key={s.id} className="flex items-center gap-2">
+                  <input type="checkbox" checked={!!s.checked} onChange={() => toggleSupply(s.id)} className="w-4 h-4 rounded border-gray-300 text-orange-500 focus:ring-orange-500" />
+                  <span className={`flex-1 text-sm ${s.checked ? 'line-through text-gray-400' : 'text-gray-700'}`}>{s.text}</span>
+                  <button type="button" onClick={() => removeSupply(s.id)} className="text-gray-300 hover:text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
+                </div>
+              ))}
+              <div className="flex gap-2">
+                <input
+                  className={inputCls} value={newSupply} onChange={e => setNewSupply(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addSupply() } }}
+                  placeholder="Add a supply item…"
+                />
+                <button type="button" onClick={addSupply} className="px-3 py-2 rounded-lg bg-gray-100 text-gray-700 text-sm font-medium hover:bg-gray-200 flex-shrink-0">Add</button>
+              </div>
+            </div>
+          </FormField>
+        </div>
 
         <div className="flex gap-3 pt-2">
           <button type="button" onClick={onClose} className="flex-1 py-2 rounded-lg border border-gray-300 text-sm text-gray-700 font-medium hover:bg-gray-50 transition-colors">

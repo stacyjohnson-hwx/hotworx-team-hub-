@@ -79,6 +79,7 @@ router.post('/', authenticate, requireStudio, requireRole('owner', 'manager'), a
   const {
     title, description, event_type, start_date, end_date,
     start_time, end_time, location, notes, month, year,
+    goal, marketing_plan, supplies,
     b2b_contact_ids = [],
   } = req.body
 
@@ -92,6 +93,8 @@ router.post('/', authenticate, requireStudio, requireRole('owner', 'manager'), a
       start_date, end_date: end_date || null,
       start_time: start_time || null, end_time: end_time || null,
       location, notes, month: parseInt(month), year: parseInt(year),
+      goal: goal || null, marketing_plan: marketing_plan || null,
+      supplies: Array.isArray(supplies) ? supplies : [],
       created_by: req.user.id,
       studio_id: req.studio.id,
     }]).select().single()
@@ -110,6 +113,7 @@ router.put('/:id', authenticate, requireStudio, requireRole('owner', 'manager'),
   const {
     title, description, event_type, start_date, end_date,
     start_time, end_time, location, notes, month, year,
+    goal, marketing_plan, supplies,
     b2b_contact_ids = [],
   } = req.body
 
@@ -119,6 +123,8 @@ router.put('/:id', authenticate, requireStudio, requireRole('owner', 'manager'),
       end_date: end_date || null,
       start_time: start_time || null, end_time: end_time || null,
       location, notes, month: parseInt(month), year: parseInt(year),
+      goal: goal ?? null, marketing_plan: marketing_plan ?? null,
+      ...(supplies !== undefined ? { supplies: Array.isArray(supplies) ? supplies : [] } : {}),
       updated_at: new Date().toISOString(),
     }).eq('id', req.params.id).select().single()
     if (error) throw error
@@ -127,6 +133,22 @@ router.put('/:id', authenticate, requireStudio, requireRole('owner', 'manager'),
     res.json(enriched)
   } catch (err) {
     console.error('PUT /events/:id', err)
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// PATCH supplies only — used to tick off the supplies checklist without
+// resending the whole event (owner/manager only).
+router.put('/:id/supplies', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
+  const supplies = Array.isArray(req.body?.supplies) ? req.body.supplies : []
+  try {
+    const { data, error } = await supabase().from('events')
+      .update({ supplies, updated_at: new Date().toISOString() })
+      .eq('id', req.params.id).eq('studio_id', req.studio.id).select().single()
+    if (error) throw error
+    res.json(data)
+  } catch (err) {
+    console.error('PUT /events/:id/supplies', err)
     res.status(500).json({ error: err.message })
   }
 })
