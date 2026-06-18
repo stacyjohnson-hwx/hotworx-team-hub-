@@ -146,18 +146,18 @@ router.put('/skills/:id/script', canAuthor, async (req, res) => {
 
 // Quiz question authoring
 router.post('/skills/:id/questions', canAuthor, async (req, res) => {
-  const { type, prompt, choices, correct_answer, sort_order } = req.body
+  const { type, prompt, choices, correct_answer, explanation, sort_order } = req.body
   if (!prompt || !correct_answer) return res.status(400).json({ error: 'prompt and correct_answer required' })
   const { data, error } = await db().from('quiz_question')
-    .insert({ skill_id: req.params.id, type: type || 'multiple_choice', prompt, choices: choices || null, correct_answer, sort_order: sort_order ?? 0 })
+    .insert({ skill_id: req.params.id, type: type || 'multiple_choice', prompt, choices: choices || null, correct_answer, explanation: explanation || null, sort_order: sort_order ?? 0 })
     .select().single()
   if (error) return res.status(500).json({ error: error.message })
   res.status(201).json(data)
 })
 router.put('/questions/:qid', canAuthor, async (req, res) => {
-  const { type, prompt, choices, correct_answer, sort_order } = req.body
+  const { type, prompt, choices, correct_answer, explanation, sort_order } = req.body
   const { data, error } = await db().from('quiz_question')
-    .update({ type, prompt, choices, correct_answer, sort_order }).eq('id', req.params.qid).select().single()
+    .update({ type, prompt, choices: choices || null, correct_answer, explanation: explanation ?? null, sort_order }).eq('id', req.params.qid).select().single()
   if (error) return res.status(500).json({ error: error.message })
   res.json(data)
 })

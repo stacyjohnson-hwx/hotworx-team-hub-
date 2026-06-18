@@ -53,15 +53,35 @@ function QuizModal({ skill, questions, onClose, onResult }) {
           <button onClick={onClose}><X size={18} className="text-gray-400" /></button>
         </div>
         {result ? (
-          <div className="p-8 text-center">
-            {result.passed
-              ? <CheckCircle2 size={42} className="mx-auto text-green-500 mb-3" />
-              : <AlertTriangle size={42} className="mx-auto text-amber-500 mb-3" />}
-            <p className="text-2xl font-bold text-gray-900">{result.score}%</p>
-            <p className={`text-sm font-medium mt-1 ${result.passed ? 'text-green-600' : 'text-amber-600'}`}>
-              {result.passed ? `Passed! You're now Ready to Test — your Lead will schedule the live demo.` : `Need ${result.threshold}% to pass. Review the script and try again.`}
-            </p>
-            <button onClick={onClose} className="mt-5 px-5 py-2 rounded-lg text-white text-sm font-semibold" style={{ backgroundColor: ACCENT }}>Done</button>
+          <div className="p-6">
+            <div className="text-center">
+              {result.passed
+                ? <CheckCircle2 size={42} className="mx-auto text-green-500 mb-3" />
+                : <AlertTriangle size={42} className="mx-auto text-amber-500 mb-3" />}
+              <p className="text-2xl font-bold text-gray-900">{result.score}%</p>
+              <p className={`text-sm font-medium mt-1 ${result.passed ? 'text-green-600' : 'text-amber-600'}`}>
+                {result.passed ? `Passed! You're now Ready to Test — your Lead will schedule the live demo.` : `Need ${result.threshold}% to pass. Review the answers below, then study the script and try again.`}
+              </p>
+            </div>
+            {/* Answer review with explanations */}
+            <div className="mt-5 space-y-2 text-left">
+              {questions.map((q, i) => {
+                const norm = s => String(s ?? '').trim().toLowerCase()
+                const given = answers[q.id]
+                const ok = norm(given) === norm(q.correct_answer)
+                return (
+                  <div key={q.id} className="border border-gray-100 rounded-lg p-3">
+                    <p className="text-sm font-medium text-gray-800">{i + 1}. {q.prompt}</p>
+                    <p className={`text-xs mt-1 ${ok ? 'text-green-600' : 'text-red-600'}`}>{ok ? '✓' : '✗'} Your answer: {given || '—'}</p>
+                    {!ok && <p className="text-xs text-gray-600">Correct: <span className="font-medium text-green-600">{q.correct_answer}</span></p>}
+                    {q.explanation && <p className="text-xs text-gray-500 mt-1 bg-gray-50 rounded p-2">{q.explanation}</p>}
+                  </div>
+                )
+              })}
+            </div>
+            <div className="text-center mt-5">
+              <button onClick={onClose} className="px-5 py-2 rounded-lg text-white text-sm font-semibold" style={{ backgroundColor: ACCENT }}>Done</button>
+            </div>
           </div>
         ) : (
           <>
@@ -397,6 +417,107 @@ function Library() {
   )
 }
 
+// User-friendly quiz question builder: separate fields for the question, each
+// answer (radio to mark the correct one), and an explanation.
+function QuestionForm({ skillId, question, onSaved, onCancel }) {
+  const isEdit = !!question
+  const [type, setType] = useState(question?.type || 'multiple_choice')
+  const [prompt, setPrompt] = useState(question?.prompt || '')
+  const [choices, setChoices] = useState(() =>
+    question?.type === 'multiple_choice' && Array.isArray(question.choices) && question.choices.length
+      ? question.choices.slice() : ['', '', '', ''])
+  const [correctIdx, setCorrectIdx] = useState(() => {
+    if (question?.type === 'multiple_choice' && Array.isArray(question.choices)) {
+      const i = question.choices.indexOf(question.correct_answer); return i >= 0 ? i : 0
+    }
+    return 0
+  })
+  const [recall, setRecall] = useState(question?.type === 'short_recall' ? (question.correct_answer || '') : '')
+  const [explanation, setExplanation] = useState(question?.explanation || '')
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+
+  const setChoice = (i, v) => setChoices(prev => prev.map((c, idx) => idx === i ? v : c))
+  const addChoice = () => setChoices(prev => [...prev, ''])
+  const removeChoice = (i) => { setChoices(prev => prev.filter((_, idx) => idx !== i)); setCorrectIdx(ci => (i < ci ? ci - 1 : i === ci ? 0 : ci)) }
+
+  const inp = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--studio-accent)]/30 focus:border-[var(--studio-accent)]'
+
+  const save = async () => {
+    setErr('')
+    if (!prompt.trim()) return setErr('Type the question.')
+    let payload
+    if (type === 'multiple_choice') {
+      const clean = choices.map(c => c.trim())
+      if (clean.filter(Boolean).length < 2) return setErr('Add at least two answer choices.')
+      if (!clean[correctIdx]) return setErr('Mark which answer is correct.')
+      payload = { type, prompt: prompt.trim(), choices: clean.filter(Boolean), correct_answer: clean[correctIdx], explanation: explanation.trim() || null }
+    } else {
+      if (!recall.trim()) return setErr('Enter the correct answer.')
+      payload = { type, prompt: prompt.trim(), choices: null, correct_answer: recall.trim(), explanation: explanation.trim() || null }
+    }
+    setSaving(true)
+    try {
+      if (isEdit) await apiPut(`/api/certification/questions/${question.id}`, payload)
+      else await apiPost(`/api/certification/skills/${skillId}/questions`, payload)
+      onSaved()
+    } catch (e) { setErr(e.message || 'Save failed'); setSaving(false) }
+  }
+
+  return (
+    <div className="border border-gray-200 rounded-xl p-4 space-y-3 bg-gray-50">
+      {/* Type */}
+      <div className="flex gap-1 bg-white rounded-lg p-0.5 w-fit border border-gray-200">
+        {[{ v: 'multiple_choice', l: 'Multiple choice' }, { v: 'short_recall', l: 'Fill in the line' }].map(t => (
+          <button key={t.v} type="button" onClick={() => setType(t.v)}
+            className={`px-3 py-1 rounded-md text-xs font-semibold ${type === t.v ? 'text-white' : 'text-gray-500'}`}
+            style={type === t.v ? { backgroundColor: ACCENT } : {}}>{t.l}</button>
+        ))}
+      </div>
+
+      <div>
+        <label className="block text-xs font-medium text-gray-600 mb-1">Question</label>
+        <textarea rows={2} className={inp} value={prompt} onChange={e => setPrompt(e.target.value)} placeholder="e.g. What's the first thing you do when a guest says it's too expensive?" autoFocus />
+      </div>
+
+      {type === 'multiple_choice' ? (
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Answers <span className="text-gray-400 font-normal">— select the correct one</span></label>
+          <div className="space-y-1.5">
+            {choices.map((c, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <input type="radio" name="correct" checked={correctIdx === i} onChange={() => setCorrectIdx(i)} title="Correct answer"
+                  className="w-4 h-4 text-green-600 focus:ring-green-500" />
+                <input className={`${inp} ${correctIdx === i ? 'border-green-400 bg-green-50' : ''}`} value={c} onChange={e => setChoice(i, e.target.value)} placeholder={`Answer ${i + 1}`} />
+                {choices.length > 2 && <button type="button" onClick={() => removeChoice(i)} className="text-gray-300 hover:text-red-500 flex-shrink-0"><Trash2 size={14} /></button>}
+              </div>
+            ))}
+          </div>
+          <button type="button" onClick={addChoice} className="mt-1.5 text-xs font-semibold text-gray-600 flex items-center gap-1"><Plus size={12} /> Add answer</button>
+        </div>
+      ) : (
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Correct answer (the key line)</label>
+          <input className={inp} value={recall} onChange={e => setRecall(e.target.value)} placeholder="The exact line they should recall" />
+        </div>
+      )}
+
+      <div>
+        <label className="block text-xs font-medium text-gray-600 mb-1">Explanation <span className="text-gray-400 font-normal">— shown after they answer</span></label>
+        <textarea rows={2} className={inp} value={explanation} onChange={e => setExplanation(e.target.value)} placeholder="Why this is the right answer / coaching note" />
+      </div>
+
+      {err && <p className="text-xs text-red-600">{err}</p>}
+      <div className="flex justify-end gap-2">
+        <button type="button" onClick={onCancel} className="px-3 py-1.5 text-sm text-gray-600">Cancel</button>
+        <button type="button" onClick={save} disabled={saving} className="px-4 py-1.5 rounded-lg text-white text-sm font-semibold disabled:opacity-50 flex items-center gap-1" style={{ backgroundColor: ACCENT }}>
+          {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} {isEdit ? 'Save question' : 'Add question'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function SkillEditor({ skillId, onBack }) {
   const [data, setData] = useState(null)
   const [body, setBody] = useState('')
@@ -411,19 +532,7 @@ function SkillEditor({ skillId, onBack }) {
     try { await apiPut(`/api/certification/skills/${skillId}/script`, { body, video_url: video.trim() || null }); await load() }
     finally { setSavingScript(false) }
   }
-  const addQuestion = async () => {
-    const type = confirm('OK = Multiple choice, Cancel = short recall (type the line)') ? 'multiple_choice' : 'short_recall'
-    const prompt_ = prompt('Question prompt:'); if (!prompt_) return
-    let choices = null, correct
-    if (type === 'multiple_choice') {
-      const raw = prompt('Answer choices, comma-separated:'); if (!raw) return
-      choices = raw.split(',').map(s => s.trim()).filter(Boolean)
-      correct = prompt(`Which is correct? Type it exactly:\n${choices.join(' | ')}`)
-    } else { correct = prompt('Correct answer (the key line):') }
-    if (!correct) return
-    await apiPost(`/api/certification/skills/${skillId}/questions`, { type, prompt: prompt_, choices, correct_answer: correct })
-    load()
-  }
+  const [qForm, setQForm] = useState(null) // null | 'new' | question object
   const delQuestion = async (qid) => { if (confirm('Delete this question?')) { await apiDelete(`/api/certification/questions/${qid}`); load() } }
 
   if (!data) return <Spinner />
@@ -444,17 +553,43 @@ function SkillEditor({ skillId, onBack }) {
       <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold text-gray-700">Quiz ({data.questions.length}) · pass {data.skill.pass_threshold}%</h3>
-          <button onClick={addQuestion} className="text-xs font-semibold flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700"><Plus size={13} /> Add question</button>
+          {qForm == null && (
+            <button onClick={() => setQForm('new')} className="text-xs font-semibold flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700"><Plus size={13} /> Add question</button>
+          )}
         </div>
-        {data.questions.length === 0 ? <p className="text-xs text-gray-400">No quiz questions yet — TSAs can't certify until at least one exists.</p>
+
+        {qForm === 'new' && (
+          <QuestionForm skillId={skillId} question={null} onSaved={() => { setQForm(null); load() }} onCancel={() => setQForm(null)} />
+        )}
+
+        {data.questions.length === 0 && qForm == null ? <p className="text-xs text-gray-400">No quiz questions yet — TSAs can't certify until at least one exists.</p>
           : data.questions.map((q, i) => (
-            <div key={q.id} className="flex items-start gap-2 border-b border-gray-50 pb-2">
-              <div className="flex-1 min-w-0">
-                <p className="text-sm text-gray-800">{i + 1}. {q.prompt}</p>
-                <p className="text-[11px] text-gray-400">{q.type === 'multiple_choice' ? `Choices: ${(q.choices || []).join(', ')} · ` : 'Recall · '}Answer: <span className="text-green-600 font-medium">{q.correct_answer}</span></p>
+            qForm && qForm !== 'new' && qForm.id === q.id ? (
+              <QuestionForm key={q.id} skillId={skillId} question={q} onSaved={() => { setQForm(null); load() }} onCancel={() => setQForm(null)} />
+            ) : (
+              <div key={q.id} className="flex items-start gap-2 border-b border-gray-50 pb-2 last:border-0">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-gray-800">{i + 1}. {q.prompt}</p>
+                  {q.type === 'multiple_choice' && Array.isArray(q.choices) ? (
+                    <ul className="mt-1 space-y-0.5">
+                      {q.choices.map((c, ci) => (
+                        <li key={ci} className={`text-xs flex items-center gap-1.5 ${c === q.correct_answer ? 'text-green-700 font-medium' : 'text-gray-500'}`}>
+                          {c === q.correct_answer ? <CheckCircle2 size={12} className="text-green-500 flex-shrink-0" /> : <Circle size={12} className="text-gray-300 flex-shrink-0" />}
+                          {c}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-[11px] text-gray-400 mt-0.5">Recall · answer: <span className="text-green-600 font-medium">{q.correct_answer}</span></p>
+                  )}
+                  {q.explanation && <p className="text-[11px] text-gray-400 mt-1 italic">{q.explanation}</p>}
+                </div>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <button onClick={() => setQForm(q)} className="text-gray-300 hover:text-gray-600" title="Edit"><Pencil size={13} /></button>
+                  <button onClick={() => delQuestion(q.id)} className="text-gray-300 hover:text-red-500" title="Delete"><Trash2 size={14} /></button>
+                </div>
               </div>
-              <button onClick={() => delQuestion(q.id)} className="text-gray-300 hover:text-red-500"><Trash2 size={14} /></button>
-            </div>
+            )
           ))}
       </div>
     </div>
