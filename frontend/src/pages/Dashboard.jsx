@@ -4,7 +4,7 @@ import { useRole } from '@/hooks/useRole'
 import { useMonth } from '@/contexts/MonthContext'
 import { formatMonthYear } from '@/lib/utils'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
-import { Plus, Pencil, Trash2, ExternalLink, Lock, X, Link as LinkIcon, Loader2, Image } from 'lucide-react'
+import { Plus, Pencil, Trash2, ExternalLink, Lock, X, Link as LinkIcon, Loader2, Image, AlertTriangle } from 'lucide-react'
 
 // ─── Extract domain for favicon fallback ──────────────────────────────────────
 function getDomain(url) {
@@ -384,6 +384,9 @@ export default function Dashboard() {
         </p>
       </div>
 
+      {/* Overdue-coaching alert (owner/manager) */}
+      {isOwnerOrManager && <CoachingAlerts />}
+
       {/* Quick-access cards */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
         <QuickCard
@@ -458,6 +461,27 @@ export default function Dashboard() {
       {/* Important Links */}
       <ImportantLinks role={role} />
     </div>
+  )
+}
+
+// ─── Overdue-coaching alert ─────────────────────────────────────────────────────
+function CoachingAlerts() {
+  const [rows, setRows] = useState(null)
+  useEffect(() => { apiGet('/api/certification/coaching/overview').then(setRows).catch(() => setRows([])) }, [])
+  if (!rows || !rows.length) return null
+  const overdue = rows.filter(r => r.days_since == null || r.days_since > 14)
+  if (!overdue.length) return null
+  return (
+    <a href="/certification?tab=coaching"
+      className="block mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 hover:border-amber-300 transition-colors">
+      <div className="flex items-center gap-2">
+        <AlertTriangle size={16} className="text-amber-600 flex-shrink-0" />
+        <p className="text-sm text-amber-800">
+          <span className="font-semibold">{overdue.length} team member{overdue.length > 1 ? 's' : ''}</span> not coached in 14+ days: {overdue.map(o => o.name.split(' ')[0]).join(', ')}
+        </p>
+      </div>
+      <p className="text-[11px] text-amber-600 mt-0.5 ml-6">Open the coaching tracker →</p>
+    </a>
   )
 }
 

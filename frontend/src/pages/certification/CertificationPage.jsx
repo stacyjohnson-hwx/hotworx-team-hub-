@@ -496,8 +496,25 @@ function CoachingTracker() {
   if (!rows) return <Spinner />
   if (!rows.length) return <p className="text-sm text-gray-400">No active team members in this studio yet.</p>
 
+  const overdue = rows.filter(r => r.days_since == null || r.days_since > OVERDUE_DAYS)
+  const atRisk = rows.filter(r => r.status === 'at_risk' || r.status === 'needs_improvement')
+
   return (
     <div>
+      {/* Roll-up */}
+      <div className="flex flex-wrap gap-2 mb-3">
+        <span className={`text-xs font-semibold px-2.5 py-1 rounded-lg border ${overdue.length ? 'bg-red-50 text-red-700 border-red-200' : 'bg-green-50 text-green-700 border-green-200'}`}>
+          {overdue.length ? `${overdue.length} overdue (14+ days)` : 'All coached recently ✅'}
+        </span>
+        {atRisk.length > 0 && (
+          <span className="text-xs font-semibold px-2.5 py-1 rounded-lg border bg-amber-50 text-amber-700 border-amber-200">
+            {atRisk.length} needing attention
+          </span>
+        )}
+        <span className="text-xs font-medium px-2.5 py-1 rounded-lg border bg-gray-50 text-gray-500 border-gray-200">
+          {rows.length} team {rows.length === 1 ? 'member' : 'members'}
+        </span>
+      </div>
       <p className="text-xs text-gray-500 mb-3">One section per team member. Red “last met” = no coaching logged in {OVERDUE_DAYS}+ days.</p>
       <div className="space-y-2">
         {rows.map(r => {
@@ -651,7 +668,10 @@ const LEAD_TABS = [
 
 export default function CertificationPage() {
   const { isOwnerOrManager } = useRole()
-  const [tab, setTab] = useState('matrix')
+  const [tab, setTab] = useState(() => {
+    const t = new URLSearchParams(window.location.search).get('tab')
+    return ['matrix', 'coaching', 'tests', 'library'].includes(t) ? t : 'matrix'
+  })
 
   return (
     <div className="max-w-5xl mx-auto pb-12">
