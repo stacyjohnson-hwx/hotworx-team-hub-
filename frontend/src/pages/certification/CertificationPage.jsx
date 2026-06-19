@@ -391,7 +391,7 @@ function Library() {
   const addSkill = async (categoryId) => { const name = prompt('New skill name:'); if (name) { await apiPost('/api/certification/skills', { category_id: categoryId, name }); load() } }
 
   if (!cats) return <Spinner />
-  if (editing) return <SkillEditor skillId={editing} onBack={() => { setEditing(null); load() }} />
+  if (editing) return <SkillEditor skillId={editing} categories={cats} onBack={() => { setEditing(null); load() }} />
   return (
     <div className="space-y-5">
       <div className="flex justify-end"><button onClick={addCategory} className="text-xs font-semibold flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700"><Plus size={13} /> Add category</button></div>
@@ -518,13 +518,33 @@ function QuestionForm({ skillId, question, onSaved, onCancel }) {
   )
 }
 
-function SkillEditor({ skillId, onBack }) {
+function SkillEditor({ skillId, categories = [], onBack }) {
   const [data, setData] = useState(null)
   const [body, setBody] = useState('')
   const [video, setVideo] = useState('')
   const [savingScript, setSavingScript] = useState(false)
-  const load = useCallback(() => apiGet(`/api/certification/skills/${skillId}`).then(d => { setData(d); setBody(d.script?.body || ''); setVideo(d.script?.video_url || '') }), [skillId])
+  // Editable skill details
+  const [name, setName] = useState('')
+  const [categoryId, setCategoryId] = useState('')
+  const [threshold, setThreshold] = useState(80)
+  const [savingSkill, setSavingSkill] = useState(false)
+  const load = useCallback(() => apiGet(`/api/certification/skills/${skillId}`).then(d => {
+    setData(d); setBody(d.script?.body || ''); setVideo(d.script?.video_url || '')
+    setName(d.skill.name); setCategoryId(d.skill.category_id || ''); setThreshold(d.skill.pass_threshold ?? 80)
+  }), [skillId])
   useEffect(() => { load() }, [load])
+
+  const saveSkill = async () => {
+    if (!name.trim()) return
+    setSavingSkill(true)
+    try { await apiPut(`/api/certification/skills/${skillId}`, { name: name.trim(), category_id: categoryId || null, pass_threshold: Number(threshold) || 80 }); await load() }
+    finally { setSavingSkill(false) }
+  }
+  const deleteSkill = async () => {
+    if (!confirm('Permanently delete this skill? This removes its script, quiz, and every team member’s certification progress on it. This cannot be undone.')) return
+    await apiDelete(`/api/certification/skills/${skillId}`)
+    onBack()
+  }
 
   const saveScript = async () => {
     if (!confirm('Save a new version? Anyone currently Certified on this skill will move to "Needs Recert" and must re-quiz + re-demo.')) return
@@ -540,7 +560,30 @@ function SkillEditor({ skillId, onBack }) {
   return (
     <div className="space-y-5 max-w-2xl">
       <button onClick={onBack} className="text-sm text-gray-500 hover:text-gray-700">← Back to library</button>
-      <h2 className="text-lg font-bold text-gray-900">{data.skill.name}</h2>
+
+      {/* Skill details — rename, move category, pass threshold, delete */}
+      <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
+        <div className="grid grid-cols-1 sm:grid-cols-6 gap-3">
+          <div className="sm:col-span-3">
+            <label className="block text-xs font-medium text-gray-600 mb-1">Skill name</label>
+            <input className={inputCls} value={name} onChange={e => setName(e.target.value)} />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-medium text-gray-600 mb-1">Category</label>
+            <select className={inputCls} value={categoryId} onChange={e => setCategoryId(e.target.value)}>
+              {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <div className="sm:col-span-1">
+            <label className="block text-xs font-medium text-gray-600 mb-1">Pass %</label>
+            <input type="number" className={inputCls} value={threshold} onChange={e => setThreshold(e.target.value)} />
+          </div>
+        </div>
+        <div className="flex items-center justify-between">
+          <button onClick={deleteSkill} className="text-xs font-medium text-red-500 hover:text-red-600 flex items-center gap-1"><Trash2 size={13} /> Delete skill</button>
+          <button onClick={saveSkill} disabled={savingSkill || !name.trim()} className="px-4 py-1.5 rounded-lg text-white text-sm font-semibold disabled:opacity-50 flex items-center gap-1" style={{ backgroundColor: ACCENT }}>{savingSkill ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save details</button>
+        </div>
+      </div>
 
       <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
         <div className="flex items-center justify-between"><h3 className="text-sm font-semibold text-gray-700">Script {data.script?.version ? `(v${data.script.version})` : ''}</h3></div>

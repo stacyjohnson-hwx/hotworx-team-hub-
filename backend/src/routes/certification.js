@@ -125,6 +125,14 @@ router.put('/skills/:id', canAuthor, async (req, res) => {
   res.json(data)
 })
 
+// DELETE /skills/:id — permanently removes the skill, its script, quiz, and all
+// certification progress on it (FK cascade).
+router.delete('/skills/:id', canAuthor, async (req, res) => {
+  const { error } = await db().from('skill').delete().eq('id', req.params.id)
+  if (error) return res.status(500).json({ error: error.message })
+  res.status(204).end()
+})
+
 // PUT /skills/:id/script — save a NEW script version. Flips current Certified TSAs
 // (all studios) to Needs Recert on the new version.
 router.put('/skills/:id/script', canAuthor, async (req, res) => {
