@@ -389,6 +389,12 @@ function Library() {
 
   const addCategory = async () => { const name = prompt('New category name:'); if (name) { await apiPost('/api/certification/categories', { name, sort_order: (cats?.length || 0) + 1 }); load() } }
   const addSkill = async (categoryId) => { const name = prompt('New skill name:'); if (name) { await apiPost('/api/certification/skills', { category_id: categoryId, name }); load() } }
+  const renameCategory = async (cat) => { const name = prompt('Rename category:', cat.name); if (name && name.trim() && name !== cat.name) { await apiPut(`/api/certification/categories/${cat.id}`, { name: name.trim() }); load() } }
+  const delCategory = async (cat) => {
+    if (!confirm(`Delete the "${cat.name}" category?`)) return
+    try { await apiDelete(`/api/certification/categories/${cat.id}`); load() }
+    catch (e) { alert(e.message || 'Could not delete category.') }
+  }
 
   if (!cats) return <Spinner />
   if (editing) return <SkillEditor skillId={editing} categories={cats} onBack={() => { setEditing(null); load() }} />
@@ -398,7 +404,11 @@ function Library() {
       {cats.map(cat => (
         <div key={cat.id}>
           <div className="flex items-center justify-between mb-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">{cat.name}</p>
+            <div className="flex items-center gap-1.5 group">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">{cat.name}</p>
+              <button onClick={() => renameCategory(cat)} title="Rename category" className="text-gray-300 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity"><Pencil size={11} /></button>
+              <button onClick={() => delCategory(cat)} title="Delete category" className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={11} /></button>
+            </div>
             <button onClick={() => addSkill(cat.id)} className="text-[11px] text-gray-500 hover:text-gray-700 flex items-center gap-1"><Plus size={11} /> Add skill</button>
           </div>
           <div className="space-y-1.5">

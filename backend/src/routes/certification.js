@@ -106,6 +106,18 @@ router.put('/categories/:id', canAuthor, async (req, res) => {
   if (error) return res.status(500).json({ error: error.message })
   res.json(data)
 })
+// DELETE /categories/:id — blocked while it still has skills (deleting would
+// cascade-wipe those skills + all certification progress on them).
+router.delete('/categories/:id', canAuthor, async (req, res) => {
+  const sb = db()
+  const { data: skills } = await sb.from('skill').select('id').eq('category_id', req.params.id).eq('active', true).limit(1)
+  if (skills && skills.length) {
+    return res.status(400).json({ error: 'Move or delete this category’s skills first.' })
+  }
+  const { error } = await sb.from('skill_category').delete().eq('id', req.params.id)
+  if (error) return res.status(500).json({ error: error.message })
+  res.status(204).end()
+})
 
 router.post('/skills', canAuthor, async (req, res) => {
   const { category_id, name, sort_order, pass_threshold } = req.body
