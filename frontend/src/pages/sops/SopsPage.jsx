@@ -1,11 +1,48 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRole } from '@/hooks/useRole'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
 import { supabase } from '@/lib/supabase'
 import {
   BookOpen, Plus, X, Search, ChevronDown, ChevronUp, Edit2, Trash2,
   History, FileText, Upload, ExternalLink, Clock, Check, AlertCircle, Video,
+  Bold, Italic, Underline, List, ListOrdered, Heading2, Link2,
 } from 'lucide-react'
+
+// Render stored SOP content: pass HTML through; convert legacy plain text to <br>s.
+function toSopHtml(content) {
+  if (!content) return ''
+  if (/<[a-z][\s\S]*>/i.test(content)) return content
+  return content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')
+}
+
+// Lightweight rich-text editor (toolbar + contentEditable). Stores HTML.
+function RichTextEditor({ value, onChange }) {
+  const ref = useRef(null)
+  useEffect(() => { if (ref.current) ref.current.innerHTML = value || '' }, []) // init once
+  const sync = () => onChange(ref.current?.innerHTML || '')
+  const exec = (cmd, arg) => { document.execCommand(cmd, false, arg); ref.current?.focus(); sync() }
+  const addLink = () => { const url = prompt('Link URL:'); if (url) exec('createLink', url.startsWith('http') ? url : `https://${url}`) }
+  const Btn = ({ onClick, title, children }) => (
+    <button type="button" onMouseDown={e => e.preventDefault()} onClick={onClick} title={title}
+      className="px-2 py-1 rounded hover:bg-gray-200 text-gray-600">{children}</button>
+  )
+  return (
+    <div className="border border-gray-300 rounded-lg overflow-hidden">
+      <div className="flex flex-wrap items-center gap-0.5 px-2 py-1.5 border-b border-gray-200 bg-gray-50">
+        <Btn onClick={() => exec('bold')} title="Bold"><Bold size={14} /></Btn>
+        <Btn onClick={() => exec('italic')} title="Italic"><Italic size={14} /></Btn>
+        <Btn onClick={() => exec('underline')} title="Underline"><Underline size={14} /></Btn>
+        <span className="w-px h-4 bg-gray-200 mx-1" />
+        <Btn onClick={() => exec('formatBlock', '<h2>')} title="Heading"><Heading2 size={14} /></Btn>
+        <Btn onClick={() => exec('insertUnorderedList')} title="Bullet list"><List size={14} /></Btn>
+        <Btn onClick={() => exec('insertOrderedList')} title="Numbered list"><ListOrdered size={14} /></Btn>
+        <Btn onClick={addLink} title="Add link"><Link2 size={14} /></Btn>
+      </div>
+      <div ref={ref} contentEditable suppressContentEditableWarning onInput={sync} onBlur={sync}
+        className="sop-content min-h-[260px] max-h-[440px] overflow-y-auto px-4 py-3 text-sm text-gray-800 focus:outline-none" />
+    </div>
+  )
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const CATEGORIES = [
@@ -176,14 +213,8 @@ function SopModal({ sop, onSave, onClose }) {
             <label className="block text-xs font-medium text-gray-600 mb-1">
               Procedure Content
             </label>
-            <textarea
-              rows={14}
-              className={`${inputCls} resize-y font-mono text-xs leading-relaxed`}
-              value={form.content}
-              onChange={e => set('content', e.target.value)}
-              placeholder={`Write the step-by-step procedure here.\n\nTip: Use blank lines between steps for readability.\n\n1. First step\n2. Second step\n   - Sub-step detail\n3. Third step`}
-            />
-            <p className="text-xs text-gray-400 mt-1">Plain text with line breaks. Use numbered steps for procedures.</p>
+            <RichTextEditor value={form.content} onChange={v => set('content', v)} />
+            <p className="text-xs text-gray-400 mt-1">Use the toolbar for headings, bold, lists, and links.</p>
           </div>
         </div>
 
@@ -257,9 +288,9 @@ function VersionHistory({ sopId, currentVersion, onClose, onRestoreVersion }) {
               </div>
               {expanded === v.id && (
                 <div className="px-4 pb-3 bg-gray-50 border-t border-gray-100">
-                  <pre className="text-xs text-gray-600 font-mono leading-relaxed whitespace-pre-wrap mt-2">
-                    {v.content || '(empty)'}
-                  </pre>
+                  {v.content
+                    ? <div className="sop-content text-xs text-gray-600 leading-relaxed mt-2" dangerouslySetInnerHTML={{ __html: toSopHtml(v.content) }} />
+                    : <p className="text-xs text-gray-400 mt-2">(empty)</p>}
                 </div>
               )}
             </div>
@@ -332,9 +363,7 @@ function SopCard({ sop, isOwnerOrManager, onEdit, onDelete, onViewHistory }) {
           {/* Content */}
           {sop.content ? (
             <div className="px-5 py-4 bg-gray-50">
-              <pre className="text-sm text-gray-700 font-sans leading-relaxed whitespace-pre-wrap">
-                {sop.content}
-              </pre>
+              <div className="sop-content text-sm text-gray-700 leading-relaxed" dangerouslySetInnerHTML={{ __html: toSopHtml(sop.content) }} />
             </div>
           ) : (
             <div className="px-5 py-4 bg-gray-50 text-sm text-gray-400 italic">

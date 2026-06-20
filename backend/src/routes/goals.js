@@ -127,13 +127,17 @@ router.get('/studio', async (req, res) => {
   const { month, year } = req.query
   if (!month || !year) return res.status(400).json({ error: 'month and year required' })
 
-  const [{ data: goals, error }, { data: trends }] = await Promise.all([
+  const pm = Number(month) === 1 ? 12 : Number(month) - 1
+  const py = Number(month) === 1 ? Number(year) - 1 : Number(year)
+
+  const [{ data: goals, error }, { data: trends }, { data: prevTrends }] = await Promise.all([
     db().from('studio_goals').select('*').eq('studio_id', req.studio.id).eq('month', month).eq('year', year).maybeSingle(),
     db().from('studio_trends').select(
       'leads,cancellations,total_member_count,new_members,' +
       'membership_cash,net_eft,eft_decrease,in_the_bank,itb_goal,' +
       'eft_increase,retail,red_appts_booked,red_appts_held'
     ).eq('studio_id', req.studio.id).eq('month', month).eq('year', year).maybeSingle(),
+    db().from('studio_trends').select('total_member_count').eq('studio_id', req.studio.id).eq('month', pm).eq('year', py).maybeSingle(),
   ])
 
   if (error) return res.status(500).json({ error: error.message })
@@ -164,6 +168,10 @@ router.get('/studio', async (req, res) => {
     conversion_rate_actual:    trends ? rate(t.new_members, t.leads) : base.conversion_rate_actual,
     checkin_show_rate_actual:  trends ? rate(t.red_appts_held, t.red_appts_booked) : base.checkin_show_rate_actual,
     close_rate_actual:         trends ? rate(t.new_members, t.red_appts_held) : base.close_rate_actual,
+    // Attrition = this month's cancellations ÷ last month's total members
+    prev_total_members:   prevTrends?.total_member_count ?? null,
+    attrition_rate:       (trends && prevTrends && n(prevTrends.total_member_count) > 0)
+      ? Math.round((n(t.cancellations) / n(prevTrends.total_member_count)) * 1000) / 10 : null,
   })
 })
 
@@ -269,7 +277,8 @@ router.get('/personal', authenticate, async (req, res) => {
   const roleByUser = {}
   for (const m of memberRows || []) roleByUser[m.user_id] = m.role
 
-  const studioUsers = users.filter(u => roleByUser[u.id] && !inactiveIds.has(u.id))
+  // Owner isn't a salesperson — exclude the owner role from the team goals list.
+  const studioUsers = users.filter(u => roleByUser[u.id] && roleByUser[u.id] !== 'owner' && !inactiveIds.has(u.id))
 
   const { data: goalsData, error: gErr } = await db()
     .from('personal_goals').select('*').eq('studio_id', req.studio.id).eq('month', month).eq('year', year)

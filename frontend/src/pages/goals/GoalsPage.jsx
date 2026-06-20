@@ -425,7 +425,8 @@ function StudioGoals({ month, year }) {
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
             <KpiCard label="In the Bank"   target={g.in_the_bank_target} actual={g.in_the_bank_actual} prefix="$" color="bg-green-600" />
             <KpiCard label="Total Leads"   target={g.total_leads_target} actual={g.total_leads_actual} prefix=""  color="bg-blue-600" />
-            <StatCard label="Cancellations"   value={g.cancellations_actual} prefix="" />
+            <StatCard label="Cancellations"   value={g.cancellations_actual} prefix=""
+              sub={g.attrition_rate != null ? `${g.attrition_rate}% attrition · ÷ ${Number(g.prev_total_members).toLocaleString()} members last mo.` : null} />
             <StatCard label="Total Members"   value={g.total_members_actual} prefix="" />
             <StatCard
               label="Net Members"

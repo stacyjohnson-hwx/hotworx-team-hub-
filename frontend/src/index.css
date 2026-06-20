@@ -68,3 +68,17 @@ body {
     margin: 0.5in;
   }
 }
+
+/* ── Rich-text SOP content (Tailwind preflight resets these, so restore them) ── */
+.sop-content h1 { font-size: 1.3rem; font-weight: 700; margin: 0.5em 0 0.3em; }
+.sop-content h2 { font-size: 1.1rem; font-weight: 700; margin: 0.5em 0 0.3em; }
+.sop-content h3 { font-size: 1rem; font-weight: 700; margin: 0.4em 0 0.2em; }
+.sop-content p  { margin: 0.4em 0; }
+.sop-content ul { list-style: disc;    margin: 0.4em 0; padding-left: 1.4em; }
+.sop-content ol { list-style: decimal; margin: 0.4em 0; padding-left: 1.6em; }
+.sop-content li { margin: 0.15em 0; }
+.sop-content a  { color: var(--studio-accent, #C8102E); text-decoration: underline; }
+.sop-content strong, .sop-content b { font-weight: 700; }
+.sop-content em, .sop-content i { font-style: italic; }
+.sop-content u  { text-decoration: underline; }
+.sop-content:empty::before { content: 'Write the procedure here…'; color: #9ca3af; }
