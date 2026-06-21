@@ -12,6 +12,8 @@ so exact names don't matter as long as the keyword is present.
 import sys
 import glob
 import os
+import datetime
+import pandas as pd
 from sail_normalizer import normalize, money
 
 # Detect each report by the columns it contains (robust to filename typos and to
@@ -48,6 +50,12 @@ def detect(folder):
 
 
 def main(folder):
+    global TARGET_YEAR, TARGET_MONTH
+    now = datetime.date.today()
+    TARGET_YEAR = int(os.environ.get("YEAR", now.year))
+    TARGET_MONTH = int(os.environ.get("MONTH", now.month))
+    print(f"Target month: {TARGET_YEAR}-{TARGET_MONTH:02d}  (override with YEAR=/MONTH= env)\n")
+
     detected = detect(folder)
     paths = {role: detected.get(role) for role in SIGNATURES}  # all keys present (None if missing)
     for role in SIGNATURES:
@@ -74,14 +82,20 @@ def main(folder):
             print(f"   {emp:18s} POS ${per[emp]:>9.2f}   retail ${per_retail.get(emp, 0):>9.2f}")
         print()
 
-    # ── SAFE: total_member_count + Sweat Elite ──
+    # ── SAFE: total_member_count + Sweat Elite (calendar-month mix) ──
     if paths["members"]:
         m = normalize(paths["members"])
         safe["total_member_count"] = int(m.shape[0])
-        # RULE: a membership is Sweat Elite when Monthly Amount is $79 or $39.50 (owner-confirmed)
-        elite = int(money(m["Monthly Amount"]).isin([79, 39.5]).sum())
-        safe["sweat_elite_members"] = elite
-        blocked["sweat_elite_pct_of_all_members"] = round(elite / len(m) * 100, 1)  # 16.7% — app shows 56; confirm denominator
+        amt = money(m["Monthly Amount"])  # RULE: Sweat Elite = Monthly Amount $79 or $39.50
+        dcol = next((c for c in m.columns if "subscription" in c.lower() and "date" in c.lower()), None)
+        d = pd.to_datetime(m[dcol], errors="coerce") if dcol else None
+        if d is not None:
+            inmonth = (d.dt.year == TARGET_YEAR) & (d.dt.month == TARGET_MONTH)
+            new_n = int(inmonth.sum())
+            elite_n = int((inmonth & amt.isin([79, 39.5])).sum())
+            # RULE: sweat_elite_pct = elite memberships / all memberships THIS calendar month
+            safe["sweat_elite_pct"] = round(elite_n / new_n * 100, 1) if new_n else 0
+            blocked["new_memberships_this_month (candidate for new_members)"] = new_n
 
     # ── SAFE: eft_decrease (all rows) + cancellations count (exclude downgrades) ──
     if paths["cancel"]:
@@ -93,7 +107,6 @@ def main(folder):
 
     # ── Operational (Airtable side, FYI) ──
     if paths["util"]:
-        import pandas as pd
         u = normalize(paths["util"])
         d = pd.to_numeric(u["Days Since Last Booking"], errors="coerce")
         print("Win-back (Utilization, pre-DNC/active filter):",
