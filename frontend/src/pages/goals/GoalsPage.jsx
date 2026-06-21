@@ -724,7 +724,7 @@ function TeamMemberRow({ member, onEdit }) {
             )}
           </div>
           <p className="text-xs text-gray-400 mt-0.5">
-            {isManager ? `POS: ${fmt$(member.pos_collected)}` : `Retail: ${fmt$(member.retail_actual)}`}
+            {isManager && `POS: ${fmt$(member.pos_collected)} · `}Retail: {fmt$(member.retail_actual)}
             &nbsp;·&nbsp; Basic: {member.sweat_basic || 0} &nbsp;·&nbsp; Elite: {member.sweat_elite || 0}
           </p>
         </div>
@@ -745,10 +745,7 @@ function TeamMemberRow({ member, onEdit }) {
       {hasGoals && (
         <div className="border-t border-gray-100 bg-gray-50 px-4 py-3 grid grid-cols-2 gap-4">
           <MiniGoalBar label="Members"  actual={member.total_memberships} goal={member.memberships_goal_computed} />
-          {!isManager
-            ? <MiniGoalBar label="Retail" actual={member.retail_actual} goal={member.retail_goal_computed} prefix="$" />
-            : <div />
-          }
+          <MiniGoalBar label="Retail" actual={member.retail_actual} goal={member.retail_goal_computed} prefix="$" />
         </div>
       )}
     </div>
