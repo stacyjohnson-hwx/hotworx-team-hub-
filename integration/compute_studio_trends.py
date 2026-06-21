@@ -64,8 +64,7 @@ def main(folder):
         is_memcash = s["Type"].isin(["MembershipCash", "PIF"])
         safe["membership_cash"] = round(g[is_memcash].sum(), 2)
         is_retail = s["Type"].astype(str).str.contains("retail", case=False, na=False)
-        blocked["retail_gross"] = round(g[is_retail].sum(), 2)
-        blocked["retail_net"] = round(n[is_retail].sum(), 2)
+        safe["retail"] = round(g[is_retail].sum(), 2)        # RULE: gross (owner-confirmed)
         # per-employee POS (gross of all sale types) and retail
         s["_g"] = g
         per = s.groupby("Employee")["_g"].sum().round(2)
@@ -75,20 +74,22 @@ def main(folder):
             print(f"   {emp:18s} POS ${per[emp]:>9.2f}   retail ${per_retail.get(emp, 0):>9.2f}")
         print()
 
-    # ── SAFE: total_member_count = active member rows ──
+    # ── SAFE: total_member_count + Sweat Elite ──
     if paths["members"]:
         m = normalize(paths["members"])
         safe["total_member_count"] = int(m.shape[0])
-        pkg = m["Package"].astype(str)
-        elite = pkg.str.contains("elite", case=False, na=False).sum()
-        blocked["elite_members"] = int(elite)
-        blocked["elite_pct_of_members"] = round(elite / len(m) * 100, 1)
+        # RULE: a membership is Sweat Elite when Monthly Amount is $79 or $39.50 (owner-confirmed)
+        elite = int(money(m["Monthly Amount"]).isin([79, 39.5]).sum())
+        safe["sweat_elite_members"] = elite
+        blocked["sweat_elite_pct_of_all_members"] = round(elite / len(m) * 100, 1)  # 16.7% — app shows 56; confirm denominator
 
-    # ── SAFE: eft_decrease = sum cancellations Monthly Payment ──
+    # ── SAFE: eft_decrease (all rows) + cancellations count (exclude downgrades) ──
     if paths["cancel"]:
         c = normalize(paths["cancel"])
         safe["eft_decrease"] = round(money(c["Monthly Payment"]).sum(), 2)
-        blocked["cancellation_rows"] = int(c.shape[0])
+        # RULE: cancellations excludes Package Name == 'Membership Downgrade' (owner-confirmed)
+        not_downgrade = ~c["Package Name"].astype(str).str.contains("downgrade", case=False, na=False)
+        safe["cancellations"] = int(not_downgrade.sum())
 
     # ── Operational (Airtable side, FYI) ──
     if paths["util"]:

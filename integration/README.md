@@ -13,14 +13,20 @@ The Airtable base (`appTQPmbMRZA6sWr5`) has a **Monthly Scorecard** table — on
 per month, already aggregated into app-shaped numbers. **That row is what the
 nightly job pushes** — no file parsing in the job itself. Confirmed mapping:
 
-| Monthly Scorecard field | studio_trends column | Status |
-|---|---|---|
-| Membership Cash | `membership_cash` | ✅ safe |
-| Total Members | `total_member_count` | ✅ safe |
-| Lost MRR | `eft_decrease` | ✅ safe |
-| Retail Revenue (gross) | `retail` | ⛔ definition (app shows higher) |
-| Cancellations | `cancellations` | ⛔ owner says 18, Airtable has 24 |
-| Memberships Sold | `new_members`? | ⛔ Airtable 4 vs app 16 — different meaning |
+| metric | studio_trends column | rule | Status |
+|---|---|---|---|
+| Membership Cash | `membership_cash` | MembershipCash + PIF gross | ✅ |
+| Retail | `retail` | Sales gross where Type=Retail | ✅ |
+| Total Members | `total_member_count` | active member rows | ✅ |
+| EFT Decrease | `eft_decrease` | Σ cancellation Monthly Payment | ✅ |
+| Cancellations | `cancellations` | count **excluding** Package Name "Membership Downgrade" | ✅ (=18) |
+| Sweat Elite | (members) | Monthly Amount = $79 or $39.50 → 78 members | ✅ identified |
+| `sweat_elite_pct` | `sweat_elite_pct` | denominator TBD (16.7% of all members vs app's 56) | ⛔ confirm meaning |
+| New Members | `new_members` | Airtable "Memberships Sold"=4 vs app 16 | ⛔ define |
+
+These rules live in code (`compute_studio_trends.py`), so the nightly job applies
+them — it does NOT trust raw Airtable/Scorecard values that haven't had the rules
+applied (e.g. the Scorecard's Cancellations is still the raw 24).
 
 ## Files
 - `push_to_supabase.py` — **the nightly pusher.** Reads the Monthly Scorecard row
