@@ -8,12 +8,30 @@ Full design spec: `HOTWORX_Integration_Handoff.md` (kept with the owner).
 The HOTWORX app is a dashboard fed once a night. This folder is the data layer that
 sits between SAIL exports and the app.
 
+## The hand-off point: Airtable "Monthly Scorecard"
+The Airtable base (`appTQPmbMRZA6sWr5`) has a **Monthly Scorecard** table — one row
+per month, already aggregated into app-shaped numbers. **That row is what the
+nightly job pushes** — no file parsing in the job itself. Confirmed mapping:
+
+| Monthly Scorecard field | studio_trends column | Status |
+|---|---|---|
+| Membership Cash | `membership_cash` | ✅ safe |
+| Total Members | `total_member_count` | ✅ safe |
+| Lost MRR | `eft_decrease` | ✅ safe |
+| Retail Revenue (gross) | `retail` | ⛔ definition (app shows higher) |
+| Cancellations | `cancellations` | ⛔ owner says 18, Airtable has 24 |
+| Memberships Sold | `new_members`? | ⛔ Airtable 4 vs app 16 — different meaning |
+
 ## Files
-- `sail_normalizer.py` — one normalizer that handles every SAIL quirk (title row,
-  header-on-row-1, blank-leading-column shift, xlsx-masquerading-as-csv). Detects
-  files by **column signature**, not filename (filenames are inconsistent).
-- `compute_studio_trends.py` — **DRY RUN.** Reads a folder of exports, computes the
-  `studio_trends` fields, and prints a validation table. **Writes nothing.**
+- `push_to_supabase.py` — **the nightly pusher.** Reads the Monthly Scorecard row
+  via the Airtable API → writes the 3 safe fields to `studio_trends`, Pewaukee-only
+  + `locked = false` guard. **DRY RUN by default; `--write` to apply.** Needs
+  `AIRTABLE_TOKEN`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` env vars.
+- `sail_normalizer.py` — normalizer for the raw SAIL files (handles every quirk;
+  detects reports by **column signature**, not filename). Used on the Drive→Airtable
+  side and for cross-checking.
+- `compute_studio_trends.py` — **DRY RUN** validator that re-derives the numbers
+  straight from the raw exports, to confirm Airtable's Scorecard is correct. Writes nothing.
 
 ## Run the validator
 ```bash
