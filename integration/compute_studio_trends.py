@@ -1,0 +1,122 @@
+"""
+DRY RUN — compute the studio_trends fields from a folder of SAIL exports and print
+a validation table. This WRITES NOTHING. It exists to prove each value matches the
+app's known-good numbers before we ever auto-push.
+
+Run:
+    python3 integration/compute_studio_trends.py "/path/to/folder/of/exports"
+
+It matches files by keyword in the filename (members, sales, cancel, util, campaign),
+so exact names don't matter as long as the keyword is present.
+"""
+import sys
+import glob
+import os
+from sail_normalizer import normalize, money
+
+# Detect each report by the columns it contains (robust to filename typos and to
+# a folder full of other files). Each role needs ALL of its signature columns.
+SIGNATURES = {
+    "util":     {"Days Since Last Booking"},
+    "members":  {"Subscription Id", "Cancellation Date"},
+    "sales":    {"Gross Cost", "Employee", "Type"},
+    "cancel":   {"Cancellation Type", "Monthly Payment"},
+    "campaign": {"Lead Status", "Automation Path"},
+}
+
+
+def _headers(path):
+    try:
+        from sail_normalizer import _read_raw
+        return set(h for h in _read_raw(path).iloc[1].tolist() if isinstance(h, str))
+    except Exception:
+        return set()
+
+
+def detect(folder):
+    cands = sorted(
+        glob.glob(os.path.join(folder, "*.xlsx")) + glob.glob(os.path.join(folder, "*.csv")),
+        key=os.path.getmtime, reverse=True,  # newest wins on ties
+    )
+    roles = {}
+    for f in cands:
+        cols = _headers(f)
+        for role, sig in SIGNATURES.items():
+            if role not in roles and sig.issubset(cols):
+                roles[role] = f
+    return roles
+
+
+def main(folder):
+    detected = detect(folder)
+    paths = {role: detected.get(role) for role in SIGNATURES}  # all keys present (None if missing)
+    for role in SIGNATURES:
+        p = paths.get(role)
+        print(f"  {role:10s} -> {os.path.basename(p) if p else '*** NOT FOUND ***'}")
+    print()
+
+    safe, blocked = {}, {}
+
+    # ── SAFE: membership_cash = MembershipCash + PIF (gross) ──
+    if paths["sales"]:
+        s = normalize(paths["sales"])
+        g = money(s["Gross Cost"]); n = money(s["Net Cost"])
+        is_memcash = s["Type"].isin(["MembershipCash", "PIF"])
+        safe["membership_cash"] = round(g[is_memcash].sum(), 2)
+        is_retail = s["Type"].astype(str).str.contains("retail", case=False, na=False)
+        blocked["retail_gross"] = round(g[is_retail].sum(), 2)
+        blocked["retail_net"] = round(n[is_retail].sum(), 2)
+        # per-employee POS (gross of all sale types) and retail
+        s["_g"] = g
+        per = s.groupby("Employee")["_g"].sum().round(2)
+        per_retail = s[is_retail].groupby("Employee")["_g"].sum().round(2)
+        print("Per-employee POS (gross) / retail:")
+        for emp in per.index:
+            print(f"   {emp:18s} POS ${per[emp]:>9.2f}   retail ${per_retail.get(emp, 0):>9.2f}")
+        print()
+
+    # ── SAFE: total_member_count = active member rows ──
+    if paths["members"]:
+        m = normalize(paths["members"])
+        safe["total_member_count"] = int(m.shape[0])
+        pkg = m["Package"].astype(str)
+        elite = pkg.str.contains("elite", case=False, na=False).sum()
+        blocked["elite_members"] = int(elite)
+        blocked["elite_pct_of_members"] = round(elite / len(m) * 100, 1)
+
+    # ── SAFE: eft_decrease = sum cancellations Monthly Payment ──
+    if paths["cancel"]:
+        c = normalize(paths["cancel"])
+        safe["eft_decrease"] = round(money(c["Monthly Payment"]).sum(), 2)
+        blocked["cancellation_rows"] = int(c.shape[0])
+
+    # ── Operational (Airtable side, FYI) ──
+    if paths["util"]:
+        import pandas as pd
+        u = normalize(paths["util"])
+        d = pd.to_numeric(u["Days Since Last Booking"], errors="coerce")
+        print("Win-back (Utilization, pre-DNC/active filter):",
+              f"14+ days={int((d >= 14).sum())}  (60+={int((d >= 60).sum())},"
+              f" 30-59={int(((d >= 30) & (d < 60)).sum())}, 14-29={int(((d >= 14) & (d < 30)).sum())})")
+    if paths["campaign"]:
+        cam = normalize(paths["campaign"])
+        dnc = (cam["Lead Status"].astype(str).str.strip() == "Do Not Call").sum()
+        sub = cam["Sub Status"].astype(str)
+        print(f"DNC suppression list: {int(dnc)}  |  Missed Guest/Be Back: "
+              f"{int(sub.str.contains('Missed Guest', na=False).sum())}  |  "
+              f"No Show/Red Appt Canceled: {int(sub.isin(['No Show', 'Red Appointment Canceled']).sum())}")
+
+    print("\n" + "=" * 60)
+    print("SAFE to auto-push to studio_trends (validate vs app first):")
+    for k, v in safe.items():
+        print(f"   {k:22s} = {v}")
+    print("\nBLOCKED — needs an owner definition before auto-push:")
+    for k, v in blocked.items():
+        print(f"   {k:22s} = {v}")
+    print("=" * 60)
+    print("NOTE: this script does not write to Supabase. It is validation only.")
+
+
+if __name__ == "__main__":
+    folder = sys.argv[1] if len(sys.argv) > 1 else os.path.expanduser("~/Downloads")
+    main(folder)
