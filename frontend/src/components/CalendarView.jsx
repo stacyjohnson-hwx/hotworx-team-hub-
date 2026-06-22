@@ -65,21 +65,29 @@ export default function CalendarView({ studioId, initialMonth, initialYear, embe
   return (
     <div className="hwx-cal" style={{ fontFamily: 'Montserrat, sans-serif', color: INK, background: '#fff', borderRadius: embedded ? 12 : 0, border: embedded ? '1px solid #eee' : 'none' }}>
       <style>{`
-        @page { size: landscape; margin: 0.4in; }
-        @media print { .no-print { display: none !important; } .hwx-cal { -webkit-print-color-adjust: exact; print-color-adjust: exact; border:none !important; } }
         .hwx-bebas { font-family: 'Bebas Neue', sans-serif; letter-spacing: .02em; }
-        .hwx-cell { border: 1px solid #e5e5e5; min-height: 78px; padding: 4px 6px; vertical-align: top; }
-        .hwx-chip { background: ${ORANGE}; color:#fff; border-radius:4px; padding:2px 5px; font-size:10px; font-weight:600; margin-top:3px; line-height:1.25; }
+        /* Every day is the same fixed box; extra content is clipped, not stretched */
+        .hwx-cell { border: 1px solid #e5e5e5; height: 92px; padding: 4px 6px; vertical-align: top; overflow: hidden; }
+        .hwx-chip { background: ${ORANGE}; color:#fff; border-radius:4px; padding:2px 5px; font-size:10px; font-weight:600; margin-top:3px; line-height:1.25; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        /* Force a single landscape page on print */
+        @media print {
+          @page { size: landscape; margin: 0.35in; }
+          .no-print { display: none !important; }
+          .hwx-cal { -webkit-print-color-adjust: exact; print-color-adjust: exact; border: none !important; page-break-inside: avoid; }
+          .hwx-page { max-width: none !important; padding: 0 !important; }
+          .hwx-cal table { page-break-inside: avoid; }
+          .hwx-cell { height: 0.8in !important; padding: 3px 5px !important; }
+          .hwx-chip { font-size: 8.5px !important; padding: 1px 4px !important; }
+          .hwx-rail { width: 210px !important; }
+        }
       `}</style>
 
-      <div style={{ maxWidth: 1040, margin: '0 auto', padding: '18px 22px' }}>
+      <div className="hwx-page" style={{ maxWidth: 1040, margin: '0 auto', padding: '18px 22px' }}>
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', borderBottom: `4px solid ${ORANGE}`, paddingBottom: 8 }}>
           <div>
-            <div className="hwx-bebas" style={{ fontSize: 40, lineHeight: .9, color: INK }}>
-              HOT<span style={{ color: ORANGE }}>WORX</span>
-            </div>
-            <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.18em', textTransform: 'uppercase', color: '#777' }}>
+            <img src="/hotworx-logo.svg" alt="HOTWORX" style={{ height: 44, width: 'auto', display: 'block' }} />
+            <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.18em', textTransform: 'uppercase', color: '#777', marginTop: 6 }}>
               {data?.studio_name || ''}
             </div>
           </div>
@@ -129,7 +137,7 @@ export default function CalendarView({ studioId, initialMonth, initialYear, embe
           </table>
 
           {/* Side rail */}
-          <div style={{ width: 232, flexShrink: 0 }}>
+          <div className="hwx-rail" style={{ width: 232, flexShrink: 0 }}>
             <div style={{ border: `2px solid ${ORANGE}`, borderRadius: 10, overflow: 'hidden' }}>
               <div className="hwx-bebas" style={{ background: ORANGE, color: '#fff', fontSize: 20, padding: '8px 12px', textAlign: 'center' }}>
                 Business of the Month
