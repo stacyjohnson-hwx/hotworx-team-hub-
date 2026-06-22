@@ -7,6 +7,7 @@ import {
   Gift, MapPin, Clock, ChevronDown, ChevronUp,
   AlertCircle, Loader2, Building2, Phone, Mail, Search, Star, Share2,
 } from 'lucide-react'
+import CalendarView from '@/components/CalendarView'
 import RatingModal, { StarDisplay } from '@/components/RatingModal'
 import ThumbsWidget, { useFeedbackSignals } from '@/components/ThumbsWidget'
 
@@ -70,6 +71,7 @@ function PageTabs({ active, onChange }) {
     { id: 'events',    label: 'Events' },
     { id: 'promos',    label: 'Promotions' },
     { id: 'discounts', label: 'B2B Partner Discounts' },
+    { id: 'calendar',  label: 'Public Calendar' },
   ]
   return (
     <div className="flex border-b border-gray-200 mb-6">
@@ -1230,7 +1232,6 @@ export default function EventsPage() {
           <h1 className="text-2xl font-bold text-gray-900">Events &amp; Promotions</h1>
           <p className="text-sm text-gray-500 mt-0.5">Studio events, active offers, and partner discounts</p>
         </div>
-        {isOwnerOrManager && <ShareCalendarButton />}
       </div>
 
       <PageTabs active={activeTab} onChange={setActiveTab} />
@@ -1244,6 +1245,25 @@ export default function EventsPage() {
       {activeTab === 'discounts' && (
         <B2bDiscountsTab />
       )}
+      {activeTab === 'calendar' && (
+        <PublicCalendarTab />
+      )}
+    </div>
+  )
+}
+
+function PublicCalendarTab() {
+  const studioId = typeof localStorage !== 'undefined' ? localStorage.getItem('selectedStudioId') : null
+  return (
+    <div>
+      <div className="flex items-start justify-between mb-4 gap-4">
+        <p className="text-sm text-gray-500">
+          This is the public, no-login calendar your members see from the QR code or shared link.
+          It shows the current month’s events and the Business of the Month, and excludes team-only events.
+        </p>
+        <ShareCalendarButton />
+      </div>
+      <CalendarView studioId={studioId} embedded />
     </div>
   )
 }
