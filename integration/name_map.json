@@ -1,0 +1,7 @@
+{
+  "_comment": "SAIL login-style name -> HOTWORX app user_profiles.id (Pewaukee). Add/edit as staff change. Departed staff are deactivated in the app (is_active=false), so leaving an old entry here is harmless — the writer skips inactive users.",
+  "ChrissyBlawat": "29d2a055-9f03-4907-8d0c-558018369cad",
+  "Marisa Ladwig": "2e59b712-394a-475f-8fbe-613aa15f32d5",
+  "Olivia Clinton": "35ce84f4-b598-46b9-ba89-3bd0b46ca313",
+  "SynnevaNatynski": "a1679a79-f754-49e3-8e47-79619e8bb9ff"
+}

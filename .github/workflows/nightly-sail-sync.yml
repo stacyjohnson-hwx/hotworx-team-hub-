@@ -1,0 +1,48 @@
+name: Nightly SAIL → app sync
+
+# Runs ~2 AM Central (07:00 UTC). GitHub cron is UTC and does not observe DST,
+# so this is 2 AM CDT (summer) / 1 AM CST (winter) — fine for a nightly batch.
+on:
+  schedule:
+    - cron: "0 7 * * *"
+  workflow_dispatch:        # manual trigger
+    inputs:
+      mode:
+        description: "write or dry-run"
+        default: "dry-run"
+        type: choice
+        options: ["dry-run", "write"]
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: pip install pandas openpyxl anthropic google-api-python-client google-auth
+
+      - name: Write Google service-account key
+        run: printf '%s' "$GSA" > /tmp/sa.json
+        env:
+          GSA: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+
+      - name: Run nightly sync
+        working-directory: integration
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          AIRTABLE_TOKEN: ${{ secrets.AIRTABLE_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: /tmp/sa.json
+        run: |
+          # Scheduled runs write; manual runs honor the chosen mode.
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event.inputs.mode }}" = "write" ]; then
+            python nightly_run.py --write
+          else
+            python nightly_run.py
+          fi

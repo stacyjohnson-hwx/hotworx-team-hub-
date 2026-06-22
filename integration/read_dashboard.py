@@ -36,6 +36,10 @@ using null for any value not present on this image (do not guess):
   "cancellations": int|null,          // "CANCELLATION REQUEST" number
   "eft_increase": number|null,        // "EFT INCREASE $"
   "eft_decrease": number|null,        // "EFT DECREASE $"
+  "membership_cash": number|null,     // "Membership Cash $X / $goal" -> the actual (X)
+  "retail": number|null,              // "Retail Sales $X / $goal" -> the actual (X)
+  "vending": number|null,             // "Vending Revenue $X" -> the actual
+  "net_eft": number|null,             // "Net EFT $X / $goal" (the monthly EFT base, e.g. 24,671.06)
   "rewards": number|null,             // "Rewards Redeemed $"
   "red_appts_booked": int|null,       // "Red's Scheduled" (the denominator, e.g. 28/38 -> 38)
   "red_appts_held": int|null,         // "Checked In" count (e.g. 28/38 -> 28)
@@ -82,8 +86,8 @@ def main(paths):
         print(json.dumps(fields, indent=2))
     # studio_trends-ready subset (only the columns that map 1:1)
     cols = ["total_active_members", "new_members", "cancellations", "eft_increase",
-            "eft_decrease", "rewards", "red_appts_booked", "red_appts_held",
-            "calls_made", "texts_made"]
+            "eft_decrease", "membership_cash", "retail", "vending", "net_eft", "rewards",
+            "red_appts_booked", "red_appts_held", "calls_made", "texts_made"]
     print("\n=== merged studio_trends fields (DRY RUN — nothing written) ===")
     print(json.dumps({k: merged.get(k) for k in cols}, indent=2))
     if merged.get("new_members") and merged.get("new_elite") is not None:

@@ -86,4 +86,18 @@ red appts, leads, socials, expenses, ITB, goals.
 - **Still manual (not in SAIL CRM):** refunds (need Refund report), Monthly EFT base,
   In The Bank, ITB Goal, Expenses, Vending, Instagram/Facebook/TikTok followers, 5-Star Reviews.
 
+## Nightly schedule (how it runs)
+- **Runner:** `nightly_run.py` — pulls 01_Daily from Drive → vision-reads the two
+  dashboards + cross-checks cancellations CSV → writes `studio_trends`
+  (+ recomputed EFT Change / Net Income) + `personal_goals` (commission CSV, mapped
+  via `name_map.json`) + the Airtable Scorecard. **Dry-run by default; `--write` writes.**
+- **Scheduler:** `.github/workflows/nightly-sail-sync.yml` — GitHub Actions cron at
+  07:00 UTC (~2 AM Central). Manual runs default to dry-run.
+- **Month-end lock:** `month_end_lock.sql` — pg_cron job that freezes the prior month.
+
+**Setup (one-time):** add repo Secrets → `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`,
+`AIRTABLE_TOKEN`, `ANTHROPIC_API_KEY`, `GOOGLE_SERVICE_ACCOUNT_JSON` (a service account
+with the 01_Daily folder shared to it). Then run the workflow manually in **dry-run**
+once, confirm the numbers, then let the nightly schedule take over.
+
 Everything that touches the live app is **dry-run-first, Pewaukee-only, lock-guarded.**
