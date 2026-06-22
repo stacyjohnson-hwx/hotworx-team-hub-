@@ -285,9 +285,9 @@ function EventCard({ event, canEdit, onEdit, onDelete, rating, onRate, signal })
                   </p>
                   {canEdit && (
                     <button onClick={pushAllToOrders} disabled={orderingAll || supplies.every(s => addedOrders[s.id])}
-                      className="inline-flex items-center gap-1 text-[11px] font-semibold text-orange-600 hover:text-orange-700 disabled:text-gray-300 disabled:cursor-default">
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-orange-200 bg-orange-50 text-[11px] font-semibold text-orange-700 hover:bg-orange-100 disabled:opacity-50 disabled:cursor-default">
                       <ShoppingCart className="w-3.5 h-3.5" />
-                      {orderingAll ? 'Adding…' : supplies.every(s => addedOrders[s.id]) ? 'All ordered' : 'Order all supplies'}
+                      {orderingAll ? 'Adding…' : supplies.every(s => addedOrders[s.id]) ? 'All ordered ✓' : 'Order all supplies'}
                     </button>
                   )}
                 </div>
@@ -299,11 +299,11 @@ function EventCard({ event, canEdit, onEdit, onDelete, rating, onRate, signal })
                       <span className={`flex-1 text-sm ${s.checked ? 'line-through text-gray-400' : 'text-gray-700'}`}>{s.text}</span>
                       {canEdit && (addedOrders[s.id]
                         ? <span className="text-[11px] text-green-600 font-medium flex-shrink-0">✓ Ordered</span>
-                        : <button onClick={() => addSupplyToOrder(s).catch(() => {})} className="text-[11px] text-orange-600 hover:underline flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">+ Order</button>
+                        : <button onClick={() => addSupplyToOrder(s).catch(() => {})} className="inline-flex items-center gap-1 text-[11px] font-semibold text-orange-600 hover:text-orange-700 flex-shrink-0"><ShoppingCart className="w-3 h-3" /> Order</button>
                       )}
                       {canEdit && (addedTodos[s.id]
                         ? <span className="text-[11px] text-green-600 font-medium flex-shrink-0">✓ on To-Do</span>
-                        : <button onClick={() => addSupplyToTodo(s)} className="text-[11px] text-orange-600 hover:underline flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">+ To-Do</button>
+                        : <button onClick={() => addSupplyToTodo(s)} className="text-[11px] font-semibold text-orange-600 hover:text-orange-700 flex-shrink-0">+ To-Do</button>
                       )}
                     </div>
                   ))}
