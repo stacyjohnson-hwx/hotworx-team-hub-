@@ -8,6 +8,7 @@ import {
   AlertCircle, Loader2, Building2, Phone, Mail, Search, Star, Share2,
 } from 'lucide-react'
 import CalendarView from '@/components/CalendarView'
+import { RichTextEditor, renderRichText } from '@/components/RichText'
 import RatingModal, { StarDisplay } from '@/components/RatingModal'
 import ThumbsWidget, { useFeedbackSignals } from '@/components/ThumbsWidget'
 
@@ -236,7 +237,7 @@ function EventCard({ event, canEdit, onEdit, onDelete, rating, onRate, signal })
 
         {expanded && (event.description || event.notes || hasPlanning) && (
           <div className="mt-3 pt-3 border-t border-gray-100 space-y-3">
-            {event.description && <p className="text-sm text-gray-700">{event.description}</p>}
+            {event.description && <div className="rich-content text-sm text-gray-700" dangerouslySetInnerHTML={{ __html: renderRichText(event.description) }} />}
             {event.notes && (
               <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-600">
                 <span className="font-semibold text-gray-700">Notes: </span>{event.notes}
@@ -382,7 +383,8 @@ function EventForm({ event, month, year, onSave, onClose }) {
         </FormField>
 
         <FormField label="Description">
-          <textarea className={inputCls} rows={2} value={form.description} onChange={e => set('description', e.target.value)} placeholder="Brief description for the team" />
+          <RichTextEditor value={form.description} onChange={v => set('description', v)} />
+          <p className="text-xs text-gray-400 mt-1">Shown to members when they tap the event on the public calendar. Formatting supported.</p>
         </FormField>
 
         <div className="grid grid-cols-2 gap-3">

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { renderRichText } from '@/components/RichText'
 
 // Shared monthly events calendar. Reads the PUBLIC (no-auth) endpoint so it
 // renders identically whether shown inside the app (embedded) or on the
@@ -30,6 +31,8 @@ const fmtTime = (t) => {
   const [h, m] = t.split(':').map(Number)
   return `${(h % 12) || 12}:${String(m).padStart(2, '0')}${h >= 12 ? 'p' : 'a'}`
 }
+const longDate = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) : ''
+const timeRange = (e) => [fmtTime(e.start_time), fmtTime(e.end_time)].filter(Boolean).join(' – ')
 
 export default function CalendarView({ studioId, initialMonth, initialYear, embedded = false }) {
   const now = new Date()
@@ -37,6 +40,7 @@ export default function CalendarView({ studioId, initialMonth, initialYear, embe
   const [month, setMonth] = useState(initialMonth || (now.getMonth() + 1))
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
+  const [selected, setSelected] = useState(null)   // event clicked → detail modal
 
   useEffect(() => {
     if (!studioId) return
@@ -70,6 +74,14 @@ export default function CalendarView({ studioId, initialMonth, initialYear, embe
         .hwx-cell { border: 1px solid #e5e5e5; width: 14.285%; height: 118px; padding: 4px 6px; vertical-align: top; overflow: hidden; }
         .hwx-cell-inner { height: 110px; overflow: hidden; }
         .hwx-chip { background: ${ORANGE}; color:#fff; border-radius:4px; padding:2px 5px; font-size:10px; font-weight:600; margin-top:3px; line-height:1.2; overflow:hidden; word-break:break-word; }
+        .hwx-clickable { cursor: pointer; }
+        .hwx-chip.hwx-clickable:hover { filter: brightness(1.08); }
+        .hwx-rich a { color: ${ORANGE}; text-decoration: underline; }
+        .hwx-rich h2 { font-size: 15px; font-weight: 700; margin: 8px 0 4px; }
+        .hwx-rich ul { list-style: disc; margin: 4px 0 4px 18px; padding-left: 4px; }
+        .hwx-rich ol { list-style: decimal; margin: 4px 0 4px 18px; padding-left: 4px; }
+        .hwx-rich li { margin: 2px 0; }
+        .hwx-rich p { margin: 6px 0; }
         /* Force a single landscape page on print */
         @media print {
           @page { size: landscape; margin: 0.35in; }
@@ -129,9 +141,11 @@ export default function CalendarView({ studioId, initialMonth, initialYear, embe
                           <div style={{ fontSize: 12, fontWeight: 700, color: inMonth ? INK : '#bbb' }}>{dt.getDate()}</div>
                           {inMonth && evs.map(e => {
                             const label = `${e.start_time ? fmtTime(e.start_time) + ' ' : ''}${e.title}`
-                            return e.registration_url
-                              ? <a key={e.id} href={e.registration_url} target="_blank" rel="noreferrer" title="Tap to register" className="hwx-chip" style={{ display: 'block', textDecoration: 'none', cursor: 'pointer' }}>{label} ↗</a>
-                              : <div key={e.id} className="hwx-chip">{label}</div>
+                            return (
+                              <div key={e.id} className="hwx-chip hwx-clickable" title="Tap for details" onClick={() => setSelected(e)}>
+                                {label}{e.registration_url ? ' ↗' : ''}
+                              </div>
+                            )
                           })}
                         </div>
                       </td>
@@ -188,11 +202,12 @@ export default function CalendarView({ studioId, initialMonth, initialYear, embe
                       {new Date(e.start_date + 'T00:00:00').getDate()}
                     </div>
                     <div>
-                      {e.registration_url
-                        ? <a href={e.registration_url} target="_blank" rel="noreferrer" style={{ fontWeight: 700, color: ORANGE, textDecoration: 'none' }}>{e.title} ↗</a>
-                        : <div style={{ fontWeight: 700 }}>{e.title}</div>}
+                      <button onClick={() => setSelected(e)} className="hwx-clickable"
+                        style={{ fontWeight: 700, color: INK, background: 'none', border: 'none', padding: 0, textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', fontSize: 'inherit' }}>
+                        {e.title}{e.registration_url ? ' ↗' : ''}
+                      </button>
                       <div style={{ color: '#777' }}>{[fmtTime(e.start_time), e.location].filter(Boolean).join(' · ')}</div>
-                      {e.registration_url && <div className="no-print" style={{ color: ORANGE, fontSize: 11, fontWeight: 600 }}>Register →</div>}
+                      <div className="no-print" style={{ color: ORANGE, fontSize: 11, fontWeight: 600, cursor: 'pointer' }} onClick={() => setSelected(e)}>Details →</div>
                     </div>
                   </div>
                 ))}
@@ -200,6 +215,41 @@ export default function CalendarView({ studioId, initialMonth, initialYear, embe
           </div>
         </div>
       </div>
+
+      {/* Event detail popup */}
+      {selected && (
+        <div className="no-print" onClick={() => setSelected(null)}
+          style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: '#fff', borderRadius: 16, maxWidth: 440, width: '100%', maxHeight: '85vh', overflow: 'auto', boxShadow: '0 20px 50px rgba(0,0,0,.3)' }}>
+            <div style={{ background: ORANGE, color: '#fff', padding: '16px 20px', position: 'relative' }}>
+              <div className="hwx-bebas" style={{ fontSize: 26, lineHeight: 1.05, paddingRight: 24 }}>{selected.title}</div>
+              <div style={{ fontSize: 12.5, marginTop: 5, fontWeight: 600 }}>
+                {longDate(selected.start_date)}{timeRange(selected) ? ` · ${timeRange(selected)}` : ''}
+              </div>
+              <button onClick={() => setSelected(null)} aria-label="Close"
+                style={{ position: 'absolute', top: 12, right: 14, background: 'none', border: 'none', color: '#fff', fontSize: 22, lineHeight: 1, cursor: 'pointer' }}>×</button>
+            </div>
+            <div style={{ padding: 20 }}>
+              {selected.location && (
+                <div style={{ display: 'flex', gap: 6, fontSize: 13, fontWeight: 600, color: INK, marginBottom: 12 }}>
+                  <span style={{ color: ORANGE }}>📍</span><span>{selected.location}</span>
+                </div>
+              )}
+              {selected.description
+                ? <div className="hwx-rich" style={{ fontSize: 13.5, color: '#333', lineHeight: 1.5 }}
+                    dangerouslySetInnerHTML={{ __html: renderRichText(selected.description) }} />
+                : <p style={{ fontSize: 13, color: '#999' }}>No additional details.</p>}
+              {selected.registration_url && (
+                <a href={selected.registration_url} target="_blank" rel="noreferrer"
+                  style={{ display: 'block', textAlign: 'center', marginTop: 18, background: ORANGE, color: '#fff', fontWeight: 700, fontSize: 14, padding: '11px 16px', borderRadius: 10, textDecoration: 'none' }}>
+                  Register / Sign Up ↗
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
