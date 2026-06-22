@@ -33,6 +33,47 @@ const fmtTime = (t) => {
 }
 const longDate = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) : ''
 const timeRange = (e) => [fmtTime(e.start_time), fmtTime(e.end_time)].filter(Boolean).join(' – ')
+const parseYmd = (s) => new Date(s + 'T00:00:00')
+const dayDiff = (a, b) => Math.round((b - a) / 86400000)
+
+// Lay out one week's events into horizontal bars (Google-Calendar style).
+// Multi-day events span columns; each event is assigned a lane so they stack
+// without overlapping. Returns items with {e, startCol, endCol, lane, multi, contLeft, contRight}.
+function weekBars(week, events) {
+  const weekStart = week[0]
+  const ws = ymd(week[0]), we = ymd(week[6])
+  const items = []
+  for (const e of events) {
+    const es = e.start_date
+    const ee = e.end_date || e.start_date
+    if (ee < ws || es > we) continue                       // event doesn't touch this week
+    let startCol = dayDiff(weekStart, parseYmd(es < ws ? ws : es))
+    let endCol = dayDiff(weekStart, parseYmd(ee > we ? we : ee))
+    startCol = Math.max(0, Math.min(6, startCol))
+    endCol = Math.max(0, Math.min(6, endCol))
+    items.push({ e, startCol, endCol, multi: ee > es, contLeft: es < ws, contRight: ee > we })
+  }
+  // Longer/earlier events first so multi-day bars take the top lanes.
+  items.sort((a, b) =>
+    a.startCol - b.startCol ||
+    (b.endCol - b.startCol) - (a.endCol - a.startCol) ||
+    (a.e.start_time || '').localeCompare(b.e.start_time || '') ||
+    a.e.title.localeCompare(b.e.title))
+  const lanes = []
+  for (const it of items) {
+    let lane = 0
+    for (;;) {
+      const occ = lanes[lane] || (lanes[lane] = [])
+      if (occ.every(r => it.endCol < r.s || it.startCol > r.e)) {
+        occ.push({ s: it.startCol, e: it.endCol })
+        it.lane = lane
+        break
+      }
+      lane++
+    }
+  }
+  return items
+}
 
 export default function CalendarView({ studioId, initialMonth, initialYear, embedded = false }) {
   const now = new Date()
@@ -56,10 +97,6 @@ export default function CalendarView({ studioId, initialMonth, initialYear, embe
     setMonth(m); setYear(y)
   }
 
-  const eventsByDay = {}
-  for (const e of data?.events || []) {
-    ;(eventsByDay[e.start_date] = eventsByDay[e.start_date] || []).push(e)
-  }
   const weeks = monthGrid(year, month)
   const bom = data?.business_of_month
 
@@ -70,12 +107,19 @@ export default function CalendarView({ studioId, initialMonth, initialYear, embe
     <div className="hwx-cal" style={{ fontFamily: 'Montserrat, sans-serif', color: INK, background: '#fff', borderRadius: embedded ? 12 : 0, border: embedded ? '1px solid #eee' : 'none' }}>
       <style>{`
         .hwx-bebas { font-family: 'Bebas Neue', sans-serif; letter-spacing: .02em; }
-        /* Every day is the same fixed box; extra content is clipped, not stretched */
-        .hwx-cell { border: 1px solid #e5e5e5; width: 14.285%; height: 118px; padding: 4px 6px; vertical-align: top; overflow: hidden; }
-        .hwx-cell-inner { height: 110px; overflow: hidden; }
-        .hwx-chip { background: ${ORANGE}; color:#fff; border-radius:4px; padding:2px 5px; font-size:10px; font-weight:600; margin-top:3px; line-height:1.2; overflow:hidden; word-break:break-word; }
+        /* CSS-grid month: uniform day boxes + an overlay layer for spanning event bars */
+        .hwx-grid { display: grid; grid-template-columns: repeat(7, 1fr); }
+        .hwx-dow { background: ${INK}; color: #fff; font-size: 16px; text-align: center; padding: 5px 0; border: 1px solid ${INK}; }
+        .hwx-week { position: relative; }
+        .hwx-day { border: 1px solid #e5e5e5; min-height: 120px; padding: 3px 5px; overflow: hidden; }
+        .hwx-daynum { font-size: 12px; font-weight: 700; line-height: 1; }
+        .hwx-bars { position: absolute; top: 20px; left: 0; right: 0; bottom: 2px; display: grid;
+          grid-template-columns: repeat(7, 1fr); grid-auto-rows: 17px; row-gap: 2px; padding: 0 2px; pointer-events: none; }
+        .hwx-bar { pointer-events: auto; background: ${ORANGE}; color: #fff; font-size: 10px; font-weight: 600;
+          line-height: 17px; height: 17px; padding: 0 5px; margin: 0 1px; border-radius: 4px;
+          overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
         .hwx-clickable { cursor: pointer; }
-        .hwx-chip.hwx-clickable:hover { filter: brightness(1.08); }
+        .hwx-bar.hwx-clickable:hover { filter: brightness(1.08); }
         .hwx-rich a { color: ${ORANGE}; text-decoration: underline; }
         .hwx-rich h2 { font-size: 15px; font-weight: 700; margin: 8px 0 4px; }
         .hwx-rich ul { list-style: disc; margin: 4px 0 4px 18px; padding-left: 4px; }
@@ -86,12 +130,13 @@ export default function CalendarView({ studioId, initialMonth, initialYear, embe
         @media print {
           @page { size: landscape; margin: 0.35in; }
           .no-print { display: none !important; }
-          .hwx-cal { -webkit-print-color-adjust: exact; print-color-adjust: exact; border: none !important; page-break-inside: avoid; }
+          .hwx-cal { -webkit-print-color-adjust: exact; print-color-adjust: exact; border: none !important; }
           .hwx-page { max-width: none !important; padding: 0 !important; }
-          .hwx-cal table { page-break-inside: avoid; }
-          .hwx-cell { height: 1in !important; padding: 3px 5px !important; }
-          .hwx-cell-inner { height: calc(1in - 12px) !important; }
-          .hwx-chip { font-size: 8.5px !important; padding: 1px 4px !important; }
+          .hwx-week { page-break-inside: avoid; }
+          .hwx-day { min-height: 0.92in !important; padding: 2px 4px !important; }
+          .hwx-dow { font-size: 13px !important; padding: 3px 0 !important; }
+          .hwx-bars { top: 16px !important; grid-auto-rows: 13px !important; }
+          .hwx-bar { font-size: 8px !important; line-height: 13px !important; height: 13px !important; padding: 0 4px !important; }
           .hwx-rail { width: 210px !important; }
         }
       `}</style>
@@ -122,39 +167,46 @@ export default function CalendarView({ studioId, initialMonth, initialYear, embe
 
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginTop: 10 }}>
           {/* Calendar */}
-          <table style={{ flex: 1, width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-            <colgroup>{DOW.map(d => <col key={d} style={{ width: '14.285%' }} />)}</colgroup>
-            <thead>
-              <tr>{DOW.map(d => (
-                <th key={d} className="hwx-bebas" style={{ background: INK, color: '#fff', fontSize: 16, padding: '5px 0', border: `1px solid ${INK}` }}>{d}</th>
-              ))}</tr>
-            </thead>
-            <tbody>
-              {weeks.map((week, wi) => (
-                <tr key={wi}>
-                  {week.map((dt, di) => {
-                    const inMonth = dt.getMonth() === month - 1
-                    const evs = eventsByDay[ymd(dt)] || []
-                    return (
-                      <td key={di} className="hwx-cell" style={{ background: inMonth ? '#fff' : '#fafafa', opacity: inMonth ? 1 : .45 }}>
-                        <div className="hwx-cell-inner">
-                          <div style={{ fontSize: 12, fontWeight: 700, color: inMonth ? INK : '#bbb' }}>{dt.getDate()}</div>
-                          {inMonth && evs.map(e => {
-                            const label = `${e.start_time ? fmtTime(e.start_time) + ' ' : ''}${e.title}`
-                            return (
-                              <div key={e.id} className="hwx-chip hwx-clickable" title="Tap for details" onClick={() => setSelected(e)}>
-                                {label}{e.registration_url ? ' ↗' : ''}
-                              </div>
-                            )
-                          })}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {/* Weekday header */}
+            <div className="hwx-grid">
+              {DOW.map(d => <div key={d} className="hwx-dow hwx-bebas">{d}</div>)}
+            </div>
+            {/* Weeks: a grid of day boxes with an overlay of event bars on top */}
+            {weeks.map((week, wi) => {
+              const bars = weekBars(week, data?.events || [])
+              return (
+                <div key={wi} className="hwx-week">
+                  <div className="hwx-grid">
+                    {week.map((dt, di) => {
+                      const inMonth = dt.getMonth() === month - 1
+                      return (
+                        <div key={di} className="hwx-day" style={{ background: inMonth ? '#fff' : '#fafafa' }}>
+                          <div className="hwx-daynum" style={{ color: inMonth ? INK : '#bbb' }}>{dt.getDate()}</div>
                         </div>
-                      </td>
-                    )
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                      )
+                    })}
+                  </div>
+                  <div className="hwx-bars">
+                    {bars.map(b => {
+                      const e = b.e
+                      const label = b.multi ? e.title : `${e.start_time ? fmtTime(e.start_time) + ' ' : ''}${e.title}`
+                      return (
+                        <div key={e.id} className="hwx-bar hwx-clickable" title="Tap for details" onClick={() => setSelected(e)}
+                          style={{
+                            gridColumn: `${b.startCol + 1} / ${b.endCol + 2}`, gridRow: b.lane + 1,
+                            borderTopLeftRadius: b.contLeft ? 0 : 4, borderBottomLeftRadius: b.contLeft ? 0 : 4,
+                            borderTopRightRadius: b.contRight ? 0 : 4, borderBottomRightRadius: b.contRight ? 0 : 4,
+                          }}>
+                          {b.contLeft ? '‹ ' : ''}{label}{e.registration_url ? ' ↗' : ''}{b.contRight ? ' ›' : ''}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
 
           {/* Side rail */}
           <div className="hwx-rail" style={{ width: 232, flexShrink: 0 }}>
