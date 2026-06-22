@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { ChevronLeft, ChevronRight, Plus, Pencil, Trash2, RefreshCw, X, Flag, Calendar, LayoutGrid, MessageSquare, Tag, Sparkles, Check, Building2, ExternalLink } from 'lucide-react'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
 import { useRole } from '@/hooks/useRole'
+import { renderRichText } from '@/components/RichText'
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
 
@@ -442,7 +443,7 @@ function BusinessOfMonthBanner({ events, activeMonth, activeYear }) {
             <div className="min-w-0 flex-1">
               <p className="text-[11px] font-bold uppercase tracking-wide text-amber-700">{monthName} Business of the Month</p>
               <p className="text-base font-bold text-gray-900 leading-tight">{name}</p>
-              {e.description && <p className="text-sm text-gray-600 mt-1 whitespace-pre-line">{e.description}</p>}
+              {e.description && <div className="rich-content text-sm text-gray-600 mt-1" dangerouslySetInnerHTML={{ __html: renderRichText(e.description) }} />}
               {website && (
                 <a href={website.startsWith('http') ? website : `https://${website}`} target="_blank" rel="noreferrer"
                    className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 hover:underline mt-1.5">
@@ -859,7 +860,7 @@ function DetailModal({ item, type, onClose, onEdit, onDelete, canEdit }) {
                 <Row label="Time" value={[formatTime(item.start_time), formatTime(item.end_time)].filter(Boolean).join(' – ')} />
               )}
               {item.location && <Row label="Location" value={item.location} />}
-              {item.description && <Row label="Description" value={item.description} />}
+              {item.description && <RichRow label="Description" value={item.description} />}
               {item.b2b_partners?.length > 0 && (
                 <Row label="B2B Partners" value={item.b2b_partners.map(p => p.business_name).join(', ')} />
               )}
@@ -885,7 +886,7 @@ function DetailModal({ item, type, onClose, onEdit, onDelete, canEdit }) {
                   : `$${item.discount_value} off`
                 } />
               )}
-              {item.description && <Row label="Description" value={item.description} />}
+              {item.description && <RichRow label="Description" value={item.description} />}
             </>
           )}
 
@@ -917,6 +918,16 @@ function Row({ label, value, multiline }) {
     <div>
       <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-0.5">{label}</p>
       <p className={`text-sm text-gray-800 ${multiline ? 'whitespace-pre-wrap' : ''}`}>{value}</p>
+    </div>
+  )
+}
+
+// Like Row, but renders rich-text (HTML) values — used for event descriptions.
+function RichRow({ label, value }) {
+  return (
+    <div>
+      <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-0.5">{label}</p>
+      <div className="rich-content text-sm text-gray-800" dangerouslySetInnerHTML={{ __html: renderRichText(value) }} />
     </div>
   )
 }
