@@ -67,7 +67,8 @@ export default function CalendarView({ studioId, initialMonth, initialYear, embe
       <style>{`
         .hwx-bebas { font-family: 'Bebas Neue', sans-serif; letter-spacing: .02em; }
         /* Every day is the same fixed box; extra content is clipped, not stretched */
-        .hwx-cell { border: 1px solid #e5e5e5; height: 92px; padding: 4px 6px; vertical-align: top; overflow: hidden; }
+        .hwx-cell { border: 1px solid #e5e5e5; width: 14.28%; height: 92px; padding: 4px 6px; vertical-align: top; overflow: hidden; }
+        .hwx-cell-inner { height: 84px; overflow: hidden; }
         .hwx-chip { background: ${ORANGE}; color:#fff; border-radius:4px; padding:2px 5px; font-size:10px; font-weight:600; margin-top:3px; line-height:1.25; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         /* Force a single landscape page on print */
         @media print {
@@ -77,6 +78,7 @@ export default function CalendarView({ studioId, initialMonth, initialYear, embe
           .hwx-page { max-width: none !important; padding: 0 !important; }
           .hwx-cal table { page-break-inside: avoid; }
           .hwx-cell { height: 0.8in !important; padding: 3px 5px !important; }
+          .hwx-cell-inner { height: calc(0.8in - 12px) !important; }
           .hwx-chip { font-size: 8.5px !important; padding: 1px 4px !important; }
           .hwx-rail { width: 210px !important; }
         }
@@ -106,7 +108,7 @@ export default function CalendarView({ studioId, initialMonth, initialYear, embe
             : <button onClick={() => window.print()} style={{ ...btn, background: ORANGE, color: '#fff', border: 'none' }}>Print</button>}
         </div>
 
-        <div style={{ display: 'flex', gap: 16, marginTop: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginTop: 10 }}>
           {/* Calendar */}
           <table style={{ flex: 1, borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <thead>
@@ -122,13 +124,15 @@ export default function CalendarView({ studioId, initialMonth, initialYear, embe
                     const evs = eventsByDay[ymd(dt)] || []
                     return (
                       <td key={di} className="hwx-cell" style={{ background: inMonth ? '#fff' : '#fafafa', opacity: inMonth ? 1 : .45 }}>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: inMonth ? INK : '#bbb' }}>{dt.getDate()}</div>
-                        {inMonth && evs.map(e => {
-                          const label = `${e.start_time ? fmtTime(e.start_time) + ' ' : ''}${e.title}`
-                          return e.registration_url
-                            ? <a key={e.id} href={e.registration_url} target="_blank" rel="noreferrer" title="Tap to register" className="hwx-chip" style={{ display: 'block', textDecoration: 'none', cursor: 'pointer' }}>{label} ↗</a>
-                            : <div key={e.id} className="hwx-chip">{label}</div>
-                        })}
+                        <div className="hwx-cell-inner">
+                          <div style={{ fontSize: 12, fontWeight: 700, color: inMonth ? INK : '#bbb' }}>{dt.getDate()}</div>
+                          {inMonth && evs.map(e => {
+                            const label = `${e.start_time ? fmtTime(e.start_time) + ' ' : ''}${e.title}`
+                            return e.registration_url
+                              ? <a key={e.id} href={e.registration_url} target="_blank" rel="noreferrer" title="Tap to register" className="hwx-chip" style={{ display: 'block', textDecoration: 'none', cursor: 'pointer' }}>{label} ↗</a>
+                              : <div key={e.id} className="hwx-chip">{label}</div>
+                          })}
+                        </div>
                       </td>
                     )
                   })}
