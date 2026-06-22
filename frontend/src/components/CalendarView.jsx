@@ -67,9 +67,9 @@ export default function CalendarView({ studioId, initialMonth, initialYear, embe
       <style>{`
         .hwx-bebas { font-family: 'Bebas Neue', sans-serif; letter-spacing: .02em; }
         /* Every day is the same fixed box; extra content is clipped, not stretched */
-        .hwx-cell { border: 1px solid #e5e5e5; width: 14.28%; height: 92px; padding: 4px 6px; vertical-align: top; overflow: hidden; }
-        .hwx-cell-inner { height: 84px; overflow: hidden; }
-        .hwx-chip { background: ${ORANGE}; color:#fff; border-radius:4px; padding:2px 5px; font-size:10px; font-weight:600; margin-top:3px; line-height:1.25; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .hwx-cell { border: 1px solid #e5e5e5; width: 14.285%; height: 118px; padding: 4px 6px; vertical-align: top; overflow: hidden; }
+        .hwx-cell-inner { height: 110px; overflow: hidden; }
+        .hwx-chip { background: ${ORANGE}; color:#fff; border-radius:4px; padding:2px 5px; font-size:10px; font-weight:600; margin-top:3px; line-height:1.2; overflow:hidden; word-break:break-word; }
         /* Force a single landscape page on print */
         @media print {
           @page { size: landscape; margin: 0.35in; }
@@ -77,8 +77,8 @@ export default function CalendarView({ studioId, initialMonth, initialYear, embe
           .hwx-cal { -webkit-print-color-adjust: exact; print-color-adjust: exact; border: none !important; page-break-inside: avoid; }
           .hwx-page { max-width: none !important; padding: 0 !important; }
           .hwx-cal table { page-break-inside: avoid; }
-          .hwx-cell { height: 0.8in !important; padding: 3px 5px !important; }
-          .hwx-cell-inner { height: calc(0.8in - 12px) !important; }
+          .hwx-cell { height: 1in !important; padding: 3px 5px !important; }
+          .hwx-cell-inner { height: calc(1in - 12px) !important; }
           .hwx-chip { font-size: 8.5px !important; padding: 1px 4px !important; }
           .hwx-rail { width: 210px !important; }
         }
@@ -110,7 +110,8 @@ export default function CalendarView({ studioId, initialMonth, initialYear, embe
 
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginTop: 10 }}>
           {/* Calendar */}
-          <table style={{ flex: 1, borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+          <table style={{ flex: 1, width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+            <colgroup>{DOW.map(d => <col key={d} style={{ width: '14.285%' }} />)}</colgroup>
             <thead>
               <tr>{DOW.map(d => (
                 <th key={d} className="hwx-bebas" style={{ background: INK, color: '#fff', fontSize: 16, padding: '5px 0', border: `1px solid ${INK}` }}>{d}</th>
