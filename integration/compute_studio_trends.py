@@ -82,20 +82,16 @@ def main(folder):
             print(f"   {emp:18s} POS ${per[emp]:>9.2f}   retail ${per_retail.get(emp, 0):>9.2f}")
         print()
 
-    # ── SAFE: total_member_count + Sweat Elite (calendar-month mix) ──
+    # ── SAFE: total_member_count (from CSV) ──
+    # new_members and sweat_elite_pct come from the SALES/MEMBER DASHBOARD via
+    # read_dashboard.py — that's SAIL's authoritative "New Member Breakdown":
+    #   new_members      = 18
+    #   sweat_elite_pct  = new_elite (11) / new_members (18) = 61%   ("Sweat Elite Mix")
+    # We deliberately do NOT recompute them from the members file (the subscription-date
+    # method gave a different 13 / 46.2% and would conflict).
     if paths["members"]:
         m = normalize(paths["members"])
         safe["total_member_count"] = int(m.shape[0])
-        amt = money(m["Monthly Amount"])  # RULE: Sweat Elite = Monthly Amount $79 or $39.50
-        dcol = next((c for c in m.columns if "subscription" in c.lower() and "date" in c.lower()), None)
-        d = pd.to_datetime(m[dcol], errors="coerce") if dcol else None
-        if d is not None:
-            inmonth = (d.dt.year == TARGET_YEAR) & (d.dt.month == TARGET_MONTH)
-            new_n = int(inmonth.sum())
-            elite_n = int((inmonth & amt.isin([79, 39.5])).sum())
-            # RULE: sweat_elite_pct = elite memberships / all memberships THIS calendar month
-            safe["sweat_elite_pct"] = round(elite_n / new_n * 100, 1) if new_n else 0
-            blocked["new_memberships_this_month (candidate for new_members)"] = new_n
 
     # ── SAFE: eft_decrease (all rows) + cancellations count (exclude downgrades) ──
     if paths["cancel"]:
