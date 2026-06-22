@@ -131,6 +131,76 @@ router.post('/', authenticate, requireStudio, async (req, res) => {
   res.status(201).json(data)
 })
 
+// ─── POST /api/orders/bulk ───────────────────────────────────────────────────
+// Create several order requests at once (e.g. an event's supplies list).
+// Sends ONE summary email instead of one per item.
+router.post('/bulk', authenticate, requireStudio, async (req, res) => {
+  const { items, category, source } = req.body
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'items array is required' })
+  }
+  const rows = items
+    .filter(it => it && (it.item_name || it.text))
+    .map(it => ({
+      item_name: it.item_name || it.text,
+      quantity: it.quantity || 1,
+      category: category || it.category || 'supplies',
+      notes: it.notes || source || null,
+      est_cost: it.est_cost || null,
+      vendor: it.vendor || null,
+      status: 'pending',
+      requested_by: req.user.id,
+      studio_id: req.studio.id,
+    }))
+  if (rows.length === 0) return res.status(400).json({ error: 'no valid items' })
+
+  const { data, error } = await supabase().from('orders').insert(rows).select()
+  if (error) return res.status(500).json({ error: error.message })
+
+  // One summary email for the whole batch (fire-and-forget).
+  const db2 = supabase()
+  buildUserMap(db2).then(userMap => {
+    const requesterName = userMap[req.user.id] || 'Team Member'
+    sendBulkOrderEmail(data, requesterName, source)
+  }).catch(() => {})
+
+  res.status(201).json(data)
+})
+
+async function sendBulkOrderEmail(orders, requesterName, source) {
+  if (!process.env.EMAIL_USER && !process.env.RESEND_API_KEY) return
+  const rowsHtml = orders.map(o =>
+    `<tr><td style="font-size:13px;padding:4px 0">${o.item_name}</td><td style="font-size:13px;text-align:right;color:#6b7280">x${o.quantity}</td></tr>`
+  ).join('')
+  const srcLine = source ? `<p style="margin:0 0 12px;font-size:13px;color:#6b7280">${source}</p>` : ''
+  const html = `
+    <div style="font-family:sans-serif;max-width:520px;margin:0 auto">
+      <div style="background:#C8102E;padding:16px 20px;border-radius:8px 8px 0 0">
+        <h2 style="color:#fff;margin:0;font-size:16px">${orders.length} New Order Requests — HOTWORX Pewaukee</h2>
+      </div>
+      <div style="background:#fff;border:1px solid #e5e7eb;border-top:none;padding:20px;border-radius:0 0 8px 8px">
+        <p style="margin:0 0 12px;font-size:14px;color:#111827"><strong>${requesterName}</strong> sent ${orders.length} items to Orders.</p>
+        ${srcLine}
+        <table style="width:100%;border-collapse:collapse">${rowsHtml}</table>
+      </div>
+    </div>`
+  const recipients = [process.env.OWNER_EMAIL, process.env.MANAGER_EMAIL].filter(Boolean)
+  const subject = `${orders.length} Order Requests — HOTWORX Pewaukee`
+  const fromName = 'HOTWORX Pewaukee'
+  try {
+    if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+      const transport = nodemailer.createTransport({
+        host: 'smtp.gmail.com', port: 465, secure: true,
+        auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+      })
+      await transport.sendMail({ from: `"${fromName}" <${process.env.EMAIL_USER}>`, to: recipients.join(', '), subject, html })
+    } else {
+      const resend = new Resend(process.env.RESEND_API_KEY)
+      await resend.emails.send({ from: `${fromName} <onboarding@resend.dev>`, to: recipients, subject, html })
+    }
+  } catch (err) { console.error('Bulk order email failed:', err.message) }
+}
+
 // ─── PUT /api/orders/:id ─────────────────────────────────────────────────────
 // Owner/manager: full update. TSA: may only mark ordered → received.
 router.put('/:id', authenticate, requireStudio, async (req, res) => {

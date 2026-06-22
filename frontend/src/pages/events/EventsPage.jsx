@@ -5,7 +5,7 @@ import { useMonth } from '@/contexts/MonthContext'
 import {
   Plus, X, Edit2, Trash2, Calendar, Tag, Repeat,
   Gift, MapPin, Clock, ChevronDown, ChevronUp,
-  AlertCircle, Loader2, Building2, Phone, Mail, Search, Star, Share2,
+  AlertCircle, Loader2, Building2, Phone, Mail, Search, Star, Share2, ShoppingCart,
 } from 'lucide-react'
 import CalendarView from '@/components/CalendarView'
 import { RichTextEditor, renderRichText } from '@/components/RichText'
@@ -137,6 +137,8 @@ function EventCard({ event, canEdit, onEdit, onDelete, rating, onRate, signal })
   const [expanded, setExpanded] = useState(false)
   const [supplies, setSupplies] = useState(Array.isArray(event.supplies) ? event.supplies : [])
   const [addedTodos, setAddedTodos] = useState({})
+  const [addedOrders, setAddedOrders] = useState({})
+  const [orderingAll, setOrderingAll] = useState(false)
   const meta = eventTypeMeta(event.event_type)
   const past = isExpired(event.end_date || event.start_date)
 
@@ -150,6 +152,26 @@ function EventCard({ event, canEdit, onEdit, onDelete, rating, onRate, signal })
       await apiPost('/api/todo', { title: item.text, area: 'Events', source: 'event', notes: `For event: ${event.title}` })
       setAddedTodos(p => ({ ...p, [item.id]: true }))
     } catch { /* ignore */ }
+  }
+  const addSupplyToOrder = async (item) => {
+    await apiPost('/api/orders', {
+      item_name: item.text, quantity: 1, category: 'supplies',
+      notes: `For event: ${event.title} (${fmtDate(event.start_date)})`,
+    })
+    setAddedOrders(p => ({ ...p, [item.id]: true }))
+  }
+  const pushAllToOrders = async () => {
+    const pending = supplies.filter(s => !addedOrders[s.id])
+    if (pending.length === 0) return
+    setOrderingAll(true)
+    try {
+      await apiPost('/api/orders/bulk', {
+        items: pending.map(s => ({ text: s.text })),
+        category: 'supplies',
+        source: `For event: ${event.title} (${fmtDate(event.start_date)})`,
+      })
+      setAddedOrders(p => { const n = { ...p }; for (const s of pending) n[s.id] = true; return n })
+    } catch { /* leave buttons available to retry */ } finally { setOrderingAll(false) }
   }
   const hasPlanning = event.goal || event.marketing_plan || supplies.length > 0
 
@@ -257,15 +279,28 @@ function EventCard({ event, canEdit, onEdit, onDelete, rating, onRate, signal })
             )}
             {supplies.length > 0 && (
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-1">
-                  Supplies <span className="text-gray-400 normal-case">· {supplies.filter(s => s.checked).length}/{supplies.length} ready</span>
-                </p>
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                    Supplies <span className="text-gray-400 normal-case">· {supplies.filter(s => s.checked).length}/{supplies.length} ready</span>
+                  </p>
+                  {canEdit && (
+                    <button onClick={pushAllToOrders} disabled={orderingAll || supplies.every(s => addedOrders[s.id])}
+                      className="inline-flex items-center gap-1 text-[11px] font-semibold text-orange-600 hover:text-orange-700 disabled:text-gray-300 disabled:cursor-default">
+                      <ShoppingCart className="w-3.5 h-3.5" />
+                      {orderingAll ? 'Adding…' : supplies.every(s => addedOrders[s.id]) ? 'All ordered' : 'Order all supplies'}
+                    </button>
+                  )}
+                </div>
                 <div className="space-y-1">
                   {supplies.map(s => (
                     <div key={s.id} className="flex items-center gap-2 group">
                       <input type="checkbox" checked={!!s.checked} disabled={!canEdit} onChange={() => toggleSupply(s.id)}
                         className="w-4 h-4 rounded border-gray-300 text-orange-500 focus:ring-orange-500 disabled:opacity-50" />
                       <span className={`flex-1 text-sm ${s.checked ? 'line-through text-gray-400' : 'text-gray-700'}`}>{s.text}</span>
+                      {canEdit && (addedOrders[s.id]
+                        ? <span className="text-[11px] text-green-600 font-medium flex-shrink-0">✓ Ordered</span>
+                        : <button onClick={() => addSupplyToOrder(s).catch(() => {})} className="text-[11px] text-orange-600 hover:underline flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">+ Order</button>
+                      )}
                       {canEdit && (addedTodos[s.id]
                         ? <span className="text-[11px] text-green-600 font-medium flex-shrink-0">✓ on To-Do</span>
                         : <button onClick={() => addSupplyToTodo(s)} className="text-[11px] text-orange-600 hover:underline flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">+ To-Do</button>
