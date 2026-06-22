@@ -8,6 +8,18 @@ const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SER
 
 const pad = (n) => String(n).padStart(2, '0')
 
+// Normalize a stored social handle into a full Instagram URL.
+// Accepts "@handle", "handle", "instagram.com/handle", or a full URL.
+function instagramUrl(handle) {
+  if (!handle) return null
+  let h = String(handle).trim()
+  if (/^https?:\/\//i.test(h)) return h
+  if (/instagram\.com/i.test(h)) return 'https://' + h.replace(/^\/+/, '')
+  h = h.replace(/^@/, '').replace(/\s+/g, '')
+  if (!h) return null
+  return `https://instagram.com/${h}`
+}
+
 // GET /api/public/calendar/:studioId?month=&year=
 router.get('/calendar/:studioId', async (req, res) => {
   const { studioId } = req.params
@@ -24,7 +36,7 @@ router.get('/calendar/:studioId', async (req, res) => {
 
   // Client-safe columns only. Filter by actual date; exclude Team events.
   const { data: rows, error } = await sb.from('events')
-    .select('id, title, description, event_type, start_date, end_date, start_time, end_time, location')
+    .select('id, title, description, event_type, start_date, end_date, start_time, end_time, location, registration_url')
     .eq('studio_id', studioId)
     .gte('start_date', monthStart).lte('start_date', monthEnd)
     .neq('event_type', 'team')
@@ -35,12 +47,12 @@ router.get('/calendar/:studioId', async (req, res) => {
   const bomEvent = all.find(e => e.event_type === 'business_of_the_month') || null
   const events = all.filter(e => e.event_type !== 'business_of_the_month')
 
-  // Business of the Month: pull the linked business (name + logo + website).
+  // Business of the Month: pull the linked business (name + logo + website + location + socials).
   let businessOfMonth = null
   if (bomEvent) {
     const { data: links } = await sb
       .from('event_b2b_contacts')
-      .select('b2b_contacts(business_name, logo_url, website)')
+      .select('b2b_contacts(business_name, logo_url, website, address, social_handle)')
       .eq('event_id', bomEvent.id).limit(1)
     const c = links && links[0] && links[0].b2b_contacts
     businessOfMonth = {
@@ -49,6 +61,8 @@ router.get('/calendar/:studioId', async (req, res) => {
       business_name: c?.business_name || bomEvent.title,
       logo_url: c?.logo_url || null,
       website: c?.website || null,
+      location: c?.address || null,
+      instagram: instagramUrl(c?.social_handle),
     }
   }
 

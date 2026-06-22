@@ -86,7 +86,7 @@ export default function CalendarView({ studioId, initialMonth, initialYear, embe
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', borderBottom: `4px solid ${ORANGE}`, paddingBottom: 8 }}>
           <div>
-            <img src="/hotworx-logo.svg" alt="HOTWORX" style={{ height: 44, width: 'auto', display: 'block' }} />
+            <img src="/hotworx-logo.png" alt="HOTWORX" style={{ height: 40, width: 'auto', display: 'block' }} />
             <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.18em', textTransform: 'uppercase', color: '#777', marginTop: 6 }}>
               {data?.studio_name || ''}
             </div>
@@ -123,11 +123,12 @@ export default function CalendarView({ studioId, initialMonth, initialYear, embe
                     return (
                       <td key={di} className="hwx-cell" style={{ background: inMonth ? '#fff' : '#fafafa', opacity: inMonth ? 1 : .45 }}>
                         <div style={{ fontSize: 12, fontWeight: 700, color: inMonth ? INK : '#bbb' }}>{dt.getDate()}</div>
-                        {inMonth && evs.map(e => (
-                          <div key={e.id} className="hwx-chip">
-                            {e.start_time ? fmtTime(e.start_time) + ' ' : ''}{e.title}
-                          </div>
-                        ))}
+                        {inMonth && evs.map(e => {
+                          const label = `${e.start_time ? fmtTime(e.start_time) + ' ' : ''}${e.title}`
+                          return e.registration_url
+                            ? <a key={e.id} href={e.registration_url} target="_blank" rel="noreferrer" title="Tap to register" className="hwx-chip" style={{ display: 'block', textDecoration: 'none', cursor: 'pointer' }}>{label} ↗</a>
+                            : <div key={e.id} className="hwx-chip">{label}</div>
+                        })}
                       </td>
                     )
                   })}
@@ -145,12 +146,26 @@ export default function CalendarView({ studioId, initialMonth, initialYear, embe
               <div style={{ padding: 14, textAlign: 'center' }}>
                 {bom ? (
                   <>
-                    {bom.logo_url
-                      ? <img src={bom.logo_url} alt={bom.business_name} style={{ maxWidth: '100%', maxHeight: 120, objectFit: 'contain', marginBottom: 10 }} />
-                      : <div className="hwx-bebas" style={{ fontSize: 22, color: INK, marginBottom: 6 }}>{bom.business_name}</div>}
-                    <div style={{ fontWeight: 700, fontSize: 15 }}>{bom.business_name}</div>
+                    {bom.logo_url &&
+                      <img src={bom.logo_url} alt={bom.business_name} style={{ maxWidth: '100%', maxHeight: 110, objectFit: 'contain', marginBottom: 10 }} />}
+                    <div className="hwx-bebas" style={{ fontSize: 22, color: INK, lineHeight: 1 }}>{bom.business_name}</div>
+                    {bom.location && <div style={{ fontSize: 11, color: '#777', marginTop: 4 }}>{bom.location}</div>}
                     {bom.description && <p style={{ fontSize: 12, color: '#555', marginTop: 6, lineHeight: 1.4 }}>{bom.description}</p>}
-                    {bom.website && <div style={{ fontSize: 11, color: ORANGE, marginTop: 8, wordBreak: 'break-all' }}>{bom.website.replace(/^https?:\/\//, '')}</div>}
+                    {(bom.website || bom.instagram) && (
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginTop: 10, flexWrap: 'wrap' }}>
+                        {bom.website && (
+                          <a href={bom.website.startsWith('http') ? bom.website : `https://${bom.website}`} target="_blank" rel="noreferrer"
+                             style={{ fontSize: 11, fontWeight: 700, color: ORANGE, textDecoration: 'none', wordBreak: 'break-all' }}>
+                            {bom.website.replace(/^https?:\/\//, '').replace(/\/$/, '')}
+                          </a>
+                        )}
+                        {bom.instagram && (
+                          <a href={bom.instagram} target="_blank" rel="noreferrer" title="Instagram" aria-label="Instagram" style={{ display: 'inline-flex', lineHeight: 0 }}>
+                            <InstagramIcon />
+                          </a>
+                        )}
+                      </div>
+                    )}
                   </>
                 ) : (
                   <p style={{ fontSize: 12, color: '#999' }}>Coming soon!</p>
@@ -168,8 +183,11 @@ export default function CalendarView({ studioId, initialMonth, initialYear, embe
                       {new Date(e.start_date + 'T00:00:00').getDate()}
                     </div>
                     <div>
-                      <div style={{ fontWeight: 700 }}>{e.title}</div>
+                      {e.registration_url
+                        ? <a href={e.registration_url} target="_blank" rel="noreferrer" style={{ fontWeight: 700, color: ORANGE, textDecoration: 'none' }}>{e.title} ↗</a>
+                        : <div style={{ fontWeight: 700 }}>{e.title}</div>}
                       <div style={{ color: '#777' }}>{[fmtTime(e.start_time), e.location].filter(Boolean).join(' · ')}</div>
+                      {e.registration_url && <div className="no-print" style={{ color: ORANGE, fontSize: 11, fontWeight: 600 }}>Register →</div>}
                     </div>
                   </div>
                 ))}
@@ -182,3 +200,13 @@ export default function CalendarView({ studioId, initialMonth, initialYear, embe
 }
 
 const btn = { fontFamily: 'Montserrat, sans-serif', fontSize: 12, fontWeight: 600, padding: '5px 10px', border: '1px solid #ddd', borderRadius: 6, background: '#fff', cursor: 'pointer' }
+
+function InstagramIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={ORANGE} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
+      <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+      <line x1="17.5" y1="6.5" x2="17.51" y2="6.5" />
+    </svg>
+  )
+}

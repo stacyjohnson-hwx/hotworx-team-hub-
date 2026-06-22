@@ -79,7 +79,7 @@ router.post('/', authenticate, requireStudio, requireRole('owner', 'manager'), a
   const {
     title, description, event_type, start_date, end_date,
     start_time, end_time, location, notes, month, year,
-    goal, marketing_plan, supplies,
+    goal, marketing_plan, supplies, registration_url,
     b2b_contact_ids = [],
   } = req.body
 
@@ -94,6 +94,7 @@ router.post('/', authenticate, requireStudio, requireRole('owner', 'manager'), a
       start_time: start_time || null, end_time: end_time || null,
       location, notes, month: parseInt(month), year: parseInt(year),
       goal: goal || null, marketing_plan: marketing_plan || null,
+      registration_url: registration_url || null,
       supplies: Array.isArray(supplies) ? supplies : [],
       created_by: req.user.id,
       studio_id: req.studio.id,
@@ -113,7 +114,7 @@ router.put('/:id', authenticate, requireStudio, requireRole('owner', 'manager'),
   const {
     title, description, event_type, start_date, end_date,
     start_time, end_time, location, notes, month, year,
-    goal, marketing_plan, supplies,
+    goal, marketing_plan, supplies, registration_url,
     b2b_contact_ids = [],
   } = req.body
 
@@ -124,6 +125,7 @@ router.put('/:id', authenticate, requireStudio, requireRole('owner', 'manager'),
       start_time: start_time || null, end_time: end_time || null,
       location, notes, month: parseInt(month), year: parseInt(year),
       goal: goal ?? null, marketing_plan: marketing_plan ?? null,
+      registration_url: registration_url ?? null,
       ...(supplies !== undefined ? { supplies: Array.isArray(supplies) ? supplies : [] } : {}),
       updated_at: new Date().toISOString(),
     }).eq('id', req.params.id).select().single()

@@ -294,6 +294,7 @@ function EventForm({ event, month, year, onSave, onClose }) {
     notes: event?.notes || '',
     goal: event?.goal || '',
     marketing_plan: event?.marketing_plan || '',
+    registration_url: event?.registration_url || '',
   })
   // Supplies checklist: [{ id, text, checked }]
   const [supplies, setSupplies] = useState(Array.isArray(event?.supplies) ? event.supplies : [])
@@ -404,6 +405,10 @@ function EventForm({ event, month, year, onSave, onClose }) {
 
         <FormField label="Location">
           <input className={inputCls} value={form.location} onChange={e => set('location', e.target.value)} placeholder="e.g. Studio floor, Local park, Zoom" />
+        </FormField>
+
+        <FormField label="Registration link (optional)">
+          <input className={inputCls} type="url" value={form.registration_url} onChange={e => set('registration_url', e.target.value)} placeholder="https://… — members can tap the event on the public calendar to sign up" />
         </FormField>
 
         <FormField label="B2B Partners (optional — add as many as needed)">
