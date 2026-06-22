@@ -21,6 +21,7 @@ app.use(cors({
 app.use(express.json())
 
 app.use('/api/health',          require('./routes/health'))
+app.use('/api/public',          require('./routes/public'))   // no auth — client-facing calendar
 app.use('/api/cleaning',        require('./routes/cleaning'))
 app.use('/api/eod',             require('./routes/eod'))
 app.use('/api/goals',           require('./routes/goals'))

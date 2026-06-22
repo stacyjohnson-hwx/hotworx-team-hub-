@@ -5,7 +5,7 @@ import { useMonth } from '@/contexts/MonthContext'
 import {
   Plus, X, Edit2, Trash2, Calendar, Tag, Repeat,
   Gift, MapPin, Clock, ChevronDown, ChevronUp,
-  AlertCircle, Loader2, Building2, Phone, Mail, Search, Star,
+  AlertCircle, Loader2, Building2, Phone, Mail, Search, Star, Share2,
 } from 'lucide-react'
 import RatingModal, { StarDisplay } from '@/components/RatingModal'
 import ThumbsWidget, { useFeedbackSignals } from '@/components/ThumbsWidget'
@@ -1168,6 +1168,51 @@ function B2bDiscountsTab() {
 
 // ─── Page Root ────────────────────────────────────────────────────────────────
 
+function ShareCalendarButton() {
+  const [open, setOpen] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const studioId = typeof localStorage !== 'undefined' ? localStorage.getItem('selectedStudioId') : null
+  const url = studioId ? `${window.location.origin}/calendar/${studioId}` : ''
+  const qr = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=8&data=${encodeURIComponent(url)}`
+
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 1500) } catch {}
+  }
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        disabled={!studioId}
+        className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg bg-brand-red text-white hover:opacity-90 disabled:opacity-50"
+      >
+        <Share2 className="w-4 h-4" /> Share calendar
+      </button>
+
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setOpen(false)}>
+          <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 text-center" onClick={e => e.stopPropagation()}>
+            <h2 className="text-lg font-bold text-gray-900">Public Calendar</h2>
+            <p className="text-sm text-gray-500 mt-1">Anyone with this link or QR code can view the studio’s monthly events. No login required.</p>
+            <img src={qr} alt="Calendar QR code" className="mx-auto my-4 rounded-lg border border-gray-200" width={220} height={220} />
+            <div className="flex items-center gap-2">
+              <input readOnly value={url} className="flex-1 text-xs px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 truncate" />
+              <button onClick={copy} className="px-3 py-2 text-sm font-medium rounded-lg bg-gray-900 text-white hover:opacity-90 whitespace-nowrap">
+                {copied ? 'Copied!' : 'Copy'}
+              </button>
+            </div>
+            <div className="flex gap-2 mt-4">
+              <a href={url} target="_blank" rel="noreferrer" className="flex-1 px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50">Open</a>
+              <a href={qr} download="hotworx-calendar-qr.png" className="flex-1 px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50">Download QR</a>
+            </div>
+            <button onClick={() => setOpen(false)} className="mt-4 text-sm text-gray-400 hover:text-gray-600">Close</button>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
 export default function EventsPage() {
   const { role, isOwnerOrManager } = useRole()
   const { selectedMonth, isCurrentMonth } = useMonth()
@@ -1185,6 +1230,7 @@ export default function EventsPage() {
           <h1 className="text-2xl font-bold text-gray-900">Events &amp; Promotions</h1>
           <p className="text-sm text-gray-500 mt-0.5">Studio events, active offers, and partner discounts</p>
         </div>
+        {isOwnerOrManager && <ShareCalendarButton />}
       </div>
 
       <PageTabs active={activeTab} onChange={setActiveTab} />

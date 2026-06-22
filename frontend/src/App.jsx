@@ -26,6 +26,7 @@ import UsersPage from '@/pages/users/UsersPage'
 import ProfilePage from '@/pages/profile/ProfilePage'
 import OnboardingPage from '@/pages/onboarding/OnboardingPage'
 import ResetPasswordPage from '@/pages/auth/ResetPasswordPage'
+import PublicCalendarPage from '@/pages/public/PublicCalendarPage'
 import AdvisorPage from '@/pages/advisor/AdvisorPage'
 import MaintenancePage from '@/pages/maintenance/MaintenancePage'
 import EscalationsPage from '@/pages/escalations/EscalationsPage'
@@ -185,6 +186,9 @@ function AppRoutes() {
 
       {/* Password reset — must be outside ProtectedRoute so logged-out users can reach it */}
       <Route path="/reset-password" element={<ResetPasswordPage />} />
+
+      {/* Public, no-auth client calendar (QR / link target) */}
+      <Route path="/calendar/:studioId" element={<PublicCalendarPage />} />
 
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
