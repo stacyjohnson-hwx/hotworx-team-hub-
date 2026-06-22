@@ -32,6 +32,12 @@ applied (e.g. the Scorecard's Cancellations is still the raw 24).
   via the Airtable API → writes the 3 safe fields to `studio_trends`, Pewaukee-only
   + `locked = false` guard. **DRY RUN by default; `--write` to apply.** Needs
   `AIRTABLE_TOKEN`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` env vars.
+- `read_dashboard.py` — **vision reader** for the two SAIL *dashboard* screens that
+  have no CSV export (Sales/Member summary + Pending Tasks). Calls Claude vision to
+  pull the labeled tiles into JSON. These dashboards are the authoritative source for
+  fields the CSVs can't give: **eft_increase, rewards, new_members (+ elite/basic
+  breakdown), red_appts_booked/held (Red's Scheduled / Checked-In), calls_made,
+  texts_made, active member count.** Needs `ANTHROPIC_API_KEY`. Dry run (prints JSON).
 - `sail_normalizer.py` — normalizer for the raw SAIL files (handles every quirk;
   detects reports by **column signature**, not filename). Used on the Drive→Airtable
   side and for cross-checking.
@@ -69,5 +75,15 @@ red appts, leads, socials, expenses, ITB, goals.
 3. **Airtable loaders** + the operational automations (onboarding, win-back,
    utilization follow-up, call lists) — live in Airtable + Make.com, not here.
 4. **Month-end lock** — Supabase pg_cron (pure SQL).
+
+## Field sources (final)
+- **From CSVs:** membership_cash, retail (gross), total_member_count, eft_decrease,
+  cancellations (excl. "Membership Downgrade" = 18), leads (campaigns).
+- **From the two dashboards (vision):** eft_increase ($1,213), rewards ($589.61),
+  new_members (**18**), sweat_elite_pct (new_elite 11 / new_members 18 = **61%**),
+  red_appts_booked (38), red_appts_held (28), calls_made (512), texts_made (1031),
+  active member count (472).
+- **Still manual (not in SAIL CRM):** refunds (need Refund report), Monthly EFT base,
+  In The Bank, ITB Goal, Expenses, Vending, Instagram/Facebook/TikTok followers, 5-Star Reviews.
 
 Everything that touches the live app is **dry-run-first, Pewaukee-only, lock-guarded.**
