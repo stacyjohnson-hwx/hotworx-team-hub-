@@ -114,10 +114,10 @@ export default function CalendarView({ studioId, initialMonth, initialYear, embe
         .hwx-day { border: 1px solid #e5e5e5; min-height: 120px; padding: 3px 5px; overflow: hidden; }
         .hwx-daynum { font-size: 12px; font-weight: 700; line-height: 1; }
         .hwx-bars { position: absolute; top: 20px; left: 0; right: 0; bottom: 2px; display: grid;
-          grid-template-columns: repeat(7, 1fr); grid-auto-rows: 17px; row-gap: 2px; padding: 0 2px; pointer-events: none; }
+          grid-template-columns: repeat(7, 1fr); grid-auto-rows: min-content; row-gap: 2px; padding: 0 2px; pointer-events: none; }
         .hwx-bar { pointer-events: auto; background: ${ORANGE}; color: #fff; font-size: 10px; font-weight: 600;
-          line-height: 17px; height: 17px; padding: 0 5px; margin: 0 1px; border-radius: 4px;
-          overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+          line-height: 1.15; min-height: 16px; padding: 2px 5px; margin: 0 1px; border-radius: 4px;
+          display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: normal; word-break: break-word; }
         .hwx-clickable { cursor: pointer; }
         .hwx-bar.hwx-clickable:hover { filter: brightness(1.08); }
         .hwx-rich a { color: ${ORANGE}; text-decoration: underline; }
@@ -135,8 +135,8 @@ export default function CalendarView({ studioId, initialMonth, initialYear, embe
           .hwx-week { page-break-inside: avoid; }
           .hwx-day { min-height: 0.92in !important; padding: 2px 4px !important; }
           .hwx-dow { font-size: 13px !important; padding: 3px 0 !important; }
-          .hwx-bars { top: 16px !important; grid-auto-rows: 13px !important; }
-          .hwx-bar { font-size: 8px !important; line-height: 13px !important; height: 13px !important; padding: 0 4px !important; }
+          .hwx-bars { top: 16px !important; }
+          .hwx-bar { font-size: 8px !important; line-height: 1.1 !important; min-height: 11px !important; padding: 1px 4px !important; }
           .hwx-rail { width: 210px !important; }
         }
       `}</style>
