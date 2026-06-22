@@ -12,6 +12,16 @@ const supabase = () => createClient(
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+// File an event under the month/year of its start_date so the events list and
+// the date-based calendar always agree. Falls back to the passed month/year.
+function monthYearFromDate(start_date, month, year) {
+  if (start_date && /^\d{4}-\d{2}-\d{2}/.test(start_date)) {
+    const [y, m] = start_date.slice(0, 10).split('-').map(Number)
+    return { m, y }
+  }
+  return { m: parseInt(month), y: parseInt(year) }
+}
+
 // Fetch b2b contacts linked to an event and attach as event.b2b_partners
 async function attachPartners(events) {
   if (!events.length) return events
@@ -87,12 +97,13 @@ router.post('/', authenticate, requireStudio, requireRole('owner', 'manager'), a
     return res.status(400).json({ error: 'title, start_date, month, and year are required' })
   }
 
+  const my = monthYearFromDate(start_date, month, year)
   try {
     const { data, error } = await supabase().from('events').insert([{
       title, description, event_type: event_type || 'in-store',
       start_date, end_date: end_date || null,
       start_time: start_time || null, end_time: end_time || null,
-      location, notes, month: parseInt(month), year: parseInt(year),
+      location, notes, month: my.m, year: my.y,
       goal: goal || null, marketing_plan: marketing_plan || null,
       registration_url: registration_url || null,
       supplies: Array.isArray(supplies) ? supplies : [],
@@ -118,12 +129,13 @@ router.put('/:id', authenticate, requireStudio, requireRole('owner', 'manager'),
     b2b_contact_ids = [],
   } = req.body
 
+  const my = monthYearFromDate(start_date, month, year)
   try {
     const { data, error } = await supabase().from('events').update({
       title, description, event_type, start_date,
       end_date: end_date || null,
       start_time: start_time || null, end_time: end_time || null,
-      location, notes, month: parseInt(month), year: parseInt(year),
+      location, notes, month: my.m, year: my.y,
       goal: goal ?? null, marketing_plan: marketing_plan ?? null,
       registration_url: registration_url ?? null,
       ...(supplies !== undefined ? { supplies: Array.isArray(supplies) ? supplies : [] } : {}),
