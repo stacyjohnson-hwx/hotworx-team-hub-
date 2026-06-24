@@ -4,7 +4,7 @@ import { apiGet, apiPost, apiPut, apiPatch, apiDelete } from '@/hooks/useApi'
 import {
   Phone, MessageSquare, ChevronDown, ChevronUp, Plus, Trash2,
   Edit2, Check, X, ArrowUp, ArrowDown, Upload, Users,
-  BookOpen, MapPin, ClipboardList, AlertCircle, ChevronRight,
+  BookOpen, MapPin, ClipboardList, AlertCircle, ChevronRight, RefreshCw,
 } from 'lucide-react'
 
 // ─── Color map ────────────────────────────────────────────────────────────────
@@ -508,6 +508,8 @@ export default function OutreachTab() {
   const [editMode, setEditMode] = useState(false)
   const [tileModal, setTileModal] = useState(null)  // null | false (new) | tile (edit)
   const [error, setError]       = useState('')
+  const [syncing, setSyncing]   = useState(false)
+  const [syncMsg, setSyncMsg]   = useState('')
 
   const load = useCallback(async () => {
     try {
@@ -527,6 +529,18 @@ export default function OutreachTab() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  const handleSync = async () => {
+    setSyncing(true); setSyncMsg('')
+    try {
+      const res = await apiPost('/api/outreach/sync', {})
+      const counts = Object.entries(res.tiles || {}).map(([k, v]) => `${k}: ${v.inserted}${v.overflow ? `(+${v.overflow} over cap)` : ''}`).join(' · ')
+      setSyncMsg(`Updated from Airtable — ${counts}`)
+      await load()
+    } catch (e) {
+      setSyncMsg(e.message || 'Sync failed')
+    } finally { setSyncing(false) }
+  }
 
   const handleLogChange = (tileId, updated) => {
     setLogs(prev => ({ ...prev, [tileId]: updated }))
@@ -576,6 +590,14 @@ export default function OutreachTab() {
           {isOwnerOrManager && (
             <div className="flex items-center gap-2">
               <button
+                onClick={handleSync}
+                disabled={syncing}
+                title="Pull the latest call lists from Airtable"
+                className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg border border-orange-300 text-orange-700 bg-orange-50 hover:bg-orange-100 disabled:opacity-50 transition-colors"
+              >
+                <RefreshCw size={13} className={syncing ? 'animate-spin' : ''} /> {syncing ? 'Syncing…' : 'Sync from Airtable'}
+              </button>
+              <button
                 onClick={() => setEditMode(v => !v)}
                 className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${editMode ? 'bg-gray-800 text-white border-gray-800' : 'border-gray-300 text-gray-600 hover:border-gray-400'}`}
               >
@@ -592,6 +614,10 @@ export default function OutreachTab() {
             </div>
           )}
         </div>
+
+        {syncMsg && (
+          <div className="mb-3 text-xs px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-gray-600">{syncMsg}</div>
+        )}
 
         {/* Big daily totals */}
         <div className="grid grid-cols-2 gap-3">

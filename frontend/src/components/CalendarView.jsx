@@ -221,7 +221,7 @@ export default function CalendarView({ studioId, initialMonth, initialYear, embe
                       <img src={bom.logo_url} alt={bom.business_name} style={{ maxWidth: '100%', maxHeight: 110, objectFit: 'contain', marginBottom: 10 }} />}
                     <div className="hwx-bebas" style={{ fontSize: 22, color: INK, lineHeight: 1 }}>{bom.business_name}</div>
                     {bom.location && <div style={{ fontSize: 11, color: '#777', marginTop: 4 }}>{bom.location}</div>}
-                    {bom.description && <p style={{ fontSize: 12, color: '#555', marginTop: 6, lineHeight: 1.4 }}>{bom.description}</p>}
+                    {bom.description && <div className="hwx-rich" style={{ fontSize: 12, color: '#555', marginTop: 6, lineHeight: 1.4, textAlign: 'left' }} dangerouslySetInnerHTML={{ __html: renderRichText(bom.description) }} />}
                     {(bom.website || bom.instagram) && (
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginTop: 10, flexWrap: 'wrap' }}>
                         {bom.website && (

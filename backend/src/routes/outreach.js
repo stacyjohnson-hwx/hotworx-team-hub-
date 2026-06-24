@@ -3,9 +3,25 @@ const router = express.Router()
 const { createClient } = require('@supabase/supabase-js')
 const { requireRole } = require('../middleware/roleGuard')
 const authenticate = require('../middleware/authMiddleware')
+const { syncOutreach, isConfigured } = require('../services/outreachSync')
 
 const supabase = () =>
   createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+
+// ─── POST /api/outreach/sync ─────────────────────────────────────────────────
+// On-demand: pull the call lists from Airtable and refresh each tile.
+router.post('/sync', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+  if (!isConfigured()) {
+    return res.status(503).json({ error: 'Airtable sync is not configured on the server (missing AIRTABLE_TOKEN / AIRTABLE_BASE_ID).' })
+  }
+  try {
+    const result = await syncOutreach()
+    res.json({ ok: true, tiles: result })
+  } catch (err) {
+    console.error('POST /outreach/sync', err)
+    res.status(500).json({ error: err.message })
+  }
+})
 
 // ─── GET /api/outreach/tiles ─────────────────────────────────────────────────
 router.get('/tiles', authenticate, async (req, res) => {
