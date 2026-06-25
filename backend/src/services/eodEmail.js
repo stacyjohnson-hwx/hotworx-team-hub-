@@ -140,7 +140,6 @@ function sectionHeader(title) {
 function buildShiftBlock(row_data, outreachSummary, tasksByUser) {
   const cleaningItems   = tasksByUser?.cleaning   || []
   const operationsItems = tasksByUser?.operations || []
-  const missionItems    = row_data.mission_titles || []
   const v = variance(row_data)
   const varAbs = Math.abs(v)
   const varColor = varAbs > THRESHOLD ? '#C8102E' : '#16a34a'
@@ -178,11 +177,6 @@ function buildShiftBlock(row_data, outreachSummary, tasksByUser) {
   const operationsRows = operationsItems.length
     ? operationsItems.map(label => `<tr><td colspan="2" style="padding:2px 0;font-size:12px;color:#374151;">✅ ${label}</td></tr>`).join('')
     : `<tr><td colspan="2" style="padding:5px 0;font-size:13px;color:#9ca3af;">No operations tasks logged today.</td></tr>`
-
-  // Missions section HTML
-  const missionsRows = missionItems.length
-    ? missionItems.map(label => `<tr><td colspan="2" style="padding:2px 0;font-size:12px;color:#374151;">✅ ${label}</td></tr>`).join('')
-    : `<tr><td colspan="2" style="padding:5px 0;font-size:13px;color:#9ca3af;">No marketing tasks completed today.</td></tr>`
 
   return `
   <div style="margin-bottom:24px;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
@@ -230,9 +224,6 @@ function buildShiftBlock(row_data, outreachSummary, tasksByUser) {
 
         ${sectionHeader('Operations Completed')}
         ${operationsRows}
-
-        ${sectionHeader('Marketing')}
-        ${missionsRows}
 
         ${sectionHeader('Training Completed')}
         ${(() => {
@@ -299,7 +290,23 @@ function buildOpsSection(ops) {
   </div>`
 }
 
-function buildHtml(dateStr, submissions, outreachByUser, tasksByUser, ops) {
+// Studio-level "Marketing Tasks Completed" — every Growth-section completion for
+// the day, attributed to staff. Rendered once per email (not per shift).
+function buildMarketingSection(marketing) {
+  if (!marketing || marketing.length === 0) return ''
+  const rows = marketing.map(m => opsItem(`🚀 ${m.title}`, m.staff_name)).join('')
+  return `
+  <div style="margin-bottom:24px;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
+    <div style="background:#1A1A1A;padding:12px 16px;font-size:14px;font-weight:700;color:#fff;">Marketing Tasks Completed (${marketing.length})</div>
+    <div style="padding:12px 16px;">
+      <table style="width:100%;border-collapse:collapse;">
+        ${rows}
+      </table>
+    </div>
+  </div>`
+}
+
+function buildHtml(dateStr, submissions, outreachByUser, tasksByUser, ops, marketing) {
   const dateLabel = new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
   })
@@ -321,6 +328,7 @@ function buildHtml(dateStr, submissions, outreachByUser, tasksByUser, ops) {
             outreachByUser[s.submitted_by] || null,
             tasksByUser[s.submitted_by]    || { cleaning: [], operations: [] }
           )).join('')}
+      ${buildMarketingSection(marketing)}
       ${buildOpsSection(ops)}
       <div style="margin-top:16px;padding-top:16px;border-top:1px solid #f3f4f6;font-size:12px;color:#9ca3af;text-align:center;">
         ${process.env.STUDIO_NAME} · ${process.env.STUDIO_ADDRESS} · Internal use only
@@ -344,7 +352,30 @@ async function fetchSubmissionsForDate(dateStr, studioId) {
   const { data: submissions, error } = await subQuery
 
   if (error) throw new Error(error.message)
-  if (!submissions.length) return { submissions: [], outreachByUser: {}, cleaningByUser: {} }
+
+  // Marketing tasks completed today (Growth section) — studio-wide, not shift-bound,
+  // and independent of whether the person submitted an EOD.
+  let marketing = []
+  {
+    let mq = db
+      .from('marketing_task_completions')
+      .select('staff_id, completed_at, marketing_tasks(title)')
+      .eq('completion_date', dateStr)
+    if (studioId) mq = mq.eq('studio_id', studioId)
+    const { data: mComp } = await mq
+    if (mComp && mComp.length) {
+      const mNames = {}
+      for (const uid of [...new Set(mComp.map(c => c.staff_id).filter(Boolean))]) {
+        const { data } = await db.auth.admin.getUserById(uid)
+        mNames[uid] = data?.user?.user_metadata?.full_name || data?.user?.email?.split('@')[0] || 'Team Member'
+      }
+      marketing = mComp
+        .map(c => ({ title: c.marketing_tasks?.title || 'Marketing task', staff_name: mNames[c.staff_id] || 'Team Member', completed_at: c.completed_at }))
+        .sort((a, b) => (a.completed_at || '').localeCompare(b.completed_at || ''))
+    }
+  }
+
+  if (!submissions.length) return { submissions: [], outreachByUser: {}, tasksByUser: {}, marketing }
 
   const userIds = [...new Set(submissions.map(s => s.submitted_by))]
 
@@ -410,7 +441,7 @@ async function fetchSubmissionsForDate(dateStr, studioId) {
     ...s,
     submitter_name: nameMap[s.submitted_by] || 'Team Member',
   }))
-  return { submissions: enrichedSubmissions, outreachByUser, tasksByUser }
+  return { submissions: enrichedSubmissions, outreachByUser, tasksByUser, marketing }
 }
 
 // Studio-level operations snapshot for the EOD email: open maintenance,
@@ -473,9 +504,9 @@ async function sendEodEmail(dateStr, studioId) {
     return
   }
 
-  const { submissions, outreachByUser, tasksByUser } = await fetchSubmissionsForDate(dateStr, studioId)
+  const { submissions, outreachByUser, tasksByUser, marketing } = await fetchSubmissionsForDate(dateStr, studioId)
   const ops = await fetchOpsSummary(db, studioId)
-  const html = buildHtml(dateStr, submissions, outreachByUser, tasksByUser, ops)
+  const html = buildHtml(dateStr, submissions, outreachByUser, tasksByUser, ops, marketing)
   const studioLabel = studioName || process.env.STUDIO_NAME || 'HOTWORX Pewaukee'
 
   const dateLabel = new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', {
