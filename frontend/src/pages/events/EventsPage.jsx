@@ -6,6 +6,7 @@ import {
   Plus, X, Edit2, Trash2, Calendar, Tag, Repeat,
   Gift, MapPin, Clock, ChevronDown, ChevronUp,
   AlertCircle, Loader2, Building2, Phone, Mail, Search, Star, Share2, ShoppingCart,
+  Check, ArrowRight,
 } from 'lucide-react'
 import CalendarView from '@/components/CalendarView'
 import { RichTextEditor, renderRichText } from '@/components/RichText'
@@ -133,12 +134,64 @@ const inputCls = 'w-full rounded-lg border border-gray-300 bg-white text-gray-90
 
 // ─── Events Tab ──────────────────────────────────────────────────────────────
 
+// One marketing-plan step: push it to a chosen teammate's To-Do list (coaching-style).
+function PlanItemRow({ item, canEdit, onPush }) {
+  const [pushing, setPushing] = useState(false)
+  const [pushed, setPushed] = useState(item.pushed_to_todo)
+  const [showPicker, setShowPicker] = useState(false)
+  const [managers, setManagers] = useState([])
+
+  const openPicker = async () => {
+    setShowPicker(true)
+    if (!managers.length) {
+      try { const m = await apiGet('/api/todo/managers'); setManagers(Array.isArray(m) ? m : []) } catch { /* ignore */ }
+    }
+  }
+  const handlePush = async (target) => {
+    setPushing(true); setShowPicker(false)
+    try { await onPush(item, target); setPushed(true) } catch { /* ignore */ } finally { setPushing(false) }
+  }
+
+  return (
+    <div className={`flex items-start gap-2 px-2.5 py-2 rounded-lg ${pushed ? 'bg-green-50' : 'bg-gray-50'}`}>
+      <div className={`mt-0.5 w-4 h-4 rounded-full flex-shrink-0 flex items-center justify-center ${pushed ? 'bg-green-500' : 'bg-gray-300'}`}>
+        {pushed && <Check size={10} className="text-white" strokeWidth={3} />}
+      </div>
+      <p className={`text-sm flex-1 ${pushed ? 'text-gray-500 line-through' : 'text-gray-800'}`}>{item.text}</p>
+      {canEdit && (
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {pushed ? (
+            <span className="text-[11px] text-green-600 font-medium whitespace-nowrap">✓ In To-Do</span>
+          ) : showPicker ? (
+            <div className="flex items-center gap-1 flex-wrap justify-end">
+              <span className="text-[11px] text-gray-500">To:</span>
+              {managers.map(m => (
+                <button key={m.id} onClick={() => handlePush({ list_target: 'manager', assigned_to: m.id })} disabled={pushing}
+                  className="text-[11px] font-semibold px-2 py-0.5 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">{m.name}</button>
+              ))}
+              <button onClick={() => handlePush({ list_target: 'owner', assigned_to: '' })} disabled={pushing}
+                className="text-[11px] font-semibold px-2 py-0.5 bg-orange-600 text-white rounded hover:bg-orange-700 disabled:opacity-50">Owner</button>
+              <button onClick={() => setShowPicker(false)} className="p-0.5 text-gray-400 hover:text-gray-600"><X className="w-3 h-3" /></button>
+            </div>
+          ) : (
+            <button onClick={openPicker} disabled={pushing}
+              className="flex items-center gap-1 text-[11px] font-semibold text-orange-600 hover:text-orange-700 whitespace-nowrap">
+              {pushing ? <Loader2 className="w-3 h-3 animate-spin" /> : <ArrowRight className="w-3 h-3" />} Push to To-Do
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function EventCard({ event, canEdit, onEdit, onDelete, rating, onRate, signal }) {
   const [expanded, setExpanded] = useState(false)
   const [supplies, setSupplies] = useState(Array.isArray(event.supplies) ? event.supplies : [])
   const [addedTodos, setAddedTodos] = useState({})
   const [addedOrders, setAddedOrders] = useState({})
   const [orderingAll, setOrderingAll] = useState(false)
+  const [planItems, setPlanItems] = useState(Array.isArray(event.marketing_plan_items) ? event.marketing_plan_items : [])
   const meta = eventTypeMeta(event.event_type)
   const past = isExpired(event.end_date || event.start_date)
 
@@ -173,7 +226,18 @@ function EventCard({ event, canEdit, onEdit, onDelete, rating, onRate, signal })
       setAddedOrders(p => { const n = { ...p }; for (const s of pending) n[s.id] = true; return n })
     } catch { /* leave buttons available to retry */ } finally { setOrderingAll(false) }
   }
-  const hasPlanning = event.goal || event.marketing_plan || supplies.length > 0
+  // Marketing-plan checklist → push an item to a teammate's To-Do list (coaching-style)
+  const pushPlanItem = async (item, target) => {
+    await apiPost('/api/todo', {
+      title: item.text, area: 'Events', source: 'event',
+      notes: `Marketing — ${event.title}`,
+      list_target: target.list_target, assigned_to: target.assigned_to,
+    })
+    const next = planItems.map(p => p.id === item.id ? { ...p, pushed_to_todo: true } : p)
+    setPlanItems(next)
+    try { await apiPut(`/api/events/${event.id}/marketing-plan`, { marketing_plan_items: next }) } catch { /* keep UI state */ }
+  }
+  const hasPlanning = event.goal || event.marketing_plan || planItems.length > 0 || supplies.length > 0
 
   return (
     <div className={`bg-white rounded-xl border shadow-sm overflow-hidden transition-opacity ${past ? 'opacity-60' : ''}`}>
@@ -271,10 +335,15 @@ function EventCard({ event, canEdit, onEdit, onDelete, rating, onRate, signal })
                 <p className="text-sm text-gray-700 whitespace-pre-line">{event.goal}</p>
               </div>
             )}
-            {event.marketing_plan && (
+            {(planItems.length > 0 || event.marketing_plan) && (
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-0.5">Marketing Plan</p>
-                <p className="text-sm text-gray-700 whitespace-pre-line">{event.marketing_plan}</p>
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Marketing Plan</p>
+                {event.marketing_plan && <p className="text-sm text-gray-700 whitespace-pre-line mb-2">{event.marketing_plan}</p>}
+                <div className="space-y-1.5">
+                  {planItems.map(item => (
+                    <PlanItemRow key={item.id} item={item} canEdit={canEdit} onPush={pushPlanItem} />
+                  ))}
+                </div>
               </div>
             )}
             {supplies.length > 0 && (
@@ -342,6 +411,15 @@ function EventForm({ event, month, year, onSave, onClose }) {
   }
   const toggleSupply = (id) => setSupplies(prev => prev.map(s => s.id === id ? { ...s, checked: !s.checked } : s))
   const removeSupply = (id) => setSupplies(prev => prev.filter(s => s.id !== id))
+  // Marketing plan checklist: [{ id, text, pushed_to_todo }] — pushable to to-do lists
+  const [planItems, setPlanItems] = useState(Array.isArray(event?.marketing_plan_items) ? event.marketing_plan_items : [])
+  const [newPlan, setNewPlan] = useState('')
+  const addPlan = () => {
+    const t = newPlan.trim(); if (!t) return
+    setPlanItems(prev => [...prev, { id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, text: t, pushed_to_todo: false }])
+    setNewPlan('')
+  }
+  const removePlan = (id) => setPlanItems(prev => prev.filter(s => s.id !== id))
   // Multi-select B2B partners: [{ id, business_name }]
   const [selectedPartners, setSelectedPartners] = useState(event?.b2b_partners || [])
   const [saving, setSaving] = useState(false)
@@ -385,7 +463,7 @@ function EventForm({ event, month, year, onSave, onClose }) {
     setSaving(true)
     setError('')
     try {
-      const payload = { ...form, month, year, b2b_contact_ids: selectedIds, supplies }
+      const payload = { ...form, month, year, b2b_contact_ids: selectedIds, supplies, marketing_plan_items: planItems }
       const result = event
         ? await apiPut(`/api/events/${event.id}`, payload)
         : await apiPost('/api/events', payload)
@@ -513,7 +591,24 @@ function EventForm({ event, month, year, onSave, onClose }) {
           </FormField>
 
           <FormField label="Marketing Plan">
-            <textarea className={inputCls} rows={3} value={form.marketing_plan} onChange={e => set('marketing_plan', e.target.value)} placeholder="How will you promote it? Channels, dates, who owns what…" />
+            <p className="text-xs text-gray-400 mb-1.5">Add each step as a checklist item — you can push any item to a teammate’s To-Do list.</p>
+            <div className="space-y-1.5">
+              {planItems.map(s => (
+                <div key={s.id} className="flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-orange-400 flex-shrink-0" />
+                  <span className="flex-1 text-sm text-gray-700">{s.text}</span>
+                  <button type="button" onClick={() => removePlan(s.id)} className="text-gray-300 hover:text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
+                </div>
+              ))}
+              <div className="flex gap-2">
+                <input
+                  className={inputCls} value={newPlan} onChange={e => setNewPlan(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addPlan() } }}
+                  placeholder="Add a marketing step… (e.g. Post 3 IG stories, Email past guests)"
+                />
+                <button type="button" onClick={addPlan} className="px-3 py-2 rounded-lg bg-gray-100 text-gray-700 text-sm font-medium hover:bg-gray-200 flex-shrink-0">Add</button>
+              </div>
+            </div>
           </FormField>
 
           <FormField label="Supplies">

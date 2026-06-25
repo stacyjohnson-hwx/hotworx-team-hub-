@@ -89,7 +89,7 @@ router.post('/', authenticate, requireStudio, requireRole('owner', 'manager'), a
   const {
     title, description, event_type, start_date, end_date,
     start_time, end_time, location, notes, month, year,
-    goal, marketing_plan, supplies, registration_url,
+    goal, marketing_plan, marketing_plan_items, supplies, registration_url,
     b2b_contact_ids = [],
   } = req.body
 
@@ -105,6 +105,7 @@ router.post('/', authenticate, requireStudio, requireRole('owner', 'manager'), a
       start_time: start_time || null, end_time: end_time || null,
       location, notes, month: my.m, year: my.y,
       goal: goal || null, marketing_plan: marketing_plan || null,
+      marketing_plan_items: Array.isArray(marketing_plan_items) ? marketing_plan_items : [],
       registration_url: registration_url || null,
       supplies: Array.isArray(supplies) ? supplies : [],
       created_by: req.user.id,
@@ -125,7 +126,7 @@ router.put('/:id', authenticate, requireStudio, requireRole('owner', 'manager'),
   const {
     title, description, event_type, start_date, end_date,
     start_time, end_time, location, notes, month, year,
-    goal, marketing_plan, supplies, registration_url,
+    goal, marketing_plan, marketing_plan_items, supplies, registration_url,
     b2b_contact_ids = [],
   } = req.body
 
@@ -138,6 +139,7 @@ router.put('/:id', authenticate, requireStudio, requireRole('owner', 'manager'),
       location, notes, month: my.m, year: my.y,
       goal: goal ?? null, marketing_plan: marketing_plan ?? null,
       registration_url: registration_url ?? null,
+      ...(marketing_plan_items !== undefined ? { marketing_plan_items: Array.isArray(marketing_plan_items) ? marketing_plan_items : [] } : {}),
       ...(supplies !== undefined ? { supplies: Array.isArray(supplies) ? supplies : [] } : {}),
       updated_at: new Date().toISOString(),
     }).eq('id', req.params.id).select().single()
@@ -163,6 +165,22 @@ router.put('/:id/supplies', authenticate, requireStudio, requireRole('owner', 'm
     res.json(data)
   } catch (err) {
     console.error('PUT /events/:id/supplies', err)
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// PATCH marketing plan checklist only — tick/push items without resending the
+// whole event (owner/manager only).
+router.put('/:id/marketing-plan', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
+  const marketing_plan_items = Array.isArray(req.body?.marketing_plan_items) ? req.body.marketing_plan_items : []
+  try {
+    const { data, error } = await supabase().from('events')
+      .update({ marketing_plan_items, updated_at: new Date().toISOString() })
+      .eq('id', req.params.id).eq('studio_id', req.studio.id).select().single()
+    if (error) throw error
+    res.json(data)
+  } catch (err) {
+    console.error('PUT /events/:id/marketing-plan', err)
     res.status(500).json({ error: err.message })
   }
 })
