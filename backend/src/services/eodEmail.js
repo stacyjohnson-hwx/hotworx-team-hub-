@@ -293,11 +293,13 @@ function buildOpsSection(ops) {
 // Studio-level "Marketing Tasks Completed" — every Growth-section completion for
 // the day, attributed to staff. Rendered once per email (not per shift).
 function buildMarketingSection(marketing) {
-  if (!marketing || marketing.length === 0) return ''
-  const rows = marketing.map(m => opsItem(`🚀 ${m.title}`, m.staff_name)).join('')
+  const list = marketing || []
+  const rows = list.length
+    ? list.map(m => opsItem(`🚀 ${m.title}`, m.staff_name)).join('')
+    : opsEmpty('No marketing tasks completed today.')
   return `
   <div style="margin-bottom:24px;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
-    <div style="background:#1A1A1A;padding:12px 16px;font-size:14px;font-weight:700;color:#fff;">Marketing Tasks Completed (${marketing.length})</div>
+    <div style="background:#1A1A1A;padding:12px 16px;font-size:14px;font-weight:700;color:#fff;">Marketing Tasks Completed (${list.length})</div>
     <div style="padding:12px 16px;">
       <table style="width:100%;border-collapse:collapse;">
         ${rows}
