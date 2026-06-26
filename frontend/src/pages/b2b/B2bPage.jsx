@@ -1451,6 +1451,22 @@ export default function B2bPage() {
     .sort((a, b) => a.next_action_date.localeCompare(b.next_action_date))
   const userName = (id) => users.find(u => u.id === id)?.name
 
+  // ── "Going Cold" — active partners with no scheduled follow-up that haven't
+  // been touched in COLD_DAYS+. Catches partnerships the follow-up queue misses. ──
+  const COLD_DAYS = 30
+  const dueIds = new Set(dueItems.map(c => c.id))
+  const staleDays = (c) => {
+    const ref = c.last_interacted_at || c.created_at
+    return ref ? Math.floor((Date.now() - new Date(ref).getTime()) / 86400000) : 9999
+  }
+  const coldItems = contacts
+    .filter(c => c.status === 'active_partner')
+    .filter(c => !dueIds.has(c.id))
+    .filter(c => !(c.next_action_date && c.next_action_date > todayStr)) // not already scheduled ahead
+    .filter(c => staleDays(c) >= COLD_DAYS)
+    .filter(c => !queueAssignee || c.assigned_to === queueAssignee)
+    .sort((a, b) => staleDays(b) - staleDays(a))
+
   if (loading) return (
     <div className="flex items-center justify-center h-64">
       <div className="w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
@@ -1523,6 +1539,42 @@ export default function B2bPage() {
             })}
           </div>
         )}
+      </div>
+      )}
+
+      {/* Going Cold — active partners drifting without a scheduled touch */}
+      {tab !== 'map' && tab !== 'territory' && coldItems.length > 0 && (
+      <div className="mb-6 bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+        <div className="bg-slate-50 px-4 py-3 flex items-center justify-between border-b border-slate-100 gap-3">
+          <h2 className="text-sm font-bold text-slate-700 flex items-center gap-2">
+            <Clock size={15} /> Going Cold
+            <span className="bg-slate-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">{coldItems.length}</span>
+          </h2>
+          <span className="text-xs text-slate-400">Active partners, no contact in {COLD_DAYS}+ days &amp; no follow-up set</span>
+        </div>
+        <div className="divide-y divide-gray-100 max-h-72 overflow-y-auto">
+          {coldItems.map(c => {
+            const who = userName(c.assigned_to)
+            const days = staleDays(c)
+            return (
+              <button key={c.id} onClick={() => setModalContact(c)}
+                className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-3 transition-colors">
+                <span className="w-2 h-2 rounded-full flex-shrink-0 bg-slate-400" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-gray-900 truncate">
+                    {c.business_name}
+                    {c.partner_type === 'corporate' && <span className="ml-1.5 text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full font-medium">Corporate</span>}
+                  </p>
+                  <p className="text-xs text-gray-500 truncate">Tap to log a touch or schedule a follow-up</p>
+                </div>
+                {who && <span className="text-xs text-gray-400 flex-shrink-0">{who}</span>}
+                <span className="text-xs font-semibold flex-shrink-0 text-slate-500">
+                  {days >= 9999 ? 'never contacted' : `${days}d cold`}
+                </span>
+              </button>
+            )
+          })}
+        </div>
       </div>
       )}
 
