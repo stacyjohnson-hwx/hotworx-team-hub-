@@ -931,6 +931,81 @@ function PipelineRow({ contact, users, isOwnerOrManager, onEdit, onDelete, onLog
   )
 }
 
+// ─── Kanban Board (Connections pipeline) ──────────────────────────────────────
+// Dependency-free drag-and-drop via native HTML5 DnD. Drag a card to another
+// column to change its status.
+function KanbanBoard({ contacts, users, onEdit, onStatusChange }) {
+  const [dragId, setDragId] = useState(null)
+  const [overCol, setOverCol] = useState(null)
+  const todayStr = new Date().toISOString().split('T')[0]
+  const userName = id => users.find(u => u.id === id)?.name
+
+  const handleDrop = (status) => {
+    const id = dragId
+    setOverCol(null); setDragId(null)
+    if (!id) return
+    const c = contacts.find(x => x.id === id)
+    if (c && c.status !== status) onStatusChange(id, status)
+  }
+
+  return (
+    <div className="flex gap-3 overflow-x-auto pb-4">
+      {PIPELINE_STATUSES.map(statusVal => {
+        const meta = statusMeta(statusVal)
+        const items = contacts.filter(c => c.status === statusVal)
+        const active = overCol === statusVal
+        return (
+          <div key={statusVal}
+            onDragOver={e => { e.preventDefault(); if (!active) setOverCol(statusVal) }}
+            onDragLeave={e => { if (e.currentTarget === e.target) setOverCol(c => c === statusVal ? null : c) }}
+            onDrop={() => handleDrop(statusVal)}
+            className={`flex-shrink-0 w-64 rounded-xl border flex flex-col max-h-[72vh] ${active ? 'border-orange-400 bg-orange-50/60' : 'border-gray-200 bg-gray-50'}`}>
+            <div className={`flex items-center justify-between px-3 py-2 rounded-t-xl border-b ${meta.bg} ${meta.border}`}>
+              <span className={`text-xs font-bold ${meta.text}`}>{meta.label}</span>
+              <span className="text-xs font-semibold text-gray-500 bg-white/70 rounded-full px-1.5">{items.length}</span>
+            </div>
+            <div className="p-2 space-y-2 overflow-y-auto">
+              {items.map(c => {
+                const overdue = c.next_action_date && c.next_action_date < todayStr
+                return (
+                  <div key={c.id} draggable
+                    onDragStart={() => setDragId(c.id)}
+                    onDragEnd={() => { setDragId(null); setOverCol(null) }}
+                    onClick={() => onEdit(c)}
+                    className={`bg-white rounded-lg border border-gray-200 p-2.5 shadow-sm cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow ${dragId === c.id ? 'opacity-40' : ''}`}>
+                    <div className="flex items-center gap-2">
+                      {c.logo_url
+                        ? <img src={c.logo_url} alt="" className="w-7 h-7 rounded object-contain bg-gray-50 border border-gray-200 flex-shrink-0" />
+                        : <div className="w-7 h-7 rounded bg-gray-100 border border-gray-200 flex items-center justify-center flex-shrink-0"><span className="text-xs font-bold text-gray-500">{(c.business_name[0] || '?').toUpperCase()}</span></div>}
+                      <p className="text-sm font-semibold text-gray-900 truncate flex-1">{c.business_name}</p>
+                    </div>
+                    {(c.is_partner || c.has_lead_box || c.industry) && (
+                      <div className="flex items-center gap-1 flex-wrap mt-1.5">
+                        {c.is_partner && <span className="text-[10px] font-bold bg-orange-500 text-white rounded-full px-1.5 py-0.5">Partner</span>}
+                        {c.has_lead_box && <span className="text-[10px] font-bold bg-blue-600 text-white rounded-full px-1.5 py-0.5">Lead Box</span>}
+                        {c.industry && <span className="text-[10px] text-gray-400 truncate">{c.industry}</span>}
+                      </div>
+                    )}
+                    {(c.next_action_date || c.assigned_to) && (
+                      <div className="flex items-center justify-between mt-1.5 text-[11px]">
+                        {c.next_action_date
+                          ? <span className={overdue ? 'text-red-600 font-semibold' : 'text-gray-500'}>{fmtDate(c.next_action_date)}</span>
+                          : <span />}
+                        {c.assigned_to && <span className="text-gray-400 truncate ml-2">{userName(c.assigned_to)}</span>}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+              {items.length === 0 && <p className="text-xs text-gray-300 text-center py-6 select-none">Drop here</p>}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 // ─── Pipeline Tab ─────────────────────────────────────────────────────────────
 function PipelineTab({ contacts, users, isOwnerOrManager, onEdit, onDelete, onStatusChange, onInteractionLogged, b2bSignals = {} }) {
   const [logTarget, setLogTarget] = useState(null)
@@ -1411,6 +1486,7 @@ export default function B2bPage() {
   const [industryFilter, setIndustryFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
   const [leadBoxOnly, setLeadBoxOnly] = useState(false)
+  const [pipelineView, setPipelineView] = useState('board')  // 'board' | 'list'
   const [queueAssignee, setQueueAssignee] = useState('')
 
   const load = useCallback(async () => {
@@ -1693,7 +1769,21 @@ export default function B2bPage() {
       )}
 
       {tab === 'pipeline' && (
-        <PipelineTab contacts={filtered} users={users} isOwnerOrManager={isOwnerOrManager} onEdit={setModalContact} onDelete={handleDelete} onStatusChange={handleStatusChange} onInteractionLogged={handleInteractionLogged} b2bSignals={b2bSignals} />
+        <>
+          <div className="flex justify-end mb-3">
+            <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden">
+              {['board', 'list'].map(v => (
+                <button key={v} onClick={() => setPipelineView(v)}
+                  className={`px-3 py-1.5 text-xs font-semibold capitalize transition-colors ${pipelineView === v ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
+                  {v === 'board' ? 'Board' : 'List'}
+                </button>
+              ))}
+            </div>
+          </div>
+          {pipelineView === 'board'
+            ? <KanbanBoard contacts={filtered} users={users} onEdit={setModalContact} onStatusChange={handleStatusChange} />
+            : <PipelineTab contacts={filtered} users={users} isOwnerOrManager={isOwnerOrManager} onEdit={setModalContact} onDelete={handleDelete} onStatusChange={handleStatusChange} onInteractionLogged={handleInteractionLogged} b2bSignals={b2bSignals} />}
+        </>
       )}
       {tab === 'partners' && (
         <ActivePartnersTab contacts={filteredPartners} users={users} isOwnerOrManager={isOwnerOrManager} onEdit={setModalContact} onDelete={handleDelete} onInteractionLogged={handleInteractionLogged} b2bSignals={b2bSignals} />
