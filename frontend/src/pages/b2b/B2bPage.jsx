@@ -1345,7 +1345,7 @@ function ActivePartnersTab({ contacts, users, isOwnerOrManager, onEdit, onDelete
                   isOwnerOrManager={isOwnerOrManager}
                   onEdit={onEdit}
                   onDelete={onDelete}
-                  onLog={() => setLogTarget({ contact: c, callback: i => {} })}
+                  onLog={cb => setLogTarget({ contact: c, callback: cb })}
                   signal={b2bSignals[String(c.id)] ?? null}
                 />
               ))}
