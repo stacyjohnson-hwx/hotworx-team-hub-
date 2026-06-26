@@ -32,6 +32,9 @@ const INTERACTION_TYPES = [
   { value: 'other',   label: 'Other',   icon: MessageSquare },
 ]
 
+// Interaction history is always shown newest-first.
+const byNewest = (a, b) => new Date(b.logged_at) - new Date(a.logged_at)
+
 const INDUSTRIES = [
   'Accounting', 'Apartments', 'Chiropractic', 'Club / Group', 'Coffee / Café', 'Community Org',
   'Corporate / Office', 'Corporate Wellness', 'Education', 'Entertainment', 'Events',
@@ -677,7 +680,7 @@ function ContactCard({ contact, users, isOwnerOrManager, onEdit, onDelete, onLog
           {loadingHistory ? (
             <p className="text-xs text-gray-400 py-3">Loading…</p>
           ) : interactions?.length ? (
-            interactions.map(i => (
+            [...interactions].sort(byNewest).map(i => (
               <InteractionRow
                 key={i.id}
                 interaction={i}
@@ -872,7 +875,7 @@ function PipelineRow({ contact, users, isOwnerOrManager, onEdit, onDelete, onLog
             <>
               {interactions?.length ? (
                 <div className="space-y-0">
-                  {interactions.map(i => (
+                  {[...interactions].sort(byNewest).map(i => (
                     <InteractionRow
                       key={i.id}
                       interaction={i}
@@ -1115,7 +1118,7 @@ function ActivePartnerCard({ contact, users, isOwnerOrManager, onEdit, onLog, si
           ) : (
             <>
               {interactions?.length ? (
-                interactions.map(i => (
+                [...interactions].sort(byNewest).map(i => (
                   <InteractionRow
                     key={i.id}
                     interaction={i}
@@ -1253,7 +1256,7 @@ function ActivePartnerRow({ contact, isOwnerOrManager, onEdit, onLog, onDelete, 
             <>
               {interactions?.length ? (
                 <div className="space-y-0">
-                  {interactions.map(i => (
+                  {[...interactions].sort(byNewest).map(i => (
                     <InteractionRow
                       key={i.id}
                       interaction={i}
