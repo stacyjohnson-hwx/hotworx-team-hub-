@@ -78,6 +78,7 @@ export default function EodHistory() {
   const [error, setError] = useState(null)
   const [sending, setSending] = useState(false)
   const [sendMsg, setSendMsg] = useState(null)
+  const [digestDate, setDigestDate] = useState(today)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -122,8 +123,8 @@ export default function EodHistory() {
     setSending(true)
     setSendMsg(null)
     try {
-      await apiPost('/api/eod/send-digest', { date: today })
-      setSendMsg('Email digest sent!')
+      await apiPost('/api/eod/send-digest', { date: digestDate })
+      setSendMsg(`Email digest sent for ${digestDate}!`)
     } catch (e) {
       setSendMsg(`Error: ${e.message}`)
     } finally {
@@ -174,6 +175,14 @@ export default function EodHistory() {
               {sendMsg}
             </span>
           )}
+          <input
+            type="date"
+            value={digestDate}
+            max={today}
+            onChange={e => setDigestDate(e.target.value)}
+            className="text-sm border border-gray-300 rounded-lg px-2 py-1.5 text-gray-700"
+            title="Which day's report to send"
+          />
           <button
             onClick={sendDigest}
             disabled={sending}
