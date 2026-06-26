@@ -937,6 +937,7 @@ function PipelineRow({ contact, users, isOwnerOrManager, onEdit, onDelete, onLog
 function KanbanBoard({ contacts, users, onEdit, onStatusChange }) {
   const [dragId, setDragId] = useState(null)
   const [overCol, setOverCol] = useState(null)
+  const [sortBy, setSortBy] = useState('none')  // 'none' | 'recent' | 'stale'
   const todayStr = new Date().toISOString().split('T')[0]
   const userName = id => users.find(u => u.id === id)?.name
 
@@ -948,11 +949,32 @@ function KanbanBoard({ contacts, users, onEdit, onStatusChange }) {
     if (c && c.status !== status) onStatusChange(id, status)
   }
 
+  const sortItems = (arr) => {
+    if (sortBy === 'none') return arr
+    const ts = c => (c.last_interacted_at ? new Date(c.last_interacted_at).getTime() : null)
+    return [...arr].sort((a, b) => {
+      const ta = ts(a), tb = ts(b)
+      if (ta === null && tb === null) return 0
+      if (sortBy === 'recent') return ta === null ? 1 : tb === null ? -1 : tb - ta   // newest first, never-contacted last
+      return ta === null ? -1 : tb === null ? 1 : ta - tb                              // 'stale': oldest/never first
+    })
+  }
+
   return (
-    <div className="flex gap-3 overflow-x-auto pb-4">
+    <div>
+      <div className="flex items-center gap-2 mb-3 text-xs">
+        <span className="text-gray-500 font-medium">Sort by last contacted:</span>
+        <select value={sortBy} onChange={e => setSortBy(e.target.value)}
+          className="border border-gray-300 rounded-lg px-2 py-1 text-gray-700 bg-white">
+          <option value="none">Default</option>
+          <option value="recent">Most recent first</option>
+          <option value="stale">Oldest / never first</option>
+        </select>
+      </div>
+      <div className="flex gap-3 overflow-x-auto pb-4">
       {PIPELINE_STATUSES.map(statusVal => {
         const meta = statusMeta(statusVal)
-        const items = contacts.filter(c => c.status === statusVal)
+        const items = sortItems(contacts.filter(c => c.status === statusVal))
         const active = overCol === statusVal
         return (
           <div key={statusVal}
@@ -986,12 +1008,15 @@ function KanbanBoard({ contacts, users, onEdit, onStatusChange }) {
                         {c.industry && <span className="text-[10px] text-gray-400 truncate">{c.industry}</span>}
                       </div>
                     )}
-                    {(c.next_action_date || c.assigned_to) && (
-                      <div className="flex items-center justify-between mt-1.5 text-[11px]">
-                        {c.next_action_date
-                          ? <span className={overdue ? 'text-red-600 font-semibold' : 'text-gray-500'}>{fmtDate(c.next_action_date)}</span>
-                          : <span />}
-                        {c.assigned_to && <span className="text-gray-400 truncate ml-2">{userName(c.assigned_to)}</span>}
+                    <div className="flex items-center justify-between mt-1.5 text-[11px]">
+                      <span className="text-gray-400">
+                        {fmtLastContact(c.last_interacted_at) ? `Contacted ${fmtLastContact(c.last_interacted_at)}` : 'Never contacted'}
+                      </span>
+                      {c.assigned_to && <span className="text-gray-400 truncate ml-2">{userName(c.assigned_to)}</span>}
+                    </div>
+                    {c.next_action_date && (
+                      <div className="mt-1 text-[11px]">
+                        <span className={overdue ? 'text-red-600 font-semibold' : 'text-gray-500'}>Next: {fmtDate(c.next_action_date)}</span>
                       </div>
                     )}
                   </div>
@@ -1002,6 +1027,7 @@ function KanbanBoard({ contacts, users, onEdit, onStatusChange }) {
           </div>
         )
       })}
+      </div>
     </div>
   )
 }
