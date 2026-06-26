@@ -91,7 +91,7 @@ const blankForm = {
   next_action: '', next_action_date: '', notes: '', assigned_to: '',
   latitude: null, longitude: null,
   guests_referred: 0, members_referred: 0, revenue_generated: 0,
-  is_partner: false,
+  is_partner: false, has_lead_box: false,
 }
 
 async function geocodeAddress(address) {
@@ -140,6 +140,7 @@ function ContactModal({ contact, users, onSave, onClose }) {
     members_referred:  contact.members_referred ?? 0,
     revenue_generated: contact.revenue_generated ?? 0,
     is_partner:        contact.is_partner ?? false,
+    has_lead_box:      contact.has_lead_box ?? false,
   } : { ...blankForm })
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -265,6 +266,14 @@ function ContactModal({ contact, users, onSave, onClose }) {
               className="w-4 h-4 rounded border-gray-300 text-orange-500 focus:ring-orange-500" />
             <span className="text-sm font-semibold text-gray-800">Partner</span>
             <span className="text-xs text-gray-500">— check to list this business / apartment on the Partners tab</span>
+          </label>
+
+          {/* Digital Lead Box flag */}
+          <label className="flex items-center gap-2.5 cursor-pointer bg-blue-50 border border-blue-200 rounded-lg px-3 py-2.5">
+            <input type="checkbox" checked={!!form.has_lead_box} onChange={e => set('has_lead_box', e.target.checked)}
+              className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+            <span className="text-sm font-semibold text-gray-800">Digital Lead Box</span>
+            <span className="text-xs text-gray-500">— this location has a HOTWORX digital lead box in their store</span>
           </label>
 
           {/* Status + Assignment */}
@@ -588,6 +597,11 @@ function ContactCard({ contact, users, isOwnerOrManager, onEdit, onDelete, onLog
           {contact.is_partner && (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-orange-500 text-white rounded-full text-xs font-bold">
               <Handshake size={11} /> Partner
+            </span>
+          )}
+          {contact.has_lead_box && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-600 text-white rounded-full text-xs font-bold">
+              <Package size={11} /> Lead Box
             </span>
           )}
           {contact.discount_ongoing && (
@@ -1396,6 +1410,7 @@ export default function B2bPage() {
   const [statusFilter, setStatusFilter] = useState('')
   const [industryFilter, setIndustryFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
+  const [leadBoxOnly, setLeadBoxOnly] = useState(false)
   const [queueAssignee, setQueueAssignee] = useState('')
 
   const load = useCallback(async () => {
@@ -1451,7 +1466,8 @@ export default function B2bPage() {
     const matchStatus = !statusFilter || c.status === statusFilter
     const matchIndustry = !industryFilter || c.industry === industryFilter
     const matchType = !typeFilter || (c.partner_type || 'referral_collab') === typeFilter
-    return matchSearch && matchStatus && matchIndustry && matchType
+    const matchLeadBox = !leadBoxOnly || c.has_lead_box
+    return matchSearch && matchStatus && matchIndustry && matchType && matchLeadBox
   })
 
   const filteredPartners = contacts.filter(c => {
@@ -1459,7 +1475,8 @@ export default function B2bPage() {
     const matchSearch = !q || [c.business_name, c.contact_name, c.email, c.industry].some(f => f?.toLowerCase().includes(q))
     const matchIndustry = !industryFilter || c.industry === industryFilter
     const matchType = !typeFilter || (c.partner_type || 'referral_collab') === typeFilter
-    return c.is_partner && matchSearch && matchIndustry && matchType
+    const matchLeadBox = !leadBoxOnly || c.has_lead_box
+    return c.is_partner && matchSearch && matchIndustry && matchType && matchLeadBox
   })
 
   // ── "B2B Today" action queue — follow-ups due or overdue ──
@@ -1663,6 +1680,15 @@ export default function B2bPage() {
             {STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
           </select>
         )}
+        <button
+          type="button"
+          onClick={() => setLeadBoxOnly(v => !v)}
+          title="Show only locations with a Digital Lead Box"
+          className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold border transition-colors ${
+            leadBoxOnly ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400'
+          }`}>
+          <Package size={14} /> Lead Box
+        </button>
       </div>
       )}
 
