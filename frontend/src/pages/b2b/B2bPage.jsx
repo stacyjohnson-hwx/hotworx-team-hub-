@@ -934,10 +934,11 @@ function PipelineRow({ contact, users, isOwnerOrManager, onEdit, onDelete, onLog
 // ─── Kanban Board (Connections pipeline) ──────────────────────────────────────
 // Dependency-free drag-and-drop via native HTML5 DnD. Drag a card to another
 // column to change its status.
-function KanbanBoard({ contacts, users, onEdit, onStatusChange }) {
+function KanbanBoard({ contacts, users, onEdit, onStatusChange, onLogged }) {
   const [dragId, setDragId] = useState(null)
   const [overCol, setOverCol] = useState(null)
   const [sortBy, setSortBy] = useState('none')  // 'none' | 'recent' | 'stale'
+  const [logFor, setLogFor] = useState(null)    // contact to log an interaction for
   const todayStr = new Date().toISOString().split('T')[0]
   const userName = id => users.find(u => u.id === id)?.name
 
@@ -1000,6 +1001,10 @@ function KanbanBoard({ contacts, users, onEdit, onStatusChange }) {
                         ? <img src={c.logo_url} alt="" className="w-7 h-7 rounded object-contain bg-gray-50 border border-gray-200 flex-shrink-0" />
                         : <div className="w-7 h-7 rounded bg-gray-100 border border-gray-200 flex items-center justify-center flex-shrink-0"><span className="text-xs font-bold text-gray-500">{(c.business_name[0] || '?').toUpperCase()}</span></div>}
                       <p className="text-sm font-semibold text-gray-900 truncate flex-1">{c.business_name}</p>
+                      <button onClick={e => { e.stopPropagation(); setLogFor(c) }} title="Log interaction"
+                        className="flex-shrink-0 p-1 text-gray-300 hover:text-orange-500 rounded">
+                        <MessageSquare size={14} />
+                      </button>
                     </div>
                     {(c.is_partner || c.has_lead_box || c.industry) && (
                       <div className="flex items-center gap-1 flex-wrap mt-1.5">
@@ -1028,6 +1033,14 @@ function KanbanBoard({ contacts, users, onEdit, onStatusChange }) {
         )
       })}
       </div>
+
+      {logFor && (
+        <LogInteractionModal
+          contact={logFor}
+          onSave={saved => { onLogged?.(logFor.id, saved); setLogFor(null) }}
+          onClose={() => setLogFor(null)}
+        />
+      )}
     </div>
   )
 }
@@ -1623,7 +1636,12 @@ export default function B2bPage() {
   const handleInteractionLogged = (contactId, interaction) => {
     setContacts(prev => prev.map(c =>
       c.id === contactId
-        ? { ...c, last_interacted_at: interaction.logged_at || new Date().toISOString() }
+        ? {
+            ...c,
+            last_interacted_at: interaction.logged_at || new Date().toISOString(),
+            // mirror the backend automation: reaching out moves a fresh/cooled lead to Contacted
+            status: (c.status === 'new_lead' || c.status === 'follow_up') ? 'contacted' : c.status,
+          }
         : c
     ))
   }
@@ -1887,7 +1905,7 @@ export default function B2bPage() {
             </div>
           </div>
           {pipelineView === 'board'
-            ? <KanbanBoard contacts={filtered} users={users} onEdit={setModalContact} onStatusChange={handleStatusChange} />
+            ? <KanbanBoard contacts={filtered} users={users} onEdit={setModalContact} onStatusChange={handleStatusChange} onLogged={handleInteractionLogged} />
             : <PipelineTab contacts={filtered} users={users} isOwnerOrManager={isOwnerOrManager} onEdit={setModalContact} onDelete={handleDelete} onStatusChange={handleStatusChange} onInteractionLogged={handleInteractionLogged} b2bSignals={b2bSignals} />}
         </>
       )}
