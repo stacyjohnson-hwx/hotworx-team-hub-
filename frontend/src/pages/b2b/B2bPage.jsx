@@ -145,8 +145,16 @@ function ContactModal({ contact, users, onSave, onClose }) {
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
+  const [history, setHistory] = useState(null)   // interaction history (edit mode)
   const logoInputRef = useRef(null)
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  useEffect(() => {
+    if (!contact?.id) return
+    apiGet(`/api/b2b/contacts/${contact.id}/interactions`)
+      .then(d => setHistory([...(d || [])].sort(byNewest)))
+      .catch(() => setHistory([]))
+  }, [contact?.id])
 
   const handleLogoChange = async (e) => {
     const file = e.target.files?.[0]
@@ -329,6 +337,42 @@ function ContactModal({ contact, users, onSave, onClose }) {
           </div>
 
           <div><label className={labelCls}>Notes</label><textarea rows={3} className={`${inputCls} resize-none`} value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Additional context…" /></div>
+
+          {/* Interaction history (read-only) — edit mode only */}
+          {contact && (
+            <div className="pt-4 border-t border-gray-100">
+              <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">
+                Interaction History{Array.isArray(history) && history.length > 0 ? ` (${history.length})` : ''}
+              </p>
+              {history === null ? (
+                <p className="text-xs text-gray-400 py-2">Loading…</p>
+              ) : history.length === 0 ? (
+                <p className="text-xs text-gray-400 py-2">No interactions logged yet.</p>
+              ) : (
+                <div className="rounded-lg border border-gray-100 px-3 max-h-64 overflow-y-auto">
+                  {history.map(i => {
+                    const meta = INTERACTION_TYPES.find(t => t.value === i.type) || INTERACTION_TYPES[INTERACTION_TYPES.length - 1]
+                    const Icon = meta.icon
+                    return (
+                      <div key={i.id} className="flex items-start gap-2.5 py-2.5 border-b border-gray-100 last:border-0">
+                        <div className="w-6 h-6 rounded-full bg-orange-100 border border-orange-200 flex items-center justify-center flex-shrink-0 mt-0.5">
+                          <Icon size={11} className="text-orange-500" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-semibold text-gray-800">
+                            <span className="capitalize">{meta.label}</span>
+                            <span className="text-gray-500 font-normal ml-1">by {i.logged_by_name}</span>
+                            <span className="text-gray-400 ml-1.5">{fmtDateTime(i.logged_at)}</span>
+                          </p>
+                          {i.notes && <p className="text-xs text-gray-600 mt-0.5">{i.notes}</p>}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-200">
