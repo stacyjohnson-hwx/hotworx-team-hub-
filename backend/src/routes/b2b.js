@@ -20,20 +20,33 @@ router.get('/contacts', authenticate, requireStudio, async (req, res) => {
     .order('created_at', { ascending: false })
   if (error) return res.status(500).json({ error: error.message })
 
-  // Attach last_interacted_at from interactions table
-  const { data: lastRows } = await supabase()
-    .from('b2b_interactions')
-    .select('contact_id, logged_at')
-    .order('logged_at', { ascending: false })
+  // "Last contacted" = most recent of a logged interaction OR a linked event
+  // that has already occurred.
+  const today = new Date().toISOString().split('T')[0]
+
+  const [{ data: lastRows }, { data: evRows }] = await Promise.all([
+    db.from('b2b_interactions').select('contact_id, logged_at').order('logged_at', { ascending: false }),
+    db.from('event_b2b_contacts').select('b2b_contact_id, events(start_date)'),
+  ])
 
   const lastMap = {}
-  if (lastRows) {
-    for (const row of lastRows) {
-      if (!lastMap[row.contact_id]) lastMap[row.contact_id] = row.logged_at
-    }
+  for (const row of lastRows || []) {
+    if (!lastMap[row.contact_id]) lastMap[row.contact_id] = row.logged_at
   }
 
-  res.json(data.map(c => ({ ...c, last_interacted_at: lastMap[c.id] || null })))
+  const eventMap = {}
+  for (const row of evRows || []) {
+    const sd = row.events?.start_date
+    if (!sd || sd > today) continue // only events that have happened
+    if (!eventMap[row.b2b_contact_id] || sd > eventMap[row.b2b_contact_id]) eventMap[row.b2b_contact_id] = sd
+  }
+
+  res.json(data.map(c => {
+    let last = lastMap[c.id] || null
+    const lastEvent = eventMap[c.id] || null
+    if (lastEvent && (!last || new Date(lastEvent) > new Date(last))) last = lastEvent
+    return { ...c, last_interacted_at: last }
+  }))
 })
 
 // ─── POST /api/b2b/contacts ──────────────────────────────────────────────────
