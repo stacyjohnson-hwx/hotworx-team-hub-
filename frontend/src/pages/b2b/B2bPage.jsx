@@ -17,9 +17,7 @@ const STATUSES = [
   { value: 'new_lead',          label: 'New Lead',          bg: 'bg-blue-100',          text: 'text-blue-800',          border: 'border-blue-300' },
   { value: 'contacted',         label: 'Contacted',         bg: 'bg-yellow-100',        text: 'text-yellow-800',        border: 'border-yellow-300' },
   { value: 'meeting_scheduled', label: 'Meeting Scheduled', bg: 'bg-purple-100',        text: 'text-purple-800',        border: 'border-purple-300' },
-  { value: 'active_partner',    label: 'Active Partner',    bg: 'bg-orange-100',        text: 'text-orange-800',        border: 'border-orange-300' },
   { value: 'follow_up',         label: 'Follow Up',         bg: 'bg-red-100',           text: 'text-red-800',           border: 'border-red-300' },
-  { value: 'past_partner',      label: 'Past Partner',      bg: 'bg-slate-100',         text: 'text-slate-600',         border: 'border-slate-300' },
   { value: 'not_interested',    label: 'Not Interested',    bg: 'bg-gray-100',          text: 'text-gray-600',          border: 'border-gray-300' },
 ]
 
@@ -731,7 +729,7 @@ const PIPELINE_STATUSES = ['new_lead', 'contacted', 'meeting_scheduled', 'follow
 const NEXT_STAGE = {
   new_lead:          { value: 'contacted',         label: 'Mark Contacted' },
   contacted:         { value: 'meeting_scheduled', label: 'Book Meeting' },
-  meeting_scheduled: { value: 'active_partner',    label: 'Make Partner' },
+  meeting_scheduled: { value: 'follow_up',         label: 'Mark Follow-Up' },
   follow_up:         { value: 'contacted',         label: 'Re-Contacted' },
 }
 
@@ -1300,7 +1298,6 @@ function ActivePartnerRow({ contact, isOwnerOrManager, onEdit, onLog, onDelete, 
 function ActivePartnersTab({ contacts, users, isOwnerOrManager, onEdit, onDelete, onInteractionLogged, b2bSignals = {} }) {
   const [logTarget, setLogTarget] = useState(null)
   const [viewMode, setViewMode]   = useState('list') // 'card' | 'list'
-  const [showPast, setShowPast]   = useState(true)
 
   const handleInteractionSaved = i => {
     logTarget?.callback?.(i)
@@ -1308,13 +1305,12 @@ function ActivePartnersTab({ contacts, users, isOwnerOrManager, onEdit, onDelete
     setLogTarget(null)
   }
 
-  // Input is already the partner-flagged list. Split off ended partnerships.
-  const partners     = contacts.filter(c => c.status !== 'past_partner')
-  const pastPartners = contacts.filter(c => c.status === 'past_partner')
+  // Input is already the partner-flagged list (the Partner checkbox).
+  const partners = contacts
 
   return (
     <>
-      {partners.length + pastPartners.length === 0 ? (
+      {partners.length === 0 ? (
         <div className="text-center py-24">
           <Handshake size={48} className="mx-auto mb-4 text-gray-300" />
           <p className="text-gray-700 font-semibold">No partners yet.</p>
@@ -1368,33 +1364,6 @@ function ActivePartnersTab({ contacts, users, isOwnerOrManager, onEdit, onDelete
             </div>
           )}
         </>
-      )}
-      {/* Past Partners */}
-      {pastPartners.length > 0 && (
-        <div className="mt-8">
-          <button
-            onClick={() => setShowPast(v => !v)}
-            className="flex items-center gap-2 text-sm font-semibold text-gray-400 hover:text-gray-600 transition-colors mb-3"
-          >
-            {showPast ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-            Past Partners ({pastPartners.length})
-          </button>
-          {showPast && (
-            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm opacity-75">
-              {pastPartners.map(c => (
-                <ActivePartnerRow
-                  key={c.id}
-                  contact={c}
-                  isOwnerOrManager={isOwnerOrManager}
-                  onEdit={onEdit}
-                  onDelete={onDelete}
-                  onLog={cb => setLogTarget({ contact: c, callback: cb })}
-                  signal={b2bSignals[String(c.id)] ?? null}
-                />
-              ))}
-            </div>
-          )}
-        </div>
       )}
 
       {logTarget && (
@@ -1467,11 +1436,8 @@ export default function B2bPage() {
   const handleStatusChange = async (id, newStatus) => {
     const contact = contacts.find(c => c.id === id)
     if (!contact) return
-    // Advancing to Active Partner also flags them as a Partner (checkbox is the
-    // source of truth for the Partners tab).
-    const extra = newStatus === 'active_partner' ? { is_partner: true } : {}
     try {
-      const updated = await apiPut(`/api/b2b/contacts/${id}`, { ...contact, status: newStatus, ...extra })
+      const updated = await apiPut(`/api/b2b/contacts/${id}`, { ...contact, status: newStatus })
       setContacts(prev => prev.map(c => c.id === id ? updated : c))
     } catch (err) { setError(err.message) }
   }
@@ -1497,7 +1463,7 @@ export default function B2bPage() {
   const todayStr = new Date().toISOString().split('T')[0]
   const dueItems = contacts
     .filter(c => c.next_action_date && c.next_action_date <= todayStr
-      && c.status !== 'not_interested' && c.status !== 'past_partner')
+      && c.status !== 'not_interested')
     .filter(c => !queueAssignee || c.assigned_to === queueAssignee)
     .sort((a, b) => a.next_action_date.localeCompare(b.next_action_date))
   const userName = (id) => users.find(u => u.id === id)?.name
@@ -1691,7 +1657,7 @@ export default function B2bPage() {
             className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-orange-500"
             value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
             <option value="">All statuses</option>
-            {STATUSES.filter(s => s.value !== 'active_partner').map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+            {STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
           </select>
         )}
       </div>

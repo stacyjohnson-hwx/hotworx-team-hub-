@@ -19,7 +19,8 @@ jest.mock('../middleware/authMiddleware', () =>
 const mockContact = {
   id: 'contact-uuid-1234',
   business_name: 'Test Biz',
-  status: 'active_partner',
+  status: 'follow_up',
+  is_partner: true,
 }
 const mockInteraction = {
   id: 'int-1',

@@ -219,7 +219,6 @@ function saveNeighborhoods(list) {
 
 // B2B status colors for map pins
 const B2B_STATUS_COLOR = {
-  active_partner:    '#E8611A',
   meeting_scheduled: '#9333EA',
   contacted:         '#F59E0B',
   new_lead:          '#3B82F6',
@@ -227,7 +226,6 @@ const B2B_STATUS_COLOR = {
   not_interested:    '#9CA3AF',
 }
 const B2B_STATUS_LABEL = {
-  active_partner:    'Active Partner',
   meeting_scheduled: 'Meeting Scheduled',
   contacted:         'Contacted',
   new_lead:          'New Lead',
@@ -812,7 +810,6 @@ const B2B_STATUSES = [
   { value:'contacted',         label:'Contacted' },
   { value:'meeting_scheduled', label:'Meeting Scheduled' },
   { value:'follow_up',         label:'Follow Up' },
-  { value:'active_partner',    label:'Active Partner' },
   { value:'not_interested',    label:'Not Interested' },
 ]
 
