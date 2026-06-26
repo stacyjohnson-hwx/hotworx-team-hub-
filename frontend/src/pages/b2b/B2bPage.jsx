@@ -75,6 +75,8 @@ function fmtLastContact(iso) {
   return `${Math.floor(days / 365)}y ago`
 }
 
+const fmtMoney = (n) => `$${(Number(n) || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+
 function fmtDateTime(str) {
   if (!str) return '—'
   return new Date(str).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
@@ -713,7 +715,7 @@ function ContactCard({ contact, users, isOwnerOrManager, onEdit, onDelete, onLog
           <div className="mt-2.5 flex flex-wrap gap-1.5">
             {contact.guests_referred > 0 && <span className="text-[11px] font-semibold bg-slate-100 text-slate-700 rounded-full px-2 py-0.5">{contact.guests_referred} guests</span>}
             {contact.members_referred > 0 && <span className="text-[11px] font-semibold bg-slate-100 text-slate-700 rounded-full px-2 py-0.5">{contact.members_referred} members</span>}
-            {contact.revenue_generated > 0 && <span className="text-[11px] font-semibold bg-green-100 text-green-700 rounded-full px-2 py-0.5">${Number(contact.revenue_generated).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>}
+            {contact.revenue_generated > 0 && <span className="text-[11px] font-semibold bg-green-100 text-green-700 rounded-full px-2 py-0.5">{fmtMoney(contact.revenue_generated)}</span>}
           </div>
         )}
       </div>
@@ -1554,6 +1556,27 @@ function ActivePartnersTab({ contacts, users, isOwnerOrManager, onEdit, onDelete
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 // ─── Report Tab ───────────────────────────────────────────────────────────────
+function StatCard({ label, value, valueClass = 'text-gray-900' }) {
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 text-center shadow-sm">
+      <p className={`text-2xl font-black leading-none ${valueClass}`}>{value}</p>
+      <p className="text-[11px] text-gray-500 font-medium mt-1 uppercase tracking-wide">{label}</p>
+    </div>
+  )
+}
+
+function Bar({ label, value, max, barClass = 'bg-orange-400' }) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="w-32 flex-shrink-0 text-xs font-semibold text-gray-600 truncate">{label}</span>
+      <div className="flex-1 bg-gray-100 rounded-full h-5 overflow-hidden">
+        <div className={`${barClass} h-full rounded-full`} style={{ width: `${(value / max) * 100}%` }} />
+      </div>
+      <span className="w-8 text-right text-sm font-bold text-gray-800">{value}</span>
+    </div>
+  )
+}
+
 function ReportTab() {
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
@@ -1582,12 +1605,7 @@ function ReportTab() {
     <div className="space-y-6">
       {/* Stat cards */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        {stats.map(s => (
-          <div key={s.label} className="bg-white border border-gray-200 rounded-xl px-4 py-3 text-center shadow-sm">
-            <p className="text-2xl font-black text-gray-900 leading-none">{s.value}</p>
-            <p className="text-[11px] text-gray-500 font-medium mt-1 uppercase tracking-wide">{s.label}</p>
-          </div>
-        ))}
+        {stats.map(s => <StatCard key={s.label} label={s.label} value={s.value} />)}
       </div>
 
       {/* Pipeline funnel by stage */}
@@ -1596,16 +1614,7 @@ function ReportTab() {
         <div className="space-y-2.5">
           {PIPELINE_STATUSES.map(s => {
             const meta = statusMeta(s)
-            const count = data.byStage[s] || 0
-            return (
-              <div key={s} className="flex items-center gap-3">
-                <span className="w-32 flex-shrink-0 text-xs font-semibold text-gray-600">{meta.label}</span>
-                <div className="flex-1 bg-gray-100 rounded-full h-5 overflow-hidden">
-                  <div className={`${meta.bg} h-full rounded-full`} style={{ width: `${(count / stageMax) * 100}%` }} />
-                </div>
-                <span className="w-8 text-right text-sm font-bold text-gray-800">{count}</span>
-              </div>
-            )
+            return <Bar key={s} label={meta.label} value={data.byStage[s] || 0} max={stageMax} barClass={meta.bg} />
           })}
         </div>
       </div>
@@ -1617,15 +1626,7 @@ function ReportTab() {
           <p className="text-sm text-gray-400 py-4">No interactions logged in the last 30 days.</p>
         ) : (
           <div className="space-y-2.5 mt-3">
-            {data.activityByRep.map(r => (
-              <div key={r.id} className="flex items-center gap-3">
-                <span className="w-32 flex-shrink-0 text-xs font-semibold text-gray-600 truncate">{r.name}</span>
-                <div className="flex-1 bg-gray-100 rounded-full h-5 overflow-hidden">
-                  <div className="bg-orange-400 h-full rounded-full" style={{ width: `${(r.interactions / repMax) * 100}%` }} />
-                </div>
-                <span className="w-8 text-right text-sm font-bold text-gray-800">{r.interactions}</span>
-              </div>
-            ))}
+            {data.activityByRep.map(r => <Bar key={r.id} label={r.name} value={r.interactions} max={repMax} />)}
           </div>
         )}
       </div>
@@ -1792,13 +1793,8 @@ export default function B2bPage() {
           {[
             { label: 'Guests Referred', value: roi.guests.toLocaleString() },
             { label: 'Members Referred', value: roi.members.toLocaleString() },
-            { label: 'Partner Revenue', value: `$${roi.revenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}` },
-          ].map(s => (
-            <div key={s.label} className="bg-white border border-gray-200 rounded-xl px-4 py-3 text-center shadow-sm">
-              <p className="text-2xl font-black text-orange-500 leading-none">{s.value}</p>
-              <p className="text-[11px] text-gray-500 font-medium mt-1 uppercase tracking-wide">{s.label}</p>
-            </div>
-          ))}
+            { label: 'Partner Revenue', value: fmtMoney(roi.revenue) },
+          ].map(s => <StatCard key={s.label} label={s.label} value={s.value} valueClass="text-orange-500" />)}
         </div>
       )}
 

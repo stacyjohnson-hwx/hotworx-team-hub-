@@ -4,6 +4,7 @@ const { createClient } = require('@supabase/supabase-js')
 const authenticate    = require('../middleware/authMiddleware')
 const { requireRole } = require('../middleware/roleGuard')
 const { requireStudio } = require('../middleware/studioMiddleware')
+const { markContacted } = require('../services/b2bAutomation')
 
 const supabase = () => createClient(
   process.env.SUPABASE_URL,
@@ -44,11 +45,7 @@ async function syncPartners(eventId, contactIds = []) {
   if (!contactIds.length) return
   const rows = contactIds.map(cid => ({ event_id: eventId, b2b_contact_id: cid }))
   await supabase().from('event_b2b_contacts').insert(rows)
-  // Adding an event with a partner counts as reaching out → "Contacted" (automation).
-  await supabase().from('b2b_contacts')
-    .update({ status: 'contacted', updated_at: new Date().toISOString() })
-    .in('id', contactIds)
-    .in('status', ['new_lead', 'follow_up'])
+  await markContacted(contactIds)   // automation: linking an event → Contacted
 }
 
 // ─── EVENTS ──────────────────────────────────────────────────────────────────

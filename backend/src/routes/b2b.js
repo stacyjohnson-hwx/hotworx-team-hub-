@@ -3,6 +3,7 @@ const router = express.Router()
 const { createClient } = require('@supabase/supabase-js')
 const { requireRole } = require('../middleware/roleGuard')
 const { requireStudio } = require('../middleware/studioMiddleware')
+const { markContacted } = require('../services/b2bAutomation')
 const authenticate = require('../middleware/authMiddleware')
 
 const supabase = () =>
@@ -225,11 +226,7 @@ router.post('/contacts/:id/interactions', authenticate, requireStudio, async (re
 
   if (error) return res.status(500).json({ error: error.message })
 
-  // Reaching out moves a fresh/cooled lead to "Contacted" (automation rule).
-  await supabase().from('b2b_contacts')
-    .update({ status: 'contacted', updated_at: new Date().toISOString() })
-    .eq('id', req.params.id)
-    .in('status', ['new_lead', 'follow_up'])
+  await markContacted(req.params.id)   // automation: reaching out → Contacted
 
   res.status(201).json(data)
 })
