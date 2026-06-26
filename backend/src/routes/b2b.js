@@ -293,7 +293,7 @@ router.get('/report', authenticate, requireStudio, async (req, res) => {
 
     const [{ data: contacts }, { data: inter }] = await Promise.all([
       db.from('b2b_contacts').select('status, is_partner, has_lead_box, created_at').eq('studio_id', sid),
-      db.from('b2b_interactions').select('logged_by, logged_at, type').eq('studio_id', sid).gte('logged_at', since30),
+      db.from('b2b_interactions').select('logged_by, logged_at, contact_id').eq('studio_id', sid).gte('logged_at', since30),
     ])
 
     const byStage = {}
@@ -312,17 +312,25 @@ router.get('/report', authenticate, requireStudio, async (req, res) => {
     const nameMap = {}
     for (const u of users || []) nameMap[u.id] = u.user_metadata?.full_name || u.email?.split('@')[0] || 'Team Member'
 
-    const repCount = {}
-    for (const i of inter || []) if (i.logged_by) repCount[i.logged_by] = (repCount[i.logged_by] || 0) + 1
+    const repCount = {}                       // rep id -> interaction count
+    const repContacts = {}                    // rep id -> Set of contact ids
+    const activityContactIds = new Set()      // all contacts touched in the window
+    for (const i of inter || []) {
+      if (i.contact_id) activityContactIds.add(i.contact_id)
+      if (!i.logged_by) continue
+      repCount[i.logged_by] = (repCount[i.logged_by] || 0) + 1
+      if (i.contact_id) (repContacts[i.logged_by] = repContacts[i.logged_by] || new Set()).add(i.contact_id)
+    }
     const activityByRep = Object.entries(repCount)
       .filter(([id]) => activeSet.has(id))
-      .map(([id, count]) => ({ id, name: nameMap[id] || 'Team Member', interactions: count }))
+      .map(([id, count]) => ({ id, name: nameMap[id] || 'Team Member', interactions: count, contactIds: [...(repContacts[id] || [])] }))
       .sort((a, b) => b.interactions - a.interactions)
 
     res.json({
       total: (contacts || []).length,
       byStage, addedThisMonth, partners, leadBoxes,
       interactions30: (inter || []).length,
+      activityContactIds: [...activityContactIds],
       activityByRep,
     })
   } catch (err) {

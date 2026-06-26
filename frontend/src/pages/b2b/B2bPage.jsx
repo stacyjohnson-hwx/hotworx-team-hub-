@@ -1556,30 +1556,32 @@ function ActivePartnersTab({ contacts, users, isOwnerOrManager, onEdit, onDelete
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 // ─── Report Tab ───────────────────────────────────────────────────────────────
-function StatCard({ label, value, valueClass = 'text-gray-900' }) {
+function StatCard({ label, value, valueClass = 'text-gray-900', onClick }) {
   return (
-    <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 text-center shadow-sm">
+    <div onClick={onClick}
+      className={`bg-white border border-gray-200 rounded-xl px-4 py-3 text-center shadow-sm ${onClick ? 'cursor-pointer hover:border-orange-300 hover:shadow-md transition-all' : ''}`}>
       <p className={`text-2xl font-black leading-none ${valueClass}`}>{value}</p>
       <p className="text-[11px] text-gray-500 font-medium mt-1 uppercase tracking-wide">{label}</p>
     </div>
   )
 }
 
-function Bar({ label, value, max, barClass = 'bg-orange-400' }) {
+function Bar({ label, value, max, barClass = 'bg-orange-400', onClick }) {
   return (
-    <div className="flex items-center gap-3">
-      <span className="w-32 flex-shrink-0 text-xs font-semibold text-gray-600 truncate">{label}</span>
+    <div onClick={onClick} className={`flex items-center gap-3 ${onClick ? 'cursor-pointer group' : ''}`}>
+      <span className={`w-32 flex-shrink-0 text-xs font-semibold text-gray-600 truncate ${onClick ? 'group-hover:text-orange-600' : ''}`}>{label}</span>
       <div className="flex-1 bg-gray-100 rounded-full h-5 overflow-hidden">
-        <div className={`${barClass} h-full rounded-full`} style={{ width: `${(value / max) * 100}%` }} />
+        <div className={`${barClass} h-full rounded-full ${onClick ? 'group-hover:brightness-95' : ''}`} style={{ width: `${(value / max) * 100}%` }} />
       </div>
       <span className="w-8 text-right text-sm font-bold text-gray-800">{value}</span>
     </div>
   )
 }
 
-function ReportTab() {
+function ReportTab({ contacts, onOpenContact }) {
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
+  const [drill, setDrill] = useState(null)   // { title, items: contact[] }
   useEffect(() => {
     apiGet('/api/b2b/report').then(setData).catch(e => setError(e.message))
   }, [])
@@ -1591,12 +1593,17 @@ function ReportTab() {
     </div>
   )
 
+  const byId = Object.fromEntries((contacts || []).map(c => [c.id, c]))
+  const idsToContacts = ids => (ids || []).map(id => byId[id]).filter(Boolean)
+  const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()
+  const open = (title, items) => setDrill({ title, items })
+
   const stats = [
-    { label: 'Total Connections', value: data.total },
-    { label: 'Added This Month', value: data.addedThisMonth },
-    { label: 'Partners', value: data.partners },
-    { label: 'Lead Boxes', value: data.leadBoxes },
-    { label: 'Interactions (30d)', value: data.interactions30 },
+    { label: 'Total Connections', value: data.total, drill: () => open('All connections', contacts || []) },
+    { label: 'Added This Month', value: data.addedThisMonth, drill: () => open('Added this month', (contacts || []).filter(c => c.created_at >= monthStart)) },
+    { label: 'Partners', value: data.partners, drill: () => open('Partners', (contacts || []).filter(c => c.is_partner)) },
+    { label: 'Lead Boxes', value: data.leadBoxes, drill: () => open('Digital Lead Box locations', (contacts || []).filter(c => c.has_lead_box)) },
+    { label: 'Interactions (30d)', value: data.interactions30, drill: () => open('Businesses contacted (last 30 days)', idsToContacts(data.activityContactIds)) },
   ]
   const stageMax = Math.max(1, ...PIPELINE_STATUSES.map(s => data.byStage[s] || 0))
   const repMax = Math.max(1, ...(data.activityByRep || []).map(r => r.interactions))
@@ -1605,16 +1612,17 @@ function ReportTab() {
     <div className="space-y-6">
       {/* Stat cards */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        {stats.map(s => <StatCard key={s.label} label={s.label} value={s.value} />)}
+        {stats.map(s => <StatCard key={s.label} label={s.label} value={s.value} onClick={s.drill} />)}
       </div>
 
       {/* Pipeline funnel by stage */}
       <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
-        <h3 className="text-sm font-bold text-gray-900 mb-4">Connections by Stage</h3>
+        <h3 className="text-sm font-bold text-gray-900 mb-4">Connections by Stage <span className="text-gray-400 font-normal">— tap a bar to see the businesses</span></h3>
         <div className="space-y-2.5">
           {PIPELINE_STATUSES.map(s => {
             const meta = statusMeta(s)
-            return <Bar key={s} label={meta.label} value={data.byStage[s] || 0} max={stageMax} barClass={meta.bg} />
+            return <Bar key={s} label={meta.label} value={data.byStage[s] || 0} max={stageMax} barClass={meta.bg}
+              onClick={() => open(`${meta.label}`, (contacts || []).filter(c => c.status === s))} />
           })}
         </div>
       </div>
@@ -1626,10 +1634,40 @@ function ReportTab() {
           <p className="text-sm text-gray-400 py-4">No interactions logged in the last 30 days.</p>
         ) : (
           <div className="space-y-2.5 mt-3">
-            {data.activityByRep.map(r => <Bar key={r.id} label={r.name} value={r.interactions} max={repMax} />)}
+            {data.activityByRep.map(r => <Bar key={r.id} label={r.name} value={r.interactions} max={repMax}
+              onClick={() => open(`${r.name} — businesses contacted (30d)`, idsToContacts(r.contactIds))} />)}
           </div>
         )}
       </div>
+
+      {drill && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setDrill(null)}>
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl border border-gray-200 max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-200 bg-gray-800 rounded-t-2xl">
+              <h3 className="text-white font-bold text-sm">{drill.title} <span className="text-gray-400 font-normal">({drill.items.length})</span></h3>
+              <button onClick={() => setDrill(null)} className="text-gray-300 hover:text-white"><X size={18} /></button>
+            </div>
+            <div className="overflow-y-auto divide-y divide-gray-100">
+              {drill.items.length === 0 ? (
+                <p className="text-sm text-gray-400 px-5 py-6 text-center">No businesses.</p>
+              ) : drill.items.map(c => (
+                <button key={c.id} onClick={() => { onOpenContact(c); setDrill(null) }}
+                  className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-3 transition-colors">
+                  {c.logo_url
+                    ? <img src={c.logo_url} alt="" className="w-8 h-8 rounded-lg object-contain bg-gray-50 border border-gray-200 flex-shrink-0" />
+                    : <div className="w-8 h-8 rounded-lg bg-gray-100 border border-gray-200 flex items-center justify-center flex-shrink-0"><span className="text-xs font-bold text-gray-500">{(c.business_name[0] || '?').toUpperCase()}</span></div>}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-gray-900 truncate">{c.business_name}</p>
+                    <p className="text-xs text-gray-400">{statusMeta(c.status).label}{fmtLastContact(c.last_interacted_at) ? ` · ${fmtLastContact(c.last_interacted_at)}` : ''}</p>
+                  </div>
+                  {c.is_partner && <span className="text-[10px] font-bold bg-orange-500 text-white rounded-full px-1.5 py-0.5 flex-shrink-0">Partner</span>}
+                  {c.has_lead_box && <span className="text-[10px] font-bold bg-blue-600 text-white rounded-full px-1.5 py-0.5 flex-shrink-0">Box</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -1960,7 +1998,7 @@ export default function B2bPage() {
         />
       )}
       {tab === 'map' && <MapTab focus={mapFocus} />}
-      {tab === 'report' && <ReportTab />}
+      {tab === 'report' && <ReportTab contacts={contacts} onOpenContact={setModalContact} />}
 
       {modalContact !== null && (
         <ContactModal contact={modalContact || null} users={users} onSave={handleSave} onClose={() => setModalContact(null)} />
