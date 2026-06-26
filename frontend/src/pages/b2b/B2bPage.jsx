@@ -89,6 +89,7 @@ const blankForm = {
   status: 'new_lead', discount_desc: '', discount_ongoing: false,
   next_action: '', next_action_date: '', notes: '', assigned_to: '',
   latitude: null, longitude: null,
+  guests_referred: 0, members_referred: 0, revenue_generated: 0,
 }
 
 async function geocodeAddress(address) {
@@ -133,6 +134,9 @@ function ContactModal({ contact, users, onSave, onClose }) {
     assigned_to:      contact.assigned_to || '',
     latitude:         contact.latitude || null,
     longitude:        contact.longitude || null,
+    guests_referred:   contact.guests_referred ?? 0,
+    members_referred:  contact.members_referred ?? 0,
+    revenue_generated: contact.revenue_generated ?? 0,
   } : { ...blankForm })
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -283,6 +287,25 @@ function ContactModal({ contact, users, onSave, onClose }) {
           <div className="grid grid-cols-2 gap-3">
             <div><label className={labelCls}>Next Action</label><input className={inputCls} value={form.next_action} onChange={e => set('next_action', e.target.value)} placeholder="Follow up by phone" /></div>
             <div><label className={labelCls}>Due Date</label><input type="date" className={inputCls} value={form.next_action_date} onChange={e => set('next_action_date', e.target.value)} /></div>
+          </div>
+
+          {/* Partnership value — what this relationship is worth */}
+          <div>
+            <label className={labelCls}>Partnership Value <span className="text-gray-400 font-normal normal-case">— track the ROI of this relationship</span></label>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <span className="text-[11px] text-gray-500">Guests referred</span>
+                <input type="number" min="0" className={inputCls} value={form.guests_referred} onChange={e => set('guests_referred', e.target.value)} />
+              </div>
+              <div>
+                <span className="text-[11px] text-gray-500">Members referred</span>
+                <input type="number" min="0" className={inputCls} value={form.members_referred} onChange={e => set('members_referred', e.target.value)} />
+              </div>
+              <div>
+                <span className="text-[11px] text-gray-500">Revenue ($)</span>
+                <input type="number" min="0" step="0.01" className={inputCls} value={form.revenue_generated} onChange={e => set('revenue_generated', e.target.value)} />
+              </div>
+            </div>
           </div>
 
           <div><label className={labelCls}>Notes</label><textarea rows={3} className={`${inputCls} resize-none`} value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Additional context…" /></div>
@@ -608,6 +631,15 @@ function ContactCard({ contact, users, isOwnerOrManager, onEdit, onDelete, onLog
           <div className="mt-2.5 flex items-center gap-1.5 bg-orange-50 border border-orange-200 rounded-lg px-2.5 py-1.5">
             <Gift size={11} className="text-orange-500 flex-shrink-0" />
             <p className="text-orange-800 text-xs font-medium">{contact.discount_desc}</p>
+          </div>
+        )}
+
+        {/* Partnership value */}
+        {(contact.guests_referred > 0 || contact.members_referred > 0 || contact.revenue_generated > 0) && (
+          <div className="mt-2.5 flex flex-wrap gap-1.5">
+            {contact.guests_referred > 0 && <span className="text-[11px] font-semibold bg-slate-100 text-slate-700 rounded-full px-2 py-0.5">{contact.guests_referred} guests</span>}
+            {contact.members_referred > 0 && <span className="text-[11px] font-semibold bg-slate-100 text-slate-700 rounded-full px-2 py-0.5">{contact.members_referred} members</span>}
+            {contact.revenue_generated > 0 && <span className="text-[11px] font-semibold bg-green-100 text-green-700 rounded-full px-2 py-0.5">${Number(contact.revenue_generated).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>}
           </div>
         )}
       </div>
@@ -1467,6 +1499,14 @@ export default function B2bPage() {
     .filter(c => !queueAssignee || c.assigned_to === queueAssignee)
     .sort((a, b) => staleDays(b) - staleDays(a))
 
+  // ── Partnership ROI totals across all contacts ──
+  const roi = contacts.reduce((a, c) => ({
+    guests:  a.guests  + (Number(c.guests_referred)  || 0),
+    members: a.members + (Number(c.members_referred) || 0),
+    revenue: a.revenue + (Number(c.revenue_generated) || 0),
+  }), { guests: 0, members: 0, revenue: 0 })
+  const hasRoi = roi.guests > 0 || roi.members > 0 || roi.revenue > 0
+
   if (loading) return (
     <div className="flex items-center justify-center h-64">
       <div className="w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
@@ -1496,6 +1536,22 @@ export default function B2bPage() {
       </div>
 
       {error && <div className="mb-4 bg-red-50 border border-red-300 text-red-700 text-sm rounded-lg px-4 py-3">{error}</div>}
+
+      {/* Partnership ROI summary */}
+      {tab !== 'map' && tab !== 'territory' && hasRoi && (
+        <div className="mb-6 grid grid-cols-3 gap-3">
+          {[
+            { label: 'Guests Referred', value: roi.guests.toLocaleString() },
+            { label: 'Members Referred', value: roi.members.toLocaleString() },
+            { label: 'Partner Revenue', value: `$${roi.revenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}` },
+          ].map(s => (
+            <div key={s.label} className="bg-white border border-gray-200 rounded-xl px-4 py-3 text-center shadow-sm">
+              <p className="text-2xl font-black text-orange-500 leading-none">{s.value}</p>
+              <p className="text-[11px] text-gray-500 font-medium mt-1 uppercase tracking-wide">{s.label}</p>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* B2B Today — follow-ups due / overdue (business pipeline only) */}
       {tab !== 'map' && tab !== 'territory' && (

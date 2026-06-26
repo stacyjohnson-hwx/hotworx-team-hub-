@@ -73,6 +73,7 @@ router.post('/contacts', authenticate, requireStudio, async (req, res) => {
     website, social_handle, logo_url, partner_type,
     status, discount_desc, discount_ongoing, next_action, next_action_date,
     notes, assigned_to, latitude, longitude,
+    guests_referred, members_referred, revenue_generated,
   } = req.body
 
   if (!business_name) return res.status(400).json({ error: 'business_name is required' })
@@ -99,6 +100,9 @@ router.post('/contacts', authenticate, requireStudio, async (req, res) => {
       assigned_to: assigned_to || null,
       latitude: latitude || null,
       longitude: longitude || null,
+      guests_referred: Number(guests_referred) || 0,
+      members_referred: Number(members_referred) || 0,
+      revenue_generated: Number(revenue_generated) || 0,
       created_by: req.user.id,
       studio_id: req.studio.id,
     })
@@ -117,6 +121,7 @@ router.put('/contacts/:id', authenticate, requireStudio, async (req, res) => {
     website, social_handle, logo_url, partner_type,
     status, discount_desc, discount_ongoing, next_action, next_action_date,
     notes, assigned_to, latitude, longitude,
+    guests_referred, members_referred, revenue_generated,
   } = req.body
 
   const { data, error } = await supabase()
@@ -130,6 +135,9 @@ router.put('/contacts/:id', authenticate, requireStudio, async (req, res) => {
       notes, assigned_to: assigned_to || null,
       latitude: latitude || null,
       longitude: longitude || null,
+      ...(guests_referred  !== undefined ? { guests_referred:  Number(guests_referred)  || 0 } : {}),
+      ...(members_referred !== undefined ? { members_referred: Number(members_referred) || 0 } : {}),
+      ...(revenue_generated !== undefined ? { revenue_generated: Number(revenue_generated) || 0 } : {}),
       updated_at: new Date().toISOString(),
     })
     .eq('id', req.params.id)
