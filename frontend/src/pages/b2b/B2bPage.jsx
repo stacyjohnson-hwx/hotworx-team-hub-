@@ -90,6 +90,7 @@ const blankForm = {
   next_action: '', next_action_date: '', notes: '', assigned_to: '',
   latitude: null, longitude: null,
   guests_referred: 0, members_referred: 0, revenue_generated: 0,
+  is_partner: false,
 }
 
 async function geocodeAddress(address) {
@@ -137,6 +138,7 @@ function ContactModal({ contact, users, onSave, onClose }) {
     guests_referred:   contact.guests_referred ?? 0,
     members_referred:  contact.members_referred ?? 0,
     revenue_generated: contact.revenue_generated ?? 0,
+    is_partner:        contact.is_partner ?? false,
   } : { ...blankForm })
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -255,6 +257,14 @@ function ContactModal({ contact, users, onSave, onClose }) {
               ))}
             </div>
           </div>
+
+          {/* Partner flag */}
+          <label className="flex items-center gap-2.5 cursor-pointer bg-orange-50 border border-orange-200 rounded-lg px-3 py-2.5">
+            <input type="checkbox" checked={!!form.is_partner} onChange={e => set('is_partner', e.target.checked)}
+              className="w-4 h-4 rounded border-gray-300 text-orange-500 focus:ring-orange-500" />
+            <span className="text-sm font-semibold text-gray-800">Partner</span>
+            <span className="text-xs text-gray-500">— check to list this business / apartment on the Partners tab</span>
+          </label>
 
           {/* Status + Assignment */}
           <div className="grid grid-cols-2 gap-3">
@@ -574,6 +584,11 @@ function ContactCard({ contact, users, isOwnerOrManager, onEdit, onDelete, onLog
         {/* Status + partner badge + thumbs */}
         <div className="flex items-center gap-2 flex-wrap mt-3">
           <StatusBadge status={contact.status} />
+          {contact.is_partner && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-orange-500 text-white rounded-full text-xs font-bold">
+              <Handshake size={11} /> Partner
+            </span>
+          )}
           {contact.discount_ongoing && (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-orange-100 border border-orange-300 rounded-full text-xs font-semibold text-orange-800">
               <Gift size={10} /> Partner
@@ -910,7 +925,7 @@ function PipelineTab({ contacts, users, isOwnerOrManager, onEdit, onDelete, onSt
     setLogTarget(null)
   }
 
-  const pipelineContacts = contacts.filter(c => c.status !== 'active_partner')
+  const pipelineContacts = contacts // Connections shows all businesses/apartments, partners included
   const today  = new Date(); today.setHours(0,0,0,0)
   const overdue = pipelineContacts.filter(c => c.next_action_date && new Date(c.next_action_date + 'T00:00:00') < today)
 
@@ -1293,17 +1308,18 @@ function ActivePartnersTab({ contacts, users, isOwnerOrManager, onEdit, onDelete
     setLogTarget(null)
   }
 
-  const partners    = contacts.filter(c => c.status === 'active_partner')
+  // Input is already the partner-flagged list. Split off ended partnerships.
+  const partners     = contacts.filter(c => c.status !== 'past_partner')
   const pastPartners = contacts.filter(c => c.status === 'past_partner')
 
   return (
     <>
-      {partners.length === 0 ? (
+      {partners.length + pastPartners.length === 0 ? (
         <div className="text-center py-24">
           <Handshake size={48} className="mx-auto mb-4 text-gray-300" />
-          <p className="text-gray-700 font-semibold">No active partners yet.</p>
+          <p className="text-gray-700 font-semibold">No partners yet.</p>
           <p className="text-gray-400 text-sm mt-1">
-            Use the Pipeline tab and click "Make Partner →" on a meeting-scheduled contact to move them here.
+            Check the <span className="font-semibold">Partner</span> box on any business or apartment to list it here.
           </p>
         </div>
       ) : (
@@ -1451,8 +1467,11 @@ export default function B2bPage() {
   const handleStatusChange = async (id, newStatus) => {
     const contact = contacts.find(c => c.id === id)
     if (!contact) return
+    // Advancing to Active Partner also flags them as a Partner (checkbox is the
+    // source of truth for the Partners tab).
+    const extra = newStatus === 'active_partner' ? { is_partner: true } : {}
     try {
-      const updated = await apiPut(`/api/b2b/contacts/${id}`, { ...contact, status: newStatus })
+      const updated = await apiPut(`/api/b2b/contacts/${id}`, { ...contact, status: newStatus, ...extra })
       setContacts(prev => prev.map(c => c.id === id ? updated : c))
     } catch (err) { setError(err.message) }
   }
@@ -1471,7 +1490,7 @@ export default function B2bPage() {
     const matchSearch = !q || [c.business_name, c.contact_name, c.email, c.industry].some(f => f?.toLowerCase().includes(q))
     const matchIndustry = !industryFilter || c.industry === industryFilter
     const matchType = !typeFilter || (c.partner_type || 'referral_collab') === typeFilter
-    return (c.status === 'active_partner' || c.status === 'past_partner') && matchSearch && matchIndustry && matchType
+    return c.is_partner && matchSearch && matchIndustry && matchType
   })
 
   // ── "B2B Today" action queue — follow-ups due or overdue ──
@@ -1492,7 +1511,7 @@ export default function B2bPage() {
     return ref ? Math.floor((Date.now() - new Date(ref).getTime()) / 86400000) : 9999
   }
   const coldItems = contacts
-    .filter(c => c.status === 'active_partner')
+    .filter(c => c.is_partner)
     .filter(c => !dueIds.has(c.id))
     .filter(c => !(c.next_action_date && c.next_action_date > todayStr)) // not already scheduled ahead
     .filter(c => staleDays(c) >= COLD_DAYS)
@@ -1524,7 +1543,7 @@ export default function B2bPage() {
           <p className="text-gray-500 text-sm mt-1">
             <span className="text-gray-900 font-semibold">{contacts.length}</span> contact{contacts.length !== 1 ? 's' : ''}
             <span className="mx-1.5 text-gray-300">·</span>
-            <span className="text-orange-500 font-semibold">{contacts.filter(c => c.status === 'active_partner').length}</span> active partners
+            <span className="text-orange-500 font-semibold">{contacts.filter(c => c.is_partner).length}</span> partners
           </p>
         </div>
         {isOwnerOrManager && (
@@ -1636,7 +1655,7 @@ export default function B2bPage() {
 
       {/* Tabs */}
       <div className="flex gap-1 mb-5 border-b border-gray-200">
-        {[{ key: 'pipeline', label: 'Pipeline' }, { key: 'partners', label: 'Active Partners' }, { key: 'territory', label: 'Canvassing' }, { key: 'map', label: 'Map' }].map(t => (
+        {[{ key: 'pipeline', label: 'Connections' }, { key: 'partners', label: 'Partners' }, { key: 'territory', label: 'Canvassing' }, { key: 'map', label: 'Map' }].map(t => (
           <button key={t.key} onClick={() => { setTab(t.key); if (t.key === 'partners') setStatusFilter('') }}
             className={`px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${
               tab === t.key ? 'border-orange-500 text-orange-500' : 'border-transparent text-gray-500 hover:text-gray-800'
