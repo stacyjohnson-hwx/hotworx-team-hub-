@@ -308,7 +308,28 @@ function buildMarketingSection(marketing) {
   </div>`
 }
 
-function buildHtml(dateStr, submissions, outreachByUser, tasksByUser, ops, marketing) {
+// Studio-level "B2B Outreach & Canvassing" — logged partner interactions and
+// territory canvassing visits for the day. Rendered once per email.
+function buildB2bSection(b2b) {
+  const inter = (b2b && b2b.interactions) || []
+  const visits = (b2b && b2b.visits) || []
+  const total = inter.length + visits.length
+  const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : 'Outreach'
+  const interRows = inter.map(x => opsItem(`🤝 ${cap(x.type)} — ${x.business}`, x.staff)).join('')
+  const visitRows = visits.map(x => opsItem(`📍 ${x.place}${x.activity ? ` (${x.activity})` : ''}`, x.staff)).join('')
+  const body = total ? `${interRows}${visitRows}` : opsEmpty('No B2B outreach or canvassing logged today.')
+  return `
+  <div style="margin-bottom:24px;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
+    <div style="background:#1A1A1A;padding:12px 16px;font-size:14px;font-weight:700;color:#fff;">B2B Outreach &amp; Canvassing (${total})</div>
+    <div style="padding:12px 16px;">
+      <table style="width:100%;border-collapse:collapse;">
+        ${body}
+      </table>
+    </div>
+  </div>`
+}
+
+function buildHtml(dateStr, submissions, outreachByUser, tasksByUser, ops, marketing, b2b) {
   const dateLabel = new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
   })
@@ -331,6 +352,7 @@ function buildHtml(dateStr, submissions, outreachByUser, tasksByUser, ops, marke
             tasksByUser[s.submitted_by]    || { cleaning: [], operations: [] }
           )).join('')}
       ${buildMarketingSection(marketing)}
+      ${buildB2bSection(b2b)}
       ${buildOpsSection(ops)}
       <div style="margin-top:16px;padding-top:16px;border-top:1px solid #f3f4f6;font-size:12px;color:#9ca3af;text-align:center;">
         ${process.env.STUDIO_NAME} · ${process.env.STUDIO_ADDRESS} · Internal use only
@@ -377,7 +399,38 @@ async function fetchSubmissionsForDate(dateStr, studioId) {
     }
   }
 
-  if (!submissions.length) return { submissions: [], outreachByUser: {}, tasksByUser: {}, marketing }
+  // B2B outreach (logged interactions) + canvassing (territory visits) for the day.
+  let b2b = { interactions: [], visits: [] }
+  {
+    // interactions store a timestamptz; fetch a UTC window then keep rows whose
+    // America/Chicago calendar date matches the report date.
+    const win = (d) => { const x = new Date(`${dateStr}T00:00:00Z`); x.setUTCDate(x.getUTCDate() + d); return x.toISOString() }
+    const centralDate = (ts) => new Date(ts).toLocaleDateString('en-CA', { timeZone: 'America/Chicago' })
+    let iq = db.from('b2b_interactions')
+      .select('type, notes, logged_by, logged_at, b2b_contacts(business_name)')
+      .gte('logged_at', win(-1)).lt('logged_at', win(2))
+    if (studioId) iq = iq.eq('studio_id', studioId)
+    const { data: inter } = await iq
+
+    let vq = db.from('territory_visits')
+      .select('activity_type, notes, visited_by, visit_date, territories(name)')
+      .eq('visit_date', dateStr)
+    if (studioId) vq = vq.eq('studio_id', studioId)
+    const { data: vis } = await vq
+
+    const todays = (inter || []).filter(x => centralDate(x.logged_at) === dateStr)
+    const bNames = {}
+    for (const uid of [...new Set([...todays.map(x => x.logged_by), ...(vis || []).map(x => x.visited_by)].filter(Boolean))]) {
+      const { data } = await db.auth.admin.getUserById(uid)
+      bNames[uid] = data?.user?.user_metadata?.full_name || data?.user?.email?.split('@')[0] || 'Team Member'
+    }
+    b2b = {
+      interactions: todays.map(x => ({ type: x.type || 'other', business: x.b2b_contacts?.business_name || 'Unknown business', staff: bNames[x.logged_by] || 'Team Member' })),
+      visits: (vis || []).map(x => ({ activity: x.activity_type || '', place: x.territories?.name || 'Territory', staff: bNames[x.visited_by] || 'Team Member' })),
+    }
+  }
+
+  if (!submissions.length) return { submissions: [], outreachByUser: {}, tasksByUser: {}, marketing, b2b }
 
   const userIds = [...new Set(submissions.map(s => s.submitted_by))]
 
@@ -443,7 +496,7 @@ async function fetchSubmissionsForDate(dateStr, studioId) {
     ...s,
     submitter_name: nameMap[s.submitted_by] || 'Team Member',
   }))
-  return { submissions: enrichedSubmissions, outreachByUser, tasksByUser, marketing }
+  return { submissions: enrichedSubmissions, outreachByUser, tasksByUser, marketing, b2b }
 }
 
 // Studio-level operations snapshot for the EOD email: open maintenance,
@@ -506,9 +559,9 @@ async function sendEodEmail(dateStr, studioId) {
     return
   }
 
-  const { submissions, outreachByUser, tasksByUser, marketing } = await fetchSubmissionsForDate(dateStr, studioId)
+  const { submissions, outreachByUser, tasksByUser, marketing, b2b } = await fetchSubmissionsForDate(dateStr, studioId)
   const ops = await fetchOpsSummary(db, studioId)
-  const html = buildHtml(dateStr, submissions, outreachByUser, tasksByUser, ops, marketing)
+  const html = buildHtml(dateStr, submissions, outreachByUser, tasksByUser, ops, marketing, b2b)
   const studioLabel = studioName || process.env.STUDIO_NAME || 'HOTWORX Pewaukee'
 
   const dateLabel = new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', {
