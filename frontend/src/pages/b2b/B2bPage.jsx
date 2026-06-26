@@ -1470,6 +1470,86 @@ function ActivePartnersTab({ contacts, users, isOwnerOrManager, onEdit, onDelete
 }
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
+// ─── Report Tab ───────────────────────────────────────────────────────────────
+function ReportTab() {
+  const [data, setData] = useState(null)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    apiGet('/api/b2b/report').then(setData).catch(e => setError(e.message))
+  }, [])
+
+  if (error) return <div className="text-sm text-red-600 py-8">{error}</div>
+  if (!data) return (
+    <div className="flex items-center justify-center h-48">
+      <div className="w-7 h-7 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+    </div>
+  )
+
+  const stats = [
+    { label: 'Total Connections', value: data.total },
+    { label: 'Added This Month', value: data.addedThisMonth },
+    { label: 'Partners', value: data.partners },
+    { label: 'Lead Boxes', value: data.leadBoxes },
+    { label: 'Interactions (30d)', value: data.interactions30 },
+  ]
+  const stageMax = Math.max(1, ...PIPELINE_STATUSES.map(s => data.byStage[s] || 0))
+  const repMax = Math.max(1, ...(data.activityByRep || []).map(r => r.interactions))
+
+  return (
+    <div className="space-y-6">
+      {/* Stat cards */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        {stats.map(s => (
+          <div key={s.label} className="bg-white border border-gray-200 rounded-xl px-4 py-3 text-center shadow-sm">
+            <p className="text-2xl font-black text-gray-900 leading-none">{s.value}</p>
+            <p className="text-[11px] text-gray-500 font-medium mt-1 uppercase tracking-wide">{s.label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Pipeline funnel by stage */}
+      <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+        <h3 className="text-sm font-bold text-gray-900 mb-4">Connections by Stage</h3>
+        <div className="space-y-2.5">
+          {PIPELINE_STATUSES.map(s => {
+            const meta = statusMeta(s)
+            const count = data.byStage[s] || 0
+            return (
+              <div key={s} className="flex items-center gap-3">
+                <span className="w-32 flex-shrink-0 text-xs font-semibold text-gray-600">{meta.label}</span>
+                <div className="flex-1 bg-gray-100 rounded-full h-5 overflow-hidden">
+                  <div className={`${meta.bg} h-full rounded-full`} style={{ width: `${(count / stageMax) * 100}%` }} />
+                </div>
+                <span className="w-8 text-right text-sm font-bold text-gray-800">{count}</span>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Activity by rep */}
+      <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+        <h3 className="text-sm font-bold text-gray-900 mb-1">Activity by Rep <span className="text-gray-400 font-normal">— interactions logged (last 30 days)</span></h3>
+        {(data.activityByRep || []).length === 0 ? (
+          <p className="text-sm text-gray-400 py-4">No interactions logged in the last 30 days.</p>
+        ) : (
+          <div className="space-y-2.5 mt-3">
+            {data.activityByRep.map(r => (
+              <div key={r.id} className="flex items-center gap-3">
+                <span className="w-32 flex-shrink-0 text-xs font-semibold text-gray-600 truncate">{r.name}</span>
+                <div className="flex-1 bg-gray-100 rounded-full h-5 overflow-hidden">
+                  <div className="bg-orange-400 h-full rounded-full" style={{ width: `${(r.interactions / repMax) * 100}%` }} />
+                </div>
+                <span className="w-8 text-right text-sm font-bold text-gray-800">{r.interactions}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function B2bPage() {
   const { role } = useRole()
   const isOwnerOrManager = true // all roles can view, add, and log interactions in B2B
@@ -1493,7 +1573,7 @@ export default function B2bPage() {
     try {
       const [cd, ud] = await Promise.all([apiGet('/api/b2b/contacts'), apiGet('/api/users')])
       setContacts(cd)
-      setUsers(ud.map(u => ({ id: u.id, name: u.full_name || u.email })))
+      setUsers(ud.filter(u => u.is_active !== false).map(u => ({ id: u.id, name: u.full_name || u.email })))
     } catch (err) { setError(err.message) }
     finally { setLoading(false) }
   }, [])
@@ -1619,7 +1699,7 @@ export default function B2bPage() {
       {error && <div className="mb-4 bg-red-50 border border-red-300 text-red-700 text-sm rounded-lg px-4 py-3">{error}</div>}
 
       {/* Partnership ROI summary */}
-      {tab !== 'map' && tab !== 'territory' && hasRoi && (
+      {tab !== 'map' && tab !== 'territory' && tab !== 'report' && hasRoi && (
         <div className="mb-6 grid grid-cols-3 gap-3">
           {[
             { label: 'Guests Referred', value: roi.guests.toLocaleString() },
@@ -1635,7 +1715,7 @@ export default function B2bPage() {
       )}
 
       {/* B2B Today — follow-ups due / overdue (business pipeline only) */}
-      {tab !== 'map' && tab !== 'territory' && (
+      {tab !== 'map' && tab !== 'territory' && tab !== 'report' && (
       <div className="mb-6 bg-white border border-orange-200 rounded-xl overflow-hidden shadow-sm">
         <div className="bg-orange-50 px-4 py-3 flex items-center justify-between border-b border-orange-100 gap-3">
           <h2 className="text-sm font-bold text-orange-800 flex items-center gap-2">
@@ -1680,7 +1760,7 @@ export default function B2bPage() {
       )}
 
       {/* Going Cold — active partners drifting without a scheduled touch */}
-      {tab !== 'map' && tab !== 'territory' && coldItems.length > 0 && (
+      {tab !== 'map' && tab !== 'territory' && tab !== 'report' && coldItems.length > 0 && (
       <div className="mb-6 bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
         <div className="bg-slate-50 px-4 py-3 flex items-center justify-between border-b border-slate-100 gap-3">
           <h2 className="text-sm font-bold text-slate-700 flex items-center gap-2">
@@ -1717,7 +1797,7 @@ export default function B2bPage() {
 
       {/* Tabs */}
       <div className="flex gap-1 mb-5 border-b border-gray-200">
-        {[{ key: 'pipeline', label: 'Connections' }, { key: 'partners', label: 'Partners' }, { key: 'territory', label: 'Canvassing' }, { key: 'map', label: 'Map' }].map(t => (
+        {[{ key: 'pipeline', label: 'Connections' }, { key: 'partners', label: 'Partners' }, { key: 'territory', label: 'Canvassing' }, { key: 'map', label: 'Map' }, { key: 'report', label: 'Report' }].map(t => (
           <button key={t.key} onClick={() => { setTab(t.key); if (t.key === 'partners') setStatusFilter('') }}
             className={`px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${
               tab === t.key ? 'border-orange-500 text-orange-500' : 'border-transparent text-gray-500 hover:text-gray-800'
@@ -1728,7 +1808,7 @@ export default function B2bPage() {
       </div>
 
       {/* Search + filter (hidden on Map & Territory tabs, which have their own) */}
-      {tab !== 'map' && tab !== 'territory' && (
+      {tab !== 'map' && tab !== 'territory' && tab !== 'report' && (
       <div className="flex gap-3 mb-6 flex-wrap">
         <input
           className="flex-1 min-w-48 bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 text-sm placeholder-gray-400 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
@@ -1796,6 +1876,7 @@ export default function B2bPage() {
         />
       )}
       {tab === 'map' && <MapTab focus={mapFocus} />}
+      {tab === 'report' && <ReportTab />}
 
       {modalContact !== null && (
         <ContactModal contact={modalContact || null} users={users} onSave={handleSave} onClose={() => setModalContact(null)} />

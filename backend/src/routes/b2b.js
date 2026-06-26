@@ -211,6 +211,13 @@ router.post('/contacts/:id/interactions', authenticate, requireStudio, async (re
     .single()
 
   if (error) return res.status(500).json({ error: error.message })
+
+  // Reaching out moves a fresh/cooled lead to "Contacted" (automation rule).
+  await supabase().from('b2b_contacts')
+    .update({ status: 'contacted', updated_at: new Date().toISOString() })
+    .eq('id', req.params.id)
+    .in('status', ['new_lead', 'follow_up'])
+
   res.status(201).json(data)
 })
 
@@ -260,6 +267,56 @@ router.get('/contacts/:id/events', authenticate, requireStudio, async (req, res)
     res.json(data || [])
   } catch (err) {
     console.error('GET /b2b/contacts/:id/events', err.message)
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ─── GET /api/b2b/report ─────────────────────────────────────────────────────
+// Pipeline + activity report for the studio.
+router.get('/report', authenticate, requireStudio, async (req, res) => {
+  try {
+    const db = supabase()
+    const sid = req.studio.id
+    const now = new Date()
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+    const since30 = new Date(Date.now() - 30 * 86400000).toISOString()
+
+    const [{ data: contacts }, { data: inter }] = await Promise.all([
+      db.from('b2b_contacts').select('status, is_partner, has_lead_box, created_at').eq('studio_id', sid),
+      db.from('b2b_interactions').select('logged_by, logged_at, type').eq('studio_id', sid).gte('logged_at', since30),
+    ])
+
+    const byStage = {}
+    let partners = 0, leadBoxes = 0, addedThisMonth = 0
+    for (const c of contacts || []) {
+      byStage[c.status] = (byStage[c.status] || 0) + 1
+      if (c.is_partner) partners++
+      if (c.has_lead_box) leadBoxes++
+      if (c.created_at && c.created_at >= monthStart) addedThisMonth++
+    }
+
+    // Activity per rep (interactions logged in the last 30 days) — active users only.
+    const { data: { users } } = await db.auth.admin.listUsers({ perPage: 200 })
+    const { data: profiles } = await db.from('user_profiles').select('id, is_active')
+    const activeSet = new Set((profiles || []).filter(p => p.is_active !== false).map(p => p.id))
+    const nameMap = {}
+    for (const u of users || []) nameMap[u.id] = u.user_metadata?.full_name || u.email?.split('@')[0] || 'Team Member'
+
+    const repCount = {}
+    for (const i of inter || []) if (i.logged_by) repCount[i.logged_by] = (repCount[i.logged_by] || 0) + 1
+    const activityByRep = Object.entries(repCount)
+      .filter(([id]) => activeSet.has(id))
+      .map(([id, count]) => ({ id, name: nameMap[id] || 'Team Member', interactions: count }))
+      .sort((a, b) => b.interactions - a.interactions)
+
+    res.json({
+      total: (contacts || []).length,
+      byStage, addedThisMonth, partners, leadBoxes,
+      interactions30: (inter || []).length,
+      activityByRep,
+    })
+  } catch (err) {
+    console.error('GET /b2b/report', err.message)
     res.status(500).json({ error: err.message })
   }
 })

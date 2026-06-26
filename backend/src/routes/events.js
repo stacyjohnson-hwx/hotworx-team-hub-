@@ -44,6 +44,11 @@ async function syncPartners(eventId, contactIds = []) {
   if (!contactIds.length) return
   const rows = contactIds.map(cid => ({ event_id: eventId, b2b_contact_id: cid }))
   await supabase().from('event_b2b_contacts').insert(rows)
+  // Adding an event with a partner counts as reaching out → "Contacted" (automation).
+  await supabase().from('b2b_contacts')
+    .update({ status: 'contacted', updated_at: new Date().toISOString() })
+    .in('id', contactIds)
+    .in('status', ['new_lead', 'follow_up'])
 }
 
 // ─── EVENTS ──────────────────────────────────────────────────────────────────

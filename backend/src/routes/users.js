@@ -259,6 +259,18 @@ router.patch('/:id/deactivate', authenticate, requireRole('owner', 'manager'), a
       .from('user_profiles')
       .upsert({ id, is_active: false }, { onConflict: 'id' })
     if (profileError) return res.status(400).json({ error: profileError.message })
+
+    // Reassign this user's B2B contacts to the owner so nothing is orphaned.
+    try {
+      const { data: { users } } = await supabase.auth.admin.listUsers({ perPage: 200 })
+      const owner = (users || []).find(u => u.email?.toLowerCase() === (process.env.OWNER_EMAIL || '').toLowerCase())
+      if (owner && owner.id !== id) {
+        await supabase.from('b2b_contacts')
+          .update({ assigned_to: owner.id, updated_at: new Date().toISOString() })
+          .eq('assigned_to', id)
+      }
+    } catch (e) { console.error('[deactivate] B2B reassign failed:', e.message) }
+
     res.json({ success: true })
   } catch (err) {
     res.status(500).json({ error: err.message })
