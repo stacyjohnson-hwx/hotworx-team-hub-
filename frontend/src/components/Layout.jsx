@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Outlet } from 'react-router-dom'
+import { Outlet, useLocation } from 'react-router-dom'
 import { NavLink } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { MonthNav } from './MonthNav'
@@ -21,10 +21,15 @@ const BOTTOM_NAV = [
   { to: '/profile',   label: 'Profile', icon: UserCircle      },
 ]
 
+// Only these pages read the global month/year selector; hide it everywhere else.
+const MONTH_AWARE_PATHS = ['/dashboard', '/goals', '/advisor', '/studio-trends', '/events', '/scorecard']
+
 export function Layout() {
   const { isCurrentMonth } = useMonth()
   const { role } = useRole()
   const { signOut } = useAuth()
+  const { pathname } = useLocation()
+  const showMonthNav = MONTH_AWARE_PATHS.some(p => pathname === p || pathname.startsWith(p + '/'))
   const [drawerOpen, setDrawerOpen] = useState(false)
 
   return (
@@ -67,9 +72,9 @@ export function Layout() {
             <Menu size={20} />
           </button>
 
-          <MonthNav />
+          {showMonthNav && <MonthNav />}
 
-          {!isCurrentMonth && (
+          {showMonthNav && !isCurrentMonth && (
             <span className="hidden sm:inline text-xs text-yellow-400 bg-yellow-400/10 border border-yellow-400/30 px-2 py-0.5 rounded-full">
               Past month — read only
             </span>
