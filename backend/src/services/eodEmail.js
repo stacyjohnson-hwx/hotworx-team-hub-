@@ -260,7 +260,7 @@ function opsEmpty(label) {
 // orders. Rendered once per email (not per shift).
 function buildOpsSection(ops) {
   if (!ops) return ''
-  const { maintenance = [], escalations = [], orders = [] } = ops
+  const { maintenance = [], escalations = [], orders = [], cancelCalls = [] } = ops
 
   const maintRows = maintenance.length
     ? maintenance.map(m => opsItem(`🔧 ${m.title}`, [m.area, m.priority, m.status === 'in_progress' ? 'in progress' : 'open'].filter(Boolean).join(' · '))).join('')
@@ -274,6 +274,10 @@ function buildOpsSection(ops) {
     ? orders.map(o => opsItem(`📦 ${o.item_name}`, [o.quantity ? `Qty ${o.quantity}` : null, o.vendor].filter(Boolean).join(' · '))).join('')
     : opsEmpty('None pending ✅')
 
+  const callRows = cancelCalls.length
+    ? cancelCalls.map(c => opsItem(`📞 ${c.member_name}`, c.follow_up_date ? `due ${c.follow_up_date}` : 'due')).join('')
+    : opsEmpty('None due ✅')
+
   return `
   <div style="margin-bottom:24px;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
     <div style="background:#1A1A1A;padding:12px 16px;font-size:14px;font-weight:700;color:#fff;">Operations Watch</div>
@@ -285,6 +289,8 @@ function buildOpsSection(ops) {
         ${escRows}
         ${sectionHeader(`Pending Orders (${orders.length})`)}
         ${orderRows}
+        ${sectionHeader(`Post-Cancel Calls Due (${cancelCalls.length})`)}
+        ${callRows}
       </table>
     </div>
   </div>`
@@ -502,16 +508,22 @@ async function fetchSubmissionsForDate(dateStr, studioId) {
 // Studio-level operations snapshot for the EOD email: open maintenance,
 // open escalations, and pending orders.
 async function fetchOpsSummary(db, studioId) {
-  if (!studioId) return { maintenance: [], escalations: [], orders: [] }
-  const [maint, esc, ord] = await Promise.all([
+  if (!studioId) return { maintenance: [], escalations: [], orders: [], cancelCalls: [] }
+  const today = new Date().toISOString().split('T')[0]
+  const [maint, esc, ord, cancels] = await Promise.all([
     db.from('maintenance_logs').select('title, area, priority, status').eq('studio_id', studioId).in('status', ['open', 'in_progress']),
     db.from('escalation_logs').select('title, type, priority, member_name, status').eq('studio_id', studioId).neq('status', 'resolved'),
     db.from('orders').select('item_name, quantity, vendor, status').eq('studio_id', studioId).eq('status', 'pending'),
+    // Post-cancel learning calls that are due (cancelled, not yet resolved, follow-up date reached)
+    db.from('cancellation_log').select('member_name, follow_up_date, win_back_step')
+      .eq('studio_id', studioId).eq('outcome', 'cancelled').is('date_resolved', null)
+      .lte('follow_up_date', today).order('follow_up_date', { ascending: true }),
   ])
   return {
     maintenance: maint.data || [],
     escalations: esc.data || [],
     orders: ord.data || [],
+    cancelCalls: cancels.data || [],
   }
 }
 

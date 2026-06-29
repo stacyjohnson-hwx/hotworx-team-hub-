@@ -4,7 +4,7 @@ import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
 import { UserMinus, Plus, X, Trash2, Edit2, Target, Loader2, Filter } from 'lucide-react'
 
 // ─── Controlled vocab (mirrors the PRD) ───────────────────────────────────────
-const REASONS = [
+export const REASONS = [
   { value: 'cost',        label: 'Cost / financial' },
   { value: 'not_using',   label: 'Not using it / no time' },
   { value: 'no_results',  label: 'Not seeing results' },
@@ -38,7 +38,7 @@ const OFFER_ACCEPTED = [
   { value: 'sweat_elite', label: 'Sweat Elite month' },
   { value: 'free_month',  label: 'Free month' },
 ]
-const OUTCOMES = [
+export const OUTCOMES = [
   { value: 'saved',     label: 'Saved',     cls: 'bg-green-100 text-green-700 border-green-200' },
   { value: 'pending',   label: 'Pending',   cls: 'bg-yellow-100 text-yellow-800 border-yellow-200' },
   { value: 'cancelled', label: 'Cancelled', cls: 'bg-red-100 text-red-700 border-red-200' },

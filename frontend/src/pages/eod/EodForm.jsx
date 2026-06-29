@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
-import { CheckCircle, ExternalLink, AlertTriangle, Phone, MessageSquare, Sparkles, ClipboardCheck, Wrench, ShieldAlert, Loader2, GraduationCap, ShoppingCart } from 'lucide-react'
+import { CheckCircle, ExternalLink, AlertTriangle, Phone, MessageSquare, Sparkles, ClipboardCheck, Wrench, ShieldAlert, Loader2, GraduationCap, ShoppingCart, UserMinus } from 'lucide-react'
 import { apiGet, apiPost } from '@/hooks/useApi'
 import { useAuth } from '@/contexts/AuthContext'
+import { REASONS as CANCEL_REASONS, OUTCOMES as CANCEL_OUTCOMES } from '@/pages/cancellations/CancellationsPage'
 
 const VARIANCE_THRESHOLD = 5
 
@@ -105,10 +106,11 @@ const priColor = (p) =>
 function MaintenanceEscalationsSection() {
   const [mItems, setMItems]   = useState([])
   const [eItems, setEItems]   = useState([])
+  const [cItems, setCItems]   = useState([])   // today's cancellations
   const [loaded, setLoaded]   = useState(false)
-  const [adding, setAdding]   = useState(null) // null | 'maintenance' | 'escalation'
+  const [adding, setAdding]   = useState(null) // null | 'maintenance' | 'escalation' | 'cancellation'
   const [saving, setSaving]   = useState(false)
-  const blankForm = { title:'', description:'', area:'', priority:'medium', type:'operational', member_name:'' }
+  const blankForm = { title:'', description:'', area:'', priority:'medium', type:'operational', member_name:'', cancel_reason:'', reason_notes:'', outcome:'cancelled' }
   const [form, setForm]       = useState(blankForm)
 
   const inp = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-600/40 focus:border-red-600'
@@ -118,14 +120,19 @@ function MaintenanceEscalationsSection() {
     Promise.all([
       apiGet('/api/maintenance').catch(() => []),
       apiGet('/api/escalations').catch(() => []),
-    ]).then(([m, e]) => {
+      apiGet('/api/cancellations').catch(() => []),
+    ]).then(([m, e, c]) => {
       setMItems((Array.isArray(m) ? m : []).filter(x => isTodayLocal(x.created_at)))
       setEItems((Array.isArray(e) ? e : []).filter(x => isTodayLocal(x.created_at)))
+      setCItems((Array.isArray(c) ? c : []).filter(x => isTodayLocal(x.created_at)))
     }).finally(() => setLoaded(true))
   }, [])
 
   const handleQuickLog = async () => {
-    if (!form.title.trim()) return
+    if (adding === 'cancellation') {
+      if (!form.member_name.trim() || !form.cancel_reason) return
+      if (form.cancel_reason === 'other' && !form.reason_notes.trim()) return
+    } else if (!form.title.trim()) return
     setSaving(true)
     try {
       if (adding === 'maintenance') {
@@ -134,6 +141,12 @@ function MaintenanceEscalationsSection() {
           priority: form.priority, description: form.description || null,
         })
         setMItems(prev => [created, ...prev])
+      } else if (adding === 'cancellation') {
+        const created = await apiPost('/api/cancellations', {
+          member_name: form.member_name, cancel_reason: form.cancel_reason,
+          reason_notes: form.reason_notes || null, outcome: form.outcome,
+        })
+        setCItems(prev => [created, ...prev])
       } else {
         const created = await apiPost('/api/escalations', {
           type: form.type, title: form.title,
@@ -149,7 +162,7 @@ function MaintenanceEscalationsSection() {
     } catch { } finally { setSaving(false) }
   }
 
-  const totalToday = mItems.length + eItems.length
+  const totalToday = mItems.length + eItems.length + cItems.length
 
   return (
     <Section
@@ -196,6 +209,26 @@ function MaintenanceEscalationsSection() {
         </div>
       )}
 
+      {/* Today's cancellations */}
+      {cItems.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Cancellations</p>
+          {cItems.map(item => {
+            const oc = CANCEL_OUTCOMES.find(o => o.value === item.outcome)
+            return (
+              <div key={item.id} className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                <UserMinus size={13} className="text-red-500 flex-shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold text-gray-800 truncate">{item.member_name}</p>
+                  <p className="text-xs text-gray-500">{CANCEL_REASONS.find(r => r.value === item.cancel_reason)?.label}</p>
+                </div>
+                <span className={`flex-shrink-0 text-xs font-semibold px-1.5 py-0.5 rounded-full border ${oc?.cls || ''}`}>{oc?.label || item.outcome}</span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       {totalToday === 0 && loaded && !adding && (
         <p className="text-xs text-gray-400 italic">Nothing logged yet today.</p>
       )}
@@ -204,8 +237,25 @@ function MaintenanceEscalationsSection() {
       {adding && (
         <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 space-y-2.5">
           <p className="text-xs font-semibold text-gray-700">
-            {adding === 'maintenance' ? 'Log Maintenance Issue' : 'Log Escalation'}
+            {adding === 'maintenance' ? 'Log Maintenance Issue' : adding === 'cancellation' ? 'Log Cancellation' : 'Log Escalation'}
           </p>
+
+          {adding === 'cancellation' && (
+            <>
+              <input className={inp} placeholder="Member name" value={form.member_name} onChange={e => set('member_name', e.target.value)} />
+              <select className={inp} value={form.cancel_reason} onChange={e => set('cancel_reason', e.target.value)}>
+                <option value="">— Reason —</option>
+                {CANCEL_REASONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+              </select>
+              {form.cancel_reason === 'other' && (
+                <input className={inp} placeholder="What was the reason?" value={form.reason_notes} onChange={e => set('reason_notes', e.target.value)} />
+              )}
+              <select className={inp} value={form.outcome} onChange={e => set('outcome', e.target.value)}>
+                {CANCEL_OUTCOMES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+              <p className="text-[11px] text-gray-400">Logs to the Cancellations module — add the save-flow details there later.</p>
+            </>
+          )}
 
           {adding === 'escalation' && (
             <select className={inp} value={form.type} onChange={e => set('type', e.target.value)}>
@@ -213,9 +263,11 @@ function MaintenanceEscalationsSection() {
             </select>
           )}
 
-          <input className={inp}
-            placeholder={adding === 'maintenance' ? 'e.g. Sauna 3 not heating' : 'Brief summary'}
-            value={form.title} onChange={e => set('title', e.target.value)} />
+          {adding !== 'cancellation' && (
+            <input className={inp}
+              placeholder={adding === 'maintenance' ? 'e.g. Sauna 3 not heating' : 'Brief summary'}
+              value={form.title} onChange={e => set('title', e.target.value)} />
+          )}
 
           {adding === 'maintenance' && (
             <div className="grid grid-cols-2 gap-2">
@@ -256,10 +308,10 @@ function MaintenanceEscalationsSection() {
               Cancel
             </button>
             <button type="button" onClick={handleQuickLog}
-              disabled={saving || !form.title.trim()}
+              disabled={saving || (adding === 'cancellation' ? (!form.member_name.trim() || !form.cancel_reason) : !form.title.trim())}
               className="px-3 py-1.5 text-xs font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center gap-1.5">
               {saving && <Loader2 size={12} className="animate-spin" />}
-              Log {adding === 'maintenance' ? 'Issue' : 'Escalation'}
+              Log {adding === 'maintenance' ? 'Issue' : adding === 'cancellation' ? 'Cancellation' : 'Escalation'}
             </button>
           </div>
         </div>
@@ -275,6 +327,10 @@ function MaintenanceEscalationsSection() {
           <button type="button" onClick={() => setAdding('escalation')}
             className="flex items-center gap-1.5 text-xs font-medium text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-1.5 hover:bg-red-100 transition-colors">
             <ShieldAlert size={12} /> Log Escalation
+          </button>
+          <button type="button" onClick={() => setAdding('cancellation')}
+            className="flex items-center gap-1.5 text-xs font-medium text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-1.5 hover:bg-red-100 transition-colors">
+            <UserMinus size={12} /> Log Cancellation
           </button>
         </div>
       )}
