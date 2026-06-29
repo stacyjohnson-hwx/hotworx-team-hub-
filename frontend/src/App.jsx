@@ -30,6 +30,7 @@ import PublicCalendarPage from '@/pages/public/PublicCalendarPage'
 import AdvisorPage from '@/pages/advisor/AdvisorPage'
 import MaintenancePage from '@/pages/maintenance/MaintenancePage'
 import EscalationsPage from '@/pages/escalations/EscalationsPage'
+import CancellationsPage from '@/pages/cancellations/CancellationsPage'
 import CompetitorsPage from '@/pages/competitors/CompetitorsPage'
 import RetailPage from '@/pages/retail/RetailPage'
 import InventoryCountPage from '@/pages/retail/InventoryCountPage'
@@ -115,6 +116,7 @@ function AppRoutes() {
         <Route path="/certification" element={<CertificationPage />} />
         <Route path="/maintenance"  element={<MaintenancePage />} />
         <Route path="/escalations"  element={<EscalationsPage />} />
+        <Route path="/cancellations" element={<CancellationsPage />} />
         <Route path="/competitors"  element={<CompetitorsPage />} />
         <Route
           path="/retail"

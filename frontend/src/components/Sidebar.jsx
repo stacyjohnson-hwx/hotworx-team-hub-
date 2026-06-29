@@ -27,6 +27,7 @@ import {
   Sparkles,
   Wrench,
   ShieldAlert,
+  UserMinus,
   Swords,
   Package,
   Gauge,
@@ -52,6 +53,7 @@ const NAV_SECTIONS = [
       { to: '/orders',      label: 'Orders',                  icon: ShoppingCart,   roles: ['owner', 'manager', 'tsa'] },
       { to: '/maintenance', label: 'Maintenance',             icon: Wrench,         roles: ['owner', 'manager', 'tsa'] },
       { to: '/escalations', label: 'Escalations',             icon: ShieldAlert,    roles: ['owner', 'manager', 'tsa'] },
+      { to: '/cancellations', label: 'Cancellations',         icon: UserMinus,      roles: ['owner', 'manager', 'tsa'] },
     ],
   },
   {
