@@ -23,7 +23,9 @@ function taskIsActiveOnDate(task, date) {
     case 'daily':
       return true
     case 'weekly':
-      return task.day_of_week === dow
+      // Stays open from its scheduled weekday through the end of that week (Sat),
+      // so an unfinished weekly task carries through the week. Resets next week.
+      return dow >= task.day_of_week
     case 'monthly':
       return task.day_of_month === dom
     case 'quarterly':
@@ -70,6 +72,18 @@ router.get('/today', async (req, res) => {
     if (!lastMap[c.task_id]) lastMap[c.task_id] = c
   }
 
+  // For weekly tasks, "completed" spans the whole week (Sun–Sat) containing the
+  // date — completing on any day that week closes it; it reopens next week.
+  const dObj = new Date(date + 'T00:00:00')
+  const weekStart = new Date(dObj); weekStart.setDate(dObj.getDate() - dObj.getDay())
+  const weekStartStr = weekStart.toISOString().slice(0, 10)
+  const weekCompletionByTask = {}   // task_id → latest completion this week (recentRes is completed_at desc)
+  for (const c of (recentRes.data || [])) {
+    if (c.completion_date >= weekStartStr && c.completion_date <= date && !weekCompletionByTask[c.task_id]) {
+      weekCompletionByTask[c.task_id] = c
+    }
+  }
+
   // Resolve user names for all unique completed_by IDs
   const userMap = await buildUserMap(db)
 
@@ -79,10 +93,12 @@ router.get('/today', async (req, res) => {
     .filter(t => taskIsActiveOnDate(t, date))
     .map(t => {
       const last = lastMap[t.id] || null
+      const weekly = t.frequency === 'weekly'
+      const weekComp = weekly ? (weekCompletionByTask[t.id] || null) : null
       return {
         ...t,
-        completed: completedIds.has(t.id),
-        completion: completionsRes.data.find(c => c.task_id === t.id) || null,
+        completed: weekly ? !!weekComp : completedIds.has(t.id),
+        completion: weekly ? weekComp : (completionsRes.data.find(c => c.task_id === t.id) || null),
         last_completion: last ? {
           date: last.completion_date,
           completed_at: last.completed_at,
@@ -314,15 +330,27 @@ router.post('/complete', async (req, res) => {
 router.delete('/complete', async (req, res) => {
   const { task_id, date } = req.body
   const completion_date = date || new Date().toISOString().slice(0, 10)
+  const db = supabase()
 
-  const { error } = await supabase()
-    .from('cleaning_completions')
-    .delete()
+  // Weekly tasks may have been completed on a different day this week — clear the
+  // whole week so un-checking works regardless of which day it was completed.
+  const { data: task } = await db.from('cleaning_tasks').select('frequency').eq('id', task_id).maybeSingle()
+
+  let q = db.from('cleaning_completions').delete()
     .eq('studio_id', req.studio.id)
     .eq('task_id', task_id)
-    .eq('completion_date', completion_date)
     .eq('completed_by', req.user.id)
 
+  if (task?.frequency === 'weekly') {
+    const dObj = new Date(completion_date + 'T00:00:00')
+    const ws = new Date(dObj); ws.setDate(dObj.getDate() - dObj.getDay())
+    const we = new Date(ws); we.setDate(ws.getDate() + 6)
+    q = q.gte('completion_date', ws.toISOString().slice(0, 10)).lte('completion_date', we.toISOString().slice(0, 10))
+  } else {
+    q = q.eq('completion_date', completion_date)
+  }
+
+  const { error } = await q
   if (error) return res.status(500).json({ error: error.message })
   res.status(204).end()
 })
