@@ -73,6 +73,7 @@ function CancellationForm({ entry, users, currentUserId, onSave, onClose }) {
     handled_by: entry?.handled_by || currentUserId || '',
     cancel_reason: entry?.cancel_reason || '',
     reason_notes: entry?.reason_notes || '',
+    conversation_notes: entry?.conversation_notes || '',
     offers_presented: Array.isArray(entry?.offers_presented) ? entry.offers_presented : [],
     offer_accepted: entry?.offer_accepted || 'none',
     goal_recaptured: entry?.goal_recaptured || false,
@@ -146,6 +147,12 @@ function CancellationForm({ entry, users, currentUserId, onSave, onClose }) {
               <p className="text-sm text-gray-700">{MATCHED_OFFER[form.cancel_reason]}</p>
             </div>
           )}
+
+          {/* Conversation notes — context for the win-back call */}
+          <div>
+            <label className={lbl}>Conversation notes <span className="text-gray-400 font-normal">— what they said; context for when we reach back out</span></label>
+            <textarea rows={3} className={`${input} resize-none`} value={form.conversation_notes} onChange={e => set('conversation_notes', e.target.value)} placeholder="e.g. Loves the workouts but new baby + tight on money; open to coming back in the fall…" />
+          </div>
 
           {/* Step 3 — goal refocus */}
           <label className="flex items-center gap-2.5 cursor-pointer bg-orange-50 border border-orange-200 rounded-lg px-3 py-2.5">

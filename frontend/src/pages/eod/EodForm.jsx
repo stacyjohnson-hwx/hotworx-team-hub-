@@ -110,7 +110,7 @@ function MaintenanceEscalationsSection() {
   const [loaded, setLoaded]   = useState(false)
   const [adding, setAdding]   = useState(null) // null | 'maintenance' | 'escalation' | 'cancellation'
   const [saving, setSaving]   = useState(false)
-  const blankForm = { title:'', description:'', area:'', priority:'medium', type:'operational', member_name:'', cancel_reason:'', reason_notes:'', outcome:'cancelled' }
+  const blankForm = { title:'', description:'', area:'', priority:'medium', type:'operational', member_name:'', cancel_reason:'', reason_notes:'', conversation_notes:'', outcome:'cancelled' }
   const [form, setForm]       = useState(blankForm)
 
   const inp = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-600/40 focus:border-red-600'
@@ -144,7 +144,7 @@ function MaintenanceEscalationsSection() {
       } else if (adding === 'cancellation') {
         const created = await apiPost('/api/cancellations', {
           member_name: form.member_name, cancel_reason: form.cancel_reason,
-          reason_notes: form.reason_notes || null, outcome: form.outcome,
+          reason_notes: form.reason_notes || null, conversation_notes: form.conversation_notes || null, outcome: form.outcome,
         })
         setCItems(prev => [created, ...prev])
       } else {
@@ -253,6 +253,8 @@ function MaintenanceEscalationsSection() {
               <select className={inp} value={form.outcome} onChange={e => set('outcome', e.target.value)}>
                 {CANCEL_OUTCOMES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
+              <textarea className={`${inp} resize-none`} rows={3} placeholder="Conversation notes — what they said (context for the win-back call)"
+                value={form.conversation_notes} onChange={e => set('conversation_notes', e.target.value)} />
               <p className="text-[11px] text-gray-400">Logs to the Cancellations module — add the save-flow details there later.</p>
             </>
           )}
