@@ -104,7 +104,7 @@ function EditTopItemsModal({ challenge, aiRecs, onSaveChallenge, onSaveAiRecs, o
         {/* Header */}
         <div className="bg-[#1A1A1A] px-5 py-4 flex items-center justify-between flex-shrink-0">
           <div>
-            <p className="text-[#E8611A] text-xs font-bold uppercase tracking-wider mb-0.5">Growth HQ</p>
+            <p className="text-[#E8611A] text-xs font-bold uppercase tracking-wider mb-0.5">Marketing Tasks</p>
             <p className="text-white font-bold text-base">Edit Weekly Challenge</p>
           </div>
           <button onClick={onClose} className="text-white/40 hover:text-white/70 transition-colors"><X size={20} /></button>
@@ -340,7 +340,7 @@ function ManageMissionsModal({ customMissions, hiddenMissions, overrides, onClos
         {/* Header */}
         <div className="bg-[#1A1A1A] px-5 py-4 flex items-center justify-between flex-shrink-0">
           <div>
-            <p className="text-[#E8611A] text-xs font-bold uppercase tracking-wider mb-0.5">Growth HQ</p>
+            <p className="text-[#E8611A] text-xs font-bold uppercase tracking-wider mb-0.5">Marketing Tasks</p>
             <p className="text-white font-bold text-base">{headerLabel}</p>
           </div>
           <button onClick={onClose} className="text-white/40 hover:text-white/70 transition-colors"><X size={20} /></button>

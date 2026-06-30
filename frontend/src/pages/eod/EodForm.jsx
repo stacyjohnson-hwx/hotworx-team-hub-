@@ -464,7 +464,7 @@ function ShiftAtAGlance({ missionTitles = [], onToggleMission, topTasks = [], on
 
           {/* Nothing set up */}
           {missionTitles.length === 0 && topTasks.length === 0 && (
-            <p className="text-xs text-gray-400 italic">No marketing tasks completed yet today. Finish tasks in <strong>Growth → My Tasks</strong> and they'll appear here.</p>
+            <p className="text-xs text-gray-400 italic">No marketing tasks completed yet today. Finish tasks in <strong>Marketing Tasks → My Tasks</strong> and they'll appear here.</p>
           )}
 
           <a href="/leads?tab=marketing" className="inline-block mt-2 text-[11px] font-medium text-gray-500 hover:text-orange-600">See all marketing tasks →</a>

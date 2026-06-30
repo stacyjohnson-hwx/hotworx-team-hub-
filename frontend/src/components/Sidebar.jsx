@@ -48,7 +48,8 @@ const NAV_SECTIONS = [
     items: [
       { to: '/schedule',    label: 'Schedule',                icon: Calendar,       roles: ['owner', 'manager', 'tsa'] },
       { to: '/timeoff',     label: 'Time Off & Availability', icon: CalendarOff,    roles: ['owner', 'manager', 'tsa'] },
-      { to: '/cleaning',    label: 'Tasks',                   icon: CheckSquare,    roles: ['owner', 'manager', 'tsa'] },
+      { to: '/cleaning',    label: 'Cleaning & Ops Tasks',    icon: CheckSquare,    roles: ['owner', 'manager', 'tsa'] },
+      { to: '/leads',       label: 'Marketing Tasks',         icon: TrendingUp,     roles: ['owner', 'manager', 'tsa'] },
       { to: '/eod',         label: 'EOD Checkout',            icon: ClipboardCheck, roles: ['owner', 'manager', 'tsa'] },
       { to: '/orders',      label: 'Orders',                  icon: ShoppingCart,   roles: ['owner', 'manager', 'tsa'] },
       { to: '/maintenance', label: 'Maintenance',             icon: Wrench,         roles: ['owner', 'manager', 'tsa'] },
@@ -60,7 +61,6 @@ const NAV_SECTIONS = [
     title: 'Sales & Growth',
     items: [
       { to: '/goals',       label: 'Goals',           icon: Target,     roles: ['owner', 'manager', 'tsa'] },
-      { to: '/leads',       label: 'Growth',          icon: TrendingUp, roles: ['owner', 'manager', 'tsa'] },
       { to: '/events',      label: 'Events & Promos', icon: Megaphone,  roles: ['owner', 'manager', 'tsa'] },
       { to: '/b2b',         label: 'B2B Outreach',    icon: Building2,  roles: ['owner', 'manager', 'tsa'] },
       { to: '/competitors', label: 'Competitors',     icon: Swords,     roles: ['owner', 'manager', 'tsa'] },
