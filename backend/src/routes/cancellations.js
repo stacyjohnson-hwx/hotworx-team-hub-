@@ -41,6 +41,50 @@ router.get('/', authenticate, requireStudio, async (req, res) => {
   res.json((data || []).map(r => ({ ...r, handled_by_name: r.handled_by ? (userMap[r.handled_by] || 'Team Member') : null })))
 })
 
+// GET /api/cancellations/report  — analytics for the studio
+router.get('/report', authenticate, requireStudio, async (req, res) => {
+  const { data: rows, error } = await supabase().from('cancellation_log').select('*')
+    .eq('studio_id', req.studio.id)
+  if (error) return res.status(500).json({ error: error.message })
+
+  const { data: { users } } = await supabase().auth.admin.listUsers({ perPage: 200 })
+  const nameMap = {}
+  for (const u of users || []) nameMap[u.id] = u.user_metadata?.full_name || u.email?.split('@')[0] || 'Team Member'
+
+  const all = rows || []
+  const total = all.length
+  const saved = all.filter(r => r.outcome === 'saved').length
+  const cancelled = all.filter(r => r.outcome === 'cancelled').length
+  const pending = all.filter(r => r.outcome === 'pending').length
+  const reactivated = all.filter(r => r.win_back_step === 'reactivated').length
+  const freeMonthGiven = all.filter(r => r.offer_accepted === 'free_month').length
+
+  const byReason = {}, byOutcome = {}
+  for (const r of all) {
+    byReason[r.cancel_reason] = (byReason[r.cancel_reason] || 0) + 1
+    byOutcome[r.outcome] = (byOutcome[r.outcome] || 0) + 1
+  }
+
+  // Per-rep: requests handled, saves, free months given — the coaching signal.
+  const repAgg = {}
+  for (const r of all) {
+    if (!r.handled_by) continue
+    const a = repAgg[r.handled_by] || (repAgg[r.handled_by] = { id: r.handled_by, name: nameMap[r.handled_by] || 'Team Member', requests: 0, saved: 0, freeMonth: 0 })
+    a.requests++
+    if (r.outcome === 'saved') a.saved++
+    if (r.offer_accepted === 'free_month') a.freeMonth++
+  }
+  const byRep = Object.values(repAgg).sort((a, b) => b.requests - a.requests)
+
+  // "What could we have done better" feed.
+  const feedback = all
+    .filter(r => r.postcancel_feedback)
+    .sort((a, b) => (b.date_requested || '').localeCompare(a.date_requested || ''))
+    .map(r => ({ id: r.id, member_name: r.member_name, date: r.date_requested, would_return: r.would_return, postcancel_feedback: r.postcancel_feedback }))
+
+  res.json({ total, saved, cancelled, pending, reactivated, freeMonthGiven, byReason, byOutcome, byRep, feedback })
+})
+
 // POST /api/cancellations
 router.post('/', authenticate, requireStudio, async (req, res) => {
   const b = req.body

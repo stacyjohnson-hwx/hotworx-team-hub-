@@ -224,6 +224,97 @@ function CancellationForm({ entry, users, currentUserId, onSave, onClose }) {
   )
 }
 
+// ─── Reporting ────────────────────────────────────────────────────────────────
+function Stat({ label, value, cls = 'text-gray-900' }) {
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 text-center shadow-sm">
+      <p className={`text-2xl font-black leading-none ${cls}`}>{value}</p>
+      <p className="text-[11px] text-gray-500 font-medium mt-1 uppercase tracking-wide">{label}</p>
+    </div>
+  )
+}
+function RBar({ label, value, max, cls = 'bg-red-400' }) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="w-36 flex-shrink-0 text-xs font-semibold text-gray-600 truncate">{label}</span>
+      <div className="flex-1 bg-gray-100 rounded-full h-5 overflow-hidden"><div className={`${cls} h-full rounded-full`} style={{ width: `${(value / max) * 100}%` }} /></div>
+      <span className="w-8 text-right text-sm font-bold text-gray-800">{value}</span>
+    </div>
+  )
+}
+function CancellationReport() {
+  const [d, setD] = useState(null)
+  const [err, setErr] = useState('')
+  useEffect(() => { apiGet('/api/cancellations/report').then(setD).catch(e => setErr(e.message)) }, [])
+  if (err) return <div className="text-sm text-red-600 py-8">{err}</div>
+  if (!d) return <div className="flex items-center justify-center h-40"><div className="w-7 h-7 border-2 border-red-600 border-t-transparent rounded-full animate-spin" /></div>
+
+  const saveRate = d.total ? Math.round((d.saved / d.total) * 100) : 0
+  const reasonMax = Math.max(1, ...Object.values(d.byReason || {}))
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <Stat label="Cancellation Requests" value={d.total} />
+        <Stat label="Saved" value={d.saved} cls="text-green-600" />
+        <Stat label="Save Rate" value={`${saveRate}%`} cls="text-green-600" />
+        <Stat label="Re-activated" value={d.reactivated} cls="text-orange-500" />
+        <Stat label="Free Months Given" value={d.freeMonthGiven} cls="text-red-500" />
+      </div>
+
+      {/* Reasons */}
+      <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+        <h3 className="text-sm font-bold text-gray-900 mb-4">Why members cancel</h3>
+        <div className="space-y-2.5">
+          {REASONS.map(r => <RBar key={r.value} label={r.label} value={d.byReason?.[r.value] || 0} max={reasonMax} />)}
+        </div>
+      </div>
+
+      {/* Per-rep save rate + free-month coaching signal */}
+      <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm overflow-x-auto">
+        <h3 className="text-sm font-bold text-gray-900 mb-1">By team member <span className="text-gray-400 font-normal">— save rate &amp; free-month usage</span></h3>
+        {(d.byRep || []).length === 0 ? <p className="text-sm text-gray-400 py-3">No cancellations handled yet.</p> : (
+          <table className="w-full text-sm mt-2">
+            <thead className="text-gray-500 text-xs uppercase border-b border-gray-200">
+              <tr><th className="text-left py-2 font-semibold">Team Member</th><th className="text-right py-2 font-semibold px-3">Requests</th><th className="text-right py-2 font-semibold px-3">Saved</th><th className="text-right py-2 font-semibold px-3">Save Rate</th><th className="text-right py-2 font-semibold px-3">Free Months</th></tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {d.byRep.map(r => {
+                const sr = r.requests ? Math.round((r.saved / r.requests) * 100) : 0
+                return (
+                  <tr key={r.id}>
+                    <td className="py-2 font-semibold text-gray-900">{r.name}</td>
+                    <td className="py-2 px-3 text-right text-gray-600">{r.requests}</td>
+                    <td className="py-2 px-3 text-right text-gray-600">{r.saved}</td>
+                    <td className="py-2 px-3 text-right font-semibold text-green-600">{sr}%</td>
+                    <td className={`py-2 px-3 text-right font-semibold ${r.freeMonth > r.saved ? 'text-red-600' : 'text-gray-600'}`}>{r.freeMonth}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+        <p className="text-[11px] text-gray-400 mt-2">Free months in red where they exceed saves — a coaching signal, not a rule.</p>
+      </div>
+
+      {/* Feedback feed */}
+      <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+        <h3 className="text-sm font-bold text-gray-900 mb-3">“What could we have done better?”</h3>
+        {(d.feedback || []).length === 0 ? <p className="text-sm text-gray-400">No post-cancel feedback captured yet.</p> : (
+          <div className="space-y-3">
+            {d.feedback.map(fb => (
+              <div key={fb.id} className="border-l-2 border-red-200 pl-3">
+                <p className="text-sm text-gray-700">“{fb.postcancel_feedback}”</p>
+                <p className="text-xs text-gray-400 mt-0.5">{fb.member_name} · {fmtDate(fb.date)}{fb.would_return ? ` · would return: ${fb.would_return}` : ''}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function CancellationsPage() {
   const { role } = useRole()
@@ -234,6 +325,8 @@ export default function CancellationsPage() {
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState(null)   // null | false(new) | entry
   const [error, setError] = useState('')
+  const [tab, setTab] = useState('log')   // 'log' | 'report'
+  const [sort, setSort] = useState({ key: 'date_requested', dir: 'desc' })
   const [f, setF] = useState({ reason: '', outcome: '', win_back_step: '', handled_by: '' })
 
   const load = useCallback(async () => {
@@ -266,6 +359,24 @@ export default function CancellationsPage() {
     (!f.win_back_step || r.win_back_step === f.win_back_step) &&
     (!f.handled_by || r.handled_by === f.handled_by))
 
+  const SORT_GETTERS = {
+    member_name:    r => (r.member_name || '').toLowerCase(),
+    date_requested: r => r.date_requested || '',
+    cancel_reason:  r => labelOf(REASONS, r.cancel_reason),
+    handled_by_name:r => (r.handled_by_name || '').toLowerCase(),
+    outcome:        r => r.outcome || '',
+    win_back_step:  r => WIN_BACK_STEPS.findIndex(s => s.value === r.win_back_step),
+    follow_up_date: r => r.follow_up_date || '',
+  }
+  const sorted = [...filtered].sort((a, b) => {
+    const g = SORT_GETTERS[sort.key] || SORT_GETTERS.date_requested
+    const av = g(a), bv = g(b)
+    const cmp = typeof av === 'number' ? av - bv : String(av).localeCompare(String(bv))
+    return sort.dir === 'asc' ? cmp : -cmp
+  })
+  const sortBy = (key) => setSort(s => ({ key, dir: s.key === key && s.dir === 'asc' ? 'desc' : 'asc' }))
+  const arrow = (key) => sort.key === key ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''
+
   const saveRate = rows.length ? Math.round((rows.filter(r => r.outcome === 'saved').length / rows.length) * 100) : 0
 
   if (loading) return <div className="flex items-center justify-center h-64"><div className="w-8 h-8 border-2 border-red-600 border-t-transparent rounded-full animate-spin" /></div>
@@ -288,6 +399,18 @@ export default function CancellationsPage() {
 
       {error && <div className="mb-4 bg-red-50 border border-red-300 text-red-700 text-sm rounded-lg px-4 py-3">{error}</div>}
 
+      {/* Tabs */}
+      <div className="flex gap-1 mb-5 border-b border-gray-200">
+        {[{ k: 'log', label: 'Log' }, { k: 'report', label: 'Reports' }].map(t => (
+          <button key={t.k} onClick={() => setTab(t.k)}
+            className={`px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${tab === t.k ? 'border-red-600 text-red-600' : 'border-transparent text-gray-500 hover:text-gray-800'}`}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'report' ? <CancellationReport /> : (<>
+
       {/* Filters */}
       <div className="flex gap-2 mb-4 flex-wrap items-center">
         <Filter size={15} className="text-gray-400" />
@@ -308,22 +431,22 @@ export default function CancellationsPage() {
       {/* Table */}
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b border-gray-200 text-gray-500 text-xs uppercase tracking-wide">
+          <thead className="bg-gray-50 border-b border-gray-200 text-gray-500 text-xs uppercase tracking-wide select-none">
             <tr>
-              <th className="text-left px-4 py-2.5 font-semibold">Member</th>
-              <th className="text-left px-3 py-2.5 font-semibold">Requested</th>
-              <th className="text-left px-3 py-2.5 font-semibold">Reason</th>
-              <th className="text-left px-3 py-2.5 font-semibold">Handled By</th>
-              <th className="text-left px-3 py-2.5 font-semibold">Outcome</th>
-              <th className="text-left px-3 py-2.5 font-semibold">Win-Back Step</th>
-              <th className="text-left px-3 py-2.5 font-semibold">Follow-Up</th>
+              <th className="text-left px-4 py-2.5 font-semibold cursor-pointer hover:text-gray-700" onClick={() => sortBy('member_name')}>Member{arrow('member_name')}</th>
+              <th className="text-left px-3 py-2.5 font-semibold cursor-pointer hover:text-gray-700" onClick={() => sortBy('date_requested')}>Requested{arrow('date_requested')}</th>
+              <th className="text-left px-3 py-2.5 font-semibold cursor-pointer hover:text-gray-700" onClick={() => sortBy('cancel_reason')}>Reason{arrow('cancel_reason')}</th>
+              <th className="text-left px-3 py-2.5 font-semibold cursor-pointer hover:text-gray-700" onClick={() => sortBy('handled_by_name')}>Handled By{arrow('handled_by_name')}</th>
+              <th className="text-left px-3 py-2.5 font-semibold cursor-pointer hover:text-gray-700" onClick={() => sortBy('outcome')}>Outcome{arrow('outcome')}</th>
+              <th className="text-left px-3 py-2.5 font-semibold cursor-pointer hover:text-gray-700" onClick={() => sortBy('win_back_step')}>Win-Back Step{arrow('win_back_step')}</th>
+              <th className="text-left px-3 py-2.5 font-semibold cursor-pointer hover:text-gray-700" onClick={() => sortBy('follow_up_date')}>Follow-Up{arrow('follow_up_date')}</th>
               <th className="px-3 py-2.5"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {filtered.length === 0 ? (
+            {sorted.length === 0 ? (
               <tr><td colSpan={8} className="text-center text-gray-400 py-12">No cancellations logged yet.</td></tr>
-            ) : filtered.map(r => {
+            ) : sorted.map(r => {
               const oc = OUTCOMES.find(o => o.value === r.outcome)
               return (
                 <tr key={r.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => setModal(r)}>
@@ -344,6 +467,7 @@ export default function CancellationsPage() {
           </tbody>
         </table>
       </div>
+      </>)}
 
       {modal !== null && (
         <CancellationForm entry={modal || null} users={users} currentUserId={me} onSave={onSaved} onClose={() => setModal(null)} />
