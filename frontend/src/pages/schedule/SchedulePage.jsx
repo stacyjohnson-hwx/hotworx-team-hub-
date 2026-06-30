@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { ChevronLeft, ChevronRight, Plus, Pencil, Trash2, RefreshCw, X, Flag, Calendar, LayoutGrid, MessageSquare, Tag, Sparkles, Check, Building2, ExternalLink } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, Pencil, Trash2, RefreshCw, X, Flag, Calendar, LayoutGrid, MessageSquare, Tag, Sparkles, Check, Building2, ExternalLink, Scale } from 'lucide-react'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
 import { useRole } from '@/hooks/useRole'
 import { renderRichText } from '@/components/RichText'
@@ -190,6 +190,7 @@ export default function SchedulePage() {
   const [error,          setError]           = useState(null)
   const [formState,      setFormState]       = useState(null)
   const [holidayForm,    setHolidayForm]     = useState(null)
+  const [reconcileOpen,  setReconcileOpen]   = useState(false)
 
   // Derive date range from current view — always returns both start + end
   const rangeParams = useCallback(() => {
@@ -334,8 +335,16 @@ export default function SchedulePage() {
           <button onClick={load} className="text-gray-400 hover:text-gray-600 p-2">
             <RefreshCw className="w-4 h-4" />
           </button>
+          {isOwnerOrManager && (
+            <button onClick={() => setReconcileOpen(true)}
+              className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 border border-gray-300 px-3 py-1.5 rounded-lg hover:bg-gray-50 transition-colors">
+              <Scale className="w-4 h-4" /> Reconcile
+            </button>
+          )}
         </div>
       </div>
+
+      {reconcileOpen && <ReconcileModal onClose={() => setReconcileOpen(false)} />}
 
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm mb-4">{error}</div>
@@ -1008,6 +1017,122 @@ function MonthChip({ shift, color, label, sub, canEdit, onEdit, onDelete }) {
         />
       )}
     </>
+  )
+}
+
+// ─── Payroll reconciliation (scheduled vs actual clock-ins) ───────────────────
+function ReconcileModal({ onClose }) {
+  const [from, setFrom] = useState(toDateStr(new Date(Date.now() - 13 * 86400000)))
+  const [to, setTo] = useState(toDateStr(new Date()))
+  const [rows, setRows] = useState(null)
+  const [actuals, setActuals] = useState({})   // tsa_id -> string hours
+  const [loading, setLoading] = useState(false)
+  const [err, setErr] = useState('')
+
+  const run = useCallback(async () => {
+    setLoading(true); setErr('')
+    try {
+      const shifts = await apiGet(`/api/schedule?weekStart=${from}&end=${to}`)
+      const emp = {}
+      for (const s of shifts || []) {
+        const e = emp[s.tsa_id] || (emp[s.tsa_id] = { id: s.tsa_id, name: s.tsa_name || 'Team Member', mins: 0, shifts: 0 })
+        e.mins += shiftMinutes(s.start_time, s.end_time)
+        e.shifts += 1
+      }
+      setRows(Object.values(emp).sort((a, b) => a.name.localeCompare(b.name)))
+    } catch (e) { setErr(e.message || 'Failed to load') } finally { setLoading(false) }
+  }, [from, to])
+  useEffect(() => { run() }, [run])
+
+  const THRESH = 0.25
+  const num = (v) => { const n = parseFloat(v); return isNaN(n) ? null : n }
+
+  let totSched = 0, totAct = 0, anyActual = false
+  const lines = (rows || []).map(r => {
+    const sched = r.mins / 60
+    const act = num(actuals[r.id])
+    totSched += sched
+    if (act != null) { totAct += act; anyActual = true }
+    return { ...r, sched, act, variance: act != null ? act - sched : null }
+  })
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-800 rounded-t-2xl">
+          <div>
+            <h2 className="text-white font-bold text-lg flex items-center gap-2"><Scale size={18} /> Payroll Reconcile</h2>
+            <p className="text-gray-300 text-xs mt-0.5">Scheduled hours vs your clock-in totals — enter actuals to spot gaps.</p>
+          </div>
+          <button onClick={onClose} className="text-gray-300 hover:text-white"><X size={20} /></button>
+        </div>
+
+        <div className="px-6 py-4">
+          <div className="flex items-end gap-3 mb-4 flex-wrap">
+            <div><label className="block text-xs font-semibold text-gray-600 mb-1">Pay period from</label>
+              <input type="date" value={from} onChange={e => setFrom(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm" /></div>
+            <div><label className="block text-xs font-semibold text-gray-600 mb-1">to</label>
+              <input type="date" value={to} onChange={e => setTo(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm" /></div>
+            <button onClick={run} className="px-4 py-2 bg-gray-800 text-white text-sm font-semibold rounded-lg hover:bg-gray-700">Run</button>
+          </div>
+
+          {err && <div className="text-sm text-red-600 mb-3">{err}</div>}
+          {loading ? <div className="py-10 flex justify-center"><div className="w-7 h-7 border-2 border-red-600 border-t-transparent rounded-full animate-spin" /></div>
+          : (rows && rows.length === 0) ? <p className="text-sm text-gray-400 py-8 text-center">No shifts scheduled in this range.</p>
+          : (
+            <table className="w-full text-sm">
+              <thead className="text-gray-500 text-xs uppercase border-b border-gray-200">
+                <tr>
+                  <th className="text-left py-2 font-semibold">Employee</th>
+                  <th className="text-right py-2 font-semibold px-3">Scheduled</th>
+                  <th className="text-center py-2 font-semibold px-2">Shifts</th>
+                  <th className="text-right py-2 font-semibold px-3">Actual (clock-in)</th>
+                  <th className="text-right py-2 font-semibold px-3">Variance</th>
+                  <th className="text-left py-2 font-semibold px-2">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {lines.map(l => {
+                  const off = l.variance != null && Math.abs(l.variance) >= THRESH
+                  return (
+                    <tr key={l.id}>
+                      <td className="py-2 font-semibold text-gray-900">{l.name}</td>
+                      <td className="py-2 px-3 text-right text-gray-700">{l.sched.toFixed(2)}h</td>
+                      <td className="py-2 px-2 text-center text-gray-400">{l.shifts}</td>
+                      <td className="py-2 px-3 text-right">
+                        <input type="number" step="0.25" min="0" value={actuals[l.id] ?? ''} onChange={e => setActuals(a => ({ ...a, [l.id]: e.target.value }))}
+                          placeholder="—" className="w-20 text-right border border-gray-300 rounded-lg px-2 py-1" />
+                      </td>
+                      <td className={`py-2 px-3 text-right font-semibold ${l.variance == null ? 'text-gray-300' : off ? 'text-red-600' : 'text-green-600'}`}>
+                        {l.variance == null ? '—' : `${l.variance > 0 ? '+' : ''}${l.variance.toFixed(2)}h`}
+                      </td>
+                      <td className="py-2 px-2">
+                        {l.variance == null ? <span className="text-gray-300 text-xs">enter actual</span>
+                          : off ? <span className="text-red-600 text-xs font-semibold">⚠ Check</span>
+                          : <span className="text-green-600 text-xs font-semibold">✓ Match</span>}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-gray-200 font-bold text-gray-800">
+                  <td className="py-2">Total</td>
+                  <td className="py-2 px-3 text-right">{totSched.toFixed(2)}h</td>
+                  <td></td>
+                  <td className="py-2 px-3 text-right">{anyActual ? totAct.toFixed(2) + 'h' : '—'}</td>
+                  <td className={`py-2 px-3 text-right ${anyActual && Math.abs(totAct - totSched) >= THRESH ? 'text-red-600' : 'text-gray-500'}`}>
+                    {anyActual ? `${totAct - totSched > 0 ? '+' : ''}${(totAct - totSched).toFixed(2)}h` : '—'}
+                  </td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          )}
+          <p className="text-[11px] text-gray-400 mt-3">Flags anyone off by ≥ {THRESH}h (15 min). Enter actual hours from your clock-in/POS report — nothing is saved, it’s a quick sanity check.</p>
+        </div>
+      </div>
+    </div>
   )
 }
 
