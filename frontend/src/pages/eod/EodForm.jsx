@@ -356,7 +356,7 @@ function StatPill({ label, value, icon: Icon, color }) {
   )
 }
 
-function ShiftAtAGlance({ missionTitles = [], onToggleMission }) {
+function ShiftAtAGlance({ missionTitles = [], onToggleMission, topTasks = [], onCompleteTask }) {
   const [cleaning, setCleaning]   = useState(null)
   const [loading,  setLoading]    = useState(true)
 
@@ -428,10 +428,10 @@ function ShiftAtAGlance({ missionTitles = [], onToggleMission }) {
         {/* ── Marketing (tasks completed in My Tasks) ── */}
         <div>
           <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Marketing</p>
-          {missionTitles.length === 0 ? (
-            <p className="text-xs text-gray-400 italic">No marketing tasks completed yet today. Finish tasks in <strong>Growth → My Tasks</strong> and they'll appear here.</p>
-          ) : (
-            <div className="space-y-1">
+
+          {/* Completed today — tap to remove */}
+          {missionTitles.length > 0 && (
+            <div className="space-y-1 mb-2">
               {missionTitles.map((title, i) => (
                 <button key={i} type="button" onClick={() => onToggleMission?.(title)}
                   className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-left bg-orange-50 border border-orange-200 text-orange-800 hover:bg-orange-100 transition-colors">
@@ -442,6 +442,32 @@ function ShiftAtAGlance({ missionTitles = [], onToggleMission }) {
               ))}
             </div>
           )}
+
+          {/* Nudge — open tasks the staffer can log right here */}
+          {topTasks.length > 0 && (
+            <>
+              {missionTitles.length === 0 && (
+                <p className="text-xs text-gray-600 font-medium mb-2">Did you complete any marketing tasks today? Tap one to log it:</p>
+              )}
+              <div className="space-y-1">
+                {topTasks.map(t => (
+                  <button key={t.id} type="button" onClick={() => onCompleteTask?.(t)}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-left bg-white border border-orange-200 text-orange-800 hover:bg-orange-50 transition-colors">
+                    <span className="flex-shrink-0 w-4 h-4 rounded-full border-2 border-orange-400" />
+                    <span className="font-medium flex-1">{t.title}</span>
+                    {t.point_value ? <span className="text-orange-400 flex-shrink-0">+{t.point_value} pts</span> : null}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* Nothing set up */}
+          {missionTitles.length === 0 && topTasks.length === 0 && (
+            <p className="text-xs text-gray-400 italic">No marketing tasks completed yet today. Finish tasks in <strong>Growth → My Tasks</strong> and they'll appear here.</p>
+          )}
+
+          <a href="/leads?tab=marketing" className="inline-block mt-2 text-[11px] font-medium text-gray-500 hover:text-orange-600">See all marketing tasks →</a>
         </div>
 
         {loading ? (
@@ -646,6 +672,7 @@ export default function EodForm({ submittedShifts, onSubmitted }) {
   const [success, setSuccess] = useState(false)
   // Auto-read today's mission completions from Growth HQ (localStorage)
   const [missionTitles, setMissionTitles] = useState([])
+  const [topTasks, setTopTasks] = useState([])
   // Training the user marked complete today (pulled from the Training module)
   const [completedTraining, setCompletedTraining] = useState([])
 
@@ -688,17 +715,28 @@ export default function EodForm({ submittedShifts, onSubmitted }) {
     } catch {}
   }
 
-  // Pull today's completed Marketing tasks (from "My Tasks") for the EOD summary.
-  // Refreshes on mount and whenever the user returns to the tab.
+  // Pull today's completed Marketing tasks (from "My Tasks") for the EOD summary,
+  // plus the top open tasks so the team can be nudged to log any they did this
+  // shift. Refreshes on mount and whenever the user returns to the tab.
   useEffect(() => {
-    async function loadCompleted() {
+    async function loadMarketing() {
       try {
-        const titles = await apiGet('/api/marketing/my-completions')
+        const [titles, tasks] = await Promise.all([
+          apiGet('/api/marketing/my-completions').catch(() => []),
+          apiGet('/api/marketing/tasks').catch(() => []),
+        ])
         if (Array.isArray(titles)) setMissionTitles(titles)
+        if (Array.isArray(tasks)) {
+          const open = tasks
+            .filter(t => !t.completed)
+            .sort((a, b) => (b.point_value || 0) - (a.point_value || 0))
+            .slice(0, 3)
+          setTopTasks(open)
+        }
       } catch {}
     }
-    loadCompleted()
-    function onVisible() { if (document.visibilityState === 'visible') loadCompleted() }
+    loadMarketing()
+    function onVisible() { if (document.visibilityState === 'visible') loadMarketing() }
     document.addEventListener('visibilitychange', onVisible)
     window.addEventListener('focus', onVisible)
     return () => {
@@ -706,6 +744,16 @@ export default function EodForm({ submittedShifts, onSubmitted }) {
       window.removeEventListener('focus', onVisible)
     }
   }, [])
+
+  // Log an open marketing task straight from the EOD form: record the completion,
+  // move it into today's completed list, and drop it from the nudge.
+  async function completeMarketingTask(task) {
+    try {
+      await apiPost(`/api/marketing/tasks/${task.id}/complete`, {})
+      setMissionTitles(prev => prev.includes(task.title) ? prev : [...prev, task.title])
+      setTopTasks(prev => prev.filter(t => t.id !== task.id))
+    } catch {}
+  }
 
   function toggleMissionTitle(title) {
     setMissionTitles(prev =>
@@ -865,7 +913,8 @@ export default function EodForm({ submittedShifts, onSubmitted }) {
           </Section>
 
           {/* Shift at a Glance — includes Lead Generation, Cleaning, Operations */}
-          <ShiftAtAGlance missionTitles={missionTitles} onToggleMission={toggleMissionTitle} />
+          <ShiftAtAGlance missionTitles={missionTitles} onToggleMission={toggleMissionTitle}
+            topTasks={topTasks} onCompleteTask={completeMarketingTask} />
 
           {/* Maintenance & Escalations */}
           <MaintenanceEscalationsSection />
