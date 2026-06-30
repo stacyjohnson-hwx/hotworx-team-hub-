@@ -359,14 +359,30 @@ function StatPill({ label, value, icon: Icon, color }) {
 function ShiftAtAGlance({ missionTitles = [], onToggleMission, topTasks = [], onCompleteTask }) {
   const [cleaning, setCleaning]   = useState(null)
   const [loading,  setLoading]    = useState(true)
+  const today = new Date().toISOString().split('T')[0]
 
   useEffect(() => {
-    const today = new Date().toISOString().split('T')[0]
     apiGet(`/api/cleaning/today?date=${today}`)
       .then(clean => setCleaning(clean))
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
+
+  // Check a cleaning/operations task off straight from the EOD form, the same
+  // way the marketing nudge logs a task. Optimistically flips it to done.
+  async function completeCleaning(task) {
+    setCleaning(prev => prev
+      ? { ...prev, tasks: prev.tasks.map(t => t.id === task.id ? { ...t, completed: true } : t) }
+      : prev)
+    try {
+      await apiPost('/api/cleaning/complete', { task_id: task.id, date: today })
+    } catch {
+      // Roll back if the save failed so the row doesn't look done when it isn't.
+      setCleaning(prev => prev
+        ? { ...prev, tasks: prev.tasks.map(t => t.id === task.id ? { ...t, completed: false } : t) }
+        : prev)
+    }
+  }
 
   const allTasks         = cleaning?.tasks || []
   const cleaningTasks    = allTasks.filter(t => t.task_type !== 'Operations')
@@ -401,14 +417,14 @@ function ShiftAtAGlance({ missionTitles = [], onToggleMission, topTasks = [], on
             </div>
           ))}
           {pending.map((task, i) => (
-            <div key={task.id}
-              className={`flex items-center gap-2.5 px-3 py-2 text-xs ${done.length + i < tasks.length - 1 ? 'border-b border-gray-100' : ''}`}>
-              <div className="w-4 h-4 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
-                <div className="w-2 h-2 rounded-full bg-gray-300" />
+            <button key={task.id} type="button" onClick={() => completeCleaning(task)}
+              className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left hover:bg-gray-50 transition-colors group ${done.length + i < tasks.length - 1 ? 'border-b border-gray-100' : ''}`}>
+              <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${label === 'Operations' ? 'border-indigo-300 group-hover:border-indigo-500' : 'border-green-300 group-hover:border-green-500'}`}>
+                <ClipboardCheck size={10} className={`opacity-0 group-hover:opacity-100 transition-opacity ${label === 'Operations' ? 'text-indigo-500' : 'text-green-500'}`} />
               </div>
-              <span className="text-gray-400 truncate">{task.title}</span>
+              <span className="text-gray-500 group-hover:text-gray-700 truncate">{task.title}</span>
               <span className="ml-auto text-gray-300 text-[10px] flex-shrink-0 capitalize">{task.frequency}</span>
-            </div>
+            </button>
           ))}
         </div>
       </div>
