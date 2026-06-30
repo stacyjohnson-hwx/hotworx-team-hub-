@@ -298,11 +298,24 @@ function buildOpsSection(ops) {
 
 // Studio-level "Marketing Tasks Completed" — every Growth-section completion for
 // the day, attributed to staff. Rendered once per email (not per shift).
-function buildMarketingSection(marketing) {
+function buildMarketingSection(marketing, topTasks = []) {
   const list = marketing || []
-  const rows = list.length
-    ? list.map(m => opsItem(`🚀 ${m.title}`, m.staff_name)).join('')
-    : opsEmpty('No marketing tasks completed today.')
+  const base = process.env.FRONTEND_URL || 'https://hotworx-team.vercel.app'
+  const mktUrl = `${base}/leads?tab=marketing`
+
+  let rows
+  if (list.length) {
+    rows = list.map(m => opsItem(`🚀 ${m.title}`, m.staff_name)).join('')
+  } else {
+    // Nobody logged one — nudge with the top tasks they can tap to go log.
+    const prompt = `<tr><td colspan="2" style="padding:4px 0 8px;font-size:13px;color:#374151;font-weight:600;">No marketing tasks logged today — did you complete any? Tap one to log it:</td></tr>`
+    const taskLinks = (topTasks || []).map(t =>
+      `<tr><td colspan="2" style="padding:3px 0;font-size:13px;"><a href="${mktUrl}" style="color:#E8540A;font-weight:600;text-decoration:none;">▢ ${t.title} →</a></td></tr>`
+    ).join('')
+    const more = `<tr><td colspan="2" style="padding:8px 0 0;"><a href="${mktUrl}" style="color:#6b7280;font-size:12px;">See all marketing tasks →</a></td></tr>`
+    rows = prompt + (taskLinks || opsEmpty('No marketing tasks set up yet.')) + more
+  }
+
   return `
   <div style="margin-bottom:24px;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
     <div style="background:#1A1A1A;padding:12px 16px;font-size:14px;font-weight:700;color:#fff;">Marketing Tasks Completed (${list.length})</div>
@@ -335,7 +348,7 @@ function buildB2bSection(b2b) {
   </div>`
 }
 
-function buildHtml(dateStr, submissions, outreachByUser, tasksByUser, ops, marketing, b2b) {
+function buildHtml(dateStr, submissions, outreachByUser, tasksByUser, ops, marketing, b2b, marketingTopTasks) {
   const dateLabel = new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
   })
@@ -357,7 +370,7 @@ function buildHtml(dateStr, submissions, outreachByUser, tasksByUser, ops, marke
             outreachByUser[s.submitted_by] || null,
             tasksByUser[s.submitted_by]    || { cleaning: [], operations: [] }
           )).join('')}
-      ${buildMarketingSection(marketing)}
+      ${buildMarketingSection(marketing, marketingTopTasks)}
       ${buildB2bSection(b2b)}
       ${buildOpsSection(ops)}
       <div style="margin-top:16px;padding-top:16px;border-top:1px solid #f3f4f6;font-size:12px;color:#9ca3af;text-align:center;">
@@ -405,6 +418,16 @@ async function fetchSubmissionsForDate(dateStr, studioId) {
     }
   }
 
+  // Top active marketing tasks — used to nudge the team when none were logged.
+  let marketingTopTasks = []
+  {
+    let tq = db.from('marketing_tasks').select('id, title')
+      .eq('active', true).order('point_value', { ascending: false }).order('created_at').limit(3)
+    if (studioId) tq = tq.eq('studio_id', studioId)
+    const { data } = await tq
+    marketingTopTasks = data || []
+  }
+
   // B2B outreach (logged interactions) + canvassing (territory visits) for the day.
   let b2b = { interactions: [], visits: [] }
   {
@@ -436,7 +459,7 @@ async function fetchSubmissionsForDate(dateStr, studioId) {
     }
   }
 
-  if (!submissions.length) return { submissions: [], outreachByUser: {}, tasksByUser: {}, marketing, b2b }
+  if (!submissions.length) return { submissions: [], outreachByUser: {}, tasksByUser: {}, marketing, marketingTopTasks, b2b }
 
   const userIds = [...new Set(submissions.map(s => s.submitted_by))]
 
@@ -502,7 +525,7 @@ async function fetchSubmissionsForDate(dateStr, studioId) {
     ...s,
     submitter_name: nameMap[s.submitted_by] || 'Team Member',
   }))
-  return { submissions: enrichedSubmissions, outreachByUser, tasksByUser, marketing, b2b }
+  return { submissions: enrichedSubmissions, outreachByUser, tasksByUser, marketing, marketingTopTasks, b2b }
 }
 
 // Studio-level operations snapshot for the EOD email: open maintenance,
@@ -571,9 +594,9 @@ async function sendEodEmail(dateStr, studioId) {
     return
   }
 
-  const { submissions, outreachByUser, tasksByUser, marketing, b2b } = await fetchSubmissionsForDate(dateStr, studioId)
+  const { submissions, outreachByUser, tasksByUser, marketing, marketingTopTasks, b2b } = await fetchSubmissionsForDate(dateStr, studioId)
   const ops = await fetchOpsSummary(db, studioId)
-  const html = buildHtml(dateStr, submissions, outreachByUser, tasksByUser, ops, marketing, b2b)
+  const html = buildHtml(dateStr, submissions, outreachByUser, tasksByUser, ops, marketing, b2b, marketingTopTasks)
   const studioLabel = studioName || process.env.STUDIO_NAME || 'HOTWORX Pewaukee'
 
   const dateLabel = new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', {

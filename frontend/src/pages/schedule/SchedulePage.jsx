@@ -169,7 +169,7 @@ const timeOffColor = id => PERSON_COLORS[personColorIdx(id)].timeoff
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function SchedulePage() {
-  const { isOwnerOrManager } = useRole()
+  const { isOwnerOrManager, isOwner } = useRole()
 
   const [view, setView] = useState('week')
 
@@ -335,7 +335,7 @@ export default function SchedulePage() {
           <button onClick={load} className="text-gray-400 hover:text-gray-600 p-2">
             <RefreshCw className="w-4 h-4" />
           </button>
-          {isOwnerOrManager && (
+          {isOwner && (
             <button onClick={() => setReconcileOpen(true)}
               className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 border border-gray-300 px-3 py-1.5 rounded-lg hover:bg-gray-50 transition-colors">
               <Scale className="w-4 h-4" /> Reconcile
@@ -344,7 +344,7 @@ export default function SchedulePage() {
         </div>
       </div>
 
-      {reconcileOpen && <ReconcileModal onClose={() => setReconcileOpen(false)} />}
+      {isOwner && reconcileOpen && <ReconcileModal onClose={() => setReconcileOpen(false)} />}
 
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm mb-4">{error}</div>

@@ -77,9 +77,12 @@ export default function LeadGenHQ() {
   const tsaEmployeeId = isTsa ? (getEmployeeIdFromProfile(profile) || 'chrissy') : null
   const tabs = isTsa ? TSA_TABS : ALL_TABS
 
-  const defaultTab = saved.activeTab && tabs.find(t => t.id === saved.activeTab)
-    ? saved.activeTab
-    : 'myshift'
+  // A ?tab= query param (e.g. the EOD email's "/leads?tab=marketing" links) wins
+  // over the last-saved tab so deep links land on the right place.
+  const urlTab = new URLSearchParams(window.location.search).get('tab')
+  const defaultTab = urlTab && tabs.find(t => t.id === urlTab)
+    ? urlTab
+    : (saved.activeTab && tabs.find(t => t.id === saved.activeTab) ? saved.activeTab : 'myshift')
 
   const [activeTab,       setActiveTab]       = useState(defaultTab)
   const [activeEmployeeId, setActiveEmployeeId] = useState(
