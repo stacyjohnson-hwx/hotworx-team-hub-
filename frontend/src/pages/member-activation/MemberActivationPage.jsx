@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Upload, Users, HeartHandshake, AlertTriangle, Check, Loader2, RefreshCw, Gauge, ListChecks, Phone, MessageSquare, SkipForward, FileText, Trophy } from 'lucide-react'
+import { Upload, Users, HeartHandshake, AlertTriangle, Check, Loader2, RefreshCw, Gauge, ListChecks, Phone, MessageSquare, SkipForward, FileText, Trophy, Gift, Cake } from 'lucide-react'
 import { apiGet, apiPost, apiPatch, apiPut, apiDelete } from '@/hooks/useApi'
 import { useRole } from '@/hooks/useRole'
 import { useStudio } from '@/contexts/StudioContext'
@@ -41,6 +41,7 @@ const TABS = [
   { k: 'daily',    label: 'Daily List',          icon: ListChecks },
   { k: 'members',  label: 'Members',            icon: Users },
   { k: 'scripts',  label: 'Scripts',             icon: FileText },
+  { k: 'recognition', label: 'Cards & Birthdays', icon: Gift },
   { k: 'import',   label: 'Daily Import',        icon: Upload },
   { k: 'metrics',  label: 'Studio Trends',       icon: Gauge },
   { k: 'unrecon',  label: 'Unreconciled',        icon: AlertTriangle },
@@ -74,6 +75,7 @@ export default function MemberActivationPage() {
       {tab === 'daily'   && <DailyListTab />}
       {tab === 'scripts' && <ScriptAdminTab canEdit={isOwnerOrManager} />}
       {tab === 'members' && <MembersTab />}
+      {tab === 'recognition' && <RecognitionTab canImport={isOwnerOrManager} />}
       {tab === 'import'  && <ImportTab canImport={isOwnerOrManager} />}
       {tab === 'metrics' && <MetricsTab canEdit={isOwnerOrManager} />}
       {tab === 'unrecon' && <UnreconciledTab />}
@@ -823,6 +825,153 @@ function MetricsTab({ canEdit }) {
         <div className="grid sm:grid-cols-2 gap-3">
           <Card metric="cancellations" label="Monthly cancellations" m={data?.cancellations} />
           <Card metric="active_members" label="Active member count" m={data?.active_members} disabled={!data?.is_current_month} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Cards & Birthdays (recognition checklist) ────────────────────────────────
+const firstOf = (name) => (name || '').trim().split(/\s+/)[0] || 'there'
+const renderBday = (body, name) => String(body || '').replace(/\{(\w+)\}/g, (_, k) => (k === 'first_name' ? firstOf(name) : ''))
+
+function RecognitionTab({ canImport }) {
+  const { currentStudio } = useStudio()
+  const [sub, setSub] = useState('cards')  // cards | birthdays
+  const [monthKey, setMonthKey] = useState(new Date().toISOString().slice(0, 7))
+  const [rows, setRows] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [bdayBody, setBdayBody] = useState('Happy Birthday, {first_name}! 🎂')
+  const [drafts, setDrafts] = useState({})
+  const [uploading, setUploading] = useState(false)
+  const [msg, setMsg] = useState('')
+  const fileRef = useRef(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      if (sub === 'cards') {
+        setRows(await apiGet(`${BASE}/recognition?type=thank_you_card`))
+      } else {
+        const [b, tpls] = await Promise.all([
+          apiGet(`${BASE}/recognition?type=birthday&month_key=${monthKey}`),
+          apiGet(`${BASE}/templates`).catch(() => []),
+        ])
+        setRows(b)
+        const t = (tpls || []).find(x => x.template_key === 'birthday_text')
+        if (t) setBdayBody(t.body)
+      }
+    } catch { setRows([]) }
+    finally { setLoading(false) }
+  }, [sub, monthKey, currentStudio?.id])
+  useEffect(() => { load() }, [load])
+
+  const complete = async (r) => {
+    setRows(rs => rs.map(x => x.id === r.id ? { ...x, status: 'completed' } : x))
+    try { await apiPost(`${BASE}/recognition/${r.id}/complete`, {}) } catch { /* ignore */ }
+  }
+  const onUpload = async (e) => {
+    const file = e.target.files?.[0]
+    if (fileRef.current) fileRef.current.value = ''
+    if (!file) return
+    setUploading(true); setMsg('')
+    try {
+      const name = file.name.toLowerCase()
+      let parsed
+      if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
+        const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' })
+        parsed = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '', raw: false })
+      } else { parsed = parseCSV(await file.text()) }
+      const res = await apiPost(`${BASE}/recognition/birthdays/import`, { rows: parsed })
+      setMsg(`Imported ${res.created} birthday${res.created !== 1 ? 's' : ''}${res.skipped ? ` · ${res.skipped} skipped (missing name/date)` : ''}.`)
+      load()
+    } catch (e) { setMsg('Upload failed: ' + (e?.message || 'error')) }
+    finally { setUploading(false) }
+  }
+
+  const pending = rows.filter(r => r.status === 'pending')
+  const doneCount = rows.filter(r => r.status === 'completed').length
+  const pct = rows.length ? Math.round(doneCount / rows.length * 100) : 0
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-4">
+        {[{ k: 'cards', label: 'Thank-You Cards', icon: Gift }, { k: 'birthdays', label: 'Birthdays', icon: Cake }].map(s => {
+          const Icon = s.icon
+          return (
+            <button key={s.k} onClick={() => setSub(s.k)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold border ${sub === s.k ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-600 border-gray-300'}`}>
+              <Icon size={14} /> {s.label}
+            </button>
+          )
+        })}
+        {sub === 'birthdays' && (
+          <>
+            <input type="month" value={monthKey} onChange={e => setMonthKey(e.target.value)}
+              className="ml-2 border border-gray-300 rounded-lg px-2 py-1.5 text-sm" />
+            {canImport && (
+              <>
+                <input ref={fileRef} type="file" accept=".csv,.txt,.xlsx,.xls" onChange={onUpload} className="hidden" />
+                <button onClick={() => fileRef.current?.click()} disabled={uploading}
+                  className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+                  {uploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />} Upload birthday list
+                </button>
+              </>
+            )}
+          </>
+        )}
+      </div>
+
+      {msg && <div className="mb-3 bg-green-50 border border-green-200 text-green-800 text-sm rounded-lg px-3 py-2">{msg}</div>}
+
+      {/* Progress */}
+      <div className="flex items-center gap-3 mb-4">
+        <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden max-w-xs">
+          <div className="h-full bg-red-600 transition-all" style={{ width: `${pct}%` }} />
+        </div>
+        <span className="text-xs text-gray-500">{doneCount}/{rows.length} done</span>
+      </div>
+
+      {loading ? <Spinner /> : rows.length === 0 ? (
+        <Empty msg={sub === 'cards'
+          ? 'No new members yet — thank-you cards appear here as members are uploaded.'
+          : 'No birthdays for this month. Upload the birthday list to populate it.'} />
+      ) : (
+        <div className="space-y-2">
+          {rows.map(r => {
+            const done = r.status === 'completed'
+            const isBday = sub === 'birthdays'
+            const script = drafts[r.id] != null ? drafts[r.id] : renderBday(bdayBody, r.member_name)
+            return (
+              <div key={r.id} className={`border rounded-xl p-3 transition-colors ${done ? 'bg-blue-50 border-blue-200 opacity-70' : 'bg-white border-gray-200'}`}>
+                <div className="flex items-start gap-3">
+                  <button onClick={() => !done && complete(r)} disabled={done}
+                    className={`mt-0.5 flex-shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center ${done ? 'bg-blue-500 border-blue-500' : 'border-gray-300 hover:border-blue-400'}`}>
+                    {done && <Check size={13} className="text-white" />}
+                  </button>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={`font-semibold ${done ? 'text-gray-500 line-through' : 'text-gray-900'}`}>{r.member_name || '—'}</span>
+                      <span className="text-xs text-gray-400">
+                        {isBday ? `🎂 ${r.ref_date || ''}` : `joined ${r.ref_date || '—'}`}
+                      </span>
+                    </div>
+                    {isBday && !done && (
+                      <>
+                        <textarea value={script} onChange={e => setDrafts(d => ({ ...d, [r.id]: e.target.value }))} rows={2}
+                          className="w-full mt-2 border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none bg-gray-50 focus:outline-none focus:border-red-400" />
+                        <div className="flex items-center gap-3 mt-1.5">
+                          {r.phone && <a href={`sms:${r.phone}?&body=${encodeURIComponent(script)}`} className="text-xs font-semibold text-blue-600 hover:underline flex items-center gap-1"><MessageSquare size={12} /> Open text</a>}
+                          <button onClick={() => navigator.clipboard?.writeText(script)} className="text-xs text-gray-500 hover:text-gray-800">Copy</button>
+                        </div>
+                      </>
+                    )}
+                    {!isBday && !done && <p className="text-xs text-gray-500 mt-0.5">Write & mail a thank-you card. Tap the circle when sent.</p>}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
         </div>
       )}
     </div>

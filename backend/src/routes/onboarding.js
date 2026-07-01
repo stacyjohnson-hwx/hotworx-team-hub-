@@ -56,6 +56,19 @@ function parseDate(v) {
 }
 
 const monthKeyOf = (dateStr) => (dateStr ? dateStr.slice(0, 7) : null)   // 'YYYY-MM'
+
+// Extract {m, d} from a birthday in various formats (YYYY-MM-DD, MM/DD, MM/DD/YYYY, text).
+function birthdayMonthDay(v) {
+  if (!v) return null
+  const s = String(v).trim()
+  let mm = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)
+  if (mm) { const m = +mm[2], d = +mm[3]; return (m >= 1 && m <= 12 && d >= 1 && d <= 31) ? { m, d } : null }
+  mm = s.match(/^(\d{1,2})[\/.-](\d{1,2})(?:[\/.-]\d{2,4})?$/)
+  if (mm) { const m = +mm[1], d = +mm[2]; return (m >= 1 && m <= 12 && d >= 1 && d <= 31) ? { m, d } : null }
+  const dt = new Date(s)
+  if (!isNaN(dt)) return { m: dt.getMonth() + 1, d: dt.getDate() }
+  return null
+}
 const chunk = (arr, n) => { const out = []; for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n)); return out }
 
 // ─── POST /api/onboarding/import ──────────────────────────────────────────────
@@ -728,6 +741,70 @@ router.put('/templates/:key', authenticate, requireStudio, requireRole('owner', 
     .update(updates).eq('studio_id', req.studio.id).eq('template_key', req.params.key).select().single()
   if (error) return res.status(500).json({ error: error.message })
   res.json(data)
+})
+
+// ─── Cards & Birthdays recognition checklist ──────────────────────────────────
+router.get('/recognition', authenticate, requireStudio, async (req, res) => {
+  let q = db().from('onboarding_recognition_tasks').select('*').eq('studio_id', req.studio.id)
+  if (req.query.type) q = q.eq('type', req.query.type)
+  if (req.query.month_key) q = q.eq('month_key', req.query.month_key)
+  if (req.query.status) q = q.eq('status', req.query.status)
+  const { data, error } = await q.order('ref_date', { ascending: true }).limit(1000)
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data || [])
+})
+
+router.post('/recognition/:id/complete', authenticate, requireStudio, async (req, res) => {
+  const { data, error } = await db().from('onboarding_recognition_tasks')
+    .update({ status: 'completed', completed_by: req.user.email || req.user.id, completed_at: new Date().toISOString() })
+    .eq('id', req.params.id).eq('studio_id', req.studio.id).select().single()
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data)
+})
+
+router.post('/recognition/:id/skip', authenticate, requireStudio, async (req, res) => {
+  const { data, error } = await db().from('onboarding_recognition_tasks')
+    .update({ status: 'skipped', completed_by: req.user.email || req.user.id, completed_at: new Date().toISOString() })
+    .eq('id', req.params.id).eq('studio_id', req.studio.id).select().single()
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data)
+})
+
+// Monthly birthday upload → create birthday checklist tasks (deduped, idempotent).
+router.post('/recognition/birthdays/import', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
+  const rows = Array.isArray(req.body.rows) ? req.body.rows : []
+  const year = new Date().getFullYear()
+  const supabase = db()
+  let skipped = 0
+  const out = []
+  for (const raw of rows) {
+    const r = normalizeRow(raw)
+    const name = pick(r, ['Name', 'Full Name', 'Member Name', 'Customer Name'])
+      || [pick(r, ['First Name', 'FirstName']), pick(r, ['Last Name', 'LastName'])].filter(Boolean).join(' ').trim()
+    const md = birthdayMonthDay(pick(r, ['Birthday', 'Birth Date', 'BirthDate', 'DOB', 'Date of Birth', 'Bday', 'Birthdate']))
+    if (!name || !md) { skipped++; continue }
+    const email = (pick(r, ['Email']) || '').toLowerCase() || null
+    const phone = pick(r, ['Phone', 'Phone No', 'Mobile', 'Cell']) || null
+    const mm = String(md.m).padStart(2, '0'), dd = String(md.d).padStart(2, '0')
+    const month_key = `${year}-${mm}`
+    const keyId = email || name.toLowerCase().replace(/\s+/g, ' ')
+    out.push({
+      studio_id: req.studio.id, type: 'birthday', member_name: name, email, phone,
+      ref_date: `${year}-${mm}-${dd}`, month_key, source: 'import',
+      dedup_key: `bday|${month_key}|${keyId}`,
+    })
+  }
+  const byKey = new Map()
+  for (const o of out) byKey.set(o.dedup_key, o)
+  const deduped = [...byKey.values()]
+  let created = 0
+  for (let i = 0; i < deduped.length; i += 500) {
+    const { data, error } = await supabase.from('onboarding_recognition_tasks')
+      .upsert(deduped.slice(i, i + 500), { onConflict: 'studio_id,dedup_key', ignoreDuplicates: true }).select('id')
+    if (error) return res.status(500).json({ error: error.message })
+    created += (data || []).length
+  }
+  res.json({ received: rows.length, created, skipped })
 })
 
 // ─── Mailchimp opt-out sync-back (Make.com → app) ─────────────────────────────

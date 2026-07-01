@@ -52,6 +52,9 @@ const TEMPLATE_DEFAULTS = [
   { template_key: 'reengage_30', label: 'We miss you — 30 days', channel: 'text', body: "Hey {first_name}, it's been a month! We'd love to see you back. {event_name}" },
   { template_key: 'reengage_60', label: 'We miss you — 60+ days', channel: 'call', body: "Call {first_name}: 60+ days since their last visit — at risk. Warm, personal re-invite. {event_name}" },
   { template_key: 'first_session_rough', label: 'Rough first session — priority', channel: 'call', body: "Call {first_name} ASAP: first session flagged rough/no-show. Check in personally, address concerns, re-book. Highest priority." },
+  // Recognition checklist (Cards & Birthdays)
+  { template_key: 'thank_you_card', label: 'Thank-you card (new member)', channel: 'card', body: "Write & mail a thank-you card welcoming {first_name} to HOTWORX Pewaukee 🎉" },
+  { template_key: 'birthday_text',  label: 'Birthday text',              channel: 'text', body: "Happy Birthday, {first_name}! 🎂 Everyone at HOTWORX Pewaukee is wishing you an amazing day — come celebrate with a birthday sweat! 🔥" },
 ]
 
 async function seedTemplates(supabase, studioId) {
@@ -115,6 +118,18 @@ async function runJourneyEngine(supabase, studioId) {
     }))
     await supabase.from('onboarding_journey_tasks').insert(tasks)
     await enqueueMailchimp(supabase, studioId, m)   // hand the new member to Mailchimp (via Make.com)
+  }
+
+  // Thank-you card checklist — one per new member (dedup on member_id; never re-opens a done one).
+  const cardRows = (members || []).filter(m => !m.is_cancelled).map(m => ({
+    studio_id: studioId, type: 'thank_you_card', member_id: m.id,
+    member_name: m.full_name || null, email: m.email || null,
+    ref_date: m.join_date, month_key: (m.join_date || '').slice(0, 7),
+    source: 'auto', dedup_key: `card|${m.id}`,
+  }))
+  for (let i = 0; i < cardRows.length; i += 500) {
+    await supabase.from('onboarding_recognition_tasks')
+      .upsert(cardRows.slice(i, i + 500), { onConflict: 'studio_id,dedup_key', ignoreDuplicates: true })
   }
 
   // Graduation: journeys strictly past Day 90 leave onboarding (stay in roster-wide systems).
