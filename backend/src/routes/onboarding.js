@@ -186,10 +186,12 @@ router.post('/import', authenticate, requireStudio, requireRole('owner', 'manage
       const ledgerRows = []
       const logRows = []
       const cancelSet = []
+      // Record the actual headers so a mismatch is diagnosable from the run log.
+      summary.cancelled.detected_columns = Object.keys(cancelled[0] || {})
       for (const raw of cancelled) {
         const r = normalizeRow(raw)
-        const customer_id = pick(r, ['Customer Id', 'CustomerId', 'Customer ID'])
-        const cancelled_date = parseDate(pick(r, ['Cancellation Date', 'Cancelled Date', 'CancellationDate', 'Cancel Date']))
+        const customer_id = pick(r, ['Customer Id', 'CustomerId', 'Customer ID', 'Member Id', 'MemberId', 'Client Id', 'ClientId', 'Customer #', 'Member #', 'Id'])
+        const cancelled_date = parseDate(pick(r, ['Cancellation Date', 'Cancelled Date', 'CancellationDate', 'Cancel Date', 'Date Cancelled', 'Cancelled On', 'Termination Date', 'End Date', 'Date']))
         if (!customer_id || !cancelled_date) { summary.cancelled.skipped++; continue }
         const name = pick(r, ['Name', 'Member Name', 'Full Name', 'Customer Name'])
           || [pick(r, ['First Name', 'FirstName']), pick(r, ['Last Name', 'LastName'])].filter(Boolean).join(' ').trim()
