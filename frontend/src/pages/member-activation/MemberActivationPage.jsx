@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Upload, Users, HeartHandshake, AlertTriangle, Check, Loader2, RefreshCw, Gauge, ListChecks, Phone, MessageSquare, SkipForward, FileText, Trophy, Gift, Cake, Pencil } from 'lucide-react'
 import { apiGet, apiPost, apiPatch, apiPut, apiDelete } from '@/hooks/useApi'
 import { useRole } from '@/hooks/useRole'
