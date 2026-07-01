@@ -57,6 +57,21 @@ function parseDate(v) {
 
 const monthKeyOf = (dateStr) => (dateStr ? dateStr.slice(0, 7) : null)   // 'YYYY-MM'
 
+// Map SAIL's free-text cancellation reason to the Cancellations tab's reason enum.
+function mapCancelReason(raw) {
+  const s = String(raw || '').toLowerCase()
+  if (!s) return 'other'
+  if (/cost|financ|money|afford|expensive|price/.test(s)) return 'cost'
+  if (/not us|no time|busy|not going|schedule|too far|distance|relocat|mov/.test(s) && /mov|relocat/.test(s)) return 'moving'
+  if (/mov|relocat/.test(s)) return 'moving'
+  if (/medical|injur|health|pregnan|surgery/.test(s)) return 'medical'
+  if (/result|not work/.test(s)) return 'no_results'
+  if (/competitor|another gym|other gym|switch/.test(s)) return 'competitor'
+  if (/unhappy|dissatisf|complaint|rude|dirty/.test(s)) return 'unhappy'
+  if (/not us|no time|busy|not going|schedule/.test(s)) return 'not_using'
+  return 'other'
+}
+
 // Extract {m, d} from a birthday in various formats (YYYY-MM-DD, MM/DD, MM/DD/YYYY, text).
 function birthdayMonthDay(v) {
   if (!v) return null
@@ -204,11 +219,12 @@ router.post('/import', authenticate, requireStudio, requireRole('owner', 'manage
       for (const raw of cancelled) {
         const r = normalizeRow(raw)
         const customer_id = pick(r, ['Customer Id', 'CustomerId', 'Customer ID', 'Member Id', 'MemberId', 'Client Id', 'ClientId', 'Customer #', 'Member #', 'Id'])
-        const cancelled_date = parseDate(pick(r, ['Cancellation Date', 'Cancelled Date', 'CancellationDate', 'Cancel Date', 'Date Cancelled', 'Cancelled On', 'Termination Date', 'End Date', 'Date']))
+        const cancelled_date = parseDate(pick(r, ['Cancellation Request Date', 'Cancellation Date', 'Cancelled Date', 'CancellationDate', 'Cancel Date', 'Date Cancelled', 'Cancelled On', 'Termination Date', 'End Date', 'Request Date', 'Date']))
         if (!customer_id || !cancelled_date) { summary.cancelled.skipped++; continue }
-        const name = pick(r, ['Name', 'Member Name', 'Full Name', 'Customer Name'])
+        const name = pick(r, ['Customer Name', 'Name', 'Member Name', 'Full Name'])
           || [pick(r, ['First Name', 'FirstName']), pick(r, ['Last Name', 'LastName'])].filter(Boolean).join(' ').trim()
           || `Customer ${customer_id}`
+        const sailReason = pick(r, ['Reason', 'Cancellation Reason', 'Cancel Reason'])
         const month_key = monthKeyOf(cancelled_date)
         touchedMonths.add(month_key)
         ledgerRows.push({
@@ -218,7 +234,8 @@ router.post('/import', authenticate, requireStudio, requireRole('owner', 'manage
         // Auto-populate the Cancellations tab (team then fills in save/win-back details).
         logRows.push({
           studio_id: studioId, member_name: name, date_requested: cancelled_date,
-          cancel_reason: 'other', reason_notes: 'Imported from SAIL cancelled export',
+          cancel_reason: mapCancelReason(sailReason),
+          reason_notes: sailReason ? `SAIL reason: ${sailReason}` : 'Imported from SAIL cancelled export',
           outcome: 'cancelled', win_back_step: 'call_scheduled',
           offers_presented: [], offer_accepted: 'none', goal_recaptured: false,
           source: 'sail_import', import_key: `${customer_id}|${cancelled_date}`,
