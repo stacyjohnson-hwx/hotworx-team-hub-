@@ -583,7 +583,7 @@ router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
 
   const [{ data: tasks, error }, { data: templates }] = await Promise.all([
     supabase.from('onboarding_journey_tasks')
-      .select('*, journey:onboarding_journeys!inner(id, status, current_track, member:onboarding_members!inner(id, full_name, phone, is_cancelled, status))')
+      .select('*, journey:onboarding_journeys!inner(id, status, current_track, member:onboarding_members!inner(id, full_name, phone, is_cancelled, status, join_date))')
       .eq('studio_id', studioId).eq('status', 'pending').lte('due_date', today),
     supabase.from('onboarding_touchpoint_templates').select('*').eq('studio_id', studioId),
   ])
@@ -638,6 +638,7 @@ router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
       due_date: t.due_date,
       last_booking_date: a.last_booking_date || null,
       days_lapsed: ctx.days_lapsed,
+      join_date: m.join_date || null,
     }
   })
 
