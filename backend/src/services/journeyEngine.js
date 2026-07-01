@@ -19,6 +19,7 @@ function renderTemplate(body, ctx) {
 
 // ─── Day-based team touchpoints (email days are Mailchimp, not tasks) ─────────
 const DAY_TOUCHPOINTS = [
+  { day: 0,  type: 'in_studio', ref: 'day_0_orientation', key: 'day0_orientation' },
   { day: 2,  type: 'call', ref: 'day_2',  key: 'day2_goal_call' },
   { day: 5,  type: 'text', ref: 'day_5',  key: 'day5_checkin' },
   { day: 21, type: 'text', ref: 'day_21', key: 'day21_bring_friend' },
@@ -29,6 +30,7 @@ const DAY_TOUCHPOINTS = [
 
 // ─── Default script templates (Script Admin edits the body; keys are stable) ──
 const TEMPLATE_DEFAULTS = [
+  { template_key: 'day0_orientation',     label: 'Day 0 — New member orientation', channel: 'in_studio', body: "<b>New Member Orientation — do this in studio with {first_name}:</b><ul><li>Give a full studio tour — saunas, FX Zone, water, restrooms.</li><li>Walk through the HOTWORX app: booking, canceling, the workout menu.</li><li>Show how a session works — start the sauna, use the tablet.</li><li>Set up Brivo door access.</li><li>Answer questions and help them book their first 3 sessions.</li></ul>" },
   { template_key: 'day0_welcome_pos',    label: 'Day 0 — Welcome (POS)',        channel: 'text', body: "Hi {first_name}! Welcome to HOTWORX Pewaukee 🔥 So glad you joined. Reply here anytime you need help booking your first sweat!" },
   { template_key: 'day0_welcome_online', label: 'Day 0 — Welcome (Online)',     channel: 'text', body: "Hi {first_name}! Welcome to HOTWORX Pewaukee 🔥 We'd love to meet you in person — stop by anytime and we'll get you set up for your first session!" },
   { template_key: 'day2_goal_call',      label: 'Day 2 — Goal + before photo',  channel: 'call', body: "Call {first_name}: welcome them personally, ask their #1 goal in their own words, capture a before photo (with consent), and help them book their next 3 sessions." },
@@ -132,8 +134,20 @@ async function runJourneyEngine(supabase, studioId) {
       .upsert(cardRows.slice(i, i + 500), { onConflict: 'studio_id,dedup_key', ignoreDuplicates: true })
   }
 
-  // Graduation: journeys strictly past Day 90 leave onboarding (stay in roster-wide systems).
+  // Backfill the Day-0 orientation touchpoint for recent active journeys created
+  // before it existed (within 14 days of joining, so it's still relevant).
   const today = todayStr()
+  const cutoff14 = addDays(today, -14)
+  for (const j of (journeys || [])) {
+    if (j.status !== 'active' || !j.start_date || j.start_date < cutoff14) continue
+    await supabase.from('onboarding_journey_tasks').upsert({
+      studio_id: studioId, journey_id: j.id, type: 'in_studio', template_key: 'day0_orientation',
+      trigger_kind: 'day_based', trigger_ref: 'day_0_orientation', due_date: j.start_date,
+      priority: 6, status: 'pending', context: {},
+    }, { onConflict: 'journey_id,trigger_ref', ignoreDuplicates: true })
+  }
+
+  // Graduation: journeys strictly past Day 90 leave onboarding (stay in roster-wide systems).
   for (const j of (journeys || [])) {
     if (j.status === 'active' && j.current_track !== 'graduated' && j.start_date && addDays(j.start_date, 90) < today) {
       await supabase.from('onboarding_journeys')

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Upload, Users, HeartHandshake, AlertTriangle, Check, Loader2, RefreshCw, Gauge, ListChecks, Phone, MessageSquare, SkipForward, FileText, Trophy, Gift, Cake, Pencil } from 'lucide-react'
+import { Upload, Users, HeartHandshake, AlertTriangle, Check, Loader2, RefreshCw, Gauge, ListChecks, Phone, MessageSquare, SkipForward, FileText, Trophy, Gift, Cake, Pencil, Building2, Bold, List } from 'lucide-react'
 import { apiGet, apiPost, apiPatch, apiPut, apiDelete } from '@/hooks/useApi'
 import { useRole } from '@/hooks/useRole'
 import { useStudio } from '@/contexts/StudioContext'
@@ -7,6 +7,43 @@ import { supabase } from '@/lib/supabase'
 import * as XLSX from 'xlsx'
 
 const BASE = '/api/member-activation'
+
+// ─── Rich-text helpers (scripts can hold bold + bullet HTML) ──────────────────
+const isHtml = (s) => /<[a-z][\s\S]*>/i.test(s || '')
+// Convert script HTML to plain text for SMS / copy (bullets → •, blocks → newlines).
+function htmlToText(h) {
+  if (!h) return ''
+  if (!isHtml(h)) return h
+  return h
+    .replace(/<li[^>]*>/gi, '• ').replace(/<\/li>/gi, '\n')
+    .replace(/<br\s*\/?>(?!\n)/gi, '\n').replace(/<\/(p|div|ul|ol|h[1-6])>/gi, '\n')
+    .replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/\n{3,}/g, '\n\n').trim()
+}
+// Render a script for display: formatted HTML, or plain text with line breaks preserved.
+function RichView({ html, className = '' }) {
+  if (isHtml(html)) return <div className={`prose-script text-sm text-gray-800 ${className}`} dangerouslySetInnerHTML={{ __html: html }} />
+  return <p className={`text-sm text-gray-800 whitespace-pre-wrap ${className}`}>{html}</p>
+}
+// Minimal rich-text editor (Bold + Bullets) storing HTML. Uncontrolled; key it to reset.
+function RichEditor({ value, onChange, disabled }) {
+  const ref = useRef(null)
+  useEffect(() => { if (ref.current) ref.current.innerHTML = value || '' }, [])
+  const exec = (cmd) => { document.execCommand(cmd, false, null); if (ref.current) { ref.current.focus(); onChange(ref.current.innerHTML) } }
+  return (
+    <div className="border border-gray-200 rounded-lg overflow-hidden">
+      {!disabled && (
+        <div className="flex items-center gap-1 px-2 py-1.5 border-b border-gray-100 bg-gray-50">
+          <button type="button" onMouseDown={e => { e.preventDefault(); exec('bold') }} className="p-1 rounded hover:bg-gray-200 text-gray-600" title="Bold"><Bold size={13} /></button>
+          <button type="button" onMouseDown={e => { e.preventDefault(); exec('insertUnorderedList') }} className="p-1 rounded hover:bg-gray-200 text-gray-600" title="Bullet list"><List size={13} /></button>
+        </div>
+      )}
+      <div ref={ref} contentEditable={!disabled} suppressContentEditableWarning
+        onInput={e => onChange(e.currentTarget.innerHTML)}
+        className="prose-script min-h-[120px] px-3 py-2 text-sm text-gray-800 focus:outline-none" />
+    </div>
+  )
+}
 
 // ─── CSV parsing (client-side; raw rows are POSTed and mapped on the backend) ──
 // Auto-detects comma vs. tab delimiter. Throws a friendly error for Excel files.
@@ -53,6 +90,7 @@ export default function MemberActivationPage() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6">
+      <style>{`.prose-script ul{list-style:disc;padding-left:1.25rem;margin:.25rem 0}.prose-script li{margin:.1rem 0}.prose-script b,.prose-script strong{font-weight:700}`}</style>
       <div className="mb-1 flex items-center gap-2">
         <HeartHandshake className="text-red-600" size={22} />
         <h1 className="text-2xl font-bold text-gray-900">Member Activation</h1>
@@ -635,17 +673,19 @@ const SUBFILTERS = {
 }
 
 // The reach-out script, opened from a Daily List item (keeps the list itself scannable).
-function ScriptModal({ item, value, onChange, onClose }) {
+function ScriptModal({ item, onClose }) {
   const [copied, setCopied] = useState(false)
   const isCall = item.channel === 'call'
-  const copy = () => { navigator.clipboard?.writeText(value || ''); setCopied(true); setTimeout(() => setCopied(false), 1500) }
+  const isStudio = item.channel === 'in_studio'
+  const plain = htmlToText(item.script || '')
+  const copy = () => { navigator.clipboard?.writeText(plain); setCopied(true); setTimeout(() => setCopied(false), 1500) }
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg" onClick={e => e.stopPropagation()}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <div className="flex items-center gap-2">
-            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full flex items-center gap-1 ${isCall ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
-              {isCall ? <Phone size={9} /> : <MessageSquare size={9} />}{isCall ? 'Call' : 'Text'}
+            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full flex items-center gap-1 ${isStudio ? 'bg-green-100 text-green-700' : isCall ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+              {isStudio ? <Building2 size={9} /> : isCall ? <Phone size={9} /> : <MessageSquare size={9} />}{isStudio ? 'In studio' : isCall ? 'Call' : 'Text'}
             </span>
             <h3 className="font-bold text-gray-900">{item.member_name}</h3>
           </div>
@@ -653,12 +693,13 @@ function ScriptModal({ item, value, onChange, onClose }) {
         </div>
         <div className="p-5">
           <p className="text-xs text-gray-500 mb-2">{item.label}</p>
-          <textarea value={value || ''} onChange={e => onChange(e.target.value)} rows={6}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:border-red-400 bg-gray-50" />
+          <div className="border border-gray-200 rounded-lg px-3 py-2 bg-gray-50">
+            <RichView html={item.script || ''} />
+          </div>
         </div>
         <div className="flex items-center gap-2 px-5 py-4 border-t border-gray-100">
-          {!isCall && item.phone && (
-            <a href={`sms:${item.phone}?&body=${encodeURIComponent(value || '')}`}
+          {!isCall && !isStudio && item.phone && (
+            <a href={`sms:${item.phone}?&body=${encodeURIComponent(plain)}`}
               className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700"><MessageSquare size={14} /> Open text</a>
           )}
           <button onClick={copy} className="flex items-center gap-1.5 px-4 py-2 border border-gray-300 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-50">
@@ -743,6 +784,7 @@ function DailyListTab() {
           {shown.map(r => {
             const isDone = done[r.id]
             const isCall = r.channel === 'call'
+            const isStudio = r.channel === 'in_studio'
             return (
               <div key={r.id} className={`border rounded-xl p-3.5 transition-colors ${isDone ? 'bg-blue-50 border-blue-300' : 'bg-white border-gray-200'}`}>
                 <div className="flex items-start gap-3">
@@ -753,8 +795,8 @@ function DailyListTab() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-bold text-gray-900">{r.member_name}</span>
-                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full flex items-center gap-1 ${isCall ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
-                        {isCall ? <Phone size={9} /> : <MessageSquare size={9} />}{isCall ? 'Call' : 'Text'}
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full flex items-center gap-1 ${isStudio ? 'bg-green-100 text-green-700' : isCall ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                        {isStudio ? <Building2 size={9} /> : isCall ? <Phone size={9} /> : <MessageSquare size={9} />}{isStudio ? 'In studio' : isCall ? 'Call' : 'Text'}
                       </span>
                       {r.priority <= 3 && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-700">PRIORITY</span>}
                       {r.reward_key && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 flex items-center gap-1"><Trophy size={9} />{r.reward_key.replace(/_/g, ' ')}</span>}
@@ -788,7 +830,7 @@ function DailyListTab() {
                       </div>
                     )}
                     <div className="flex items-center gap-3 mt-2">
-                      <button onClick={() => setScriptFor(r)} className="text-xs font-semibold text-red-600 hover:underline flex items-center gap-1"><FileText size={12} /> {isCall ? 'View call script' : 'View / send text'}</button>
+                      <button onClick={() => setScriptFor(r)} className="text-xs font-semibold text-red-600 hover:underline flex items-center gap-1"><FileText size={12} /> {isStudio ? 'View orientation' : isCall ? 'View call script' : 'View / send text'}</button>
                       <button onClick={() => skip(r)} className="text-xs text-gray-400 hover:text-gray-700 flex items-center gap-1 ml-auto"><SkipForward size={12} /> Skip</button>
                     </div>
                   </div>
@@ -799,9 +841,7 @@ function DailyListTab() {
         </div>
       )}
 
-      {scriptFor && <ScriptModal item={scriptFor} onClose={() => setScriptFor(null)}
-        value={drafts[scriptFor.id] != null ? drafts[scriptFor.id] : scriptFor.script}
-        onChange={(v) => setDrafts(d => ({ ...d, [scriptFor.id]: v }))} />}
+      {scriptFor && <ScriptModal item={scriptFor} onClose={() => setScriptFor(null)} />}
       {day2 && <Day2Modal item={day2} onClose={() => setDay2(null)}
         onDone={() => { const id = day2.id; setDay2(null); drop(id) }} />}
       {photosFor && <MemberPhotosModal member={photosFor} onClose={() => setPhotosFor(null)} />}
@@ -968,15 +1008,14 @@ function ScriptAdminTab({ canEdit }) {
         {!current ? <Empty msg="Select a template to edit." /> : (
           <>
             <p className="text-sm font-semibold text-gray-800 mb-1">{current.label}</p>
-            <p className="text-[11px] text-gray-400 mb-2">Key: {current.template_key} · {current.channel}. Edits apply on the next Daily List refresh.</p>
-            <textarea value={body} onChange={e => setBody(e.target.value)} disabled={!canEdit} rows={5}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:border-red-400 disabled:bg-gray-50" />
+            <p className="text-[11px] text-gray-400 mb-2">Key: {current.template_key} · {current.channel}. Use <b>B</b> for bold and the list button for bullets. Edits apply on the next Daily List refresh.</p>
+            <RichEditor key={sel} value={body} onChange={setBody} disabled={!canEdit} />
             <div className="flex flex-wrap gap-1.5 mt-2">
               {VARS.map(v => <span key={v} className="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded font-mono">{`{${v}}`}</span>)}
             </div>
             <div className="mt-3 bg-gray-50 border border-gray-200 rounded-lg p-3">
               <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Preview</p>
-              <p className="text-sm text-gray-800 whitespace-pre-wrap">{renderPreview(body)}</p>
+              <RichView html={renderPreview(body)} />
             </div>
             {canEdit && (
               <button onClick={save} className="mt-3 bg-red-600 text-white text-sm font-semibold px-5 py-2 rounded-xl hover:bg-red-700">
@@ -1200,7 +1239,7 @@ function RecognitionTab({ canImport }) {
             const done = r.status === 'completed'
             const isBday = sub === 'birthdays'
             const isMemberRow = /^(member|customer|reciprocal member|employee)$/i.test((r.lead_status || '').trim())
-            const script = drafts[r.id] != null ? drafts[r.id] : renderBday(isMemberRow ? bdayMember : bdayNonMember, r.member_name)
+            const script = drafts[r.id] != null ? drafts[r.id] : htmlToText(renderBday(isMemberRow ? bdayMember : bdayNonMember, r.member_name))
             return (
               <div key={r.id} className={`border rounded-xl p-3 transition-colors ${done ? 'bg-blue-50 border-blue-200 opacity-70' : 'bg-white border-gray-200'}`}>
                 <div className="flex items-start gap-3">
