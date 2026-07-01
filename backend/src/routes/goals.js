@@ -186,6 +186,8 @@ router.put('/studio', requireRole('owner', 'manager'), async (req, res) => {
     'new_members_actual', 'membership_cash', 'net_eft', 'eft_decrease_actual',
     'in_the_bank_actual', 'itb_goal',
     'conversion_rate_actual', 'checkin_show_rate_actual', 'close_rate_actual',
+    // Computed from studio_trends for display only — not columns on studio_goals
+    'attrition_rate', 'prev_total_members',
   ]
   const safeFields = Object.fromEntries(
     Object.entries(fields).filter(([k]) => !READ_ONLY_FIELDS.includes(k))
