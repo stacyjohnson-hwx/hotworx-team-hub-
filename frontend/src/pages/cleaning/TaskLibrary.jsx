@@ -5,6 +5,7 @@ import TaskForm from './TaskForm'
 
 const FREQ_LABELS = {
   daily: 'Daily',
+  specific_days: 'Select Days',
   weekly: 'Weekly',
   monthly: 'Monthly',
   quarterly: 'Quarterly',
@@ -13,6 +14,7 @@ const FREQ_LABELS = {
 
 const FREQ_COLORS = {
   daily: 'bg-blue-100 text-blue-700',
+  specific_days: 'bg-cyan-100 text-cyan-700',
   weekly: 'bg-purple-100 text-purple-700',
   monthly: 'bg-orange-100 text-orange-700',
   quarterly: 'bg-teal-100 text-teal-700',
@@ -249,6 +251,8 @@ function LibraryRow({ task, onToggleActive, onEdit, onDelete }) {
 
 function FrequencyDetail({ task }) {
   switch (task.frequency) {
+    case 'specific_days':
+      return task.days_of_week?.length ? task.days_of_week.map(d => DAYS[d]).join(', ') : null
     case 'weekly':
       return task.day_of_week != null ? `Every ${DAYS[task.day_of_week]}` : null
     case 'monthly':

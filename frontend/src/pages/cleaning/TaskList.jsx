@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext'
 
 const FREQ_LABELS = {
   daily: 'Daily',
+  specific_days: 'Select Days',
   weekly: 'Weekly',
   monthly: 'Monthly',
   quarterly: 'Quarterly',
@@ -13,6 +14,7 @@ const FREQ_LABELS = {
 
 const FREQ_COLORS = {
   daily: 'bg-blue-100 text-blue-700',
+  specific_days: 'bg-cyan-100 text-cyan-700',
   weekly: 'bg-purple-100 text-purple-700',
   monthly: 'bg-orange-100 text-orange-700',
   quarterly: 'bg-teal-100 text-teal-700',

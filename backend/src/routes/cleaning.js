@@ -26,6 +26,9 @@ function taskIsActiveOnDate(task, date) {
       // Stays open from its scheduled weekday through the end of that week (Sat),
       // so an unfinished weekly task carries through the week. Resets next week.
       return dow >= task.day_of_week
+    case 'specific_days':
+      // Appears only on the chosen weekdays (e.g. Mon/Wed/Fri). Resets each day.
+      return Array.isArray(task.days_of_week) && task.days_of_week.includes(dow)
     case 'monthly':
       return task.day_of_month === dom
     case 'quarterly':
@@ -152,7 +155,7 @@ router.get('/tasks', requireRole('owner', 'manager'), async (req, res) => {
 
 // ─── POST /api/cleaning/tasks ─────────────────────────────────────────────────
 router.post('/tasks', requireRole('owner', 'manager'), async (req, res) => {
-  const { title, area, description, task_type, frequency, day_of_week, day_of_month, quarterly_dates, one_off_date, sort_order } = req.body
+  const { title, area, description, task_type, frequency, day_of_week, days_of_week, day_of_month, quarterly_dates, one_off_date, sort_order } = req.body
 
   if (!title || !frequency) return res.status(400).json({ error: 'title and frequency are required' })
 
@@ -164,6 +167,7 @@ router.post('/tasks', requireRole('owner', 'manager'), async (req, res) => {
       task_type: task_type || 'Cleaning',
       frequency,
       day_of_week: day_of_week ?? null,
+      days_of_week: days_of_week ?? null,
       day_of_month: day_of_month ?? null,
       quarterly_dates: quarterly_dates ?? null,
       one_off_date: one_off_date ?? null,
@@ -179,11 +183,11 @@ router.post('/tasks', requireRole('owner', 'manager'), async (req, res) => {
 
 // ─── PUT /api/cleaning/tasks/:id ─────────────────────────────────────────────
 router.put('/tasks/:id', requireRole('owner', 'manager'), async (req, res) => {
-  const { title, area, description, task_type, frequency, day_of_week, day_of_month, quarterly_dates, one_off_date, active, sort_order } = req.body
+  const { title, area, description, task_type, frequency, day_of_week, days_of_week, day_of_month, quarterly_dates, one_off_date, active, sort_order } = req.body
 
   const { data, error } = await supabase()
     .from('cleaning_tasks')
-    .update({ title, area, description, task_type, frequency, day_of_week, day_of_month, quarterly_dates, one_off_date, active, sort_order })
+    .update({ title, area, description, task_type, frequency, day_of_week, days_of_week, day_of_month, quarterly_dates, one_off_date, active, sort_order })
     .eq('id', req.params.id)
     .select()
     .single()

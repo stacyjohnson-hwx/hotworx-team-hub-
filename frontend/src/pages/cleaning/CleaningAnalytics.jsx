@@ -35,7 +35,7 @@ function rateBg(rate) {
   return 'bg-red-50'
 }
 function freqLabel(f) {
-  return { daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly', quarterly: 'Quarterly', one_off: 'One-off' }[f] || f
+  return { daily: 'Daily', specific_days: 'Select Days', weekly: 'Weekly', monthly: 'Monthly', quarterly: 'Quarterly', one_off: 'One-off' }[f] || f
 }
 
 // ── Summary card ───────────────────────────────────────────────────────────────

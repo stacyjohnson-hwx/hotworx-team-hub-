@@ -20,6 +20,7 @@ export default function TaskForm({ task, onSaved, onClose }) {
     task_type: task?.task_type === 'Marketing' ? 'Cleaning' : (task?.task_type || 'Cleaning'),
     frequency: task?.frequency || 'daily',
     day_of_week: task?.day_of_week ?? 1,
+    days_of_week: task?.days_of_week ?? [1, 3, 5],
     day_of_month: task?.day_of_month ?? 1,
     quarterly_dates: task?.quarterly_dates?.join('\n') || '',
     one_off_date: task?.one_off_date || '',
@@ -30,9 +31,21 @@ export default function TaskForm({ task, onSaved, onClose }) {
     setForm(prev => ({ ...prev, [field]: value }))
   }
 
+  function toggleDay(dayIndex) {
+    setForm(prev => ({
+      ...prev,
+      days_of_week: prev.days_of_week.includes(dayIndex)
+        ? prev.days_of_week.filter(d => d !== dayIndex)
+        : [...prev.days_of_week, dayIndex],
+    }))
+  }
+
   async function submit(e) {
     e.preventDefault()
     if (!form.title.trim()) return setError('Title is required.')
+    if (form.frequency === 'specific_days' && form.days_of_week.length === 0) {
+      return setError('Pick at least one day of the week.')
+    }
 
     setSaving(true)
     setError(null)
@@ -44,6 +57,9 @@ export default function TaskForm({ task, onSaved, onClose }) {
       task_type: form.task_type,
       frequency: form.frequency,
       day_of_week: form.frequency === 'weekly' ? Number(form.day_of_week) : null,
+      days_of_week: form.frequency === 'specific_days'
+        ? [...form.days_of_week].sort((a, b) => a - b)
+        : null,
       day_of_month: form.frequency === 'monthly' ? Number(form.day_of_month) : null,
       quarterly_dates: form.frequency === 'quarterly'
         ? form.quarterly_dates.split('\n').map(d => d.trim()).filter(Boolean)
@@ -156,6 +172,7 @@ export default function TaskForm({ task, onSaved, onClose }) {
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-600/40 focus:border-red-600 bg-white"
             >
               <option value="daily">Daily — appears every day</option>
+              <option value="specific_days">Specific Days — pick weekdays (e.g. Mon / Wed / Fri)</option>
               <option value="weekly">Weekly — appears on a specific day of the week</option>
               <option value="monthly">Monthly — appears on a specific day of the month</option>
               <option value="quarterly">Quarterly — appears on 4 specific dates per year</option>
@@ -164,6 +181,33 @@ export default function TaskForm({ task, onSaved, onClose }) {
           </div>
 
           {/* Frequency-specific fields */}
+          {form.frequency === 'specific_days' && (
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1.5">Days of Week</label>
+              <div className="flex gap-1.5">
+                {DAYS.map((d, i) => {
+                  const on = form.days_of_week.includes(i)
+                  return (
+                    <button
+                      key={d}
+                      type="button"
+                      onClick={() => toggleDay(i)}
+                      title={d}
+                      className={`flex-1 py-2 rounded-lg text-xs font-semibold border transition-colors ${
+                        on
+                          ? 'bg-red-600 text-white border-red-600'
+                          : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400'
+                      }`}
+                    >
+                      {d.slice(0, 3)}
+                    </button>
+                  )
+                })}
+              </div>
+              <p className="text-[11px] text-gray-400 mt-1.5">Appears on the selected days and resets each day.</p>
+            </div>
+          )}
+
           {form.frequency === 'weekly' && (
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">Day of Week</label>
