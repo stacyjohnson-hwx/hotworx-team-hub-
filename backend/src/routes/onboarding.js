@@ -222,11 +222,18 @@ router.post('/import', authenticate, requireStudio, requireRole('owner', 'manage
     }
     const { data: unlinked } = await supabase
       .from('onboarding_bookings').select('booking_id, member_email').eq('studio_id', studioId).is('member_id', null)
-    for (const c of chunk(unlinked || [], 200)) {
-      for (const b of c) {
-        const id = b.member_email ? emailToId.get(String(b.member_email).toLowerCase()) : null
-        if (id) await supabase.from('onboarding_bookings').update({ member_id: id })
-          .eq('studio_id', studioId).eq('booking_id', b.booking_id)
+    // Group bookings by resolved member, then one bulk update per member (not per row)
+    // so a full booking accumulator doesn't fire thousands of sequential updates.
+    const bookingsByMember = new Map()
+    for (const b of (unlinked || [])) {
+      const id = b.member_email ? emailToId.get(String(b.member_email).toLowerCase()) : null
+      if (!id) continue
+      if (!bookingsByMember.has(id)) bookingsByMember.set(id, [])
+      bookingsByMember.get(id).push(b.booking_id)
+    }
+    for (const [id, ids] of bookingsByMember) {
+      for (const c of chunk(ids, 500)) {
+        await supabase.from('onboarding_bookings').update({ member_id: id }).eq('studio_id', studioId).in('booking_id', c)
       }
     }
     const { count: stillNull } = await supabase
