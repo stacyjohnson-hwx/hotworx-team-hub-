@@ -429,6 +429,44 @@ router.post('/members', authenticate, requireStudio, requireRole('owner', 'manag
   res.status(201).json({ ...member, linked_bookings: (linked || []).length })
 })
 
+// Full detail for one member: profile fields + activity + interaction history.
+router.get('/members/:id/detail', authenticate, requireStudio, async (req, res) => {
+  const supabase = db()
+  const sid = req.studio.id, mid = req.params.id
+  const [{ data: member }, { data: act }, { data: journeys }, { data: recog }, { data: reeng }, { data: templates }] = await Promise.all([
+    supabase.from('onboarding_members').select('*').eq('studio_id', sid).eq('id', mid).maybeSingle(),
+    supabase.from('onboarding_member_activity').select('*').eq('member_id', mid).maybeSingle(),
+    supabase.from('onboarding_journeys').select('id, current_track, status, start_date').eq('studio_id', sid).eq('member_id', mid),
+    supabase.from('onboarding_recognition_tasks').select('type, status, completed_by, completed_at').eq('studio_id', sid).eq('member_id', mid),
+    supabase.from('onboarding_reengage_log').select('contacted_at, contacted_by').eq('studio_id', sid).eq('member_id', mid),
+    supabase.from('onboarding_touchpoint_templates').select('template_key, label').eq('studio_id', sid),
+  ])
+  if (!member) return res.status(404).json({ error: 'not found' })
+  const tplMap = new Map((templates || []).map(t => [t.template_key, t.label]))
+
+  const journeyIds = (journeys || []).map(j => j.id)
+  let taskInter = []
+  if (journeyIds.length) {
+    const { data: tasks } = await supabase.from('onboarding_journey_tasks')
+      .select('template_key, trigger_ref, type, status, completed_by, completed_at')
+      .in('journey_id', journeyIds).in('status', ['completed', 'skipped'])
+    taskInter = (tasks || []).map(t => ({ when: t.completed_at, kind: t.type, label: tplMap.get(t.template_key) || t.trigger_ref, by: t.completed_by, status: t.status }))
+  }
+  const recInter = (recog || []).filter(r => r.status === 'completed')
+    .map(r => ({ when: r.completed_at, kind: r.type, label: r.type === 'birthday' ? 'Birthday text' : 'Thank-you card', by: r.completed_by, status: 'completed' }))
+  const reInter = (reeng || []).map(r => ({ when: r.contacted_at, kind: 'reengage', label: 'Re-engagement contact', by: r.contacted_by, status: 'completed' }))
+  const interactions = [...taskInter, ...recInter, ...reInter].filter(i => i.when)
+    .sort((a, b) => String(b.when).localeCompare(String(a.when)))
+
+  res.json({
+    member: { ...member,
+      visit_days: act?.visit_days || 0, total_sessions: act?.total_sessions || 0,
+      workouts_tried: act?.workouts_tried || 0, last_booking_date: act?.last_booking_date || null,
+      journey: (journeys || [])[0] || null },
+    interactions,
+  })
+})
+
 // Edit a member (name/type/contact/status) — owner/manager.
 router.patch('/members/:id', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const updates = { updated_at: new Date().toISOString() }

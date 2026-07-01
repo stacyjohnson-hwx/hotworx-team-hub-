@@ -131,6 +131,7 @@ function MembersTab() {
   const [filter, setFilter] = useState('all') // all | new | cancelled
   const [sort, setSort] = useState({ key: 'join_date', dir: 'desc' })
   const [editing, setEditing] = useState(null)
+  const [detailFor, setDetailFor] = useState(null)
   const todayISO = new Date().toISOString().slice(0, 10)
 
   const load = useCallback(async () => {
@@ -204,7 +205,7 @@ function MembersTab() {
                 <tr key={r.id} className={`border-b border-gray-100 ${r.is_cancelled ? 'bg-gray-50 text-gray-400' : ''}`}>
                   <td className="px-3 py-2">
                     <div className="font-medium text-gray-800 flex items-center gap-1.5">
-                      {r.full_name || r.customer_id}
+                      <button onClick={() => setDetailFor(r.id)} className="text-left hover:text-red-600 hover:underline">{r.full_name || r.customer_id}</button>
                       {r.is_new_member && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-green-100 text-green-700">NEW</span>}
                       {r.member_type && r.member_type !== 'member' && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700 uppercase">{r.member_type}</span>}
                       {r.expiration_date && r.expiration_date < todayISO && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700">EXPIRED</span>}
@@ -237,6 +238,7 @@ function MembersTab() {
 
       {editing && <MemberEditModal member={editing} onClose={() => setEditing(null)}
         onSaved={(m) => { setRows(rs => rs.map(x => x.id === m.id ? { ...x, ...m } : x)); setEditing(null) }} />}
+      {detailFor && <MemberDetailModal memberId={detailFor} onClose={() => setDetailFor(null)} />}
     </div>
   )
 }
@@ -549,6 +551,102 @@ function UnreconciledTab() {
   )
 }
 
+// Full member detail: profile, activity, interaction history, tagged photos.
+function MemberDetailModal({ memberId, onClose }) {
+  const [data, setData] = useState(null)
+  const [photos, setPhotos] = useState(null)
+  useEffect(() => {
+    apiGet(`${BASE}/members/${memberId}/detail`).then(setData).catch(() => setData({ error: true }))
+    apiGet(`/api/marketing/content?member_id=${memberId}`).then(setPhotos).catch(() => setPhotos([]))
+  }, [memberId])
+
+  const m = data?.member
+  const addr = m && [m.address, [m.city, m.state].filter(Boolean).join(', '), m.postal_code].filter(Boolean).join(' · ')
+  const Row = ({ label, value }) => value ? (
+    <div className="flex justify-between gap-4 py-1 text-sm"><span className="text-gray-400">{label}</span><span className="text-gray-800 text-right">{value}</span></div>
+  ) : null
+  const fmtWhen = (w) => { try { return new Date(w).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) } catch { return w } }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        {!data ? <Spinner /> : data.error || !m ? <Empty msg="Couldn't load this member." /> : (
+          <>
+            <div className="flex items-start justify-between px-5 py-4 border-b border-gray-100">
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="font-bold text-lg text-gray-900">{m.full_name || m.customer_id}</h3>
+                  {m.member_type && m.member_type !== 'member' && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700 uppercase">{m.member_type}</span>}
+                  {m.is_cancelled && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-700">CANCELLED</span>}
+                </div>
+                <p className="text-xs text-gray-400 mt-0.5">{m.status || '—'}{m.package_name ? ` · ${m.package_name}` : ''}{m.journey?.current_track ? ` · ${m.journey.current_track}` : ''}</p>
+              </div>
+              <button onClick={onClose} className="text-gray-400 hover:text-gray-600">✕</button>
+            </div>
+
+            <div className="p-5 space-y-5">
+              {/* Activity */}
+              <div className="grid grid-cols-4 gap-2 text-center">
+                {[['Visit-days', m.visit_days], ['Sessions', m.total_sessions], ['Workouts', `${m.workouts_tried}/12`], ['Last booking', m.last_booking_date || '—']].map(([l, v]) => (
+                  <div key={l} className="bg-gray-50 rounded-xl py-2">
+                    <p className="text-sm font-bold text-gray-900">{v}</p>
+                    <p className="text-[10px] text-gray-400">{l}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Details */}
+              <div>
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Details</p>
+                <div className="border border-gray-100 rounded-xl px-3 divide-y divide-gray-50">
+                  <Row label="Email" value={m.email} />
+                  <Row label="Phone" value={m.phone} />
+                  <Row label="Address" value={addr} />
+                  <Row label="Joined" value={m.join_date} />
+                  <Row label="Coming from" value={m.origin_studio} />
+                  <Row label="Expires (PIF)" value={m.expiration_date} />
+                </div>
+              </div>
+
+              {/* Photos */}
+              <div>
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Photos</p>
+                {photos === null ? <p className="text-xs text-gray-400">Loading…</p> : photos.length === 0 ? (
+                  <p className="text-xs text-gray-400">No tagged photos yet.</p>
+                ) : (
+                  <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                    {photos.map(a => (
+                      <a key={a.id} href={a.file_url} target="_blank" rel="noreferrer" className="block aspect-square rounded-lg overflow-hidden border border-gray-200 bg-gray-100">
+                        {a.file_type === 'photo' && a.file_url ? <img src={a.file_url} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[9px] text-gray-400">{a.file_type}</div>}
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Interactions */}
+              <div>
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Interactions ({data.interactions.length})</p>
+                {data.interactions.length === 0 ? <p className="text-xs text-gray-400">No logged interactions yet.</p> : (
+                  <div className="space-y-1.5">
+                    {data.interactions.map((i, idx) => (
+                      <div key={idx} className="flex items-center gap-2 text-sm border-l-2 border-gray-200 pl-3 py-0.5">
+                        <span className="text-gray-800">{i.label}</span>
+                        {i.status === 'skipped' && <span className="text-[9px] text-gray-400">skipped</span>}
+                        <span className="ml-auto text-xs text-gray-400">{fmtWhen(i.when)}{i.by ? ` · ${i.by}` : ''}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // Edit a member's name / type / contact.
 function MemberEditModal({ member, onClose, onSaved }) {
   const [form, setForm] = useState({
@@ -724,6 +822,7 @@ function DailyListTab() {
   const [day2, setDay2] = useState(null)      // the Day-2 item being captured
   const [photosFor, setPhotosFor] = useState(null)  // milestone shout-out: view member's photos
   const [scriptFor, setScriptFor] = useState(null)  // item whose script modal is open
+  const [detailFor, setDetailFor] = useState(null)  // member detail modal
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -794,7 +893,7 @@ function DailyListTab() {
                   </button>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-bold text-gray-900">{r.member_name}</span>
+                      <button onClick={() => setDetailFor(r.member_id)} className="font-bold text-gray-900 hover:text-red-600 hover:underline">{r.member_name}</button>
                       <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full flex items-center gap-1 ${isStudio ? 'bg-green-100 text-green-700' : isCall ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
                         {isStudio ? <Building2 size={9} /> : isCall ? <Phone size={9} /> : <MessageSquare size={9} />}{isStudio ? 'In studio' : isCall ? 'Call' : 'Text'}
                       </span>
@@ -842,6 +941,7 @@ function DailyListTab() {
       )}
 
       {scriptFor && <ScriptModal item={scriptFor} onClose={() => setScriptFor(null)} />}
+      {detailFor && <MemberDetailModal memberId={detailFor} onClose={() => setDetailFor(null)} />}
       {day2 && <Day2Modal item={day2} onClose={() => setDay2(null)}
         onDone={() => { const id = day2.id; setDay2(null); drop(id) }} />}
       {photosFor && <MemberPhotosModal member={photosFor} onClose={() => setPhotosFor(null)} />}
