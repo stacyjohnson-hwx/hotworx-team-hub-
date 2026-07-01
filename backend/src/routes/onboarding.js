@@ -131,11 +131,16 @@ router.post('/import', authenticate, requireStudio, requireRole('owner', 'manage
           is_cancelled = false; cancelled_date = null
         }
 
+        // Name may be one column or split into First/Last — try both.
+        const fullName = pick(r, ['Full Name', 'Name', 'Member Name', 'FullName', 'Customer Name', 'Client Name', 'Member Name '])
+          || [pick(r, ['First Name', 'FirstName', 'First', 'Given Name']), pick(r, ['Last Name', 'LastName', 'Last', 'Surname', 'Family Name'])].filter(Boolean).join(' ').trim()
+          || null
+
         rows.push({
           studio_id: studioId,
           customer_id,
           subscription_id: pick(r, ['Subscription Id', 'SubscriptionId', 'Subscription ID']),
-          full_name:       pick(r, ['Full Name', 'Name', 'Member Name', 'FullName']),
+          full_name:       fullName,
           primary_member:  pick(r, ['Primary Member', 'PrimaryMember', 'Primary']),
           email: (pick(r, ['Email']) || '').toLowerCase() || null,
           phone: pick(r, ['Phone No', 'Phone', 'PhoneNo', 'Mobile']),
@@ -217,16 +222,24 @@ router.post('/import', authenticate, requireStudio, requireRole('owner', 'manage
       .from('onboarding_members').select('id, email, phone').eq('studio_id', studioId)
     const emailToId = new Map(), phoneToId = new Map()
     for (const m of memForLink || []) {
-      if (m.email) emailToId.set(m.email.toLowerCase(), m.id)
+      if (m.email) emailToId.set(String(m.email).trim().toLowerCase(), m.id)
       if (m.phone) phoneToId.set(String(m.phone).replace(/[^0-9]/g, ''), m.id)
     }
-    const { data: unlinked } = await supabase
-      .from('onboarding_bookings').select('booking_id, member_email').eq('studio_id', studioId).is('member_id', null)
-    // Group bookings by resolved member, then one bulk update per member (not per row)
-    // so a full booking accumulator doesn't fire thousands of sequential updates.
+    // Fetch ALL unmatched bookings (Supabase caps a query at 1000 rows, so page
+    // through with .range) — otherwise only the first 1000 ever get reconciled.
+    const unlinked = []
+    for (let from = 0; ; from += 1000) {
+      const { data: page } = await supabase
+        .from('onboarding_bookings').select('booking_id, member_email')
+        .eq('studio_id', studioId).is('member_id', null).order('booking_id').range(from, from + 999)
+      if (!page || page.length === 0) break
+      unlinked.push(...page)
+      if (page.length < 1000) break
+    }
+    // Group bookings by resolved member, then one bulk update per member (not per row).
     const bookingsByMember = new Map()
-    for (const b of (unlinked || [])) {
-      const id = b.member_email ? emailToId.get(String(b.member_email).toLowerCase()) : null
+    for (const b of unlinked) {
+      const id = b.member_email ? emailToId.get(String(b.member_email).trim().toLowerCase()) : null
       if (!id) continue
       if (!bookingsByMember.has(id)) bookingsByMember.set(id, [])
       bookingsByMember.get(id).push(b.booking_id)
