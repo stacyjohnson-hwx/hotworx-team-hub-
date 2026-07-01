@@ -102,6 +102,7 @@ function MembersTab() {
   }, [currentStudio?.id])
   useEffect(() => { load() }, [load])
 
+  const daysSince = (d) => (d ? Math.floor((new Date(todayISO) - new Date(d)) / 86400000) : null)
   const GET = {
     full_name: r => (r.full_name || '').toLowerCase(),
     status: r => (r.status || '').toLowerCase(),
@@ -110,6 +111,7 @@ function MembersTab() {
     total_sessions: r => r.total_sessions || 0,
     workouts_tried: r => r.workouts_tried || 0,
     last_booking_date: r => r.last_booking_date || '',
+    days_since: r => (r.last_booking_date ? daysSince(r.last_booking_date) : 999999),
   }
   const filtered = rows.filter(r => {
     if (filter === 'new' && !r.is_new_member) return false
@@ -155,6 +157,7 @@ function MembersTab() {
                 <Th k="total_sessions" right>Sessions</Th>
                 <Th k="workouts_tried" right>Workouts</Th>
                 <Th k="last_booking_date">Last booking</Th>
+                <Th k="days_since" right>Days since</Th>
                 {isOwnerOrManager && <th className="px-3 py-2"></th>}
               </tr>
             </thead>
@@ -177,6 +180,9 @@ function MembersTab() {
                   <td className="px-3 py-2 text-right">{r.total_sessions}</td>
                   <td className="px-3 py-2 text-right">{r.workouts_tried}/12</td>
                   <td className="px-3 py-2">{r.last_booking_date || '—'}</td>
+                  <td className={`px-3 py-2 text-right font-medium ${daysSince(r.last_booking_date) >= 14 ? 'text-orange-600' : 'text-gray-600'}`}>
+                    {r.last_booking_date ? `${daysSince(r.last_booking_date)}d` : '—'}
+                  </td>
                   {isOwnerOrManager && (
                     <td className="px-3 py-2 text-right">
                       <button onClick={() => setEditing(r)} className="text-gray-400 hover:text-red-600" title="Edit member">
