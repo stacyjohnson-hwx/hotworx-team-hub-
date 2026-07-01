@@ -45,18 +45,33 @@ const NAV_SECTIONS = [
     ],
   },
   {
-    title: 'Daily Operations',
+    title: 'Schedule',
     items: [
       { to: '/schedule',    label: 'Schedule',                icon: Calendar,       roles: ['owner', 'manager', 'tsa'] },
       { to: '/timeoff',     label: 'Time Off & Availability', icon: CalendarOff,    roles: ['owner', 'manager', 'tsa'] },
+    ],
+  },
+  {
+    title: 'Daily Operations',
+    items: [
       { to: '/cleaning',    label: 'Cleaning & Ops Tasks',    icon: CheckSquare,    roles: ['owner', 'manager', 'tsa'] },
       { to: '/leads',       label: 'Marketing Tasks',         icon: TrendingUp,     roles: ['owner', 'manager', 'tsa'] },
       { to: '/eod',         label: 'EOD Checkout',            icon: ClipboardCheck, roles: ['owner', 'manager', 'tsa'] },
+    ],
+  },
+  {
+    title: 'Outreach',
+    items: [
+      { to: '/cancellations',     label: 'Cancellations',      icon: UserMinus,      roles: ['owner', 'manager', 'tsa'] },
+      { to: '/member-activation', label: 'Member Activation',  icon: HeartHandshake, roles: ['owner', 'manager', 'tsa'] },
+    ],
+  },
+  {
+    title: 'Studio Tracking',
+    items: [
       { to: '/orders',      label: 'Orders',                  icon: ShoppingCart,   roles: ['owner', 'manager', 'tsa'] },
       { to: '/maintenance', label: 'Maintenance',             icon: Wrench,         roles: ['owner', 'manager', 'tsa'] },
       { to: '/escalations', label: 'Escalations',             icon: ShieldAlert,    roles: ['owner', 'manager', 'tsa'] },
-      { to: '/cancellations', label: 'Cancellations',         icon: UserMinus,      roles: ['owner', 'manager', 'tsa'] },
-      { to: '/member-activation', label: 'Member Activation',   icon: HeartHandshake, roles: ['owner', 'manager', 'tsa'] },
     ],
   },
   {
