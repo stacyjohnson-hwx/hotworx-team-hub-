@@ -606,19 +606,83 @@ const FILTERS = [
   { k: 'all', label: 'All' },
   { k: 'reengage', label: 'Re-engagement', match: r => r.trigger_ref?.startsWith('reengage') },
   { k: 'milestone', label: 'Milestones', match: r => r.trigger_ref?.startsWith('milestone') || r.trigger_ref === 'passport_sticker' },
-  { k: 'onboarding', label: 'Onboarding', match: r => r.trigger_kind === 'day_based' || r.trigger_ref?.startsWith('save') },
+  { k: 'onboarding', label: 'Onboarding', match: r => r.trigger_kind === 'day_based' || r.trigger_ref?.startsWith('save') || r.trigger_ref === 'first_session_rough' },
 ]
+
+// Sub-filters within each core area (shown when that area is selected).
+const SUBFILTERS = {
+  reengage: [
+    { k: 'all', label: 'All' },
+    { k: 're14', label: '14–29 days', match: r => r.trigger_ref === 'reengage_14' },
+    { k: 're30', label: '30–59 days', match: r => r.trigger_ref === 'reengage_30' },
+    { k: 're60', label: '60+ days', match: r => r.trigger_ref === 'reengage_60' },
+  ],
+  milestone: [
+    { k: 'all', label: 'All' },
+    { k: 'm10', label: '10', match: r => r.trigger_ref === 'milestone_10' },
+    { k: 'm25', label: '25', match: r => r.trigger_ref === 'milestone_25' },
+    { k: 'm50', label: '50', match: r => r.trigger_ref === 'milestone_50' },
+    { k: 'm100', label: '100', match: r => r.trigger_ref === 'milestone_100' },
+    { k: 'mbig', label: '500 / 1,000', match: r => ['milestone_500', 'milestone_1000'].includes(r.trigger_ref) },
+    { k: 'passport', label: 'Passport', match: r => r.trigger_ref === 'passport_sticker' },
+  ],
+  onboarding: [
+    { k: 'all', label: 'All' },
+    { k: 'day', label: 'Day check-ins', match: r => r.trigger_kind === 'day_based' },
+    { k: 'save', label: 'Save fork', match: r => r.trigger_ref?.startsWith('save') },
+    { k: 'first', label: 'Rough first session', match: r => r.trigger_ref === 'first_session_rough' },
+  ],
+}
+
+// The reach-out script, opened from a Daily List item (keeps the list itself scannable).
+function ScriptModal({ item, value, onChange, onClose }) {
+  const [copied, setCopied] = useState(false)
+  const isCall = item.channel === 'call'
+  const copy = () => { navigator.clipboard?.writeText(value || ''); setCopied(true); setTimeout(() => setCopied(false), 1500) }
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div className="flex items-center gap-2">
+            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full flex items-center gap-1 ${isCall ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+              {isCall ? <Phone size={9} /> : <MessageSquare size={9} />}{isCall ? 'Call' : 'Text'}
+            </span>
+            <h3 className="font-bold text-gray-900">{item.member_name}</h3>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">✕</button>
+        </div>
+        <div className="p-5">
+          <p className="text-xs text-gray-500 mb-2">{item.label}</p>
+          <textarea value={value || ''} onChange={e => onChange(e.target.value)} rows={6}
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:border-red-400 bg-gray-50" />
+        </div>
+        <div className="flex items-center gap-2 px-5 py-4 border-t border-gray-100">
+          {!isCall && item.phone && (
+            <a href={`sms:${item.phone}?&body=${encodeURIComponent(value || '')}`}
+              className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700"><MessageSquare size={14} /> Open text</a>
+          )}
+          <button onClick={copy} className="flex items-center gap-1.5 px-4 py-2 border border-gray-300 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-50">
+            {copied ? <><Check size={14} /> Copied</> : 'Copy script'}
+          </button>
+          <button onClick={onClose} className="ml-auto px-3 py-2 text-sm text-gray-500">Close</button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function DailyListTab() {
   const { currentStudio } = useStudio()
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('all')
+  const [sub, setSub] = useState('all')       // sub-filter within the core area
   const [drafts, setDrafts] = useState({})   // id -> edited script
   const [done, setDone] = useState({})        // id -> true (row flashes blue then drops)
   const [fulfil, setFulfil] = useState({})    // id -> reward fulfilled checkbox
   const [day2, setDay2] = useState(null)      // the Day-2 item being captured
   const [photosFor, setPhotosFor] = useState(null)  // milestone shout-out: view member's photos
+  const [scriptFor, setScriptFor] = useState(null)  // item whose script modal is open
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -646,26 +710,38 @@ function DailyListTab() {
   }
 
   const f = FILTERS.find(x => x.k === filter)
-  const shown = filter === 'all' ? rows : rows.filter(f.match)
+  const subs = SUBFILTERS[filter]
+  let shown = filter === 'all' ? rows : rows.filter(f.match)
+  if (subs && sub !== 'all') { const sf = subs.find(s => s.k === sub); if (sf?.match) shown = shown.filter(sf.match) }
+  const pickCore = (k) => { setFilter(k); setSub('all') }
 
   if (loading) return <Spinner />
   return (
     <div>
-      <div className="flex flex-wrap items-center gap-2 mb-4">
+      <div className="flex flex-wrap items-center gap-2 mb-2">
         {FILTERS.map(x => (
-          <button key={x.k} onClick={() => setFilter(x.k)}
+          <button key={x.k} onClick={() => pickCore(x.k)}
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${filter === x.k ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-600 border-gray-300'}`}>
             {x.label}
           </button>
         ))}
         <span className="ml-auto text-xs text-gray-400">{shown.length} to reach</span>
       </div>
+      {subs && (
+        <div className="flex flex-wrap items-center gap-1.5 mb-4 pl-1">
+          {subs.map(s => (
+            <button key={s.k} onClick={() => setSub(s.k)}
+              className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border ${sub === s.k ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'}`}>
+              {s.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {shown.length === 0 ? <Empty msg="Nobody to reach right now. Run a Daily Import to refresh the queue. 🎉" /> : (
         <div className="space-y-2.5">
           {shown.map(r => {
             const isDone = done[r.id]
-            const script = drafts[r.id] != null ? drafts[r.id] : r.script
             const isCall = r.channel === 'call'
             return (
               <div key={r.id} className={`border rounded-xl p-3.5 transition-colors ${isDone ? 'bg-blue-50 border-blue-300' : 'bg-white border-gray-200'}`}>
@@ -683,10 +759,7 @@ function DailyListTab() {
                       {r.priority <= 3 && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-700">PRIORITY</span>}
                       {r.reward_key && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 flex items-center gap-1"><Trophy size={9} />{r.reward_key.replace(/_/g, ' ')}</span>}
                     </div>
-                    <p className="text-xs text-gray-500 mb-2">{r.label}</p>
-                    <textarea value={script} onChange={e => setDrafts(d => ({ ...d, [r.id]: e.target.value }))}
-                      rows={isCall ? 3 : 2}
-                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:border-red-400 bg-gray-50" />
+                    <p className="text-xs text-gray-500">{r.label}</p>
                     {r.reward_key && (
                       <div className="mt-2 flex items-center gap-3 flex-wrap">
                         <label className="flex items-center gap-1.5 text-xs text-gray-600">
@@ -709,11 +782,7 @@ function DailyListTab() {
                       </div>
                     )}
                     <div className="flex items-center gap-3 mt-2">
-                      {!isCall && r.phone && (
-                        <a href={`sms:${r.phone}?&body=${encodeURIComponent(script)}`}
-                          className="text-xs font-semibold text-blue-600 hover:underline flex items-center gap-1"><MessageSquare size={12} /> Open text</a>
-                      )}
-                      <button onClick={() => navigator.clipboard?.writeText(script)} className="text-xs text-gray-500 hover:text-gray-800">Copy script</button>
+                      <button onClick={() => setScriptFor(r)} className="text-xs font-semibold text-red-600 hover:underline flex items-center gap-1"><FileText size={12} /> {isCall ? 'View call script' : 'View / send text'}</button>
                       <button onClick={() => skip(r)} className="text-xs text-gray-400 hover:text-gray-700 flex items-center gap-1 ml-auto"><SkipForward size={12} /> Skip</button>
                     </div>
                   </div>
@@ -724,6 +793,9 @@ function DailyListTab() {
         </div>
       )}
 
+      {scriptFor && <ScriptModal item={scriptFor} onClose={() => setScriptFor(null)}
+        value={drafts[scriptFor.id] != null ? drafts[scriptFor.id] : scriptFor.script}
+        onChange={(v) => setDrafts(d => ({ ...d, [scriptFor.id]: v }))} />}
       {day2 && <Day2Modal item={day2} onClose={() => setDay2(null)}
         onDone={() => { const id = day2.id; setDay2(null); drop(id) }} />}
       {photosFor && <MemberPhotosModal member={photosFor} onClose={() => setPhotosFor(null)} />}
