@@ -292,7 +292,12 @@ function ContentLibrary() {
             <div key={a.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
               <div className="aspect-square bg-gray-100 flex items-center justify-center relative">
                 {a.file_type === 'photo' && a.file_url ? <img src={a.file_url} alt="" className="w-full h-full object-cover" />
-                  : a.file_type === 'video' && a.file_url ? <button onClick={() => setPlayVideo(a.file_url)} className="w-full h-full flex flex-col items-center justify-center text-gray-500 hover:text-[#E8611A] hover:bg-gray-50 transition-colors"><div className="w-11 h-11 rounded-full bg-white shadow flex items-center justify-center"><Play size={20} className="ml-0.5" fill="currentColor" /></div><span className="text-[10px] mt-1.5 font-medium">Play video</span></button>
+                  : a.file_type === 'video' && a.file_url ? <button onClick={() => setPlayVideo(a.file_url)} className="relative w-full h-full group">
+                      <video src={`${a.file_url}#t=0.5`} preload="metadata" muted playsInline className="w-full h-full object-cover" />
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/10 group-hover:bg-black/25 transition-colors">
+                        <div className="w-11 h-11 rounded-full bg-white/90 shadow flex items-center justify-center"><Play size={20} className="ml-0.5 text-gray-800" fill="currentColor" /></div>
+                      </div>
+                    </button>
                   : <div className="p-3 text-center"><Quote size={20} className="text-gray-300 mx-auto mb-1" /><p className="text-[11px] text-gray-600 leading-snug line-clamp-4">"{a.caption}"</p></div>}
                 {a.ready_for_soci && <span className="absolute top-1.5 left-1.5 text-[9px] font-bold bg-green-600 text-white px-1.5 py-0.5 rounded-full">SOCi ✓</span>}
               </div>
