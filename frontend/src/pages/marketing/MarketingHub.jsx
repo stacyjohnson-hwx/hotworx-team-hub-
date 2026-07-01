@@ -9,7 +9,7 @@ import {
   ListTodo, Images, X, Download, Trash2, CheckCheck, Send, Play, Quote,
   Trophy, Flame, RefreshCw, Gift, Check,
   BarChart3, Settings, Plus, Pencil, Copy, Flag, Archive, Star,
-  Lightbulb, Power, ExternalLink,
+  Lightbulb, Power, ExternalLink, Tag,
 } from 'lucide-react'
 
 const CATEGORY_STYLE = {
@@ -225,6 +225,7 @@ function ContentLibrary() {
   const [fStaff, setFStaff] = useState('')
   const [fReady, setFReady] = useState(false)
   const [fMember, setFMember] = useState([])   // selected member filter (single)
+  const [tagEdit, setTagEdit] = useState(null) // asset whose member tags are being edited
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -304,6 +305,7 @@ function ContentLibrary() {
                 )}
                 <div className="flex items-center gap-1 mt-1.5">
                   {a.file_url && <button onClick={() => downloadFile(a.file_url, `${a.category}-${a.id}`)} className="p-1 text-gray-400 hover:text-gray-700" title="Download"><Download size={13} /></button>}
+                  <button onClick={() => setTagEdit(a)} className="p-1 text-gray-400 hover:text-orange-600" title="Tag members"><Tag size={13} /></button>
                   {isOwnerOrManager && <>
                     <button onClick={() => setStatus(a.id, { ready_for_soci: !a.ready_for_soci })} title="Toggle Ready for SOCi"
                       className={`p-1 ${a.ready_for_soci ? 'text-green-600' : 'text-gray-400 hover:text-green-600'}`}><Send size={13} /></button>
@@ -317,6 +319,43 @@ function ContentLibrary() {
           ))}
         </div>
       )}
+
+      {tagEdit && <TagEditModal asset={tagEdit} onClose={() => setTagEdit(null)}
+        onSaved={(tags) => setAssets(prev => prev.map(x => x.id === tagEdit.id ? { ...x, tagged_members: tags } : x))} />}
+    </div>
+  )
+}
+
+// Edit the members tagged in a photo (e.g. forgot on upload).
+function TagEditModal({ asset, onClose, onSaved }) {
+  const [tags, setTags] = useState((asset.tagged_members || []).map(m => ({ id: m.id, full_name: m.full_name })))
+  const [saving, setSaving] = useState(false)
+  const save = async () => {
+    setSaving(true)
+    try { await apiPut(`/api/marketing/content/${asset.id}/tags`, { member_ids: tags.map(t => t.id) }); onSaved(tags) }
+    catch { /* ignore */ } finally { setSaving(false) }
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <h3 className="font-bold text-gray-900">Tag members</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+        <div className="p-5">
+          {asset.file_type === 'photo' && asset.file_url && (
+            <img src={asset.file_url} alt="" className="w-full max-h-48 object-contain rounded-lg border border-gray-200 mb-3 bg-gray-50" />
+          )}
+          <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Members in this photo</p>
+          <MemberTagPicker value={tags} onChange={setTags} placeholder="Search members…" />
+        </div>
+        <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-100">
+          <button onClick={onClose} className="px-3 py-1.5 text-sm text-gray-600 border border-gray-300 rounded-lg">Cancel</button>
+          <button onClick={save} disabled={saving} className="px-4 py-1.5 text-sm font-semibold text-white bg-[#E8611A] rounded-lg disabled:opacity-50 hover:bg-orange-600">
+            {saving ? 'Saving…' : 'Save tags'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

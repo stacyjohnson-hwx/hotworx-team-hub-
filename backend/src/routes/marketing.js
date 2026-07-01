@@ -287,6 +287,22 @@ router.put('/content/:id', requireRole('owner', 'manager'), async (req, res) => 
   res.json(data)
 })
 
+// PUT /api/marketing/content/:id/tags — re-tag members (any staff, e.g. forgot on upload)
+router.put('/content/:id/tags', async (req, res) => {
+  const { member_ids } = req.body
+  const database = db()
+  const { data: asset } = await database.from('marketing_content_assets')
+    .select('id').eq('id', req.params.id).eq('studio_id', req.studio.id).maybeSingle()
+  if (!asset) return res.status(404).json({ error: 'Asset not found' })
+  await database.from('marketing_content_member_tags').delete()
+    .eq('studio_id', req.studio.id).eq('content_id', req.params.id)
+  if (Array.isArray(member_ids) && member_ids.length) {
+    const rows = [...new Set(member_ids)].map(mid => ({ studio_id: req.studio.id, content_id: req.params.id, member_id: mid }))
+    await database.from('marketing_content_member_tags').insert(rows)
+  }
+  res.json({ ok: true })
+})
+
 // DELETE /api/marketing/content/:id — manager (also removes the storage file)
 router.delete('/content/:id', requireRole('owner', 'manager'), async (req, res) => {
   const database = db()
