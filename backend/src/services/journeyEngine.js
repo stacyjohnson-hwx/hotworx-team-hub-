@@ -19,7 +19,6 @@ function renderTemplate(body, ctx) {
 
 // ─── Day-based team touchpoints (email days are Mailchimp, not tasks) ─────────
 const DAY_TOUCHPOINTS = [
-  { day: 0,  type: 'text', ref: 'day_0',  keyFor: (src) => /online/i.test(src || '') ? 'day0_welcome_online' : 'day0_welcome_pos' },
   { day: 2,  type: 'call', ref: 'day_2',  key: 'day2_goal_call' },
   { day: 5,  type: 'text', ref: 'day_5',  key: 'day5_checkin' },
   { day: 21, type: 'text', ref: 'day_21', key: 'day21_bring_friend' },
