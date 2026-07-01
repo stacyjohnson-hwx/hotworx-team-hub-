@@ -184,18 +184,30 @@ router.post('/import', authenticate, requireStudio, requireRole('owner', 'manage
     const touchedMonths = new Set()
     if (cancelled.length) {
       const ledgerRows = []
+      const logRows = []
       const cancelSet = []
       for (const raw of cancelled) {
         const r = normalizeRow(raw)
         const customer_id = pick(r, ['Customer Id', 'CustomerId', 'Customer ID'])
         const cancelled_date = parseDate(pick(r, ['Cancellation Date', 'Cancelled Date', 'CancellationDate', 'Cancel Date']))
         if (!customer_id || !cancelled_date) { summary.cancelled.skipped++; continue }
+        const name = pick(r, ['Name', 'Member Name', 'Full Name', 'Customer Name'])
+          || [pick(r, ['First Name', 'FirstName']), pick(r, ['Last Name', 'LastName'])].filter(Boolean).join(' ').trim()
+          || `Customer ${customer_id}`
         const month_key = monthKeyOf(cancelled_date)
         touchedMonths.add(month_key)
         ledgerRows.push({
-          studio_id: studioId, customer_id,
-          member_name: pick(r, ['Name', 'Member Name', 'Full Name']),
+          studio_id: studioId, customer_id, member_name: name,
           cancelled_date, month_key, source: 'export',
+        })
+        // Auto-populate the Cancellations tab (team then fills in save/win-back details).
+        logRows.push({
+          studio_id: studioId, member_name: name, date_requested: cancelled_date,
+          cancel_reason: 'other', reason_notes: 'Imported from SAIL cancelled export',
+          outcome: 'cancelled', win_back_step: 'call_scheduled',
+          offers_presented: [], offer_accepted: 'none', goal_recaptured: false,
+          source: 'sail_import', import_key: `${customer_id}|${cancelled_date}`,
+          created_by: req.user.id,
         })
         cancelSet.push({ customer_id, cancelled_date })
       }
@@ -208,6 +220,13 @@ router.post('/import', authenticate, requireStudio, requireRole('owner', 'manage
         if (error) throw new Error(`ledger upsert: ${error.message}`)
       }
       summary.cancelled.ledgered = deduped.length
+
+      // Mirror into the Cancellations tab, deduped on import_key (re-imports don't duplicate).
+      const logByKey = new Map()
+      for (const row of logRows) logByKey.set(row.import_key, row)
+      for (const c of chunk([...logByKey.values()], 500)) {
+        await supabase.from('cancellation_log').upsert(c, { onConflict: 'studio_id,import_key', ignoreDuplicates: true })
+      }
       // Flag the members themselves (authoritative cancel signal).
       for (const c of chunk(cancelSet, 200)) {
         for (const { customer_id, cancelled_date } of c) {
