@@ -93,6 +93,7 @@ function MembersTab() {
   const [filter, setFilter] = useState('all') // all | new | cancelled
   const [sort, setSort] = useState({ key: 'join_date', dir: 'desc' })
   const [editing, setEditing] = useState(null)
+  const todayISO = new Date().toISOString().slice(0, 10)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -165,9 +166,10 @@ function MembersTab() {
                       {r.full_name || r.customer_id}
                       {r.is_new_member && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-green-100 text-green-700">NEW</span>}
                       {r.member_type && r.member_type !== 'member' && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700 uppercase">{r.member_type}</span>}
+                      {r.expiration_date && r.expiration_date < todayISO && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700">EXPIRED</span>}
                       {r.is_cancelled && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-700">CANCELLED</span>}
                     </div>
-                    <div className="text-[11px] text-gray-400">{r.email || '—'} · {r.package_name || '—'}{r.origin_studio ? ` · from ${r.origin_studio}` : ''}</div>
+                    <div className="text-[11px] text-gray-400">{r.email || '—'} · {r.package_name || '—'}{r.origin_studio ? ` · from ${r.origin_studio}` : ''}{r.expiration_date ? ` · expires ${r.expiration_date}` : ''}</div>
                   </td>
                   <td className="px-3 py-2">{r.status || '—'}</td>
                   <td className="px-3 py-2">{r.join_date || '—'}</td>
@@ -415,7 +417,7 @@ function UnreconciledTab() {
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [addFor, setAddFor] = useState(null)   // email being added
-  const [form, setForm] = useState({ full_name: '', member_type: 'employee', origin_studio: '' })
+  const [form, setForm] = useState({ full_name: '', member_type: 'employee', origin_studio: '', expiration_date: '' })
   const [saving, setSaving] = useState(false)
 
   const load = useCallback(async () => {
@@ -434,11 +436,11 @@ function UnreconciledTab() {
     return acc
   }, {})).sort((a, b) => b.count - a.count)
 
-  const openAdd = (email) => { setAddFor(email); setForm({ full_name: '', member_type: 'employee', origin_studio: '' }) }
+  const openAdd = (email) => { setAddFor(email); setForm({ full_name: '', member_type: 'employee', origin_studio: '', expiration_date: '' }) }
   const addPerson = async () => {
     setSaving(true)
     try {
-      await apiPost(`${BASE}/members`, { email: addFor, full_name: form.full_name, member_type: form.member_type, origin_studio: form.origin_studio })
+      await apiPost(`${BASE}/members`, { email: addFor, full_name: form.full_name, member_type: form.member_type, origin_studio: form.origin_studio, expiration_date: form.expiration_date })
       setAddFor(null); load()
     } catch { /* ignore */ }
     finally { setSaving(false) }
@@ -483,6 +485,11 @@ function UnreconciledTab() {
                     <input value={form.origin_studio} onChange={e => setForm(f => ({ ...f, origin_studio: e.target.value }))}
                       placeholder="Studio (optional)" className="border border-gray-300 rounded px-2 py-1 text-sm" />
                   </div>
+                  <div>
+                    <label className="block text-[11px] text-gray-500 mb-0.5">Expires (PIF)</label>
+                    <input type="date" value={form.expiration_date} onChange={e => setForm(f => ({ ...f, expiration_date: e.target.value }))}
+                      className="border border-gray-300 rounded px-2 py-1 text-sm" />
+                  </div>
                   <button onClick={addPerson} disabled={saving}
                     className="bg-red-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg disabled:opacity-50">
                     {saving ? 'Adding…' : `Add & link ${g.count}`}
@@ -503,6 +510,7 @@ function MemberEditModal({ member, onClose, onSaved }) {
   const [form, setForm] = useState({
     full_name: member.full_name || '', member_type: member.member_type || 'member',
     phone: member.phone || '', email: member.email || '', origin_studio: member.origin_studio || '',
+    expiration_date: member.expiration_date || '',
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
@@ -548,10 +556,17 @@ function MemberEditModal({ member, onClose, onSaved }) {
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
             </div>
           </div>
-          <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1">Coming from (studio) <span className="text-gray-400 font-normal">— for reciprocal members</span></label>
-            <input value={form.origin_studio} onChange={e => set('origin_studio', e.target.value)} placeholder="e.g. HOTWORX Madison"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">Coming from (studio)</label>
+              <input value={form.origin_studio} onChange={e => set('origin_studio', e.target.value)} placeholder="e.g. HOTWORX Madison"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">Expiration date <span className="text-gray-400 font-normal">(PIF)</span></label>
+              <input type="date" value={form.expiration_date} onChange={e => set('expiration_date', e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+            </div>
           </div>
           {error && <p className="text-xs text-red-600">{error}</p>}
         </div>
