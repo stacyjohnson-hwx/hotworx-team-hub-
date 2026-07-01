@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Upload, Users, HeartHandshake, AlertTriangle, Check, Loader2, RefreshCw, Gauge, ListChecks, Phone, MessageSquare, SkipForward, FileText, Trophy, Gift, Cake } from 'lucide-react'
+import { Upload, Users, HeartHandshake, AlertTriangle, Check, Loader2, RefreshCw, Gauge, ListChecks, Phone, MessageSquare, SkipForward, FileText, Trophy, Gift, Cake, Pencil } from 'lucide-react'
 import { apiGet, apiPost, apiPatch, apiPut, apiDelete } from '@/hooks/useApi'
 import { useRole } from '@/hooks/useRole'
 import { useStudio } from '@/contexts/StudioContext'
@@ -86,11 +86,13 @@ export default function MemberActivationPage() {
 // ─── Members ──────────────────────────────────────────────────────────────────
 function MembersTab() {
   const { currentStudio } = useStudio()
+  const { isOwnerOrManager } = useRole()
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [q, setQ] = useState('')
   const [filter, setFilter] = useState('all') // all | new | cancelled
   const [sort, setSort] = useState({ key: 'join_date', dir: 'desc' })
+  const [editing, setEditing] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -152,6 +154,7 @@ function MembersTab() {
                 <Th k="total_sessions" right>Sessions</Th>
                 <Th k="workouts_tried" right>Workouts</Th>
                 <Th k="last_booking_date">Last booking</Th>
+                {isOwnerOrManager && <th className="px-3 py-2"></th>}
               </tr>
             </thead>
             <tbody>
@@ -172,12 +175,22 @@ function MembersTab() {
                   <td className="px-3 py-2 text-right">{r.total_sessions}</td>
                   <td className="px-3 py-2 text-right">{r.workouts_tried}/12</td>
                   <td className="px-3 py-2">{r.last_booking_date || '—'}</td>
+                  {isOwnerOrManager && (
+                    <td className="px-3 py-2 text-right">
+                      <button onClick={() => setEditing(r)} className="text-gray-400 hover:text-red-600" title="Edit member">
+                        <Pencil size={14} />
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
+
+      {editing && <MemberEditModal member={editing} onClose={() => setEditing(null)}
+        onSaved={(m) => { setRows(rs => rs.map(x => x.id === m.id ? { ...x, ...m } : x)); setEditing(null) }} />}
     </div>
   )
 }
@@ -476,6 +489,69 @@ function UnreconciledTab() {
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+// Edit a member's name / type / contact.
+function MemberEditModal({ member, onClose, onSaved }) {
+  const [form, setForm] = useState({
+    full_name: member.full_name || '', member_type: member.member_type || 'member',
+    phone: member.phone || '', email: member.email || '',
+  })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState(null)
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  const save = async () => {
+    setSaving(true); setError(null)
+    try {
+      const saved = await apiPatch(`${BASE}/members/${member.id}`, form)
+      onSaved(saved)
+    } catch (e) { setError(e?.message || 'Save failed'); setSaving(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <h3 className="font-bold text-gray-900">Edit member</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">✕</button>
+        </div>
+        <div className="p-5 space-y-3">
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">Name</label>
+            <input value={form.full_name} onChange={e => set('full_name', e.target.value)} placeholder="Full name"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">Type</label>
+            <select value={form.member_type} onChange={e => set('member_type', e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
+              {MEMBER_TYPE_OPTS.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">Phone</label>
+              <input value={form.phone} onChange={e => set('phone', e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">Email</label>
+              <input value={form.email} onChange={e => set('email', e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+            </div>
+          </div>
+          {error && <p className="text-xs text-red-600">{error}</p>}
+        </div>
+        <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-100">
+          <button onClick={onClose} className="px-3 py-1.5 text-sm text-gray-600 border border-gray-300 rounded-lg">Cancel</button>
+          <button onClick={save} disabled={saving} className="px-4 py-1.5 text-sm font-semibold text-white bg-red-600 rounded-lg disabled:opacity-50">
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

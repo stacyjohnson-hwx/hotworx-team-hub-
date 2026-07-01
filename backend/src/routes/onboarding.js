@@ -416,6 +416,20 @@ router.post('/members', authenticate, requireStudio, requireRole('owner', 'manag
   res.status(201).json({ ...member, linked_bookings: (linked || []).length })
 })
 
+// Edit a member (name/type/contact/status) — owner/manager.
+router.patch('/members/:id', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
+  const updates = { updated_at: new Date().toISOString() }
+  if (req.body.full_name !== undefined) updates.full_name = req.body.full_name || null
+  if (req.body.phone !== undefined) updates.phone = req.body.phone || null
+  if (req.body.email !== undefined) updates.email = req.body.email ? String(req.body.email).trim().toLowerCase() : null
+  if (req.body.status !== undefined) updates.status = req.body.status
+  if (req.body.member_type !== undefined && MEMBER_TYPES.includes(req.body.member_type)) updates.member_type = req.body.member_type
+  const { data, error } = await db().from('onboarding_members')
+    .update(updates).eq('id', req.params.id).eq('studio_id', req.studio.id).select().single()
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data)
+})
+
 // ─── GET /api/onboarding/unreconciled ─────────────────────────────────────────
 router.get('/unreconciled', authenticate, requireStudio, async (req, res) => {
   const { data, error } = await db()
