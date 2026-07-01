@@ -760,6 +760,9 @@ function DailyListTab() {
                       {r.reward_key && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 flex items-center gap-1"><Trophy size={9} />{r.reward_key.replace(/_/g, ' ')}</span>}
                     </div>
                     <p className="text-xs text-gray-500">{r.label}</p>
+                    {r.last_booking_date && (
+                      <p className="text-[11px] text-gray-400 mt-0.5">Last booking {r.last_booking_date}{r.days_lapsed != null ? ` · ${r.days_lapsed}d ago` : ''}</p>
+                    )}
                     {r.reward_key && (
                       <div className="mt-2 flex items-center gap-3 flex-wrap">
                         <label className="flex items-center gap-1.5 text-xs text-gray-600">

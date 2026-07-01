@@ -636,6 +636,8 @@ router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
       reward_key: t.context?.reward_key || null,
       script: renderTemplate(tpl.body || '', ctx),
       due_date: t.due_date,
+      last_booking_date: a.last_booking_date || null,
+      days_lapsed: ctx.days_lapsed,
     }
   })
 
@@ -675,6 +677,7 @@ router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
       label: tpl.label || key, trigger_kind: 'reengage', trigger_ref: key,
       priority: lapse >= 60 ? 2 : 4, reward_key: null,
       script: renderTemplate(tpl.body || '', ctx), due_date: today,
+      last_booking_date: lastBookMap.get(mm.id) || null, days_lapsed: lapse,
     })
   }
 
