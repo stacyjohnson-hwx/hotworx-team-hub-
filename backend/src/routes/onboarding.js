@@ -4,6 +4,7 @@ const { createClient } = require('@supabase/supabase-js')
 const authenticate = require('../middleware/authMiddleware')
 const { requireRole } = require('../middleware/roleGuard')
 const { requireStudio } = require('../middleware/studioMiddleware')
+const { runJourneyEngine, seedTemplates, renderTemplate, firstName } = require('../services/journeyEngine')
 
 const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 
@@ -243,6 +244,9 @@ router.post('/import', authenticate, requireStudio, requireRole('owner', 'manage
       summary.months_recomputed.push(mk)
     }
 
+    // 7) Journey engine: new-member detection, day-based task seeding, graduation.
+    try { await runJourneyEngine(supabase, studioId) } catch (e) { summary.engine_error = e.message }
+
     // Log the run.
     await supabase.from('onboarding_import_runs').insert({
       studio_id: studioId, run_by: req.user.email || req.user.id,
@@ -432,7 +436,114 @@ router.delete('/metric-overrides', authenticate, requireStudio, requireRole('own
   res.status(204).end()
 })
 
-// ─── GET /api/onboarding/import/history ───────────────────────────────────────
+// ─── GET /api/member-activation/daily-list ────────────────────────────────────
+// One unified, prioritized list of members to reach today, each with WHY + script.
+router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
+  const supabase = db()
+  const studioId = req.studio.id
+  const today = new Date().toISOString().slice(0, 10)
+
+  await seedTemplates(supabase, studioId)
+
+  const [{ data: tasks, error }, { data: templates }] = await Promise.all([
+    supabase.from('onboarding_journey_tasks')
+      .select('*, journey:onboarding_journeys!inner(id, status, current_track, member:onboarding_members!inner(id, full_name, phone, is_cancelled, status))')
+      .eq('studio_id', studioId).eq('status', 'pending').lte('due_date', today),
+    supabase.from('onboarding_touchpoint_templates').select('*').eq('studio_id', studioId),
+  ])
+  if (error) return res.status(500).json({ error: error.message })
+  const tplMap = new Map((templates || []).map(t => [t.template_key, t]))
+
+  // Filter out cancelled/paused/graduated-day-based, then enrich context for rendering.
+  const live = (tasks || []).filter(t => {
+    const j = t.journey, m = j?.member
+    if (!m || m.is_cancelled) return false
+    if (j.status === 'paused') return false
+    if (t.trigger_kind === 'day_based' && j.status !== 'active') return false
+    return true
+  })
+  const memberIds = [...new Set(live.map(t => t.journey.member.id))]
+  const [{ data: activity }, { data: transforms }] = await Promise.all([
+    memberIds.length ? supabase.from('onboarding_member_activity').select('*').in('member_id', memberIds) : Promise.resolve({ data: [] }),
+    memberIds.length ? supabase.from('onboarding_transformation_records').select('member_id, goal_text').in('member_id', memberIds) : Promise.resolve({ data: [] }),
+  ])
+  const actMap = new Map((activity || []).map(a => [a.member_id, a]))
+  const goalMap = new Map((transforms || []).map(t => [t.member_id, t.goal_text]))
+
+  const daysBetween = (d) => d ? Math.floor((new Date(today) - new Date(d)) / 86400000) : null
+
+  const items = live.map(t => {
+    const m = t.journey.member
+    const a = actMap.get(m.id) || {}
+    const tpl = tplMap.get(t.template_key) || {}
+    const ctx = {
+      first_name: t.context?.first_name || firstName(m.full_name),
+      visit_days: a.visit_days || 0,
+      total_sessions: a.total_sessions || 0,
+      workouts_tried: a.workouts_tried || 0,
+      days_lapsed: daysBetween(a.last_booking_date),
+      goal_text: goalMap.get(m.id) || 'their goal',
+      ...t.context,
+    }
+    return {
+      id: t.id,
+      member_id: m.id,
+      member_name: m.full_name || ctx.first_name,
+      phone: m.phone || null,
+      channel: tpl.channel || t.type,
+      label: tpl.label || t.trigger_ref,
+      trigger_kind: t.trigger_kind,
+      trigger_ref: t.trigger_ref,
+      priority: t.priority || 6,
+      reward_key: t.context?.reward_key || null,
+      script: renderTemplate(tpl.body || '', ctx),
+      due_date: t.due_date,
+    }
+  }).sort((x, y) => x.priority - y.priority || String(x.due_date).localeCompare(String(y.due_date)))
+
+  res.json(items)
+})
+
+// Complete / skip a task (any team member — shared queue).
+router.post('/daily-list/:id/complete', authenticate, requireStudio, async (req, res) => {
+  const { data, error } = await db().from('onboarding_journey_tasks')
+    .update({ status: 'completed', completed_by: req.user.email || req.user.id, completed_at: new Date().toISOString() })
+    .eq('id', req.params.id).eq('studio_id', req.studio.id).select().single()
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data)
+})
+
+router.post('/daily-list/:id/skip', authenticate, requireStudio, async (req, res) => {
+  const { data, error } = await db().from('onboarding_journey_tasks')
+    .update({ status: 'skipped', completed_by: req.user.email || req.user.id, completed_at: new Date().toISOString() })
+    .eq('id', req.params.id).eq('studio_id', req.studio.id).select().single()
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data)
+})
+
+// ─── Script Admin (touchpoint templates) ──────────────────────────────────────
+router.get('/templates', authenticate, requireStudio, async (req, res) => {
+  const supabase = db()
+  await seedTemplates(supabase, req.studio.id)
+  const { data, error } = await supabase.from('onboarding_touchpoint_templates')
+    .select('*').eq('studio_id', req.studio.id).order('template_key')
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data || [])
+})
+
+router.put('/templates/:key', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
+  const { body, label, channel } = req.body
+  const updates = { updated_by: req.user.email || req.user.id, updated_at: new Date().toISOString() }
+  if (body !== undefined) updates.body = body
+  if (label !== undefined) updates.label = label
+  if (channel !== undefined) updates.channel = channel
+  const { data, error } = await db().from('onboarding_touchpoint_templates')
+    .update(updates).eq('studio_id', req.studio.id).eq('template_key', req.params.key).select().single()
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data)
+})
+
+// ─── GET /api/member-activation/import/history ────────────────────────────────
 router.get('/import/history', authenticate, requireStudio, async (req, res) => {
   const { data, error } = await db().from('onboarding_import_runs').select('*')
     .eq('studio_id', req.studio.id).order('run_at', { ascending: false }).limit(20)

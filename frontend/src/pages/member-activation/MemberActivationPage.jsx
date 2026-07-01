@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Upload, Users, HeartHandshake, AlertTriangle, Check, Loader2, RefreshCw, Gauge } from 'lucide-react'
+import { Upload, Users, HeartHandshake, AlertTriangle, Check, Loader2, RefreshCw, Gauge, ListChecks, Phone, MessageSquare, SkipForward, FileText, Trophy } from 'lucide-react'
 import { apiGet, apiPost, apiPatch, apiPut, apiDelete } from '@/hooks/useApi'
 import { useRole } from '@/hooks/useRole'
 import { useStudio } from '@/contexts/StudioContext'
@@ -31,7 +31,9 @@ function parseCSV(text) {
 }
 
 const TABS = [
+  { k: 'daily',    label: 'Daily List',          icon: ListChecks },
   { k: 'members',  label: 'Members',            icon: Users },
+  { k: 'scripts',  label: 'Scripts',             icon: FileText },
   { k: 'import',   label: 'Daily Import',        icon: Upload },
   { k: 'ledger',   label: 'Cancellation Ledger', icon: HeartHandshake },
   { k: 'metrics',  label: 'Studio Trends',       icon: Gauge },
@@ -40,7 +42,7 @@ const TABS = [
 
 export default function MemberActivationPage() {
   const { isOwnerOrManager } = useRole()
-  const [tab, setTab] = useState('members')
+  const [tab, setTab] = useState('daily')
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6">
@@ -63,6 +65,8 @@ export default function MemberActivationPage() {
         })}
       </div>
 
+      {tab === 'daily'   && <DailyListTab />}
+      {tab === 'scripts' && <ScriptAdminTab canEdit={isOwnerOrManager} />}
       {tab === 'members' && <MembersTab />}
       {tab === 'import'  && <ImportTab canImport={isOwnerOrManager} />}
       {tab === 'ledger'  && <LedgerTab canEdit={isOwnerOrManager} />}
@@ -406,6 +410,167 @@ function UnreconciledTab() {
           </table>
         </div>
       )}
+    </div>
+  )
+}
+
+// ─── Daily List — members to reach today ──────────────────────────────────────
+const FILTERS = [
+  { k: 'all', label: 'All' },
+  { k: 'reengage', label: 'Re-engagement', match: r => r.trigger_ref?.startsWith('reengage') },
+  { k: 'milestone', label: 'Milestones', match: r => r.trigger_ref?.startsWith('milestone') || r.trigger_ref === 'passport_sticker' },
+  { k: 'onboarding', label: 'Onboarding', match: r => r.trigger_kind === 'day_based' || r.trigger_ref?.startsWith('save') },
+]
+
+function DailyListTab() {
+  const { currentStudio } = useStudio()
+  const [rows, setRows] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [filter, setFilter] = useState('all')
+  const [drafts, setDrafts] = useState({})   // id -> edited script
+  const [done, setDone] = useState({})        // id -> true (row flashes blue then drops)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try { setRows(await apiGet(`${BASE}/daily-list`)) } catch { setRows([]) }
+    finally { setLoading(false) }
+  }, [currentStudio?.id])
+  useEffect(() => { load() }, [load])
+
+  const complete = async (r) => {
+    setDone(d => ({ ...d, [r.id]: true }))
+    try { await apiPost(`${BASE}/daily-list/${r.id}/complete`, {}) } catch { /* ignore */ }
+    setTimeout(() => setRows(rs => rs.filter(x => x.id !== r.id)), 600)
+  }
+  const skip = async (r) => {
+    try { await apiPost(`${BASE}/daily-list/${r.id}/skip`, {}) } catch { /* ignore */ }
+    setRows(rs => rs.filter(x => x.id !== r.id))
+  }
+
+  const f = FILTERS.find(x => x.k === filter)
+  const shown = filter === 'all' ? rows : rows.filter(f.match)
+
+  if (loading) return <Spinner />
+  return (
+    <div>
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        {FILTERS.map(x => (
+          <button key={x.k} onClick={() => setFilter(x.k)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${filter === x.k ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-600 border-gray-300'}`}>
+            {x.label}
+          </button>
+        ))}
+        <span className="ml-auto text-xs text-gray-400">{shown.length} to reach</span>
+      </div>
+
+      {shown.length === 0 ? <Empty msg="Nobody to reach right now. Run a Daily Import to refresh the queue. 🎉" /> : (
+        <div className="space-y-2.5">
+          {shown.map(r => {
+            const isDone = done[r.id]
+            const script = drafts[r.id] != null ? drafts[r.id] : r.script
+            const isCall = r.channel === 'call'
+            return (
+              <div key={r.id} className={`border rounded-xl p-3.5 transition-colors ${isDone ? 'bg-blue-50 border-blue-300' : 'bg-white border-gray-200'}`}>
+                <div className="flex items-start gap-3">
+                  <button onClick={() => complete(r)} title="Mark done"
+                    className={`mt-0.5 flex-shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${isDone ? 'bg-blue-500 border-blue-500' : 'border-gray-300 hover:border-blue-400'}`}>
+                    {isDone && <Check size={13} className="text-white" />}
+                  </button>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold text-gray-900">{r.member_name}</span>
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full flex items-center gap-1 ${isCall ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                        {isCall ? <Phone size={9} /> : <MessageSquare size={9} />}{isCall ? 'Call' : 'Text'}
+                      </span>
+                      {r.priority <= 3 && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-700">PRIORITY</span>}
+                      {r.reward_key && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 flex items-center gap-1"><Trophy size={9} />{r.reward_key.replace(/_/g, ' ')}</span>}
+                    </div>
+                    <p className="text-xs text-gray-500 mb-2">{r.label}</p>
+                    <textarea value={script} onChange={e => setDrafts(d => ({ ...d, [r.id]: e.target.value }))}
+                      rows={isCall ? 3 : 2}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:border-red-400 bg-gray-50" />
+                    <div className="flex items-center gap-3 mt-2">
+                      {!isCall && r.phone && (
+                        <a href={`sms:${r.phone}?&body=${encodeURIComponent(script)}`}
+                          className="text-xs font-semibold text-blue-600 hover:underline flex items-center gap-1"><MessageSquare size={12} /> Open text</a>
+                      )}
+                      <button onClick={() => navigator.clipboard?.writeText(script)} className="text-xs text-gray-500 hover:text-gray-800">Copy script</button>
+                      <button onClick={() => skip(r)} className="text-xs text-gray-400 hover:text-gray-700 flex items-center gap-1 ml-auto"><SkipForward size={12} /> Skip</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Script Admin ─────────────────────────────────────────────────────────────
+const SAMPLE = { first_name: 'Sarah', visit_days: 25, total_sessions: 30, workouts_tried: 12, days_lapsed: 14, milestone: 25, event_name: 'Join us for the Sweatathon! ', goal_text: 'lose 15 lbs' }
+const renderPreview = (body) => String(body || '').replace(/\{(\w+)\}/g, (_, k) => (SAMPLE[k] != null ? String(SAMPLE[k]) : `{${k}}`))
+const VARS = ['first_name', 'visit_days', 'total_sessions', 'workouts_tried', 'days_lapsed', 'milestone', 'event_name', 'goal_text']
+
+function ScriptAdminTab({ canEdit }) {
+  const { currentStudio } = useStudio()
+  const [rows, setRows] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [sel, setSel] = useState(null)
+  const [body, setBody] = useState('')
+  const [saved, setSaved] = useState(false)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try { const d = await apiGet(`${BASE}/templates`); setRows(d); if (d[0]) { setSel(d[0].template_key); setBody(d[0].body || '') } }
+    catch { setRows([]) }
+    finally { setLoading(false) }
+  }, [currentStudio?.id])
+  useEffect(() => { load() }, [load])
+
+  const select = (t) => { setSel(t.template_key); setBody(t.body || ''); setSaved(false) }
+  const current = rows.find(t => t.template_key === sel)
+  const save = async () => {
+    await apiPut(`${BASE}/templates/${sel}`, { body })
+    setRows(rs => rs.map(t => t.template_key === sel ? { ...t, body } : t))
+    setSaved(true); setTimeout(() => setSaved(false), 2000)
+  }
+
+  if (loading) return <Spinner />
+  return (
+    <div className="grid md:grid-cols-[240px_1fr] gap-4">
+      <div className="border border-gray-200 rounded-xl overflow-hidden max-h-[70vh] overflow-y-auto">
+        {rows.map(t => (
+          <button key={t.template_key} onClick={() => select(t)}
+            className={`w-full text-left px-3 py-2 text-xs border-b border-gray-100 ${sel === t.template_key ? 'bg-red-50 text-red-700 font-semibold' : 'text-gray-600 hover:bg-gray-50'}`}>
+            {t.label || t.template_key}
+            <span className="block text-[10px] text-gray-400">{t.channel}</span>
+          </button>
+        ))}
+      </div>
+      <div>
+        {!current ? <Empty msg="Select a template to edit." /> : (
+          <>
+            <p className="text-sm font-semibold text-gray-800 mb-1">{current.label}</p>
+            <p className="text-[11px] text-gray-400 mb-2">Key: {current.template_key} · {current.channel}. Edits apply on the next Daily List refresh.</p>
+            <textarea value={body} onChange={e => setBody(e.target.value)} disabled={!canEdit} rows={5}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:border-red-400 disabled:bg-gray-50" />
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {VARS.map(v => <span key={v} className="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded font-mono">{`{${v}}`}</span>)}
+            </div>
+            <div className="mt-3 bg-gray-50 border border-gray-200 rounded-lg p-3">
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Preview</p>
+              <p className="text-sm text-gray-800 whitespace-pre-wrap">{renderPreview(body)}</p>
+            </div>
+            {canEdit && (
+              <button onClick={save} className="mt-3 bg-red-600 text-white text-sm font-semibold px-5 py-2 rounded-xl hover:bg-red-700">
+                {saved ? '✓ Saved' : 'Save template'}
+              </button>
+            )}
+          </>
+        )}
+      </div>
     </div>
   )
 }
