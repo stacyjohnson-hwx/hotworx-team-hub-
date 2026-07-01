@@ -438,6 +438,7 @@ router.patch('/members/:id', authenticate, requireStudio, requireRole('owner', '
   if (req.body.status !== undefined) updates.status = req.body.status
   if (req.body.origin_studio !== undefined) updates.origin_studio = req.body.origin_studio || null
   if (req.body.expiration_date !== undefined) updates.expiration_date = req.body.expiration_date || null
+  for (const k of ['address', 'city', 'state', 'postal_code']) if (req.body[k] !== undefined) updates[k] = req.body[k] || null
   if (req.body.member_type !== undefined && MEMBER_TYPES.includes(req.body.member_type)) updates.member_type = req.body.member_type
   const { data, error } = await db().from('onboarding_members')
     .update(updates).eq('id', req.params.id).eq('studio_id', req.studio.id).select().single()
@@ -821,21 +822,52 @@ router.post('/recognition/birthdays/import', authenticate, requireStudio, requir
   const rows = Array.isArray(req.body.rows) ? req.body.rows : []
   const year = new Date().getFullYear()
   const supabase = db()
-  let skipped = 0
+
+  // Preload roster for member matching (by SAIL Id / customer_id, then email).
+  const { data: members } = await supabase.from('onboarding_members')
+    .select('id, customer_id, email').eq('studio_id', req.studio.id)
+  const byCid = new Map((members || []).map(m => [m.customer_id, m]))
+  const byEmail = new Map((members || []).filter(m => m.email).map(m => [String(m.email).toLowerCase(), m]))
+
+  let skipped = 0, excluded = 0, addressUpdated = 0
   const out = []
   for (const raw of rows) {
     const r = normalizeRow(raw)
-    const name = pick(r, ['Name', 'Full Name', 'Member Name', 'Customer Name'])
+    const sub_status = pick(r, ['Lead Sub Status', 'Sub Status', 'Substatus', 'SubStatus'])
+    const lead_status = pick(r, ['Lead Status', 'Status'])
+    // Never text people marked not-interested or do-not-call.
+    if ((sub_status && /not interested/i.test(sub_status)) || (lead_status && /do not call/i.test(lead_status))) { excluded++; continue }
+
+    const name = pick(r, ['Full Name', 'Name', 'Member Name', 'Customer Name'])
       || [pick(r, ['First Name', 'FirstName']), pick(r, ['Last Name', 'LastName'])].filter(Boolean).join(' ').trim()
-    const md = birthdayMonthDay(pick(r, ['Birthday', 'Birth Date', 'BirthDate', 'DOB', 'Date of Birth', 'Bday', 'Birthdate']))
+    const md = birthdayMonthDay(pick(r, ['DOB', 'Birthday', 'Birth Date', 'BirthDate', 'Date of Birth', 'Bday', 'Birthdate']))
     if (!name || !md) { skipped++; continue }
-    const email = (pick(r, ['Email']) || '').toLowerCase() || null
-    const phone = pick(r, ['Phone', 'Phone No', 'Mobile', 'Cell']) || null
+    const email = (pick(r, ['Email Address', 'Email']) || '').toLowerCase() || null
+    const phone = pick(r, ['Phone Number', 'Phone', 'Phone No', 'Mobile', 'Cell']) || null
+    const customer_id = pick(r, ['Id', 'Customer Id', 'CustomerId', 'Customer ID'])
+    const last_session = parseDate(pick(r, ['Last Booked Session', 'Last Session', 'Last Booking', 'Last Booked']))
+
+    // Match to an existing member; if found, save their mailing address to the profile.
+    const matched = (customer_id && byCid.get(customer_id)) || (email && byEmail.get(email)) || null
+    const address = pick(r, ['Address', 'Street', 'Address Line 1'])
+    const city = pick(r, ['City'])
+    const state = pick(r, ['State'])
+    const postal_code = pick(r, ['Postal Code', 'Zip', 'Zip Code', 'ZipCode', 'Zipcode'])
+    if (matched && (address || city || state || postal_code)) {
+      await supabase.from('onboarding_members').update({
+        address: address || null, city: city || null, state: state || null, postal_code: postal_code || null,
+        updated_at: new Date().toISOString(),
+      }).eq('id', matched.id)
+      addressUpdated++
+    }
+
     const mm = String(md.m).padStart(2, '0'), dd = String(md.d).padStart(2, '0')
     const month_key = `${year}-${mm}`
     const keyId = email || name.toLowerCase().replace(/\s+/g, ' ')
     out.push({
-      studio_id: req.studio.id, type: 'birthday', member_name: name, email, phone,
+      studio_id: req.studio.id, type: 'birthday', member_id: matched?.id || null,
+      member_name: name, email, phone, customer_id: customer_id || null,
+      lead_status: lead_status || null, sub_status: sub_status || null, last_session,
       ref_date: `${year}-${mm}-${dd}`, month_key, source: 'import',
       dedup_key: `bday|${month_key}|${keyId}`,
     })
@@ -850,7 +882,7 @@ router.post('/recognition/birthdays/import', authenticate, requireStudio, requir
     if (error) return res.status(500).json({ error: error.message })
     created += (data || []).length
   }
-  res.json({ received: rows.length, created, skipped })
+  res.json({ received: rows.length, created, skipped, excluded, address_updated: addressUpdated })
 })
 
 // ─── Mailchimp opt-out sync-back (Make.com → app) ─────────────────────────────

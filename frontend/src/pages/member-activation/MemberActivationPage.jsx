@@ -517,6 +517,7 @@ function MemberEditModal({ member, onClose, onSaved }) {
     full_name: member.full_name || '', member_type: member.member_type || 'member',
     phone: member.phone || '', email: member.email || '', origin_studio: member.origin_studio || '',
     expiration_date: member.expiration_date || '',
+    address: member.address || '', city: member.city || '', state: member.state || '', postal_code: member.postal_code || '',
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
@@ -572,6 +573,19 @@ function MemberEditModal({ member, onClose, onSaved }) {
               <label className="block text-xs font-semibold text-gray-700 mb-1">Expiration date <span className="text-gray-400 font-normal">(PIF)</span></label>
               <input type="date" value={form.expiration_date} onChange={e => set('expiration_date', e.target.value)}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">Address</label>
+            <input value={form.address} onChange={e => set('address', e.target.value)} placeholder="Street address"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-2 focus:outline-none focus:border-red-400" />
+            <div className="grid grid-cols-3 gap-2">
+              <input value={form.city} onChange={e => set('city', e.target.value)} placeholder="City"
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+              <input value={form.state} onChange={e => set('state', e.target.value)} placeholder="State"
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+              <input value={form.postal_code} onChange={e => set('postal_code', e.target.value)} placeholder="ZIP"
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
             </div>
           </div>
           {error && <p className="text-xs text-red-600">{error}</p>}
@@ -1030,7 +1044,10 @@ function RecognitionTab({ canImport }) {
         parsed = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '', raw: false })
       } else { parsed = parseCSV(await file.text()) }
       const res = await apiPost(`${BASE}/recognition/birthdays/import`, { rows: parsed })
-      setMsg(`Imported ${res.created} birthday${res.created !== 1 ? 's' : ''}${res.skipped ? ` · ${res.skipped} skipped (missing name/date)` : ''}.`)
+      setMsg(`Imported ${res.created} birthday${res.created !== 1 ? 's' : ''}`
+        + (res.excluded ? ` · ${res.excluded} excluded (not interested / do not call)` : '')
+        + (res.address_updated ? ` · ${res.address_updated} member addresses saved` : '')
+        + (res.skipped ? ` · ${res.skipped} skipped (missing name/date)` : '') + '.')
       load()
     } catch (e) { setMsg('Upload failed: ' + (e?.message || 'error')) }
     finally { setUploading(false) }
@@ -1102,7 +1119,14 @@ function RecognitionTab({ canImport }) {
                       <span className="text-xs text-gray-400">
                         {isBday ? `🎂 ${r.ref_date || ''}` : `joined ${r.ref_date || '—'}`}
                       </span>
+                      {isBday && r.sub_status && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600">{r.sub_status}</span>}
+                      {isBday && r.member_id && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-green-100 text-green-700">MEMBER</span>}
                     </div>
+                    {isBday && (r.lead_status || r.last_session) && (
+                      <p className="text-[11px] text-gray-400 mt-0.5">
+                        {r.lead_status || ''}{r.last_session ? `${r.lead_status ? ' · ' : ''}last session ${r.last_session}` : ''}
+                      </p>
+                    )}
                     {isBday && !done && (
                       <>
                         <textarea value={script} onChange={e => setDrafts(d => ({ ...d, [r.id]: e.target.value }))} rows={2}
