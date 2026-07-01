@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Upload, Users, HeartHandshake, AlertTriangle, Check, Loader2, RefreshCw } from 'lucide-react'
-import { apiGet, apiPost, apiPatch } from '@/hooks/useApi'
+import { Upload, Users, HeartHandshake, AlertTriangle, Check, Loader2, RefreshCw, Gauge } from 'lucide-react'
+import { apiGet, apiPost, apiPatch, apiPut, apiDelete } from '@/hooks/useApi'
 import { useRole } from '@/hooks/useRole'
 import { useStudio } from '@/contexts/StudioContext'
 
@@ -34,6 +34,7 @@ const TABS = [
   { k: 'members',  label: 'Members',            icon: Users },
   { k: 'import',   label: 'Daily Import',        icon: Upload },
   { k: 'ledger',   label: 'Cancellation Ledger', icon: HeartHandshake },
+  { k: 'metrics',  label: 'Studio Trends',       icon: Gauge },
   { k: 'unrecon',  label: 'Unreconciled',        icon: AlertTriangle },
 ]
 
@@ -65,6 +66,7 @@ export default function MemberActivationPage() {
       {tab === 'members' && <MembersTab />}
       {tab === 'import'  && <ImportTab canImport={isOwnerOrManager} />}
       {tab === 'ledger'  && <LedgerTab canEdit={isOwnerOrManager} />}
+      {tab === 'metrics' && <MetricsTab canEdit={isOwnerOrManager} />}
       {tab === 'unrecon' && <UnreconciledTab />}
     </div>
   )
@@ -402,6 +404,86 @@ function UnreconciledTab() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Studio Trends metrics (computed + override) ──────────────────────────────
+function MetricsTab({ canEdit }) {
+  const { currentStudio } = useStudio()
+  const [monthKey, setMonthKey] = useState(new Date().toISOString().slice(0, 7))
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try { setData(await apiGet(`${BASE}/metrics?month_key=${monthKey}`)) } catch { setData(null) }
+    finally { setLoading(false) }
+  }, [monthKey, currentStudio?.id])
+  useEffect(() => { load() }, [load])
+
+  const setOverride = async (metric, computed) => {
+    const raw = window.prompt(`Override value for ${metric === 'cancellations' ? 'cancellations' : 'active members'} (computed = ${computed ?? '—'}):`)
+    if (raw == null || raw.trim() === '') return
+    const val = parseInt(raw, 10)
+    if (isNaN(val)) return
+    const reason = window.prompt('Reason for the override (required):')
+    if (!reason) return
+    await apiPut(`${BASE}/metric-overrides`, { metric, month_key: monthKey, override_value: val, reason })
+    load()
+  }
+  const clearOverride = async (metric) => {
+    if (!window.confirm('Remove this override and revert to the computed value?')) return
+    await apiDelete(`${BASE}/metric-overrides`, { metric, month_key: monthKey })
+    load()
+  }
+
+  const Card = ({ metric, label, m, disabled }) => (
+    <div className="border border-gray-200 rounded-xl p-4">
+      <div className="flex items-center gap-2 mb-1">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{label}</p>
+        {m?.override != null && (
+          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700"
+            title={`Computed ${m.computed ?? '—'} · ${m.reason || ''} · ${m.set_by || ''}`}>OVERRIDDEN</span>
+        )}
+      </div>
+      {disabled ? (
+        <p className="text-sm text-gray-400 py-2">Active-member count is a point-in-time snapshot — shown for the current month only.</p>
+      ) : (
+        <>
+          <p className="text-3xl font-bold text-gray-900">{m?.resolved ?? '—'}</p>
+          {m?.override != null
+            ? <p className="text-xs text-amber-600 mt-1">Override · computed was {m.computed ?? '—'} — {m.reason}</p>
+            : <p className="text-xs text-gray-400 mt-1">Computed from the ledger/roster</p>}
+          {canEdit && (
+            <div className="flex gap-3 mt-2">
+              <button onClick={() => setOverride(metric, m?.computed)} className="text-xs font-semibold text-red-600 hover:underline">
+                {m?.override != null ? 'Change override' : 'Set override'}
+              </button>
+              {m?.override != null && (
+                <button onClick={() => clearOverride(metric)} className="text-xs text-gray-500 hover:underline">Remove override</button>
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-4">
+        <label className="text-sm text-gray-600">Month</label>
+        <input type="month" value={monthKey} onChange={e => setMonthKey(e.target.value)}
+          className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm" />
+        <p className="text-xs text-gray-400 ml-2">These two numbers flow into Studio Trends (and Goals). The override wins and survives every re-import.</p>
+      </div>
+      {loading ? <Spinner /> : (
+        <div className="grid sm:grid-cols-2 gap-3">
+          <Card metric="cancellations" label="Monthly cancellations" m={data?.cancellations} />
+          <Card metric="active_members" label="Active member count" m={data?.active_members} disabled={!data?.is_current_month} />
         </div>
       )}
     </div>

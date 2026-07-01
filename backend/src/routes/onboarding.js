@@ -357,6 +357,44 @@ router.patch('/ledger/:id', authenticate, requireStudio, requireRole('owner', 'm
   res.json(data)
 })
 
+// ─── GET /api/member-activation/metrics?month_key=YYYY-MM ─────────────────────
+// Returns computed vs. override (and the resolved value) for both Studio Trends
+// metrics, so the UI can show the number, badge overrides, and explain them.
+router.get('/metrics', authenticate, requireStudio, async (req, res) => {
+  const supabase = db()
+  const mk = req.query.month_key || new Date().toISOString().slice(0, 7)
+  const [y, m] = mk.split('-').map(Number)
+  const curKey = new Date().toISOString().slice(0, 7)
+
+  const { count: computedCancels } = await supabase
+    .from('onboarding_cancellation_ledger').select('id', { count: 'exact', head: true })
+    .eq('studio_id', req.studio.id).eq('month_key', mk).eq('excluded', false)
+
+  // Active-member count is a point-in-time snapshot — only meaningful for the current month.
+  let computedActive = null
+  if (mk === curKey) {
+    const { count } = await supabase
+      .from('onboarding_members').select('id', { count: 'exact', head: true })
+      .eq('studio_id', req.studio.id).eq('is_cancelled', false).ilike('status', '%active%')
+    computedActive = count || 0
+  }
+
+  const { data: overrides } = await supabase
+    .from('onboarding_metric_overrides').select('*')
+    .eq('studio_id', req.studio.id).eq('month_key', mk)
+  const ov = (metric) => (overrides || []).find(o => o.metric === metric) || null
+
+  const build = (metric, computed) => {
+    const o = ov(metric)
+    return { computed, override: o ? o.override_value : null,
+             resolved: o ? o.override_value : computed,
+             reason: o?.reason || null, set_by: o?.set_by || null, set_at: o?.set_at || null }
+  }
+  res.json({ month_key: mk, is_current_month: mk === curKey,
+             cancellations: build('cancellations', computedCancels || 0),
+             active_members: build('active_members', computedActive) })
+})
+
 // ─── Metric overrides ─────────────────────────────────────────────────────────
 router.get('/metric-overrides', authenticate, requireStudio, async (req, res) => {
   let q = db().from('onboarding_metric_overrides').select('*').eq('studio_id', req.studio.id)
