@@ -487,6 +487,7 @@ router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
     }
     return {
       id: t.id,
+      kind: 'task',
       journey_id: t.journey.id,
       member_id: m.id,
       member_name: m.full_name || ctx.first_name,
@@ -500,9 +501,57 @@ router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
       script: renderTemplate(tpl.body || '', ctx),
       due_date: t.due_date,
     }
-  }).sort((x, y) => x.priority - y.priority || String(x.due_date).localeCompare(String(y.due_date)))
+  })
 
+  // Re-engagement (roster-wide, live-computed): any active member lapsed 14+ days,
+  // excluding first-90 save-fork members and anyone contacted within the cooldown.
+  const cutoff = new Date(Date.now() - 10 * 86400000).toISOString()  // 10-day cooldown
+  const [{ data: allMembers }, { data: actAll }, { data: allJourneys }, { data: recent }, { data: upcoming }] = await Promise.all([
+    supabase.from('onboarding_members').select('id, full_name, phone, status, is_cancelled, join_date').eq('studio_id', studioId),
+    supabase.from('onboarding_member_activity').select('member_id, last_booking_date').eq('studio_id', studioId),
+    supabase.from('onboarding_journeys').select('member_id, status, start_date').eq('studio_id', studioId),
+    supabase.from('onboarding_reengage_log').select('member_id').eq('studio_id', studioId).gte('contacted_at', cutoff),
+    supabase.from('events').select('title, start_date').eq('studio_id', studioId).gte('start_date', today).order('start_date').limit(1),
+  ])
+  const lastBookMap = new Map((actAll || []).map(a => [a.member_id, a.last_booking_date]))
+  const jMap = new Map((allJourneys || []).map(j => [j.member_id, j]))
+  const cooling = new Set((recent || []).map(r => r.member_id))
+  const eventName = upcoming && upcoming[0] ? `${upcoming[0].title} is coming up — ` : ''
+  const addDaysStr = (d, n) => { const x = new Date(d + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10) }
+
+  for (const mm of (allMembers || [])) {
+    if (mm.is_cancelled || !/active/i.test(mm.status || '') || cooling.has(mm.id)) continue
+    const j = jMap.get(mm.id)
+    const inFirst90 = j && j.status === 'active' && j.start_date && addDaysStr(j.start_date, 90) >= today
+    if (inFirst90) continue  // save fork owns first-90 lapses
+    const ref = lastBookMap.get(mm.id) || mm.join_date
+    if (!ref) continue
+    const lapse = Math.floor((new Date(today) - new Date(ref)) / 86400000)
+    if (lapse < 14) continue
+    const key = lapse >= 60 ? 'reengage_60' : lapse >= 30 ? 'reengage_30' : 'reengage_14'
+    const tpl = tplMap.get(key) || {}
+    const ctx = { first_name: firstName(mm.full_name), days_lapsed: lapse, event_name: eventName }
+    items.push({
+      id: `reengage:${mm.id}`, kind: 'reengage', member_id: mm.id,
+      member_name: mm.full_name || ctx.first_name, phone: mm.phone || null,
+      channel: tpl.channel || (lapse >= 60 ? 'call' : 'text'),
+      label: tpl.label || key, trigger_kind: 'reengage', trigger_ref: key,
+      priority: lapse >= 60 ? 2 : 4, reward_key: null,
+      script: renderTemplate(tpl.body || '', ctx), due_date: today,
+    })
+  }
+
+  items.sort((x, y) => x.priority - y.priority || String(x.due_date).localeCompare(String(y.due_date)))
   res.json(items)
+})
+
+// Log a re-engagement contact (starts the cooldown; member drops off until it expires or they book).
+router.post('/reengage/:memberId/complete', authenticate, requireStudio, async (req, res) => {
+  const { error } = await db().from('onboarding_reengage_log').insert({
+    studio_id: req.studio.id, member_id: req.params.memberId, contacted_by: req.user.email || req.user.id,
+  })
+  if (error) return res.status(500).json({ error: error.message })
+  res.status(201).json({ ok: true })
 })
 
 // Complete / skip a task (any team member — shared queue).
@@ -602,6 +651,29 @@ router.put('/templates/:key', authenticate, requireStudio, requireRole('owner', 
     .update(updates).eq('studio_id', req.studio.id).eq('template_key', req.params.key).select().single()
   if (error) return res.status(500).json({ error: error.message })
   res.json(data)
+})
+
+// ─── Mailchimp opt-out sync-back (Make.com → app) ─────────────────────────────
+// Secured by a shared token so Make.com can post unsubscribe status back without a user JWT.
+router.post('/mailchimp/sync-back', async (req, res) => {
+  const token = req.headers['x-sync-token']
+  if (!process.env.MAKE_SYNC_TOKEN || token !== process.env.MAKE_SYNC_TOKEN) {
+    return res.status(401).json({ error: 'unauthorized' })
+  }
+  const { email, status } = req.body
+  if (!email || !status) return res.status(400).json({ error: 'email and status required' })
+  const { error } = await db().from('onboarding_members')
+    .update({ mailchimp_status: status }).eq('email', String(email).toLowerCase())
+  if (error) return res.status(500).json({ error: error.message })
+  res.json({ ok: true })
+})
+
+// Owner/manager visibility into the Mailchimp sync queue.
+router.get('/mailchimp/queue', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
+  const { data, error } = await db().from('onboarding_mailchimp_queue')
+    .select('*').eq('studio_id', req.studio.id).order('created_at', { ascending: false }).limit(50)
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data || [])
 })
 
 // ─── GET /api/member-activation/import/history ────────────────────────────────

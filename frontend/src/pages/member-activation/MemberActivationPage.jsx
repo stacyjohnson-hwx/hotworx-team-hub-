@@ -444,10 +444,13 @@ function DailyListTab() {
   const complete = async (r) => {
     if (r.trigger_ref === 'day_2') { setDay2(r); return }   // capture gate first
     drop(r.id)
-    try { await apiPost(`${BASE}/daily-list/${r.id}/complete`, { fulfilled: !!fulfil[r.id] }) } catch { /* ignore */ }
+    try {
+      if (r.kind === 'reengage') await apiPost(`${BASE}/reengage/${r.member_id}/complete`, {})
+      else await apiPost(`${BASE}/daily-list/${r.id}/complete`, { fulfilled: !!fulfil[r.id] })
+    } catch { /* ignore */ }
   }
   const skip = async (r) => {
-    try { await apiPost(`${BASE}/daily-list/${r.id}/skip`, {}) } catch { /* ignore */ }
+    try { if (r.kind !== 'reengage') await apiPost(`${BASE}/daily-list/${r.id}/skip`, {}) } catch { /* ignore */ }
     setRows(rs => rs.filter(x => x.id !== r.id))
   }
   const setFlag = async (r, flag) => {

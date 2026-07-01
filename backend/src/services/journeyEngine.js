@@ -63,13 +63,36 @@ async function seedTemplates(supabase, studioId) {
   if (missing.length) await supabase.from('onboarding_touchpoint_templates').insert(missing)
 }
 
+// Hand a new member to Mailchimp: record a sync intent (tags), then POST it to the
+// Make.com webhook if MAKE_WEBHOOK_URL is set. Resilient — never fails the import.
+async function enqueueMailchimp(supabase, studioId, m) {
+  const cohort = (m.join_date || '').slice(0, 7)
+  const tags = [cohort ? `join_${cohort}` : null, m.package_name].filter(Boolean)
+  const { data: row } = await supabase.from('onboarding_mailchimp_queue').insert({
+    studio_id: studioId, member_id: m.id, customer_id: m.customer_id, email: m.email, action: 'subscribe', tags,
+  }).select().single()
+  const url = process.env.MAKE_WEBHOOK_URL
+  if (!url || !row) return
+  try {
+    const res = await fetch(url, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ studio_id: studioId, customer_id: m.customer_id, email: m.email, action: 'subscribe', tags }),
+    })
+    await supabase.from('onboarding_mailchimp_queue')
+      .update({ status: res.ok ? 'sent' : 'failed', last_error: res.ok ? null : `HTTP ${res.status}`, attempts: 1, sent_at: new Date().toISOString() })
+      .eq('id', row.id)
+  } catch (e) {
+    await supabase.from('onboarding_mailchimp_queue').update({ status: 'failed', last_error: e.message, attempts: 1 }).eq('id', row.id)
+  }
+}
+
 // ─── Engine run (Phase 2A: new-member detection, day-based seeding, graduation) ─
 async function runJourneyEngine(supabase, studioId) {
   await seedTemplates(supabase, studioId)
 
   const [{ data: members }, { data: journeys }] = await Promise.all([
     supabase.from('onboarding_members')
-      .select('id, full_name, order_source, join_date, is_cancelled')
+      .select('id, customer_id, full_name, order_source, join_date, email, package_name, is_cancelled')
       .eq('studio_id', studioId).eq('is_new_member', true),
     supabase.from('onboarding_journeys')
       .select('id, member_id, start_date, status, current_track').eq('studio_id', studioId),
@@ -91,6 +114,7 @@ async function runJourneyEngine(supabase, studioId) {
       context: { first_name: firstName(m.full_name) },
     }))
     await supabase.from('onboarding_journey_tasks').insert(tasks)
+    await enqueueMailchimp(supabase, studioId, m)   // hand the new member to Mailchimp (via Make.com)
   }
 
   // Graduation: journeys strictly past Day 90 leave onboarding (stay in roster-wide systems).
