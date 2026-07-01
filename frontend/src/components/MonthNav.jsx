@@ -3,7 +3,7 @@ import { useMonth } from '@/contexts/MonthContext'
 import { formatMonthYear } from '@/lib/utils'
 
 export function MonthNav() {
-  const { selectedMonth, goToPrevMonth, goToNextMonth, goToCurrentMonth, isCurrentMonth } = useMonth()
+  const { selectedMonth, goToPrevMonth, goToNextMonth, goToCurrentMonth, isCurrentMonth, canGoNext } = useMonth()
 
   return (
     <div className="flex items-center gap-1">
@@ -28,7 +28,7 @@ export function MonthNav() {
 
       <button
         onClick={goToNextMonth}
-        disabled={isCurrentMonth}
+        disabled={!canGoNext}
         className="p-1 rounded hover:bg-gray-700 text-gray-400 hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
         title="Next month"
       >

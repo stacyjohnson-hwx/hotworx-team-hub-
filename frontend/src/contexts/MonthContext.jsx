@@ -25,8 +25,17 @@ export function MonthProvider({ children }) {
   const now = currentMonthYear()
   const isCurrentMonth = selectedMonth.month === now.month && selectedMonth.year === now.year
 
+  // Owners/managers can plan one month ahead (e.g. next month's goals), so the
+  // furthest-forward month allowed is current + 1.
+  const maxMonth = now.month === 12
+    ? { month: 1, year: now.year + 1 }
+    : { month: now.month + 1, year: now.year }
+  const isMaxMonth = selectedMonth.month === maxMonth.month && selectedMonth.year === maxMonth.year
+  const canGoNext = !isMaxMonth
+  const isFutureMonth = isMaxMonth
+
   return (
-    <MonthContext.Provider value={{ selectedMonth, goToPrevMonth, goToNextMonth, goToCurrentMonth, isCurrentMonth }}>
+    <MonthContext.Provider value={{ selectedMonth, goToPrevMonth, goToNextMonth, goToCurrentMonth, isCurrentMonth, canGoNext, isFutureMonth }}>
       {children}
     </MonthContext.Provider>
   )
