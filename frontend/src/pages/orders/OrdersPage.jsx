@@ -4,7 +4,7 @@ import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
 import {
   ShoppingCart, Plus, X, ChevronDown, ChevronUp, Trash2, Check,
   Package, Clock, CheckCircle2, XCircle, Truck,
-  DollarSign, Edit2, Filter, BarChart2,
+  DollarSign, Edit2, Filter, BarChart2, Calendar,
 } from 'lucide-react'
 import OrdersAnalytics from './OrdersAnalytics'
 
@@ -222,13 +222,27 @@ function OrderModal({ order, onSave, onClose, isOwnerOrManager, vendorOptions = 
 }
 
 // ─── Order Row ────────────────────────────────────────────────────────────────
-function OrderRow({ order, isOwnerOrManager, showSensitive, onStatusChange, onEdit, onDelete }) {
+function OrderRow({ order, isOwnerOrManager, showSensitive, onStatusChange, onSetDate, onEdit, onDelete }) {
   const [expanded, setExpanded] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [updatingStatus, setUpdatingStatus] = useState('')
+  const [movingDate, setMovingDate] = useState(false)
 
   const transitions = STATUS_TRANSITIONS[order.status] || []
   const catMeta = CATEGORIES.find(c => c.value === order.category)
+  // Not-yet-ordered orders can be rescheduled to a different month.
+  const canReschedule = isOwnerOrManager && (order.status === 'pending' || order.status === 'approved')
+
+  const setDate = async (isoDate) => {
+    setMovingDate(true)
+    try { await onSetDate(order.id, isoDate) }
+    finally { setMovingDate(false) }
+  }
+  const nextMonth = () => {
+    const d = new Date(order.created_at || Date.now())
+    d.setMonth(d.getMonth() + 1)
+    setDate(d.toISOString())
+  }
 
   const handleStatus = async (newStatus) => {
     setUpdatingStatus(newStatus)
@@ -325,6 +339,28 @@ function OrderRow({ order, isOwnerOrManager, showSensitive, onStatusChange, onEd
               <p className="text-gray-700 text-xs bg-white border border-gray-200 rounded-lg px-3 py-2 leading-relaxed">
                 {order.notes}
               </p>
+            )}
+
+            {/* Reschedule — move a not-yet-ordered order to another month */}
+            {canReschedule && (
+              <div className="flex items-center gap-2 flex-wrap pt-0.5">
+                <span className="text-xs text-gray-500">Order date:</span>
+                <input
+                  type="date"
+                  value={(order.created_at || '').slice(0, 10)}
+                  disabled={movingDate}
+                  onChange={e => e.target.value && setDate(new Date(e.target.value + 'T12:00:00').toISOString())}
+                  className="text-xs border border-gray-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-red-600/30 disabled:opacity-50"
+                />
+                <button
+                  onClick={nextMonth}
+                  disabled={movingDate}
+                  className="flex items-center gap-1 text-xs font-medium px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+                >
+                  {movingDate ? <div className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" /> : <Calendar size={11} />}
+                  Move to next month
+                </button>
+              </div>
             )}
 
             {/* Action buttons */}
@@ -490,6 +526,12 @@ export default function OrdersPage() {
   const handleStatusChange = async (id, newStatus) => {
     const updated = await apiPut(`/api/orders/${id}`, { status: newStatus })
     setOrders(prev => prev.map(o => o.id === id ? { ...o, ...updated } : o))
+  }
+
+  // Reschedule a not-yet-ordered order (shifts which month it falls under).
+  const handleSetDate = async (id, isoDate) => {
+    const updated = await apiPut(`/api/orders/${id}`, { created_at: isoDate })
+    setOrders(prev => sortOrders(prev.map(o => o.id === id ? { ...o, ...updated } : o)))
   }
 
   const handleDelete = async (id) => {
@@ -677,6 +719,7 @@ export default function OrdersPage() {
               isOwnerOrManager={isOwnerOrManager}
               showSensitive={isOwnerOrManager}
               onStatusChange={handleStatusChange}
+              onSetDate={handleSetDate}
               onEdit={setModal}
               onDelete={handleDelete}
             />

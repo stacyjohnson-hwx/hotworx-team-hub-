@@ -244,6 +244,12 @@ router.put('/:id', authenticate, requireStudio, async (req, res) => {
     updated_at: new Date().toISOString(),
   }
 
+  // Owner/manager can shift a not-yet-ordered order's date (moves its month bucket,
+  // e.g. carry an approved-but-unordered item to next month).
+  if (req.body.created_at !== undefined && ['pending', 'approved'].includes(current.status)) {
+    updates.created_at = req.body.created_at
+  }
+
   if (status) {
     updates.status = status
     if (status === 'approved') {
