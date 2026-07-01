@@ -1160,6 +1160,19 @@ function RecognitionTab({ canImport }) {
 
       {msg && <div className="mb-3 bg-green-50 border border-green-200 text-green-800 text-sm rounded-lg px-3 py-2">{msg}</div>}
 
+      {sub === 'cards' && (
+        <div className="mb-4 bg-orange-50 border border-orange-200 rounded-xl p-3.5 text-sm text-orange-900">
+          <p className="font-semibold mb-1">✍️ How to send a thank-you card</p>
+          <p className="text-[13px] leading-relaxed">
+            Handwrite a warm welcome card for each new member and tuck in a <b>$5 retail gift card</b>.
+            Address it to them by name, welcome them to the studio, and let them know you're excited to sweat with them.
+            For example: <i>"Hi Sarah, welcome to the HOTWORX Pewaukee family! We're so glad you're here — enjoy this
+            $5 gift toward anything in our retail shop. See you in the sauna! 🔥 — The HOTWORX Team."</i> Drop it in the mail,
+            then tap the circle to mark it sent.
+          </p>
+        </div>
+      )}
+
       {/* Progress */}
       <div className="flex items-center gap-3 mb-4">
         <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden max-w-xs">
