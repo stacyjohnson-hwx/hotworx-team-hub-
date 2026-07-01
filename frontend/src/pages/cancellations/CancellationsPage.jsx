@@ -1,7 +1,36 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRole } from '@/hooks/useRole'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
-import { UserMinus, Plus, X, Trash2, Edit2, Target, Loader2, Filter } from 'lucide-react'
+import { UserMinus, Plus, X, Trash2, Edit2, Target, Loader2, Filter, Upload } from 'lucide-react'
+import * as XLSX from 'xlsx'
+
+// Parse a cancelled CSV/Excel to raw header-keyed rows (backend maps the columns).
+async function parseCancelFile(file) {
+  const name = file.name.toLowerCase()
+  if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
+    const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' })
+    return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '', raw: false })
+  }
+  const text = await file.text()
+  const parseLine = (line) => {
+    const out = []; let cur = '', q = false
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i]
+      if (c === '"') q = !q
+      else if (c === ',' && !q) { out.push(cur); cur = '' }
+      else cur += c
+    }
+    out.push(cur)
+    return out.map(v => v.replace(/^["']|["']$/g, '').trim())
+  }
+  const lines = text.split(/\r?\n/).filter(l => l.trim())
+  if (!lines.length) return []
+  const headers = parseLine(lines[0])
+  return lines.slice(1).map(line => {
+    const vals = parseLine(line); const obj = {}
+    headers.forEach((h, i) => { obj[h] = vals[i] }); return obj
+  })
+}
 
 // ─── Controlled vocab (mirrors the PRD) ───────────────────────────────────────
 export const REASONS = [
@@ -343,6 +372,28 @@ export default function CancellationsPage() {
   }, [])
   useEffect(() => { load() }, [load])
 
+  const fileRef = useRef(null)
+  const [uploading, setUploading] = useState(false)
+  const [uploadMsg, setUploadMsg] = useState('')
+
+  // Upload the SAIL cancelled export → creates ledger + Cancellations entries via the import engine.
+  const onUploadCancels = async (e) => {
+    const file = e.target.files?.[0]
+    if (fileRef.current) fileRef.current.value = ''
+    if (!file) return
+    setUploading(true); setUploadMsg(''); setError('')
+    try {
+      const cancelled = await parseCancelFile(file)
+      if (!cancelled.length) { setError(`"${file.name}" has no data rows.`); return }
+      const res = await apiPost('/api/member-activation/import', { cancelled })
+      const c = res?.cancelled || {}
+      setUploadMsg(`Imported ${c.ledgered || 0} cancellation${(c.ledgered || 0) !== 1 ? 's' : ''}${c.skipped ? ` · ${c.skipped} skipped (missing id/date)` : ''}.`)
+      load()
+    } catch (err) {
+      setError(err?.message ? `Upload failed: ${err.message}` : 'Upload failed.')
+    } finally { setUploading(false) }
+  }
+
   const onSaved = (saved) => {
     setRows(prev => { const i = prev.findIndex(r => r.id === saved.id); return i >= 0 ? prev.map(r => r.id === saved.id ? { ...r, ...saved } : r) : [saved, ...prev] })
     setModal(null)
@@ -392,11 +443,25 @@ export default function CancellationsPage() {
             <span className="font-semibold text-green-600">{saveRate}%</span> save rate
           </p>
         </div>
-        <button onClick={() => setModal(false)} className="flex items-center gap-2 px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-lg shadow-sm">
-          <Plus size={16} /> Log Cancellation
-        </button>
+        <div className="flex items-center gap-2">
+          {isOwnerOrManager && (
+            <>
+              <input ref={fileRef} type="file" accept=".csv,.txt,.xlsx,.xls,text/csv" onChange={onUploadCancels} className="hidden" />
+              <button onClick={() => fileRef.current?.click()} disabled={uploading}
+                className="flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-300 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-50 disabled:opacity-50"
+                title="Upload the SAIL cancelled export to auto-populate this list">
+                {uploading ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
+                {uploading ? 'Uploading…' : 'Upload SAIL Cancellations'}
+              </button>
+            </>
+          )}
+          <button onClick={() => setModal(false)} className="flex items-center gap-2 px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-lg shadow-sm">
+            <Plus size={16} /> Log Cancellation
+          </button>
+        </div>
       </div>
 
+      {uploadMsg && <div className="mb-4 bg-green-50 border border-green-300 text-green-800 text-sm rounded-lg px-4 py-3 flex items-center gap-2"><Upload size={14} /> {uploadMsg}</div>}
       {error && <div className="mb-4 bg-red-50 border border-red-300 text-red-700 text-sm rounded-lg px-4 py-3">{error}</div>}
 
       {/* Tabs */}

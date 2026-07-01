@@ -42,7 +42,6 @@ const TABS = [
   { k: 'members',  label: 'Members',            icon: Users },
   { k: 'scripts',  label: 'Scripts',             icon: FileText },
   { k: 'import',   label: 'Daily Import',        icon: Upload },
-  { k: 'ledger',   label: 'Cancellation Ledger', icon: HeartHandshake },
   { k: 'metrics',  label: 'Studio Trends',       icon: Gauge },
   { k: 'unrecon',  label: 'Unreconciled',        icon: AlertTriangle },
 ]
@@ -76,7 +75,6 @@ export default function MemberActivationPage() {
       {tab === 'scripts' && <ScriptAdminTab canEdit={isOwnerOrManager} />}
       {tab === 'members' && <MembersTab />}
       {tab === 'import'  && <ImportTab canImport={isOwnerOrManager} />}
-      {tab === 'ledger'  && <LedgerTab canEdit={isOwnerOrManager} />}
       {tab === 'metrics' && <MetricsTab canEdit={isOwnerOrManager} />}
       {tab === 'unrecon' && <UnreconciledTab />}
     </div>
