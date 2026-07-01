@@ -4,6 +4,7 @@ import { apiGet, apiPost, apiPatch, apiPut, apiDelete } from '@/hooks/useApi'
 import { useRole } from '@/hooks/useRole'
 import { useStudio } from '@/contexts/StudioContext'
 import { supabase } from '@/lib/supabase'
+import * as XLSX from 'xlsx'
 
 const BASE = '/api/member-activation'
 
@@ -198,7 +199,15 @@ function ImportTab({ canImport }) {
     if (!file) return
     setError(null)
     try {
-      const rows = parseCSV(await file.text())
+      const name = file.name.toLowerCase()
+      let rows
+      if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
+        const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' })
+        const sheet = wb.Sheets[wb.SheetNames[0]]
+        rows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false })
+      } else {
+        rows = parseCSV(await file.text())
+      }
       if (!rows.length) { setError(`"${file.name}" has no data rows.`); return }
       setFiles(f => ({ ...f, [kind]: { name: file.name, rows } }))
     } catch (err) {
@@ -777,7 +786,7 @@ function FileDrop({ label, hint, file, onPick }) {
     <div className="border-2 border-dashed border-gray-200 rounded-xl p-4">
       <p className="text-sm font-semibold text-gray-800">{label}</p>
       <p className="text-[11px] text-gray-400 mb-2">{hint}</p>
-      <input type="file" accept=".csv,.txt,.tsv,text/csv,text/plain" onChange={onPick} className="text-xs" />
+      <input type="file" accept=".csv,.txt,.tsv,.xlsx,.xls,text/csv,text/plain" onChange={onPick} className="text-xs" />
       {file && <p className="text-xs text-green-600 mt-1.5 flex items-center gap-1"><Check size={12} /> {file.name} — {file.rows.length} rows</p>}
     </div>
   )
