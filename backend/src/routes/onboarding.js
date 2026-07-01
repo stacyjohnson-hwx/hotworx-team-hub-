@@ -382,6 +382,17 @@ router.get('/members', authenticate, requireStudio, async (req, res) => {
   }))
 })
 
+// Lightweight member autocomplete for photo tagging (id + name only).
+router.get('/members/lookup', authenticate, requireStudio, async (req, res) => {
+  const q = (req.query.q || '').trim()
+  let query = db().from('onboarding_members').select('id, full_name, email')
+    .eq('studio_id', req.studio.id).order('full_name').limit(20)
+  if (q) query = query.ilike('full_name', `%${q}%`)
+  const { data, error } = await query
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data || [])
+})
+
 // ─── POST /api/member-activation/members ──────────────────────────────────────
 // Manually add a non-roster person (employee, comp, PIF, reciprocal, guest) so
 // their bookings reconcile — without counting toward the active-member number or

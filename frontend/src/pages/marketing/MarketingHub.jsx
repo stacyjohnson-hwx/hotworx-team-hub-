@@ -3,6 +3,7 @@ import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
 import { supabase } from '@/lib/supabase'
 import { useStudio } from '@/contexts/StudioContext'
 import { useRole } from '@/hooks/useRole'
+import MemberTagPicker from '@/components/MemberTagPicker'
 import {
   CheckCircle2, Circle, Loader2, Camera, Megaphone, ChevronDown, ChevronUp,
   ListTodo, Images, X, Download, Trash2, CheckCheck, Send, Play, Quote,
@@ -223,6 +224,7 @@ function ContentLibrary() {
   const [fType, setFType] = useState('')
   const [fStaff, setFStaff] = useState('')
   const [fReady, setFReady] = useState(false)
+  const [fMember, setFMember] = useState([])   // selected member filter (single)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -231,8 +233,9 @@ function ContentLibrary() {
     if (fType) qs.set('type', fType)
     if (fStaff) qs.set('staff_id', fStaff)
     if (fReady) qs.set('ready', 'true')
+    if (fMember[0]) qs.set('member_id', fMember[0].id)
     try { setAssets(await apiGet(`/api/marketing/content?${qs}`)) } catch {} finally { setLoading(false) }
-  }, [fCat, fType, fStaff, fReady])
+  }, [fCat, fType, fStaff, fReady, fMember])
   useEffect(() => { load() }, [load])
 
   const staffOptions = Array.from(new Map(assets.map(a => [a.staff_id, a.staff_name])).entries())
@@ -269,6 +272,7 @@ function ContentLibrary() {
         <label className="flex items-center gap-1.5 text-xs text-gray-600 px-2 py-1.5 bg-white border border-gray-300 rounded-lg cursor-pointer">
           <input type="checkbox" checked={fReady} onChange={e => setFReady(e.target.checked)} /> Ready for SOCi
         </label>
+        <div className="w-52"><MemberTagPicker value={fMember} onChange={setFMember} single placeholder="Filter by member…" /></div>
         {downloadable > 0 && (
           <button onClick={downloadAll} className="ml-auto flex items-center gap-1.5 text-xs font-semibold text-white bg-[#1A1A1A] rounded-lg px-3 py-1.5 hover:bg-gray-800">
             <Download size={13} /> Download all ({downloadable})
@@ -293,6 +297,11 @@ function ContentLibrary() {
               <div className="p-2">
                 <p className="text-[10px] text-gray-500 truncate">{catLabel(a.category)}{a.member_name ? ` · ${a.member_name}` : ''}</p>
                 <p className="text-[10px] text-gray-400 truncate">{a.staff_name}</p>
+                {a.tagged_members?.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {a.tagged_members.map(m => <span key={m.id} className="text-[9px] bg-orange-100 text-orange-700 rounded-full px-1.5 py-0.5">{m.full_name}</span>)}
+                  </div>
+                )}
                 <div className="flex items-center gap-1 mt-1.5">
                   {a.file_url && <button onClick={() => downloadFile(a.file_url, `${a.category}-${a.id}`)} className="p-1 text-gray-400 hover:text-gray-700" title="Download"><Download size={13} /></button>}
                   {isOwnerOrManager && <>

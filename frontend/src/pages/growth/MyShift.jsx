@@ -3,6 +3,7 @@ import { apiGet, apiPost, apiPut } from '@/hooks/useApi'
 import { supabase } from '@/lib/supabase'
 import { useStudio } from '@/contexts/StudioContext'
 import { useRole } from '@/hooks/useRole'
+import MemberTagPicker from '@/components/MemberTagPicker'
 import {
   CheckCircle2, Circle, Loader2, Camera, ChevronDown, ChevronUp, X, Play,
   Trophy, Flame, Gift, Lightbulb, Image as ImageIcon, Sprout, Plus, Phone, MessageSquare,
@@ -162,6 +163,7 @@ function IdeaModal({ onClose, onSaved }) {
 function UploadContentModal({ studioId, onClose, onSaved }) {
   const [files, setFiles] = useState([])      // local File objects (uploaded on confirm)
   const [memberName, setMemberName] = useState('')
+  const [tags, setTags] = useState([])        // tagged members {id, full_name}
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const fileRef = useRef(null)
@@ -183,6 +185,7 @@ function UploadContentModal({ studioId, onClose, onSaved }) {
         await apiPost('/api/marketing/content', {
           file_url: publicUrl, file_path: path, file_type: isVideo ? 'video' : 'photo',
           category: isVideo ? 'member_videos' : 'member_photos', member_name: memberName || null,
+          member_ids: tags.map(t => t.id),
         })
       }
       onSaved()
@@ -204,7 +207,11 @@ function UploadContentModal({ studioId, onClose, onSaved }) {
           <button type="button" onClick={() => fileRef.current?.click()} className="w-16 h-16 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center text-gray-400 hover:border-[#E8611A] hover:text-[#E8611A]"><Camera size={18} /></button>
           <input ref={fileRef} type="file" accept="image/*,video/*" capture="environment" multiple onChange={addFiles} className="hidden" />
         </div>
-        <input value={memberName} onChange={e => setMemberName(e.target.value)} placeholder="Member name (optional)" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-[#E8611A]/30 focus:border-[#E8611A]" />
+        <input value={memberName} onChange={e => setMemberName(e.target.value)} placeholder="Note / caption (optional)" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-[#E8611A]/30 focus:border-[#E8611A]" />
+        <div className="mb-3">
+          <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Tag members in this photo</label>
+          <MemberTagPicker value={tags} onChange={setTags} placeholder="Search members…" />
+        </div>
         {error && <p className="text-xs text-red-600 mb-2">{error}</p>}
         <div className="flex justify-end gap-2">
           <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 font-medium">Cancel</button>

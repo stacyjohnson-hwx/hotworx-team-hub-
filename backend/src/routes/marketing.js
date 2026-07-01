@@ -169,8 +169,18 @@ async function staffNameMap(database, ids) {
 
 // GET /api/marketing/content?category=&type=&staff_id=&status=&ready=
 router.get('/content', async (req, res) => {
-  const { category, type, staff_id, status, ready } = req.query
+  const { category, type, staff_id, status, ready, member_id } = req.query
   const database = db()
+
+  // Member filter: only assets tagged with this member.
+  let contentIdsFilter = null
+  if (member_id) {
+    const { data: tags } = await database.from('marketing_content_member_tags')
+      .select('content_id').eq('studio_id', req.studio.id).eq('member_id', member_id)
+    contentIdsFilter = [...new Set((tags || []).map(t => t.content_id))]
+    if (contentIdsFilter.length === 0) return res.json([])
+  }
+
   let q = database.from('marketing_content_assets').select('*')
     .eq('studio_id', req.studio.id)
     .neq('status', 'archived')
@@ -180,6 +190,7 @@ router.get('/content', async (req, res) => {
   if (staff_id) q = q.eq('staff_id', staff_id)
   if (status)   q = q.eq('status', status)
   if (ready === 'true') q = q.eq('ready_for_soci', true)
+  if (contentIdsFilter) q = q.in('id', contentIdsFilter)
 
   const { data, error } = await q
   if (error) return res.status(500).json({ error: error.message })
@@ -191,17 +202,37 @@ router.get('/content', async (req, res) => {
     const { data: tasks } = await database.from('marketing_tasks').select('id, title').in('id', taskIds)
     for (const t of (tasks || [])) taskMap[t.id] = t.title
   }
+
+  // Enrich each asset with its tagged members.
+  const assetIds = (data || []).map(a => a.id)
+  const tagsByContent = {}
+  if (assetIds.length) {
+    const { data: tagRows } = await database.from('marketing_content_member_tags')
+      .select('content_id, member_id').in('content_id', assetIds)
+    const memberIds = [...new Set((tagRows || []).map(t => t.member_id))]
+    const memberNames = {}
+    if (memberIds.length) {
+      const { data: mems } = await database.from('onboarding_members').select('id, full_name').in('id', memberIds)
+      for (const m of (mems || [])) memberNames[m.id] = m.full_name
+    }
+    for (const t of (tagRows || [])) {
+      (tagsByContent[t.content_id] ||= []).push({ id: t.member_id, full_name: memberNames[t.member_id] || 'Member' })
+    }
+  }
+
   res.json((data || []).map(a => ({
     ...a,
     staff_name: names[a.staff_id] || 'Team Member',
     task_title: a.task_id ? (taskMap[a.task_id] || null) : null,
+    tagged_members: tagsByContent[a.id] || [],
   })))
 })
 
 // POST /api/marketing/content — register an uploaded asset (after storage upload)
 router.post('/content', async (req, res) => {
-  const { file_url, file_path, file_type, category, member_name, caption, task_id, completion_id } = req.body
-  const { data, error } = await db()
+  const { file_url, file_path, file_type, category, member_name, caption, task_id, completion_id, member_ids } = req.body
+  const database = db()
+  const { data, error } = await database
     .from('marketing_content_assets')
     .insert({
       studio_id: req.studio.id,
@@ -217,12 +248,19 @@ router.post('/content', async (req, res) => {
     })
     .select().single()
   if (error) return res.status(500).json({ error: error.message })
+
+  // Tag members in the photo (many-to-many).
+  if (Array.isArray(member_ids) && member_ids.length) {
+    const rows = [...new Set(member_ids)].map(mid => ({ studio_id: req.studio.id, content_id: data.id, member_id: mid }))
+    await database.from('marketing_content_member_tags').upsert(rows, { onConflict: 'content_id,member_id', ignoreDuplicates: true })
+  }
   res.status(201).json(data)
 })
 
 // PUT /api/marketing/content/:id — manager: approve/flag/archive, ready-for-soci, edits
 router.put('/content/:id', requireRole('owner', 'manager'), async (req, res) => {
-  const { status, ready_for_soci, posted_link, category, member_name, caption } = req.body
+  const { status, ready_for_soci, posted_link, category, member_name, caption, member_ids } = req.body
+  const database = db()
   const updates = {}
   if (status !== undefined)         updates.status = status
   if (ready_for_soci !== undefined) updates.ready_for_soci = !!ready_for_soci
@@ -231,11 +269,21 @@ router.put('/content/:id', requireRole('owner', 'manager'), async (req, res) => 
   if (member_name !== undefined)    updates.member_name = member_name || null
   if (caption !== undefined)        updates.caption = caption || null
 
-  const { data, error } = await db()
+  const { data, error } = await database
     .from('marketing_content_assets').update(updates)
     .eq('id', req.params.id).eq('studio_id', req.studio.id)
     .select().single()
   if (error) return res.status(500).json({ error: error.message })
+
+  // Re-tag members (replace the whole set) when member_ids is provided.
+  if (Array.isArray(member_ids)) {
+    await database.from('marketing_content_member_tags').delete()
+      .eq('studio_id', req.studio.id).eq('content_id', req.params.id)
+    if (member_ids.length) {
+      const rows = [...new Set(member_ids)].map(mid => ({ studio_id: req.studio.id, content_id: req.params.id, member_id: mid }))
+      await database.from('marketing_content_member_tags').insert(rows)
+    }
+  }
   res.json(data)
 })
 

@@ -604,6 +604,7 @@ function DailyListTab() {
   const [done, setDone] = useState({})        // id -> true (row flashes blue then drops)
   const [fulfil, setFulfil] = useState({})    // id -> reward fulfilled checkbox
   const [day2, setDay2] = useState(null)      // the Day-2 item being captured
+  const [photosFor, setPhotosFor] = useState(null)  // milestone shout-out: view member's photos
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -673,10 +674,14 @@ function DailyListTab() {
                       rows={isCall ? 3 : 2}
                       className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:border-red-400 bg-gray-50" />
                     {r.reward_key && (
-                      <label className="flex items-center gap-1.5 mt-2 text-xs text-gray-600">
-                        <input type="checkbox" checked={!!fulfil[r.id]} onChange={e => setFulfil(ff => ({ ...ff, [r.id]: e.target.checked }))} />
-                        Reward handed over ({r.reward_key.replace(/_/g, ' ')})
-                      </label>
+                      <div className="mt-2 flex items-center gap-3 flex-wrap">
+                        <label className="flex items-center gap-1.5 text-xs text-gray-600">
+                          <input type="checkbox" checked={!!fulfil[r.id]} onChange={e => setFulfil(ff => ({ ...ff, [r.id]: e.target.checked }))} />
+                          Reward handed over ({r.reward_key.replace(/_/g, ' ')})
+                        </label>
+                        <button type="button" onClick={() => setPhotosFor({ id: r.member_id, name: r.member_name })}
+                          className="text-xs font-semibold text-orange-600 hover:underline">📸 View {r.member_name?.split(' ')[0] || 'member'}'s photos</button>
+                      </div>
                     )}
                     {r.trigger_ref === 'day_5' && (
                       <div className="flex items-center gap-1.5 mt-2">
@@ -707,6 +712,41 @@ function DailyListTab() {
 
       {day2 && <Day2Modal item={day2} onClose={() => setDay2(null)}
         onDone={() => { const id = day2.id; setDay2(null); drop(id) }} />}
+      {photosFor && <MemberPhotosModal member={photosFor} onClose={() => setPhotosFor(null)} />}
+    </div>
+  )
+}
+
+// Milestone shout-out: show a member's tagged photos, ready to grab for a post.
+function MemberPhotosModal({ member, onClose }) {
+  const [photos, setPhotos] = useState(null)
+  useEffect(() => {
+    apiGet(`/api/marketing/content?member_id=${member.id}`).then(setPhotos).catch(() => setPhotos([]))
+  }, [member.id])
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <h3 className="font-bold text-gray-900">{member.name || 'Member'}'s photos</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">✕</button>
+        </div>
+        <div className="p-5">
+          {photos === null ? <Spinner /> : photos.length === 0 ? (
+            <Empty msg="No tagged photos yet. Tag this member when uploading content (Marketing → Upload content)." />
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {photos.map(a => (
+                <a key={a.id} href={a.file_url} target="_blank" rel="noreferrer"
+                  className="block aspect-square rounded-xl overflow-hidden border border-gray-200 bg-gray-100">
+                  {a.file_type === 'photo' && a.file_url
+                    ? <img src={a.file_url} alt="" className="w-full h-full object-cover" />
+                    : <div className="w-full h-full flex items-center justify-center text-gray-400 text-xs">{a.file_type}</div>}
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
