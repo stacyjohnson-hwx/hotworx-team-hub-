@@ -450,7 +450,10 @@ export default function CancellationsPage() {
               const oc = OUTCOMES.find(o => o.value === r.outcome)
               return (
                 <tr key={r.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => setModal(r)}>
-                  <td className="px-4 py-2.5 font-semibold text-gray-900">{r.member_name}</td>
+                  <td className="px-4 py-2.5 font-semibold text-gray-900">
+                    {r.member_name}
+                    {r.source === 'sail_import' && <span className="ml-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700 align-middle">SAIL</span>}
+                  </td>
                   <td className="px-3 py-2.5 text-gray-600">{fmtDate(r.date_requested)}</td>
                   <td className="px-3 py-2.5 text-gray-600">{labelOf(REASONS, r.cancel_reason)}</td>
                   <td className="px-3 py-2.5 text-gray-600">{r.handled_by_name || '—'}</td>
