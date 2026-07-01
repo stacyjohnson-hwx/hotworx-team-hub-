@@ -487,6 +487,7 @@ router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
     }
     return {
       id: t.id,
+      journey_id: t.journey.id,
       member_id: m.id,
       member_name: m.full_name || ctx.first_name,
       phone: m.phone || null,
@@ -506,9 +507,69 @@ router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
 
 // Complete / skip a task (any team member — shared queue).
 router.post('/daily-list/:id/complete', authenticate, requireStudio, async (req, res) => {
-  const { data, error } = await db().from('onboarding_journey_tasks')
+  const supabase = db()
+  const { data: task } = await supabase.from('onboarding_journey_tasks')
+    .select('*, journey:onboarding_journeys(member_id)').eq('id', req.params.id).eq('studio_id', req.studio.id).maybeSingle()
+  if (!task) return res.status(404).json({ error: 'Task not found' })
+  const memberId = task.journey?.member_id
+
+  // Day-2 hard gate: goal + before photo + consent must be captured first (§7).
+  if (task.trigger_ref === 'day_2') {
+    const { data: tr } = await supabase.from('onboarding_transformation_records')
+      .select('goal_text, before_photo_url, consent').eq('studio_id', req.studio.id).eq('member_id', memberId).maybeSingle()
+    if (!tr || !tr.goal_text || !tr.before_photo_url || !tr.consent) {
+      return res.status(422).json({ error: 'day2_gate', message: 'Capture goal, before photo, and consent before completing Day 2.' })
+    }
+  }
+
+  const { data, error } = await supabase.from('onboarding_journey_tasks')
     .update({ status: 'completed', completed_by: req.user.email || req.user.id, completed_at: new Date().toISOString() })
     .eq('id', req.params.id).eq('studio_id', req.studio.id).select().single()
+  if (error) return res.status(500).json({ error: error.message })
+
+  // Milestone: optionally mark the reward physically handed over.
+  if (req.body.fulfilled && task.context?.reward_key && memberId) {
+    await supabase.from('onboarding_rewards_awarded').update({ fulfilled: true })
+      .eq('studio_id', req.studio.id).eq('member_id', memberId).eq('reward_key', task.context.reward_key)
+  }
+  res.json(data)
+})
+
+// ─── Transformation record (Day-2 capture) ────────────────────────────────────
+router.get('/transformation/:memberId', authenticate, requireStudio, async (req, res) => {
+  const { data, error } = await db().from('onboarding_transformation_records')
+    .select('*').eq('studio_id', req.studio.id).eq('member_id', req.params.memberId).maybeSingle()
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data || null)
+})
+
+router.post('/transformation', authenticate, requireStudio, async (req, res) => {
+  const supabase = db()
+  const { member_id, goal_text, before_photo_url, progress_photo_url, after_photo_url, consent, next3_booked } = req.body
+  if (!member_id) return res.status(400).json({ error: 'member_id required' })
+  const fields = { studio_id: req.studio.id, member_id, captured_by: req.user.email || req.user.id, updated_at: new Date().toISOString() }
+  if (goal_text !== undefined) fields.goal_text = goal_text
+  if (before_photo_url !== undefined) fields.before_photo_url = before_photo_url
+  if (progress_photo_url !== undefined) fields.progress_photo_url = progress_photo_url
+  if (after_photo_url !== undefined) fields.after_photo_url = after_photo_url
+  if (consent !== undefined) fields.consent = !!consent
+  const { data, error } = await supabase.from('onboarding_transformation_records')
+    .upsert(fields, { onConflict: 'studio_id,member_id' }).select().single()
+  if (error) return res.status(500).json({ error: error.message })
+  if (next3_booked !== undefined) {
+    await supabase.from('onboarding_journeys').update({ next3_booked: !!next3_booked })
+      .eq('studio_id', req.studio.id).eq('member_id', member_id)
+  }
+  res.json(data)
+})
+
+// ─── Journey edits (first-session flag, manual track move, orientation) ───────
+router.patch('/journeys/:id', authenticate, requireStudio, async (req, res) => {
+  const allowed = ['first_session_flag', 'current_track', 'next3_booked', 'orientation_completed']
+  const updates = { updated_at: new Date().toISOString() }
+  for (const k of allowed) if (req.body[k] !== undefined) updates[k] = req.body[k]
+  const { data, error } = await db().from('onboarding_journeys')
+    .update(updates).eq('id', req.params.id).eq('studio_id', req.studio.id).select().single()
   if (error) return res.status(500).json({ error: error.message })
   res.json(data)
 })

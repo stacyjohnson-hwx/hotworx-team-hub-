@@ -102,6 +102,90 @@ async function runJourneyEngine(supabase, studioId) {
         .eq('id', j.id)
     }
   }
+
+  await evaluateEventTriggers(supabase, studioId)
+}
+
+// Visit-day milestone ladder → reward + a one-time team shout-out task.
+const MILESTONES = [
+  { n: 10,   reward: 'shoutout_10',   ref: 'milestone_10',   type: 'text' },
+  { n: 25,   reward: 'keychain_25',   ref: 'milestone_25',   type: 'text' },
+  { n: 50,   reward: 'shoutout_50',   ref: 'milestone_50',   type: 'text' },
+  { n: 100,  reward: 'shirt_100',     ref: 'milestone_100',  type: 'call' },
+  { n: 500,  reward: 'premium_500',   ref: 'milestone_500',  type: 'call' },
+  { n: 1000, reward: 'marquee_1000',  ref: 'milestone_1000', type: 'call' },
+]
+
+// Event-based triggers (§4): milestones, passport, first-90 save fork, first-session escalation.
+// Idempotent — unique(journey_id, trigger_ref) means each fires once; rewards dedupe per member.
+async function evaluateEventTriggers(supabase, studioId) {
+  const today = todayStr()
+  const [{ data: journeys }, { data: activity }, { data: members }] = await Promise.all([
+    supabase.from('onboarding_journeys')
+      .select('id, member_id, start_date, current_track, status, first_session_flag').eq('studio_id', studioId),
+    supabase.from('onboarding_member_activity').select('*').eq('studio_id', studioId),
+    supabase.from('onboarding_members').select('id, full_name, is_cancelled').eq('studio_id', studioId),
+  ])
+  const actMap = new Map((activity || []).map(a => [a.member_id, a]))
+  const memMap = new Map((members || []).map(m => [m.id, m]))
+
+  const addTask = async (j, fields) => {
+    await supabase.from('onboarding_journey_tasks').upsert({
+      studio_id: studioId, journey_id: j.id, status: 'pending', due_date: today, ...fields,
+    }, { onConflict: 'journey_id,trigger_ref', ignoreDuplicates: true })
+  }
+  const awardReward = async (memberId, reward_key) => {
+    await supabase.from('onboarding_rewards_awarded').upsert(
+      { studio_id: studioId, member_id: memberId, reward_key },
+      { onConflict: 'studio_id,member_id,reward_key', ignoreDuplicates: true })
+  }
+
+  for (const j of (journeys || [])) {
+    const m = memMap.get(j.member_id)
+    if (!m || m.is_cancelled || j.status === 'paused') continue
+    const a = actMap.get(j.member_id) || {}
+    const first = firstName(m.full_name)
+
+    // Determine save-fork state FIRST so celebration can be suppressed for lapsed members (§4.5).
+    const within90 = j.start_date && addDays(j.start_date, 90) >= today
+    const ref = a.last_booking_date || j.start_date
+    const lapse = ref ? Math.floor((new Date(today) - new Date(ref)) / 86400000) : 0
+    const inSaveFork = within90 && j.status === 'active' && lapse >= 14
+
+    // Milestones — reward is always recorded; the shout-out task is held while in the save fork.
+    for (const ms of MILESTONES) {
+      if ((a.visit_days || 0) >= ms.n) {
+        await awardReward(j.member_id, ms.reward)
+        if (!inSaveFork) await addTask(j, {
+          type: ms.type, template_key: ms.ref, trigger_kind: 'event_based', trigger_ref: ms.ref,
+          priority: 5, context: { first_name: first, milestone: ms.n, reward_key: ms.reward },
+        })
+      }
+    }
+    // Passport — all 12 workouts tried.
+    if ((a.workouts_tried || 0) >= 12) {
+      await awardReward(j.member_id, 'sticker')
+      if (!inSaveFork) await addTask(j, {
+        type: 'text', template_key: 'passport_sticker', trigger_kind: 'event_based', trigger_ref: 'passport_sticker',
+        priority: 5, context: { first_name: first, reward_key: 'sticker' },
+      })
+    }
+    // First-90 save fork — lapse measured from last booking (or join if never booked).
+    if (within90 && j.status === 'active' && ['onboarding', 'save'].includes(j.current_track)) {
+      if (lapse >= 14) {
+        if (j.current_track !== 'save') await supabase.from('onboarding_journeys').update({ current_track: 'save' }).eq('id', j.id)
+        await addTask(j, { type: 'call', template_key: 'save_14d', trigger_kind: 'event_based', trigger_ref: 'save_14d', priority: 3, context: { first_name: first, days_lapsed: lapse } })
+      } else if (lapse >= 7) {
+        await addTask(j, { type: 'text', template_key: 'save_7d', trigger_kind: 'event_based', trigger_ref: 'save_7d', priority: 3, context: { first_name: first, days_lapsed: lapse } })
+      } else if (j.current_track === 'save') {
+        await supabase.from('onboarding_journeys').update({ current_track: 'onboarding' }).eq('id', j.id)  // rebooked → exit save fork
+      }
+    }
+    // First-session escalation — rough / no-show ranks to the very top.
+    if (['rough', 'no_show'].includes(j.first_session_flag)) {
+      await addTask(j, { type: 'call', template_key: 'first_session_rough', trigger_kind: 'event_based', trigger_ref: 'first_session_rough', priority: 1, context: { first_name: first } })
+    }
+  }
 }
 
 module.exports = { runJourneyEngine, seedTemplates, renderTemplate, firstName, addDays, TEMPLATE_DEFAULTS, DAY_TOUCHPOINTS }

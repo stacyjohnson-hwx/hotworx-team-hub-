@@ -3,6 +3,7 @@ import { Upload, Users, HeartHandshake, AlertTriangle, Check, Loader2, RefreshCw
 import { apiGet, apiPost, apiPatch, apiPut, apiDelete } from '@/hooks/useApi'
 import { useRole } from '@/hooks/useRole'
 import { useStudio } from '@/contexts/StudioContext'
+import { supabase } from '@/lib/supabase'
 
 const BASE = '/api/member-activation'
 
@@ -429,6 +430,8 @@ function DailyListTab() {
   const [filter, setFilter] = useState('all')
   const [drafts, setDrafts] = useState({})   // id -> edited script
   const [done, setDone] = useState({})        // id -> true (row flashes blue then drops)
+  const [fulfil, setFulfil] = useState({})    // id -> reward fulfilled checkbox
+  const [day2, setDay2] = useState(null)      // the Day-2 item being captured
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -437,14 +440,19 @@ function DailyListTab() {
   }, [currentStudio?.id])
   useEffect(() => { load() }, [load])
 
+  const drop = (id) => { setDone(d => ({ ...d, [id]: true })); setTimeout(() => setRows(rs => rs.filter(x => x.id !== id)), 600) }
   const complete = async (r) => {
-    setDone(d => ({ ...d, [r.id]: true }))
-    try { await apiPost(`${BASE}/daily-list/${r.id}/complete`, {}) } catch { /* ignore */ }
-    setTimeout(() => setRows(rs => rs.filter(x => x.id !== r.id)), 600)
+    if (r.trigger_ref === 'day_2') { setDay2(r); return }   // capture gate first
+    drop(r.id)
+    try { await apiPost(`${BASE}/daily-list/${r.id}/complete`, { fulfilled: !!fulfil[r.id] }) } catch { /* ignore */ }
   }
   const skip = async (r) => {
     try { await apiPost(`${BASE}/daily-list/${r.id}/skip`, {}) } catch { /* ignore */ }
     setRows(rs => rs.filter(x => x.id !== r.id))
+  }
+  const setFlag = async (r, flag) => {
+    try { await apiPatch(`${BASE}/journeys/${r.journey_id}`, { first_session_flag: flag }) } catch { /* ignore */ }
+    load()
   }
 
   const f = FILTERS.find(x => x.k === filter)
@@ -489,6 +497,23 @@ function DailyListTab() {
                     <textarea value={script} onChange={e => setDrafts(d => ({ ...d, [r.id]: e.target.value }))}
                       rows={isCall ? 3 : 2}
                       className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:border-red-400 bg-gray-50" />
+                    {r.reward_key && (
+                      <label className="flex items-center gap-1.5 mt-2 text-xs text-gray-600">
+                        <input type="checkbox" checked={!!fulfil[r.id]} onChange={e => setFulfil(ff => ({ ...ff, [r.id]: e.target.checked }))} />
+                        Reward handed over ({r.reward_key.replace(/_/g, ' ')})
+                      </label>
+                    )}
+                    {r.trigger_ref === 'day_5' && (
+                      <div className="flex items-center gap-1.5 mt-2">
+                        <span className="text-[11px] text-gray-400">First session:</span>
+                        {['great', 'rough', 'no_show'].map(fl => (
+                          <button key={fl} onClick={() => setFlag(r, fl)}
+                            className="text-[11px] px-2 py-0.5 rounded-full border border-gray-300 text-gray-600 hover:border-red-400 capitalize">
+                            {fl.replace('_', '-')}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     <div className="flex items-center gap-3 mt-2">
                       {!isCall && r.phone && (
                         <a href={`sms:${r.phone}?&body=${encodeURIComponent(script)}`}
@@ -504,6 +529,89 @@ function DailyListTab() {
           })}
         </div>
       )}
+
+      {day2 && <Day2Modal item={day2} onClose={() => setDay2(null)}
+        onDone={() => { const id = day2.id; setDay2(null); drop(id) }} />}
+    </div>
+  )
+}
+
+// Day-2 capture gate: goal + before photo + consent required before the call completes.
+function Day2Modal({ item, onClose, onDone }) {
+  const { currentStudio } = useStudio()
+  const [goal, setGoal] = useState('')
+  const [consent, setConsent] = useState(false)
+  const [next3, setNext3] = useState(false)
+  const [photoUrl, setPhotoUrl] = useState('')
+  const [uploading, setUploading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    apiGet(`${BASE}/transformation/${item.member_id}`).then(tr => {
+      if (tr) { setGoal(tr.goal_text || ''); setConsent(!!tr.consent); setPhotoUrl(tr.before_photo_url || '') }
+    }).catch(() => {})
+  }, [item.member_id])
+
+  const upload = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true); setError(null)
+    try {
+      const path = `${currentStudio.id}/${item.member_id}/before_${Date.now()}_${file.name}`
+      const { error: upErr } = await supabase.storage.from('onboarding-photos').upload(path, file, { upsert: false, contentType: file.type })
+      if (upErr) throw upErr
+      const { data } = supabase.storage.from('onboarding-photos').getPublicUrl(path)
+      setPhotoUrl(data.publicUrl)
+    } catch (e) { setError('Photo upload failed: ' + e.message) }
+    finally { setUploading(false) }
+  }
+
+  const save = async () => {
+    if (!goal.trim() || !photoUrl || !consent) { setError('Goal, before photo, and consent are all required.'); return }
+    setSaving(true); setError(null)
+    try {
+      await apiPost(`${BASE}/transformation`, { member_id: item.member_id, goal_text: goal, before_photo_url: photoUrl, consent, next3_booked: next3 })
+      await apiPost(`${BASE}/daily-list/${item.id}/complete`, {})
+      onDone()
+    } catch (e) { setError(e.message); setSaving(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <h3 className="font-bold text-gray-900">Day 2 — {item.member_name}</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">✕</button>
+        </div>
+        <div className="p-5 space-y-3">
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">Their goal (in their words) *</label>
+            <textarea value={goal} onChange={e => setGoal(e.target.value)} rows={2}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:border-red-400" />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">Before photo *</label>
+            <input type="file" accept="image/*" onChange={upload} className="text-xs" />
+            {uploading && <p className="text-xs text-gray-400 mt-1">Uploading…</p>}
+            {photoUrl && <p className="text-xs text-green-600 mt-1 flex items-center gap-1"><Check size={12} /> Photo saved</p>}
+          </div>
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} /> Member consented to the photo *
+          </label>
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <input type="checkbox" checked={next3} onChange={e => setNext3(e.target.checked)} /> Booked their next 3 sessions
+          </label>
+          {error && <p className="text-xs text-red-600">{error}</p>}
+        </div>
+        <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-100">
+          <button onClick={onClose} className="px-3 py-1.5 text-sm text-gray-600 border border-gray-300 rounded-lg">Cancel</button>
+          <button onClick={save} disabled={saving || uploading}
+            className="px-4 py-1.5 text-sm font-semibold text-white bg-red-600 rounded-lg disabled:opacity-50">
+            {saving ? 'Saving…' : 'Capture & complete'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
