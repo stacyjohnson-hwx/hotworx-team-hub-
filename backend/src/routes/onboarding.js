@@ -388,7 +388,7 @@ router.get('/members', authenticate, requireStudio, async (req, res) => {
 // triggering onboarding/re-engagement (is_new_member=false, non-'member' type).
 const MEMBER_TYPES = ['member', 'employee', 'comp', 'pif', 'reciprocal', 'guest']
 router.post('/members', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
-  const { email, full_name, member_type, phone } = req.body
+  const { email, full_name, member_type, phone, origin_studio } = req.body
   if (!email) return res.status(400).json({ error: 'email required' })
   const type = MEMBER_TYPES.includes(member_type) ? member_type : 'guest'
   const supabase = db()
@@ -401,6 +401,7 @@ router.post('/members', authenticate, requireStudio, requireRole('owner', 'manag
     full_name: full_name || null,
     phone: phone || null,
     member_type: type,
+    origin_studio: origin_studio || null,
     status: 'Active',
     is_new_member: false,
     seen_in_last_import: true,
@@ -423,6 +424,7 @@ router.patch('/members/:id', authenticate, requireStudio, requireRole('owner', '
   if (req.body.phone !== undefined) updates.phone = req.body.phone || null
   if (req.body.email !== undefined) updates.email = req.body.email ? String(req.body.email).trim().toLowerCase() : null
   if (req.body.status !== undefined) updates.status = req.body.status
+  if (req.body.origin_studio !== undefined) updates.origin_studio = req.body.origin_studio || null
   if (req.body.member_type !== undefined && MEMBER_TYPES.includes(req.body.member_type)) updates.member_type = req.body.member_type
   const { data, error } = await db().from('onboarding_members')
     .update(updates).eq('id', req.params.id).eq('studio_id', req.studio.id).select().single()
