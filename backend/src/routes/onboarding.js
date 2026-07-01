@@ -106,7 +106,7 @@ router.post('/import', authenticate, requireStudio, requireRole('owner', 'manage
 
     // Load existing members once (for rejoin + roster-absence bookkeeping).
     const { data: existingMembers, error: emErr } = await supabase
-      .from('onboarding_members').select('id, customer_id, is_cancelled, cancelled_date, roster_absent_days').eq('studio_id', studioId)
+      .from('onboarding_members').select('id, customer_id, is_cancelled, cancelled_date, roster_absent_days, member_type').eq('studio_id', studioId)
     if (emErr) throw new Error(`load members: ${emErr.message}`)
     const existingByCid = new Map((existingMembers || []).map(m => [m.customer_id, m]))
 
@@ -173,6 +173,7 @@ router.post('/import', authenticate, requireStudio, requireRole('owner', 'manage
       // get their absence counter bumped (never auto-cancel — a Lead reviews, PRD §5.2b).
       for (const m of (existingMembers || [])) {
         if (rosterCids.has(m.customer_id)) continue
+        if (m.member_type && m.member_type !== 'member') continue  // manual adds aren't in the SAIL roster
         await supabase.from('onboarding_members')
           .update({ seen_in_last_import: false, roster_absent_days: (m.roster_absent_days || 0) + 1 })
           .eq('id', m.id)
@@ -303,7 +304,7 @@ async function recomputeStudioTrends(supabase, studioId, month, year, isCurrentM
   if (isCurrentMonth) {
     const { count: activeCount } = await supabase
       .from('onboarding_members').select('id', { count: 'exact', head: true })
-      .eq('studio_id', studioId).eq('is_cancelled', false).ilike('status', '%active%')
+      .eq('studio_id', studioId).eq('is_cancelled', false).eq('member_type', 'member').ilike('status', '%active%')
     fields.total_member_count = ovMap.has('active_members') ? ovMap.get('active_members') : (activeCount || 0)
   }
 
@@ -328,6 +329,40 @@ router.get('/members', authenticate, requireStudio, async (req, res) => {
       last_booking_date: a.last_booking_date || null,
     }
   }))
+})
+
+// ─── POST /api/member-activation/members ──────────────────────────────────────
+// Manually add a non-roster person (employee, comp, PIF, reciprocal, guest) so
+// their bookings reconcile — without counting toward the active-member number or
+// triggering onboarding/re-engagement (is_new_member=false, non-'member' type).
+const MEMBER_TYPES = ['member', 'employee', 'comp', 'pif', 'reciprocal', 'guest']
+router.post('/members', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
+  const { email, full_name, member_type, phone } = req.body
+  if (!email) return res.status(400).json({ error: 'email required' })
+  const type = MEMBER_TYPES.includes(member_type) ? member_type : 'guest'
+  const supabase = db()
+  const lower = String(email).trim().toLowerCase()
+
+  const { data: member, error } = await supabase.from('onboarding_members').upsert({
+    studio_id: req.studio.id,
+    customer_id: `MANUAL_${lower}`,
+    email: lower,
+    full_name: full_name || null,
+    phone: phone || null,
+    member_type: type,
+    status: 'Active',
+    is_new_member: false,
+    seen_in_last_import: true,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'studio_id,customer_id' }).select().single()
+  if (error) return res.status(500).json({ error: error.message })
+
+  // Link any of their unreconciled bookings by email.
+  const { data: linked } = await supabase.from('onboarding_bookings')
+    .update({ member_id: member.id })
+    .eq('studio_id', req.studio.id).is('member_id', null).eq('member_email', lower)
+    .select('booking_id')
+  res.status(201).json({ ...member, linked_bookings: (linked || []).length })
 })
 
 // ─── GET /api/onboarding/unreconciled ─────────────────────────────────────────
@@ -399,7 +434,7 @@ router.get('/metrics', authenticate, requireStudio, async (req, res) => {
   if (mk === curKey) {
     const { count } = await supabase
       .from('onboarding_members').select('id', { count: 'exact', head: true })
-      .eq('studio_id', req.studio.id).eq('is_cancelled', false).ilike('status', '%active%')
+      .eq('studio_id', req.studio.id).eq('is_cancelled', false).eq('member_type', 'member').ilike('status', '%active%')
     computedActive = count || 0
   }
 
@@ -527,7 +562,7 @@ router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
   // excluding first-90 save-fork members and anyone contacted within the cooldown.
   const cutoff = new Date(Date.now() - 10 * 86400000).toISOString()  // 10-day cooldown
   const [{ data: allMembers }, { data: actAll }, { data: allJourneys }, { data: recent }, { data: upcoming }] = await Promise.all([
-    supabase.from('onboarding_members').select('id, full_name, phone, status, is_cancelled, join_date').eq('studio_id', studioId),
+    supabase.from('onboarding_members').select('id, full_name, phone, status, is_cancelled, join_date, member_type').eq('studio_id', studioId),
     supabase.from('onboarding_member_activity').select('member_id, last_booking_date').eq('studio_id', studioId),
     supabase.from('onboarding_journeys').select('member_id, status, start_date').eq('studio_id', studioId),
     supabase.from('onboarding_reengage_log').select('member_id').eq('studio_id', studioId).gte('contacted_at', cutoff),
@@ -541,6 +576,7 @@ router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
 
   for (const mm of (allMembers || [])) {
     if (mm.is_cancelled || !/active/i.test(mm.status || '') || cooling.has(mm.id)) continue
+    if (mm.member_type && mm.member_type !== 'member') continue  // don't re-engage employees/comp/reciprocal
     const j = jMap.get(mm.id)
     const inFirst90 = j && j.status === 'active' && j.start_date && addDaysStr(j.start_date, 90) >= today
     if (inFirst90) continue  // save fork owns first-90 lapses

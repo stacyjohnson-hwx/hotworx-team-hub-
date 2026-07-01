@@ -161,6 +161,7 @@ function MembersTab() {
                     <div className="font-medium text-gray-800 flex items-center gap-1.5">
                       {r.full_name || r.customer_id}
                       {r.is_new_member && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-green-100 text-green-700">NEW</span>}
+                      {r.member_type && r.member_type !== 'member' && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700 uppercase">{r.member_type}</span>}
                       {r.is_cancelled && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-700">CANCELLED</span>}
                     </div>
                     <div className="text-[11px] text-gray-400">{r.email || '—'} · {r.package_name || '—'}</div>
@@ -387,10 +388,23 @@ function LedgerTab({ canEdit }) {
 }
 
 // ─── Unreconciled bookings ────────────────────────────────────────────────────
+const MEMBER_TYPE_OPTS = [
+  { v: 'employee',   label: 'Employee' },
+  { v: 'comp',       label: 'Comp / free month' },
+  { v: 'pif',        label: 'Paid in full' },
+  { v: 'reciprocal', label: 'Reciprocal' },
+  { v: 'guest',      label: 'Guest / other' },
+  { v: 'member',     label: 'Regular member' },
+]
+
 function UnreconciledTab() {
   const { currentStudio } = useStudio()
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
+  const [addFor, setAddFor] = useState(null)   // email being added
+  const [form, setForm] = useState({ full_name: '', member_type: 'employee' })
+  const [saving, setSaving] = useState(false)
+
   const load = useCallback(async () => {
     setLoading(true)
     try { setRows(await apiGet(`${BASE}/unreconciled`)) } catch { setRows([]) }
@@ -398,34 +412,68 @@ function UnreconciledTab() {
   }, [currentStudio?.id])
   useEffect(() => { load() }, [load])
 
+  // Group the unreconciled bookings by email so each person is one row.
+  const groups = Object.values(rows.reduce((acc, r) => {
+    const e = (r.member_email || '(no email)').toLowerCase()
+    if (!acc[e]) acc[e] = { email: e, count: 0, last: null }
+    acc[e].count++
+    if (!acc[e].last || (r.booking_date || '') > acc[e].last) acc[e].last = r.booking_date
+    return acc
+  }, {})).sort((a, b) => b.count - a.count)
+
+  const openAdd = (email) => { setAddFor(email); setForm({ full_name: '', member_type: 'employee' }) }
+  const addPerson = async () => {
+    setSaving(true)
+    try {
+      await apiPost(`${BASE}/members`, { email: addFor, full_name: form.full_name, member_type: form.member_type })
+      setAddFor(null); load()
+    } catch { /* ignore */ }
+    finally { setSaving(false) }
+  }
+
   if (loading) return <Spinner />
   return (
     <div>
       <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 mb-3 text-sm text-orange-800">
-        These bookings matched no member by email. Fix the email on the member (in SAIL) so their visit-days count — otherwise they silently read zero.
+        These bookings matched no member in the roster. If it's an <b>employee, comp, PIF, or reciprocal</b> person,
+        add them here (with the right type) so their visits track — they won't count toward the active-member number
+        or get onboarding texts. Otherwise fix the email on the member in SAIL.
       </div>
-      {rows.length === 0 ? <Empty msg="Every booking matched a member. Nothing to fix. 🎉" /> : (
-        <div className="overflow-x-auto border border-gray-200 rounded-xl">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr className="text-left text-gray-600">
-                <th className="px-3 py-2 font-semibold">Booking Id</th>
-                <th className="px-3 py-2 font-semibold">Email on booking</th>
-                <th className="px-3 py-2 font-semibold">Date</th>
-                <th className="px-3 py-2 font-semibold">Session</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map(r => (
-                <tr key={r.booking_id} className="border-b border-gray-100">
-                  <td className="px-3 py-2">{r.booking_id}</td>
-                  <td className="px-3 py-2 text-gray-700">{r.member_email || '—'}</td>
-                  <td className="px-3 py-2">{r.booking_date || '—'}</td>
-                  <td className="px-3 py-2">{r.session_type || '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {groups.length === 0 ? <Empty msg="Every booking matched a member. Nothing to fix. 🎉" /> : (
+        <div className="border border-gray-200 rounded-xl divide-y divide-gray-100">
+          {groups.map(g => (
+            <div key={g.email} className="px-3 py-2.5">
+              <div className="flex items-center gap-3 flex-wrap">
+                <span className="text-sm text-gray-800 font-medium">{g.email}</span>
+                <span className="text-xs text-gray-400">{g.count} booking{g.count !== 1 ? 's' : ''} · last {g.last || '—'}</span>
+                {addFor !== g.email && (
+                  <button onClick={() => openAdd(g.email)}
+                    className="ml-auto text-xs font-semibold text-red-600 hover:underline">+ Add person</button>
+                )}
+              </div>
+              {addFor === g.email && (
+                <div className="flex flex-wrap items-end gap-2 mt-2 bg-gray-50 border border-gray-200 rounded-lg p-2.5">
+                  <div>
+                    <label className="block text-[11px] text-gray-500 mb-0.5">Name</label>
+                    <input value={form.full_name} onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))}
+                      placeholder="Full name" className="border border-gray-300 rounded px-2 py-1 text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-gray-500 mb-0.5">Type</label>
+                    <select value={form.member_type} onChange={e => setForm(f => ({ ...f, member_type: e.target.value }))}
+                      className="border border-gray-300 rounded px-2 py-1 text-sm bg-white">
+                      {MEMBER_TYPE_OPTS.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
+                    </select>
+                  </div>
+                  <button onClick={addPerson} disabled={saving}
+                    className="bg-red-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg disabled:opacity-50">
+                    {saving ? 'Adding…' : `Add & link ${g.count}`}
+                  </button>
+                  <button onClick={() => setAddFor(null)} className="text-xs text-gray-500 px-2 py-1.5">Cancel</button>
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       )}
     </div>
