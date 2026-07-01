@@ -1080,7 +1080,8 @@ function RecognitionTab({ canImport }) {
   const [monthKey, setMonthKey] = useState(new Date().toISOString().slice(0, 7))
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
-  const [bdayBody, setBdayBody] = useState('Happy Birthday, {first_name}! 🎂')
+  const [bdayMember, setBdayMember] = useState('Happy Birthday, {first_name}! 🎂')
+  const [bdayNonMember, setBdayNonMember] = useState('Happy Birthday, {first_name}! 🎂 Come in for a FREE workout on us! 🔥')
   const [drafts, setDrafts] = useState({})
   const [uploading, setUploading] = useState(false)
   const [msg, setMsg] = useState('')
@@ -1097,8 +1098,10 @@ function RecognitionTab({ canImport }) {
           apiGet(`${BASE}/templates`).catch(() => []),
         ])
         setRows(b)
-        const t = (tpls || []).find(x => x.template_key === 'birthday_text')
-        if (t) setBdayBody(t.body)
+        const tm = (tpls || []).find(x => x.template_key === 'birthday_text')
+        const tn = (tpls || []).find(x => x.template_key === 'birthday_text_nonmember')
+        if (tm) setBdayMember(tm.body)
+        if (tn) setBdayNonMember(tn.body)
       }
     } catch { setRows([]) }
     finally { setLoading(false) }
@@ -1196,7 +1199,8 @@ function RecognitionTab({ canImport }) {
           {rows.map(r => {
             const done = r.status === 'completed'
             const isBday = sub === 'birthdays'
-            const script = drafts[r.id] != null ? drafts[r.id] : renderBday(bdayBody, r.member_name)
+            const isMemberRow = /^(member|customer|reciprocal member|employee)$/i.test((r.lead_status || '').trim())
+            const script = drafts[r.id] != null ? drafts[r.id] : renderBday(isMemberRow ? bdayMember : bdayNonMember, r.member_name)
             return (
               <div key={r.id} className={`border rounded-xl p-3 transition-colors ${done ? 'bg-blue-50 border-blue-200 opacity-70' : 'bg-white border-gray-200'}`}>
                 <div className="flex items-start gap-3">
@@ -1211,7 +1215,8 @@ function RecognitionTab({ canImport }) {
                         {isBday ? `🎂 ${r.ref_date || ''}` : `joined ${r.ref_date || '—'}`}
                       </span>
                       {isBday && r.sub_status && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600">{r.sub_status}</span>}
-                      {isBday && r.member_id && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-green-100 text-green-700">MEMBER</span>}
+                      {isBday && isMemberRow && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-green-100 text-green-700">MEMBER</span>}
+                      {isBday && !isMemberRow && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">FREE WORKOUT OFFER</span>}
                     </div>
                     {isBday && (r.lead_status || r.last_session) && (
                       <p className="text-[11px] text-gray-400 mt-0.5">

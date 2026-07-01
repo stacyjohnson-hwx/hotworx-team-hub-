@@ -54,7 +54,8 @@ const TEMPLATE_DEFAULTS = [
   { template_key: 'first_session_rough', label: 'Rough first session — priority', channel: 'call', body: "Call {first_name} ASAP: first session flagged rough/no-show. Check in personally, address concerns, re-book. Highest priority." },
   // Recognition checklist (Cards & Birthdays)
   { template_key: 'thank_you_card', label: 'Thank-you card (new member)', channel: 'card', body: "Write & mail a thank-you card welcoming {first_name} to HOTWORX Pewaukee 🎉" },
-  { template_key: 'birthday_text',  label: 'Birthday text',              channel: 'text', body: "Happy Birthday, {first_name}! 🎂 Everyone at HOTWORX Pewaukee is wishing you an amazing day — come celebrate with a birthday sweat! 🔥" },
+  { template_key: 'birthday_text',           label: 'Birthday text — member',     channel: 'text', body: "Happy Birthday, {first_name}! 🎂 Everyone at HOTWORX Pewaukee is wishing you an amazing day — come celebrate with a birthday sweat! 🔥" },
+  { template_key: 'birthday_text_nonmember', label: 'Birthday text — non-member',  channel: 'text', body: "Happy Birthday, {first_name}! 🎂 We'd love to help you celebrate — come in for a FREE workout on us this month, our treat! Reply here to book. 🔥 — HOTWORX Pewaukee" },
 ]
 
 async function seedTemplates(supabase, studioId) {
