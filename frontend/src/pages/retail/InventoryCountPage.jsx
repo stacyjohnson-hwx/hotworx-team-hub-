@@ -4,10 +4,11 @@ import { useStudio } from '@/contexts/StudioContext'
 import { apiGet, apiPut, apiPost } from '@/hooks/useApi'
 import {
   CheckCircle, Circle, AlertCircle, Camera, Flag, ArrowLeft,
-  Package, Check, X, DollarSign, TrendingDown, TrendingUp, Calendar, History, Save, Upload,
+  Package, Check, X, DollarSign, TrendingDown, TrendingUp, Calendar, History, Save, Upload, Download,
   Search, ChevronUp, ChevronDown, ChevronsUpDown,
 } from 'lucide-react'
 import { InventoryImportModal } from './InventoryImportModal'
+import * as XLSX from 'xlsx'
 
 export default function InventoryCountPage() {
   const navigate = useNavigate()
@@ -94,6 +95,24 @@ export default function InventoryCountPage() {
     } finally {
       setSaving(false)
     }
+  }
+
+  // Export the count as an .xlsx for re-entering into SAIL (SKU + counted quantity).
+  const handleExport = () => {
+    const rows = entries.map(e => ({
+      'Product Name': e.sku?.product_name || '',
+      'SKU Code': e.sku?.sku_code || '',
+      'Category': e.sku?.category?.name || 'Uncategorized',
+      'Expected': e.expected_quantity ?? '',
+      'Counted': e.actual_quantity ?? '',
+      'Variance': e.actual_quantity !== null && e.actual_quantity !== undefined
+        ? e.actual_quantity - (e.expected_quantity || 0) : '',
+    }))
+    const ws = XLSX.utils.json_to_sheet(rows)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Inventory Count')
+    const dateStr = currentSession?.count_date || new Date().toISOString().slice(0, 10)
+    XLSX.writeFile(wb, `inventory-count-${dateStr}.xlsx`)
   }
 
   const counted = entries.filter(e => e.actual_quantity !== null).length
@@ -186,13 +205,24 @@ export default function InventoryCountPage() {
                   </span>
                 )}
               </div>
-              <button
-                onClick={() => setShowImportModal(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium"
-              >
-                <Upload size={18} />
-                Import Inventory
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleExport}
+                  disabled={entries.length === 0}
+                  className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium disabled:opacity-50"
+                  title="Download the count as an Excel file to enter into SAIL"
+                >
+                  <Download size={18} />
+                  Export for SAIL
+                </button>
+                <button
+                  onClick={() => setShowImportModal(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium"
+                >
+                  <Upload size={18} />
+                  Import Inventory
+                </button>
+              </div>
             </div>
 
             {/* Progress Stats */}
