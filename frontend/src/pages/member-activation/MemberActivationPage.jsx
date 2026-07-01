@@ -8,20 +8,25 @@ import { supabase } from '@/lib/supabase'
 const BASE = '/api/member-activation'
 
 // ─── CSV parsing (client-side; raw rows are POSTed and mapped on the backend) ──
+// Auto-detects comma vs. tab delimiter. Throws a friendly error for Excel files.
 function parseCSV(text) {
+  if (text.slice(0, 2) === 'PK') {
+    throw new Error('That looks like an Excel (.xlsx) file. In SAIL, export as CSV (or in Excel: File → Save As → CSV), then upload the .csv.')
+  }
+  const lines = text.split(/\r?\n/).filter(l => l.trim())
+  if (!lines.length) return []
+  const delim = lines[0].includes('\t') && !lines[0].includes(',') ? '\t' : ','
   const parseLine = (line) => {
     const out = []; let cur = '', q = false
     for (let i = 0; i < line.length; i++) {
       const c = line[i]
       if (c === '"') q = !q
-      else if (c === ',' && !q) { out.push(cur); cur = '' }
+      else if (c === delim && !q) { out.push(cur); cur = '' }
       else cur += c
     }
     out.push(cur)
     return out.map(v => v.replace(/^["']|["']$/g, '').trim())
   }
-  const lines = text.split(/\r?\n/).filter(l => l.trim())
-  if (!lines.length) return []
   const headers = parseLine(lines[0])
   return lines.slice(1).map(line => {
     const vals = parseLine(line)
@@ -191,8 +196,14 @@ function ImportTab({ canImport }) {
   const onFile = (kind) => async (e) => {
     const file = e.target.files?.[0]
     if (!file) return
-    const rows = parseCSV(await file.text())
-    setFiles(f => ({ ...f, [kind]: { name: file.name, rows } }))
+    setError(null)
+    try {
+      const rows = parseCSV(await file.text())
+      if (!rows.length) { setError(`"${file.name}" has no data rows.`); return }
+      setFiles(f => ({ ...f, [kind]: { name: file.name, rows } }))
+    } catch (err) {
+      setError(err.message)
+    }
   }
 
   const run = async () => {
@@ -211,22 +222,14 @@ function ImportTab({ canImport }) {
 
   if (!canImport) return <Empty msg="Daily Import is limited to owners and managers." />
 
-  const Drop = ({ kind, label, hint }) => (
-    <div className="border-2 border-dashed border-gray-200 rounded-xl p-4">
-      <p className="text-sm font-semibold text-gray-800">{label}</p>
-      <p className="text-[11px] text-gray-400 mb-2">{hint}</p>
-      <input type="file" accept=".csv,text/csv" onChange={onFile(kind)} className="text-xs" />
-      {files[kind] && <p className="text-xs text-green-600 mt-1.5 flex items-center gap-1"><Check size={12} /> {files[kind].name} — {files[kind].rows.length} rows</p>}
-    </div>
-  )
   const anyFile = files.bookings || files.members || files.cancelled
 
   return (
     <div className="space-y-4">
       <div className="grid md:grid-cols-3 gap-3">
-        <Drop kind="bookings"  label="Booking export"   hint="Export A — one row per session (Id, Email, Booking Date, Session Type)" />
-        <Drop kind="members"   label="Member roster"    hint="Export B — full active roster (Customer Id, SubscriptionDate, Status…)" />
-        <Drop kind="cancelled" label="Cancelled export" hint="Export C — daily cancellations (Customer Id, Cancellation Date)" />
+        <FileDrop label="Booking export"   hint="Export A — one row per session (Id, Email, Booking Date, Session Type)" file={files.bookings}  onPick={onFile('bookings')} />
+        <FileDrop label="Member roster"    hint="Export B — full active roster (Customer Id, SubscriptionDate, Status…)" file={files.members}   onPick={onFile('members')} />
+        <FileDrop label="Cancelled export" hint="Export C — daily cancellations (Customer Id, Cancellation Date)" file={files.cancelled} onPick={onFile('cancelled')} />
       </div>
 
       <div className="flex items-center gap-3">
@@ -767,5 +770,18 @@ function MetricsTab({ canEdit }) {
 }
 
 // ─── Shared bits ──────────────────────────────────────────────────────────────
+// Stable, module-level file drop (must NOT be defined inside a render, or the
+// <input> remounts on every state change and selections don't stick).
+function FileDrop({ label, hint, file, onPick }) {
+  return (
+    <div className="border-2 border-dashed border-gray-200 rounded-xl p-4">
+      <p className="text-sm font-semibold text-gray-800">{label}</p>
+      <p className="text-[11px] text-gray-400 mb-2">{hint}</p>
+      <input type="file" accept=".csv,.txt,.tsv,text/csv,text/plain" onChange={onPick} className="text-xs" />
+      {file && <p className="text-xs text-green-600 mt-1.5 flex items-center gap-1"><Check size={12} /> {file.name} — {file.rows.length} rows</p>}
+    </div>
+  )
+}
+
 const Spinner = () => <div className="flex justify-center py-16"><Loader2 className="animate-spin text-gray-300" size={26} /></div>
 const Empty = ({ msg }) => <div className="text-center py-16 text-sm text-gray-400">{msg}</div>
