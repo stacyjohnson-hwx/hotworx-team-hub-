@@ -18,7 +18,9 @@ app.use(cors({
   },
   credentials: true,
 }))
-app.use(express.json())
+// Raised well above the 100kb default so full SAIL CSV imports (thousands of
+// rows POSTed as JSON by the Member Activation Daily Import) aren't rejected.
+app.use(express.json({ limit: '50mb' }))
 
 app.use('/api/health',          require('./routes/health'))
 app.use('/api/public',          require('./routes/public'))   // no auth — client-facing calendar

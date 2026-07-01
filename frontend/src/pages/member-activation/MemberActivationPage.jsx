@@ -223,9 +223,14 @@ function ImportTab({ canImport }) {
         members:   files.members?.rows || [],
         cancelled: files.cancelled?.rows || [],
       }
-      setResult(await apiPost(`${BASE}/import`, payload))
+      const rowCount = payload.bookings.length + payload.members.length + payload.cancelled.length
+      const res = await apiPost(`${BASE}/import`, payload)
+      setResult(res)
       loadHistory()
-    } catch (e) { setError(e.message) }
+      if (!res) setError(`Imported ${rowCount} rows but got no response — try again or check the counts in Members.`)
+    } catch (e) {
+      setError(e?.message ? `Import failed: ${e.message}` : 'Import failed — the request did not complete. If your files are very large, try importing one file at a time.')
+    }
     finally { setRunning(false) }
   }
 
@@ -242,7 +247,7 @@ function ImportTab({ canImport }) {
       </div>
 
       <div className="flex items-center gap-3">
-        <button onClick={run} disabled={running || !anyFile}
+        <button type="button" onClick={run} disabled={running || !anyFile}
           className="flex items-center gap-2 bg-red-600 text-white text-sm font-semibold px-5 py-2.5 rounded-xl hover:bg-red-700 disabled:opacity-50">
           {running ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
           {running ? 'Importing…' : 'Run Import'}
