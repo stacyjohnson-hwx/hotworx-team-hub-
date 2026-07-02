@@ -1270,12 +1270,11 @@ function MetricsTab({ canEdit }) {
         <label className="text-sm text-gray-600">Month</label>
         <input type="month" value={monthKey} onChange={e => setMonthKey(e.target.value)}
           className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm" />
-        <p className="text-xs text-gray-400 ml-2">These two numbers flow into Studio Trends (and Goals). The override wins and survives every re-import.</p>
+        <p className="text-xs text-gray-400 ml-2">This number flows into Studio Trends (and Goals). The override wins and survives every re-import. Total Member Count is entered manually in Studio Trends.</p>
       </div>
       {loading ? <Spinner /> : (
         <div className="grid sm:grid-cols-2 gap-3">
           <Card metric="cancellations" label="Monthly cancellations" m={data?.cancellations} />
-          <Card metric="active_members" label="Active member count" m={data?.active_members} disabled={!data?.is_current_month} />
         </div>
       )}
     </div>

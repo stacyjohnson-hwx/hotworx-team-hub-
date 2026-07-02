@@ -349,15 +349,11 @@ async function recomputeStudioTrends(supabase, studioId, month, year, isCurrentM
     .eq('studio_id', studioId).eq('month_key', mk)
   const ovMap = new Map((overrides || []).map(o => [o.metric, o.override_value]))
 
+  // NOTE: total_member_count is intentionally NOT written here. The computed
+  // active-member count from the roster was never reliable, so Total Member
+  // Count stays a manual field in Studio Trends (entered by owner/manager).
   const fields = { month, year, studio_id: studioId, updated_at: new Date().toISOString() }
   fields.cancellations = ovMap.has('cancellations') ? ovMap.get('cancellations') : (computedCancels || 0)
-
-  if (isCurrentMonth) {
-    const { count: activeCount } = await supabase
-      .from('onboarding_members').select('id', { count: 'exact', head: true })
-      .eq('studio_id', studioId).eq('is_cancelled', false).eq('member_type', 'member').ilike('status', '%active%')
-    fields.total_member_count = ovMap.has('active_members') ? ovMap.get('active_members') : (activeCount || 0)
-  }
 
   await supabase.from('studio_trends').upsert(fields, { onConflict: 'studio_id, month, year' })
 }
@@ -548,15 +544,6 @@ router.get('/metrics', authenticate, requireStudio, async (req, res) => {
     .from('onboarding_cancellation_ledger').select('id', { count: 'exact', head: true })
     .eq('studio_id', req.studio.id).eq('month_key', mk).eq('excluded', false)
 
-  // Active-member count is a point-in-time snapshot — only meaningful for the current month.
-  let computedActive = null
-  if (mk === curKey) {
-    const { count } = await supabase
-      .from('onboarding_members').select('id', { count: 'exact', head: true })
-      .eq('studio_id', req.studio.id).eq('is_cancelled', false).eq('member_type', 'member').ilike('status', '%active%')
-    computedActive = count || 0
-  }
-
   const { data: overrides } = await supabase
     .from('onboarding_metric_overrides').select('*')
     .eq('studio_id', req.studio.id).eq('month_key', mk)
@@ -569,8 +556,7 @@ router.get('/metrics', authenticate, requireStudio, async (req, res) => {
              reason: o?.reason || null, set_by: o?.set_by || null, set_at: o?.set_at || null }
   }
   res.json({ month_key: mk, is_current_month: mk === curKey,
-             cancellations: build('cancellations', computedCancels || 0),
-             active_members: build('active_members', computedActive) })
+             cancellations: build('cancellations', computedCancels || 0) })
 })
 
 // ─── Metric overrides ─────────────────────────────────────────────────────────
@@ -584,7 +570,7 @@ router.get('/metric-overrides', authenticate, requireStudio, async (req, res) =>
 
 router.put('/metric-overrides', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const { metric, month_key, override_value, reason } = req.body
-  if (!['cancellations', 'active_members'].includes(metric)) return res.status(400).json({ error: 'invalid metric' })
+  if (!['cancellations'].includes(metric)) return res.status(400).json({ error: 'invalid metric' })
   if (!month_key || override_value == null || !reason) return res.status(400).json({ error: 'month_key, override_value, reason required' })
   const supabase = db()
   const { data, error } = await supabase.from('onboarding_metric_overrides').upsert({
