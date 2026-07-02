@@ -76,7 +76,8 @@ async function computeAutoValues(sb, studioId, year, month) {
 
   const monthKey = `${year}-${pad(month)}`
   const [thisT, prevT, evRes, promoRes, maintRes, taskRes, compRes, shiftRes, goalRes,
-         recogRes, newJourneysRes, milestoneRes] = await Promise.all([
+         recogRes, newJourneysRes, milestoneRes,
+         b2bContactsRes, b2bInterRes, terrRes, terrVisitRes] = await Promise.all([
     sb.from('studio_trends').select('*').eq('studio_id', studioId).eq('year', year).eq('month', month).maybeSingle(),
     sb.from('studio_trends').select('*').eq('studio_id', studioId).eq('year', py).eq('month', pm).maybeSingle(),
     // Filter by actual date (matches the Events page) so events/promos dated in a
@@ -92,6 +93,11 @@ async function computeAutoValues(sb, studioId, year, month) {
     sb.from('onboarding_recognition_tasks').select('type, status').eq('studio_id', studioId).eq('month_key', monthKey),
     sb.from('onboarding_journeys').select('id').eq('studio_id', studioId).gte('start_date', monthStart).lte('start_date', monthEnd),
     sb.from('onboarding_journey_tasks').select('journey_id, trigger_ref, status').eq('studio_id', studioId).gte('due_date', monthStart).lte('due_date', monthEnd),
+    // B2B / Canvassing feeds for Outreach & Lead Gen.
+    sb.from('b2b_contacts').select('id, industry, partner_type, has_lead_box').eq('studio_id', studioId),
+    sb.from('b2b_interactions').select('contact_id, type, logged_at').eq('studio_id', studioId).gte('logged_at', monthStart).lte('logged_at', `${monthEnd}T23:59:59.999Z`),
+    sb.from('territories').select('id, type').eq('studio_id', studioId),
+    sb.from('territory_visits').select('territory_id, visit_date').eq('studio_id', studioId).gte('visit_date', monthStart).lte('visit_date', monthEnd),
   ])
 
   const t = thisT.data || null
@@ -132,6 +138,24 @@ async function computeAutoValues(sb, studioId, year, month) {
   // Milestone check-ins hit this month (visit-day milestones + workout passport).
   const milestoneTasks = jTasks.filter(t => /^milestone/.test(t.trigger_ref || '') || t.trigger_ref === 'passport_sticker')
 
+  // ── Outreach & Lead Gen (B2B + Canvassing) ─────────────────────────────
+  const b2bContacts = b2bContactsRes.data || []
+  const cById = new Map(b2bContacts.map(c => [c.id, c]))
+  const isApt = (c) => (c.industry || '').toLowerCase().includes('apart')
+  const isCorp = (c) => c.partner_type === 'corporate' || (c.industry || '').toLowerCase().includes('corporate')
+  const leadBoxesActive = b2bContacts.filter(c => c.has_lead_box).length
+  // "Contacted this month" = a logged interaction this month, split by apartment vs business.
+  const aptContacted = new Set(), bizContacted = new Set()
+  let corpPresentations = 0
+  for (const i of (b2bInterRes.data || [])) {
+    const c = cById.get(i.contact_id); if (!c) continue
+    if (isApt(c)) aptContacted.add(i.contact_id); else bizContacted.add(i.contact_id)
+    if (i.type === 'meeting' && isCorp(c)) corpPresentations++
+  }
+  // Neighborhoods flyered = distinct neighborhood territories canvassed this month.
+  const nbhdIds = new Set((terrRes.data || []).filter(t => t.type === 'neighborhood').map(t => t.id))
+  const nbhdFlyered = new Set((terrVisitRes.data || []).filter(v => nbhdIds.has(v.territory_id)).map(v => v.territory_id)).size
+
   // Outreach per shift = (calls + texts this month) ÷ shifts scheduled to date.
   const shiftsToDate = (shiftRes.data || []).length
   const outreachPerShift = t
@@ -170,6 +194,12 @@ async function computeAutoValues(sb, studioId, year, month) {
     week1_checkins_total:   newJourneyIds.size || null,
     milestone_checkins_done:  countDone(milestoneTasks),
     milestone_checkins_total: milestoneTasks.length || null,
+    // Outreach & Lead Gen — pulled from B2B outreach + canvassing.
+    neighborhoods_flyered:  nbhdFlyered,
+    apartments_contacted:   aptContacted.size,
+    businesses_contacted:   bizContacted.size,
+    lead_boxes_active:      leadBoxesActive,
+    corporate_presentations: corpPresentations,
   }
 
   // Business-of-the-Month card: first such event + its linked B2B contact (logo).

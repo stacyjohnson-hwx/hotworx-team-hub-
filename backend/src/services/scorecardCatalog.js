@@ -47,11 +47,11 @@ const CATALOG = [
   // ── Outreach & Lead Gen (Marisa) ───────────────────────────────────────
   { key: 'guest_passes',         group: 'outreach', label: 'Guest Passes / Outreach Pieces', type: 'number', goal: 2000, source: 'manual', note: 'Team top-of-funnel volume' },
   { key: 'flyers_distributed',   group: 'outreach', label: 'Flyers Distributed',     type: 'number', goal: 500, source: 'manual', note: 'Owner-set target' },
-  { key: 'neighborhoods_flyered',group: 'outreach', label: 'Neighborhoods Flyered',  type: 'number', goal: 4,   source: 'manual', note: 'Owner-set target' },
-  { key: 'lead_boxes_active',    group: 'outreach', label: 'Lead Boxes Active',      type: 'number', goal: 30,  source: 'b2b',    note: 'Team target' },
-  { key: 'businesses_contacted', group: 'outreach', label: 'Businesses Contacted',   type: 'number', goal: 20,  source: 'b2b',    note: 'Owner-set; from B2B outreach' },
-  { key: 'apartments_contacted', group: 'outreach', label: 'Apartments Contacted',   type: 'number', goal: 10,  source: 'b2b',    note: 'Owner-set; from B2B outreach' },
-  { key: 'corporate_presentations', group: 'outreach', label: 'Corporate Presentations Held', type: 'number', goal: 1, source: 'events', note: '1 per month' },
+  { key: 'neighborhoods_flyered',group: 'outreach', label: 'Neighborhoods Flyered',  type: 'number', goal: 4,   source: 'Canvassing', auto: 'neighborhoods_flyered',   note: 'Neighborhood zones canvassed this month' },
+  { key: 'lead_boxes_active',    group: 'outreach', label: 'Lead Boxes Active',      type: 'number', goal: 30,  source: 'B2B', auto: 'lead_boxes_active',       note: 'Contacts with an active lead box' },
+  { key: 'businesses_contacted', group: 'outreach', label: 'Businesses Contacted',   type: 'number', goal: 20,  source: 'B2B', auto: 'businesses_contacted',    note: 'Businesses with an interaction this month' },
+  { key: 'apartments_contacted', group: 'outreach', label: 'Apartments Contacted',   type: 'number', goal: 10,  source: 'B2B', auto: 'apartments_contacted',    note: 'Apartments with an interaction this month' },
+  { key: 'corporate_presentations', group: 'outreach', label: 'Corporate Presentations Held', type: 'number', goal: 1, source: 'B2B', auto: 'corporate_presentations', note: 'Corporate meetings logged this month' },
 
   // ── Events & Community (Marisa) ────────────────────────────────────────
   { key: 'events_held',          group: 'events', label: 'Events Held',             type: 'number', goal: 2, source: 'Events',  auto: 'events_held',          note: 'All events this month' },
