@@ -495,14 +495,8 @@ function UnreconciledTab() {
   }, [currentStudio?.id])
   useEffect(() => { load() }, [load])
 
-  // Group the unreconciled bookings by email so each person is one row.
-  const groups = Object.values(rows.reduce((acc, r) => {
-    const e = (r.member_email || '(no email)').toLowerCase()
-    if (!acc[e]) acc[e] = { email: e, count: 0, last: null }
-    acc[e].count++
-    if (!acc[e].last || (r.booking_date || '') > acc[e].last) acc[e].last = r.booking_date
-    return acc
-  }, {})).sort((a, b) => b.count - a.count)
+  // Rows arrive pre-grouped by email (one person per row, across all months).
+  const groups = rows
 
   const openAdd = (email) => { setAddFor(email); setForm({ full_name: '', member_type: 'employee', origin_studio: '', expiration_date: '' }) }
   const addPerson = async () => {

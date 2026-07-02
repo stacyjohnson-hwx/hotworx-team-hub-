@@ -482,13 +482,21 @@ router.patch('/members/:id', authenticate, requireStudio, requireRole('owner', '
 
 // ─── GET /api/onboarding/unreconciled ─────────────────────────────────────────
 router.get('/unreconciled', authenticate, requireStudio, async (req, res) => {
+  // Grouped by email across ALL months (via the onboarding_unreconciled_emails
+  // view) so no month is truncated by a booking-row limit. One row per person.
   const { data, error } = await db()
-    .from('onboarding_bookings')
-    .select('booking_id, member_email, booking_date, session_type')
-    .eq('studio_id', req.studio.id).is('member_id', null)
-    .order('booking_date', { ascending: false }).limit(500)
+    .from('onboarding_unreconciled_emails')
+    .select('email, booking_count, last_booking_date, first_booking_date')
+    .eq('studio_id', req.studio.id)
+    .order('booking_count', { ascending: false })
+    .limit(1000)
   if (error) return res.status(500).json({ error: error.message })
-  res.json(data || [])
+  res.json((data || []).map(g => ({
+    email: g.email,
+    count: g.booking_count,
+    last: g.last_booking_date,
+    first: g.first_booking_date,
+  })))
 })
 
 // ─── Cancellation ledger ──────────────────────────────────────────────────────
