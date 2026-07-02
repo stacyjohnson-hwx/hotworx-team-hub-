@@ -92,17 +92,22 @@ export default function InventoryCountPage() {
     }
   }
 
+  // Persist every counted entry to the server. Shared by Save and Submit so a
+  // submit never loses counts that weren't saved first.
+  const persistCounted = async () => {
+    for (const entry of entries.filter(e => e.actual_quantity !== null)) {
+      await apiPut(
+        `/api/retail/counts/${currentSession.id}/entries/${entry.id}`,
+        { actual_quantity: entry.actual_quantity },
+        currentStudio.id
+      )
+    }
+  }
+
   const handleSave = async () => {
     setSaving(true)
     try {
-      // Save all entries that have been counted
-      for (const entry of entries.filter(e => e.actual_quantity !== null)) {
-        await apiPut(
-          `/api/retail/counts/${currentSession.id}/entries/${entry.id}`,
-          { actual_quantity: entry.actual_quantity },
-          currentStudio.id
-        )
-      }
+      await persistCounted()
       alert('Progress saved!')
       await loadData() // Reload to get calculated variances
     } catch (err) {
@@ -122,6 +127,9 @@ export default function InventoryCountPage() {
 
     setSaving(true)
     try {
+      // Persist any counts entered since the last save FIRST — the server submit
+      // reads from the database, so unsaved counts would otherwise be dropped.
+      await persistCounted()
       await apiPost(`/api/retail/counts/${currentSession.id}/submit`, {}, currentStudio.id)
       alert('Count submitted successfully!')
       navigate('/retail?tab=inventory')
