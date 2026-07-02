@@ -61,6 +61,9 @@ const monthKeyOf = (dateStr) => (dateStr ? dateStr.slice(0, 7) : null)   // 'YYY
 function mapCancelReason(raw) {
   const s = String(raw || '').toLowerCase()
   if (!s) return 'other'
+  // SAIL auto-cancels for non-payment ("Subscription automatically canceled due
+  // to non-payment for 3+ months") — its most common cancellation reason.
+  if (/non.?payment|non pay|past due|failed payment|nsf|automatically cancel|auto.?cancel|delinquen|declined (card|payment)/.test(s)) return 'non_payment'
   if (/cost|financ|money|afford|expensive|price/.test(s)) return 'cost'
   if (/not us|no time|busy|not going|schedule|too far|distance|relocat|mov/.test(s) && /mov|relocat/.test(s)) return 'moving'
   if (/mov|relocat/.test(s)) return 'moving'
@@ -225,6 +228,12 @@ router.post('/import', authenticate, requireStudio, requireRole('owner', 'manage
           || [pick(r, ['First Name', 'FirstName']), pick(r, ['Last Name', 'LastName'])].filter(Boolean).join(' ').trim()
           || `Customer ${customer_id}`
         const sailReason = pick(r, ['Reason', 'Cancellation Reason', 'Cancel Reason'])
+        // SAIL's own cancellation-export fields — mirror them onto the record.
+        const cancellation_type = pick(r, ['Cancellation Type', 'CancellationType', 'Cancel Type']) || null
+        const package_name = pick(r, ['Package Name', 'Package', 'PackageName', 'Membership']) || null
+        const mpRaw = pick(r, ['Monthly Payment', 'MonthlyPayment', 'Monthly', 'Payment', 'Monthly Amount'])
+        const monthly_payment = mpRaw ? (Number(String(mpRaw).replace(/[^0-9.]/g, '')) || null) : null
+        const subscription_date = parseDate(pick(r, ['Subscription Date', 'SubscriptionDate', 'Join Date', 'Start Date']))
         const month_key = monthKeyOf(cancelled_date)
         touchedMonths.add(month_key)
         ledgerRows.push({
@@ -233,9 +242,10 @@ router.post('/import', authenticate, requireStudio, requireRole('owner', 'manage
         })
         // Auto-populate the Cancellations tab (team then fills in save/win-back details).
         logRows.push({
-          studio_id: studioId, member_name: name, date_requested: cancelled_date,
+          studio_id: studioId, member_name: name, member_id: customer_id, date_requested: cancelled_date,
           cancel_reason: mapCancelReason(sailReason),
           reason_notes: sailReason ? `SAIL reason: ${sailReason}` : 'Imported from SAIL cancelled export',
+          package_name, monthly_payment, cancellation_type, subscription_date,
           outcome: 'cancelled', win_back_step: 'call_scheduled',
           offers_presented: [], offer_accepted: 'none', goal_recaptured: false,
           source: 'sail_import', import_key: `${customer_id}|${cancelled_date}`,

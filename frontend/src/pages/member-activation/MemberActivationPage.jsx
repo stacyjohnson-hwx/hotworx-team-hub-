@@ -537,9 +537,13 @@ function UnreconciledTab() {
                   </div>
                   <div>
                     <label className="block text-[11px] text-gray-500 mb-0.5">Type</label>
-                    <select value={form.member_type} onChange={e => setForm(f => ({ ...f, member_type: e.target.value }))}
+                    <select value={form.is_cancelled ? '__cancelled__' : form.member_type}
+                      onChange={e => setForm(f => e.target.value === '__cancelled__'
+                        ? { ...f, is_cancelled: true, member_type: 'member' }
+                        : { ...f, is_cancelled: false, member_type: e.target.value })}
                       className="border border-gray-300 rounded px-2 py-1 text-sm bg-white">
                       {MEMBER_TYPE_OPTS.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
+                      <option value="__cancelled__">Cancelled member</option>
                     </select>
                   </div>
                   <div>
@@ -552,11 +556,6 @@ function UnreconciledTab() {
                     <input type="date" value={form.expiration_date} onChange={e => setForm(f => ({ ...f, expiration_date: e.target.value }))}
                       className="border border-gray-300 rounded px-2 py-1 text-sm" />
                   </div>
-                  <label className="flex items-center gap-1.5 text-xs text-gray-700 self-end pb-1.5">
-                    <input type="checkbox" checked={form.is_cancelled}
-                      onChange={e => setForm(f => ({ ...f, is_cancelled: e.target.checked, member_type: e.target.checked && f.member_type === 'employee' ? 'member' : f.member_type }))} />
-                    Cancelled member
-                  </label>
                   {form.is_cancelled && (
                     <div>
                       <label className="block text-[11px] text-gray-500 mb-0.5">Cancelled on</label>

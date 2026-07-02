@@ -34,6 +34,7 @@ async function parseCancelFile(file) {
 
 // ─── Controlled vocab (mirrors the PRD) ───────────────────────────────────────
 export const REASONS = [
+  { value: 'non_payment', label: 'Non-payment (auto-cancel)' },
   { value: 'cost',        label: 'Cost / financial' },
   { value: 'not_using',   label: 'Not using it / no time' },
   { value: 'no_results',  label: 'Not seeing results' },
@@ -45,6 +46,7 @@ export const REASONS = [
 ]
 // Reason → the save to surface FIRST (PRD Step 2).
 const MATCHED_OFFER = {
+  non_payment: 'Auto-cancelled for non-payment. Call to update their card and reactivate — recover the account before treating it as a true cancel.',
   cost:       'Offer a pause/freeze first — only offer the free month if the pause is refused.',
   not_using:  'Re-engage: rebook 3 sessions now, reset goals, schedule a coach check-in.',
   no_results: 'Free upgrade to Sweat Elite for the month + Training Trax goal reset.',
@@ -501,6 +503,7 @@ export default function CancellationsPage() {
               <th className="text-left px-4 py-2.5 font-semibold cursor-pointer hover:text-gray-700" onClick={() => sortBy('member_name')}>Member{arrow('member_name')}</th>
               <th className="text-left px-3 py-2.5 font-semibold cursor-pointer hover:text-gray-700" onClick={() => sortBy('date_requested')}>Requested{arrow('date_requested')}</th>
               <th className="text-left px-3 py-2.5 font-semibold cursor-pointer hover:text-gray-700" onClick={() => sortBy('cancel_reason')}>Reason{arrow('cancel_reason')}</th>
+              <th className="text-left px-3 py-2.5 font-semibold cursor-pointer hover:text-gray-700" onClick={() => sortBy('package_name')}>Package{arrow('package_name')}</th>
               <th className="text-left px-3 py-2.5 font-semibold cursor-pointer hover:text-gray-700" onClick={() => sortBy('handled_by_name')}>Handled By{arrow('handled_by_name')}</th>
               <th className="text-left px-3 py-2.5 font-semibold cursor-pointer hover:text-gray-700" onClick={() => sortBy('outcome')}>Outcome{arrow('outcome')}</th>
               <th className="text-left px-3 py-2.5 font-semibold cursor-pointer hover:text-gray-700" onClick={() => sortBy('win_back_step')}>Win-Back Step{arrow('win_back_step')}</th>
@@ -510,7 +513,7 @@ export default function CancellationsPage() {
           </thead>
           <tbody className="divide-y divide-gray-100">
             {sorted.length === 0 ? (
-              <tr><td colSpan={8} className="text-center text-gray-400 py-12">No cancellations logged yet.</td></tr>
+              <tr><td colSpan={9} className="text-center text-gray-400 py-12">No cancellations logged yet.</td></tr>
             ) : sorted.map(r => {
               const oc = OUTCOMES.find(o => o.value === r.outcome)
               return (
@@ -521,6 +524,7 @@ export default function CancellationsPage() {
                   </td>
                   <td className="px-3 py-2.5 text-gray-600">{fmtDate(r.date_requested)}</td>
                   <td className="px-3 py-2.5 text-gray-600">{labelOf(REASONS, r.cancel_reason)}</td>
+                  <td className="px-3 py-2.5 text-gray-600 text-xs">{r.package_name || '—'}{r.monthly_payment != null ? ` · $${r.monthly_payment}/mo` : ''}</td>
                   <td className="px-3 py-2.5 text-gray-600">{r.handled_by_name || '—'}</td>
                   <td className="px-3 py-2.5"><span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold border ${oc?.cls || ''}`}>{oc?.label || r.outcome}</span></td>
                   <td className="px-3 py-2.5 text-gray-600 text-xs">{labelOf(WIN_BACK_STEPS, r.win_back_step)}</td>
