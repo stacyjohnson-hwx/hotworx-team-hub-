@@ -316,6 +316,19 @@ function ImportTab({ canImport }) {
     finally { setRunning(false) }
   }
 
+  // Re-run reconciliation, milestones/re-engagement, and metric recompute over
+  // the data already in the app — no new files needed.
+  const refresh = async () => {
+    setRunning(true); setError(null); setResult(null)
+    try {
+      const res = await apiPost(`${BASE}/import`, {})
+      setResult(res); loadHistory()
+    } catch (e) {
+      setError(e?.message ? `Re-run failed: ${e.message}` : 'Re-run failed — try again.')
+    }
+    finally { setRunning(false) }
+  }
+
   if (!canImport) return <Empty msg="Daily Import is limited to owners and managers." />
 
   const anyFile = files.bookings || files.members || files.cancelled
@@ -332,9 +345,13 @@ function ImportTab({ canImport }) {
         <button type="button" onClick={run} disabled={running || !anyFile}
           className="flex items-center gap-2 bg-red-600 text-white text-sm font-semibold px-5 py-2.5 rounded-xl hover:bg-red-700 disabled:opacity-50">
           {running ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
-          {running ? 'Importing…' : 'Run Import'}
+          {running ? 'Working…' : 'Run Import'}
         </button>
-        <p className="text-xs text-gray-400">Re-running with the same files is safe — nothing double-counts.</p>
+        <button type="button" onClick={refresh} disabled={running}
+          className="flex items-center gap-2 border border-gray-300 text-gray-700 text-sm font-semibold px-4 py-2.5 rounded-xl hover:bg-gray-50 disabled:opacity-50">
+          <RefreshCw size={15} className={running ? 'animate-spin' : ''} /> Re-run (no upload)
+        </button>
+        <p className="text-xs text-gray-400">Re-running with the same files is safe — nothing double-counts. “Re-run” re-links bookings + refreshes the Daily List and counts without new files.</p>
       </div>
 
       {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3">{error}</div>}
