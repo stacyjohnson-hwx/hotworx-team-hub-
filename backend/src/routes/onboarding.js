@@ -695,23 +695,31 @@ router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
   })
 
   // Re-engagement (roster-wide, live-computed): any active member lapsed 14+ days,
-  // excluding first-90 save-fork members and anyone contacted within the cooldown.
-  const cutoff = new Date(Date.now() - 10 * 86400000).toISOString()  // 10-day cooldown
-  const [{ data: allMembers }, { data: actAll }, { data: allJourneys }, { data: recent }, { data: upcoming }] = await Promise.all([
+  // excluding first-90 save-fork members and anyone still within their tier cooldown.
+  // Cooldown scales with how cold they are so the coldest are nudged monthly, not weekly.
+  const REENGAGE_COOLDOWN = { reengage_14: 10, reengage_30: 14, reengage_60: 30 }  // days
+  const logWindow = new Date(Date.now() - 90 * 86400000).toISOString()
+  const [{ data: allMembers }, { data: actAll }, { data: allJourneys }, { data: reengRows }, { data: upcoming }] = await Promise.all([
     supabase.from('onboarding_members').select('id, full_name, phone, status, is_cancelled, join_date, member_type').eq('studio_id', studioId),
     supabase.from('onboarding_member_activity').select('member_id, last_booking_date').eq('studio_id', studioId),
     supabase.from('onboarding_journeys').select('member_id, status, start_date').eq('studio_id', studioId),
-    supabase.from('onboarding_reengage_log').select('member_id').eq('studio_id', studioId).gte('contacted_at', cutoff),
+    supabase.from('onboarding_reengage_log').select('member_id, contacted_at, contacted_by').eq('studio_id', studioId).gte('contacted_at', logWindow).order('contacted_at', { ascending: false }),
     supabase.from('events').select('title, start_date').eq('studio_id', studioId).gte('start_date', today).order('start_date').limit(1),
   ])
   const lastBookMap = new Map((actAll || []).map(a => [a.member_id, a.last_booking_date]))
   const jMap = new Map((allJourneys || []).map(j => [j.member_id, j]))
-  const cooling = new Set((recent || []).map(r => r.member_id))
+  // Most-recent contact per member (rows come newest-first), plus a real-attempt count
+  // (snoozes count toward the cooldown but not toward the displayed follow-up tally).
+  const lastContactMap = new Map(), attemptsMap = new Map()
+  for (const r of (reengRows || [])) {
+    if (!lastContactMap.has(r.member_id)) lastContactMap.set(r.member_id, r.contacted_at)
+    if (!String(r.contacted_by || '').startsWith('snoozed:')) attemptsMap.set(r.member_id, (attemptsMap.get(r.member_id) || 0) + 1)
+  }
   const eventName = upcoming && upcoming[0] ? `${upcoming[0].title} is coming up — ` : ''
   const addDaysStr = (d, n) => { const x = new Date(d + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10) }
 
   for (const mm of (allMembers || [])) {
-    if (mm.is_cancelled || !/active/i.test(mm.status || '') || cooling.has(mm.id)) continue
+    if (mm.is_cancelled || !/active/i.test(mm.status || '')) continue
     if (mm.member_type && mm.member_type !== 'member') continue  // don't re-engage employees/comp/reciprocal
     const j = jMap.get(mm.id)
     const inFirst90 = j && j.status === 'active' && j.start_date && addDaysStr(j.start_date, 90) >= today
@@ -721,6 +729,12 @@ router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
     const lapse = Math.floor((new Date(today) - new Date(ref)) / 86400000)
     if (lapse < 14) continue
     const key = lapse >= 60 ? 'reengage_60' : lapse >= 30 ? 'reengage_30' : 'reengage_14'
+    // Tier-specific cooldown: hide until enough days have passed since the last contact.
+    const lastContact = lastContactMap.get(mm.id)
+    if (lastContact) {
+      const sinceContact = Math.floor((Date.now() - new Date(lastContact).getTime()) / 86400000)
+      if (sinceContact < REENGAGE_COOLDOWN[key]) continue
+    }
     const tpl = tplMap.get(key) || {}
     const ctx = { first_name: firstName(mm.full_name), days_lapsed: lapse, event_name: eventName }
     items.push({
@@ -731,6 +745,7 @@ router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
       priority: lapse >= 60 ? 2 : 4, reward_key: null,
       script: renderTemplate(tpl.body || '', ctx), due_date: today,
       last_booking_date: lastBookMap.get(mm.id) || null, days_lapsed: lapse,
+      last_contacted_at: lastContact || null, attempts: attemptsMap.get(mm.id) || 0,
     })
   }
 
@@ -742,6 +757,16 @@ router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
 router.post('/reengage/:memberId/complete', authenticate, requireStudio, async (req, res) => {
   const { error } = await db().from('onboarding_reengage_log').insert({
     studio_id: req.studio.id, member_id: req.params.memberId, contacted_by: req.user.email || req.user.id,
+  })
+  if (error) return res.status(500).json({ error: error.message })
+  res.status(201).json({ ok: true })
+})
+
+// Snooze a re-engagement item ("not now") — same tier cooldown, but tagged so it
+// isn't counted as an actual follow-up attempt in the card history.
+router.post('/reengage/:memberId/snooze', authenticate, requireStudio, async (req, res) => {
+  const { error } = await db().from('onboarding_reengage_log').insert({
+    studio_id: req.studio.id, member_id: req.params.memberId, contacted_by: `snoozed:${req.user.email || req.user.id}`,
   })
   if (error) return res.status(500).json({ error: error.message })
   res.status(201).json({ ok: true })

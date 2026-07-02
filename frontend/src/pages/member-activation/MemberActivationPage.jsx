@@ -950,7 +950,10 @@ function DailyListTab() {
     } catch { /* ignore */ }
   }
   const skip = async (r) => {
-    try { if (r.kind !== 'reengage') await apiPost(`${BASE}/daily-list/${r.id}/skip`, {}) } catch { /* ignore */ }
+    try {
+      if (r.kind === 'reengage') await apiPost(`${BASE}/reengage/${r.member_id}/snooze`, {})  // "not now" — snooze the tier cooldown
+      else await apiPost(`${BASE}/daily-list/${r.id}/skip`, {})
+    } catch { /* ignore */ }
     setRows(rs => rs.filter(x => x.id !== r.id))
   }
   const setFlag = async (r, flag) => {
@@ -1015,6 +1018,12 @@ function DailyListTab() {
                     )}
                     {r.last_booking_date && (
                       <p className="text-[11px] text-gray-400 mt-0.5">Last booking {r.last_booking_date}{r.days_lapsed != null ? ` · ${r.days_lapsed}d ago` : ''}</p>
+                    )}
+                    {r.kind === 'reengage' && r.last_contacted_at && (
+                      <p className="text-[11px] text-amber-600 mt-0.5">
+                        Last reached out {Math.floor((Date.now() - new Date(r.last_contacted_at).getTime()) / 86400000)}d ago
+                        {r.attempts ? ` · ${r.attempts} prior follow-up${r.attempts === 1 ? '' : 's'}` : ''}
+                      </p>
                     )}
                     {r.reward_key && (
                       <div className="mt-2 flex items-center gap-3 flex-wrap">
