@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Upload, Users, HeartHandshake, AlertTriangle, Check, Loader2, RefreshCw, Gauge, ListChecks, Phone, MessageSquare, SkipForward, FileText, Trophy, Gift, Cake, Pencil, Building2, Bold, List } from 'lucide-react'
+import { Upload, Users, HeartHandshake, AlertTriangle, Check, Loader2, RefreshCw, Gauge, ListChecks, Phone, MessageSquare, SkipForward, FileText, Trophy, Gift, Cake, Pencil, Building2, Bold, List, Play, Camera, X } from 'lucide-react'
 import { apiGet, apiPost, apiPatch, apiPut, apiDelete } from '@/hooks/useApi'
 import { useRole } from '@/hooks/useRole'
 import { useStudio } from '@/contexts/StudioContext'
@@ -553,14 +553,41 @@ function UnreconciledTab() {
 
 // Full member detail: profile, activity, interaction history, tagged photos.
 function MemberDetailModal({ memberId, onClose }) {
+  const { currentStudio } = useStudio()
   const [data, setData] = useState(null)
   const [photos, setPhotos] = useState(null)
+  const [viewer, setViewer] = useState(null)   // { url, type } full-size media
+  const [uploading, setUploading] = useState(false)
+  const fileRef = useRef(null)
+
+  const loadPhotos = () => apiGet(`/api/marketing/content?member_id=${memberId}`).then(setPhotos).catch(() => setPhotos([]))
   useEffect(() => {
     apiGet(`${BASE}/members/${memberId}/detail`).then(setData).catch(() => setData({ error: true }))
-    apiGet(`/api/marketing/content?member_id=${memberId}`).then(setPhotos).catch(() => setPhotos([]))
+    loadPhotos()
   }, [memberId])
 
   const m = data?.member
+
+  const onUpload = async (e) => {
+    const file = e.target.files?.[0]
+    if (fileRef.current) fileRef.current.value = ''
+    if (!file) return
+    setUploading(true)
+    try {
+      const isVideo = file.type.startsWith('video')
+      const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+      const path = `${currentStudio.id}/library/${Date.now()}-${safe}`
+      const { error: upErr } = await supabase.storage.from('marketing-content').upload(path, file, { upsert: false, contentType: file.type })
+      if (upErr) throw upErr
+      const { data: { publicUrl } } = supabase.storage.from('marketing-content').getPublicUrl(path)
+      await apiPost('/api/marketing/content', {
+        file_url: publicUrl, file_path: path, file_type: isVideo ? 'video' : 'photo',
+        category: isVideo ? 'member_videos' : 'member_photos', member_ids: [memberId], member_name: m?.full_name || null,
+      })
+      loadPhotos()
+    } catch { /* ignore */ }
+    finally { setUploading(false) }
+  }
   const addr = m && [m.address, [m.city, m.state].filter(Boolean).join(', '), m.postal_code].filter(Boolean).join(' · ')
   const Row = ({ label, value }) => value ? (
     <div className="flex justify-between gap-4 py-1 text-sm"><span className="text-gray-400">{label}</span><span className="text-gray-800 text-right">{value}</span></div>
@@ -610,15 +637,28 @@ function MemberDetailModal({ memberId, onClose }) {
 
               {/* Photos */}
               <div>
-                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Photos</p>
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Photos</p>
+                  <input ref={fileRef} type="file" accept="image/*,video/*" onChange={onUpload} className="hidden" />
+                  <button onClick={() => fileRef.current?.click()} disabled={uploading}
+                    className="flex items-center gap-1 text-xs font-semibold text-orange-600 hover:underline disabled:opacity-50">
+                    {uploading ? <Loader2 size={12} className="animate-spin" /> : <Camera size={12} />} Add photo
+                  </button>
+                </div>
                 {photos === null ? <p className="text-xs text-gray-400">Loading…</p> : photos.length === 0 ? (
-                  <p className="text-xs text-gray-400">No tagged photos yet.</p>
+                  <p className="text-xs text-gray-400">No photos yet — tag one here or on upload.</p>
                 ) : (
                   <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
                     {photos.map(a => (
-                      <a key={a.id} href={a.file_url} target="_blank" rel="noreferrer" className="block aspect-square rounded-lg overflow-hidden border border-gray-200 bg-gray-100">
-                        {a.file_type === 'photo' && a.file_url ? <img src={a.file_url} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[9px] text-gray-400">{a.file_type}</div>}
-                      </a>
+                      <button key={a.id} onClick={() => setViewer({ url: a.file_url, type: a.file_type })}
+                        className="relative block aspect-square rounded-lg overflow-hidden border border-gray-200 bg-gray-100 group">
+                        {a.file_type === 'photo' && a.file_url
+                          ? <img src={a.file_url} alt="" className="w-full h-full object-cover" />
+                          : <>
+                              <video src={`${a.file_url}#t=0.5`} preload="metadata" muted playsInline className="w-full h-full object-cover" />
+                              <div className="absolute inset-0 flex items-center justify-center bg-black/10 group-hover:bg-black/25"><Play size={16} className="text-white" fill="currentColor" /></div>
+                            </>}
+                      </button>
                     ))}
                   </div>
                 )}
@@ -643,6 +683,17 @@ function MemberDetailModal({ memberId, onClose }) {
           </>
         )}
       </div>
+
+      {viewer && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85 p-4" onClick={e => { e.stopPropagation(); setViewer(null) }}>
+          <div className="relative w-full max-w-2xl" onClick={e => e.stopPropagation()}>
+            <button onClick={() => setViewer(null)} className="absolute -top-9 right-0 text-white/80 hover:text-white flex items-center gap-1 text-sm"><X size={18} /> Close</button>
+            {viewer.type === 'photo'
+              ? <img src={viewer.url} alt="" className="w-full max-h-[80vh] object-contain rounded-xl" />
+              : <video src={viewer.url} controls autoPlay playsInline className="w-full max-h-[80vh] rounded-xl bg-black" />}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
