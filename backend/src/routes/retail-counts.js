@@ -137,6 +137,76 @@ router.post('/', authenticate, requireStudio, requireRole('owner', 'manager'), a
   res.status(201).json({ ...session, total_items: entries.length })
 })
 
+// ─── POST /api/retail/counts/:id/entries/add-size ──────────────────────────
+// Materialize a missing clothing size: clone a sibling SKU into a new size
+// variant (global catalog) and add a count entry for it to this session, so
+// the user can count sizes that weren't in the catalog. Idempotent by product_name.
+router.post('/:id/entries/add-size', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
+  const { base_sku_id, size, product_name } = req.body
+  if (!base_sku_id || !size || !product_name) {
+    return res.status(400).json({ error: 'base_sku_id, size, and product_name are required' })
+  }
+  const database = db()
+
+  // 1. Copy attributes from the sibling SKU.
+  const { data: base, error: baseErr } = await database
+    .from('sku_master')
+    .select('sku_code, category_id, vendor_id, retail_price, wholesale_cost, image_url, description')
+    .eq('id', base_sku_id).single()
+  if (baseErr) return res.status(500).json({ error: baseErr.message })
+
+  // 2. Reuse an existing SKU with this exact name, or create one.
+  let sku
+  const { data: existingSku } = await database
+    .from('sku_master').select('*').eq('product_name', product_name).maybeSingle()
+  if (existingSku) {
+    sku = existingSku
+  } else {
+    // Unique-ish sku_code derived from the sibling + size (fallback with a suffix).
+    let sku_code = `${base.sku_code}-${size}`
+    const { data: clash } = await database.from('sku_master').select('id').eq('sku_code', sku_code).maybeSingle()
+    if (clash) sku_code = `${sku_code}-${Math.random().toString(36).slice(2, 6)}`
+    const { data: created, error: createErr } = await database
+      .from('sku_master')
+      .insert({
+        sku_code, product_name,
+        category_id: base.category_id, vendor_id: base.vendor_id,
+        retail_price: base.retail_price, wholesale_cost: base.wholesale_cost,
+        image_url: base.image_url, description: base.description,
+        has_sizes: false, active: true, created_by: req.user.id,
+      })
+      .select().single()
+    if (createErr) return res.status(500).json({ error: createErr.message })
+    sku = created
+  }
+
+  // 3. Reuse or create this session's entry for the SKU (expected 0 — new to stock).
+  const { data: existingEntry } = await database
+    .from('inventory_count_entries')
+    .select('id').eq('session_id', req.params.id).eq('sku_id', sku.id).maybeSingle()
+  let entryId = existingEntry?.id
+  if (!entryId) {
+    const { data: entry, error: entryErr } = await database
+      .from('inventory_count_entries')
+      .insert({ session_id: req.params.id, sku_id: sku.id, expected_quantity: 0, actual_quantity: null })
+      .select().single()
+    if (entryErr) return res.status(500).json({ error: entryErr.message })
+    entryId = entry.id
+    await database.from('inventory_count_sessions')
+      .update({ total_items: (await database.from('inventory_count_entries')
+        .select('*', { count: 'exact', head: true }).eq('session_id', req.params.id)).count || 0 })
+      .eq('id', req.params.id)
+  }
+
+  // 4. Return the entry in the same shape as GET /:id (sku joined).
+  const { data: full, error: fullErr } = await database
+    .from('inventory_count_entries')
+    .select(`*, sku:sku_master(id, sku_code, product_name, image_url, has_sizes, retail_price, category:product_categories(name))`)
+    .eq('id', entryId).single()
+  if (fullErr) return res.status(500).json({ error: fullErr.message })
+  res.status(201).json(full)
+})
+
 // ─── PUT /api/retail/counts/:id/entries/:entry_id ──────────────────────────
 // Update a single count entry
 router.put('/:id/entries/:entry_id', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {

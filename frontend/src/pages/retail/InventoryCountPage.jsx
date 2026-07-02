@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Fragment } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useStudio } from '@/contexts/StudioContext'
 import { apiGet, apiPut, apiPost } from '@/hooks/useApi'
@@ -9,6 +9,22 @@ import {
 } from 'lucide-react'
 import { InventoryImportModal } from './InventoryImportModal'
 import * as XLSX from 'xlsx'
+
+// Clothing size handling: group each product+color and show the full run so
+// missing sizes are visible (and countable). Order canonically.
+const SIZE_RUN = ['XS', 'S', 'M', 'L', 'XL', 'XXL']
+const SIZE_RANK = { '2XS': -2, 'XXS': -2, 'XS': 0, 'S': 1, 'M': 2, 'L': 3, 'XL': 4, 'XXL': 5, '2XL': 5, 'XXXL': 6, '3XL': 6, 'OS': 98, 'ONE SIZE': 99 }
+const SIZE_SET = new Set(Object.keys(SIZE_RANK))
+const sizeRank = (s) => (s in SIZE_RANK ? SIZE_RANK[s] : 50)
+
+// Split "Product / COLOR - SIZE" into its base ("Product / COLOR") and size.
+// Returns { base, size:null } for anything without a recognized trailing size.
+function parseSize(name) {
+  const m = (name || '').match(/^(.*?)\s*-\s*([A-Za-z][A-Za-z0-9 ]{0,8})$/)
+  if (!m) return { base: name || '', size: null }
+  const size = m[2].trim().toUpperCase()
+  return SIZE_SET.has(size) ? { base: m[1].trim(), size } : { base: name || '', size: null }
+}
 
 export default function InventoryCountPage() {
   const navigate = useNavigate()
@@ -25,6 +41,7 @@ export default function InventoryCountPage() {
   const [filterCategory, setFilterCategory] = useState('')
   const [sortBy, setSortBy] = useState('product_name') // 'product_name' | 'expected' | 'category'
   const [sortDir, setSortDir] = useState('asc') // 'asc' | 'desc'
+  const [hideZeros, setHideZeros] = useState(false) // hide items that appear to be zero
 
   useEffect(() => {
     if (currentStudio?.id && sessionId) {
@@ -55,6 +72,24 @@ export default function InventoryCountPage() {
     setEntries(prev => prev.map(e =>
       e.id === entryId ? { ...e, actual_quantity: value === '' ? null : parseInt(value) } : e
     ))
+  }
+
+  // Count a size that isn't in the catalog: create the size variant + entry on the
+  // server, then drop it into the list with the entered count (saves like any other).
+  const materializeSize = async (baseSkuId, base, size, value) => {
+    try {
+      const entry = await apiPost(
+        `/api/retail/counts/${currentSession.id}/entries/add-size`,
+        { base_sku_id: baseSkuId, size, product_name: `${base} - ${size}` },
+        currentStudio.id
+      )
+      entry.actual_quantity = value === '' || value == null ? null : parseInt(value)
+      setEntries(prev => prev.some(e => e.id === entry.id)
+        ? prev.map(e => e.id === entry.id ? { ...e, actual_quantity: entry.actual_quantity } : e)
+        : [...prev, entry])
+    } catch (err) {
+      alert('Could not add size: ' + err.message)
+    }
   }
 
   const handleSave = async () => {
@@ -99,15 +134,20 @@ export default function InventoryCountPage() {
 
   // Export the count as an .xlsx for re-entering into SAIL (SKU + counted quantity).
   const handleExport = () => {
-    const rows = entries.map(e => ({
-      'Product Name': e.sku?.product_name || '',
-      'SKU Code': e.sku?.sku_code || '',
-      'Category': e.sku?.category?.name || 'Uncategorized',
-      'Expected': e.expected_quantity ?? '',
-      'Counted': e.actual_quantity ?? '',
-      'Variance': e.actual_quantity !== null && e.actual_quantity !== undefined
-        ? e.actual_quantity - (e.expected_quantity || 0) : '',
-    }))
+    const rows = entries.map(e => {
+      const { base, size } = parseSize(e.sku?.product_name)
+      return {
+        'Product Name': e.sku?.product_name || '',
+        'Product': size ? base : (e.sku?.product_name || ''),
+        'Size': size || '',
+        'SKU Code': e.sku?.sku_code || '',
+        'Category': e.sku?.category?.name || 'Uncategorized',
+        'Expected': e.expected_quantity ?? '',
+        'Counted': e.actual_quantity ?? '',
+        'Variance': e.actual_quantity !== null && e.actual_quantity !== undefined
+          ? e.actual_quantity - (e.expected_quantity || 0) : '',
+      }
+    }).sort((a, b) => a.Product.localeCompare(b.Product) || sizeRank(a.Size) - sizeRank(b.Size))
     const ws = XLSX.utils.json_to_sheet(rows)
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Inventory Count')
@@ -163,6 +203,99 @@ export default function InventoryCountPage() {
       }
       return sortDir === 'asc' ? cmp : -cmp
     })
+
+  // A row "appears to be zero" if it's a not-yet-in-catalog placeholder, or an
+  // existing item with 0 expected that hasn't been counted.
+  const isZeroish = (entry) => entry == null
+    ? true
+    : (entry.expected_quantity || 0) === 0 && entry.actual_quantity == null
+
+  // Group apparel (product+color) so all sizes sit together; everything else
+  // (non-sized items) renders as its own row.
+  const groupMap = new Map()
+  const singles = []
+  for (const e of displayEntries) {
+    const { base, size } = parseSize(e.sku?.product_name)
+    if (!size) { singles.push(e); continue }
+    if (!groupMap.has(base)) groupMap.set(base, { base, sample: e, bySize: {} })
+    groupMap.get(base).bySize[size] = e
+  }
+  const groups = [...groupMap.values()]
+    .map(g => {
+      const extra = Object.keys(g.bySize).filter(s => !SIZE_RUN.includes(s))
+      const sizeList = [...SIZE_RUN, ...extra].sort((a, b) => sizeRank(a) - sizeRank(b))
+      const rows = sizeList.map(size => ({ size, entry: g.bySize[size] || null }))
+        .filter(r => !hideZeros || !isZeroish(r.entry))
+      return { ...g, rows }
+    })
+    .filter(g => g.rows.length > 0)
+    .sort((a, b) => (sortDir === 'desc' ? -1 : 1) * a.base.localeCompare(b.base))
+  const visibleSingles = singles.filter(e => !hideZeros || !isZeroish(e))
+  const visibleRowCount = groups.reduce((n, g) => n + g.rows.length, 0) + visibleSingles.length
+
+  const numInputCls = 'w-24 px-3 py-2 border-2 border-gray-300 rounded-lg text-center text-lg font-bold focus:outline-none focus:ring-2 focus:ring-red-600 focus:border-red-600'
+  // onWheel blur prevents the mouse wheel from silently changing a typed count.
+  const noWheel = (e) => e.currentTarget.blur()
+
+  // A real, counted/countable entry. `sizeLabel` set → rendered inside a size group.
+  const renderRealRow = (entry, sizeLabel) => {
+    const variance = entry.actual_quantity !== null ? entry.actual_quantity - entry.expected_quantity : null
+    return (
+      <tr key={entry.id} className={`hover:bg-gray-50 transition-colors ${variance !== null && variance !== 0 ? 'bg-amber-50/30' : ''}`}>
+        <td className="px-4 py-3">
+          {sizeLabel ? null : (
+            <div className="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden shadow-sm">
+              {entry.sku?.image_url ? <img src={entry.sku.image_url} alt="" className="w-full h-full object-cover" /> : <Package size={28} className="text-gray-300" />}
+            </div>
+          )}
+        </td>
+        <td className="px-4 py-3">
+          {sizeLabel
+            ? <span className="pl-4 text-gray-800 font-semibold">{sizeLabel}</span>
+            : <p className="text-gray-900 font-medium">{entry.sku?.product_name}</p>}
+        </td>
+        <td className="px-4 py-3">
+          {!sizeLabel && (
+            <span className="inline-block px-2 py-0.5 bg-gray-100 text-gray-700 rounded-full text-xs font-medium">
+              {entry.sku?.category?.name || 'Uncategorized'}
+            </span>
+          )}
+        </td>
+        <td className="px-4 py-3 text-gray-600 font-mono text-xs">{entry.sku?.sku_code}</td>
+        <td className="px-4 py-3 text-right"><span className="text-lg font-bold text-gray-900">{entry.expected_quantity}</span></td>
+        <td className="px-4 py-3">
+          <input type="number" value={entry.actual_quantity ?? ''} onWheel={noWheel}
+            onChange={e => handleActualChange(entry.id, e.target.value)}
+            className={numInputCls} placeholder="—" />
+        </td>
+        <td className="px-4 py-3 text-right">
+          {variance !== null
+            ? <span className={`text-lg font-bold ${variance < 0 ? 'text-red-600' : variance > 0 ? 'text-green-600' : 'text-gray-600'}`}>{variance > 0 ? '+' : ''}{variance}</span>
+            : <span className="text-gray-400 text-lg">—</span>}
+        </td>
+      </tr>
+    )
+  }
+
+  // A size not yet in the catalog — count it to materialize the size on the server.
+  const renderPlaceholderRow = (group, size) => (
+    <tr key={`${group.base}|${size}`} className="hover:bg-gray-50">
+      <td className="px-4 py-3" />
+      <td className="px-4 py-3">
+        <span className="pl-4 text-gray-500 font-semibold">{size}</span>
+        <span className="ml-2 text-[11px] text-gray-400">not in catalog — enter a count to add</span>
+      </td>
+      <td className="px-4 py-3" />
+      <td className="px-4 py-3 text-gray-300 font-mono text-xs">—</td>
+      <td className="px-4 py-3 text-right text-gray-300">—</td>
+      <td className="px-4 py-3">
+        <input type="number" defaultValue="" placeholder="—" onWheel={noWheel}
+          onBlur={e => { const v = e.target.value.trim(); if (v !== '') materializeSize(group.sample.sku?.id, group.base, size, v) }}
+          className={`${numInputCls} border-dashed`} />
+      </td>
+      <td className="px-4 py-3 text-right text-gray-300">—</td>
+    </tr>
+  )
 
   if (loading) {
     return <div className="p-8 text-center text-gray-500">Loading inventory...</div>
@@ -273,6 +406,13 @@ export default function InventoryCountPage() {
                   <option key={cat} value={cat}>{cat}</option>
                 ))}
               </select>
+              <button
+                onClick={() => setHideZeros(v => !v)}
+                className={`px-4 py-2 text-sm rounded-lg border flex items-center gap-1.5 ${hideZeros ? 'bg-red-600 text-white border-red-600 hover:bg-red-700' : 'text-gray-600 border-gray-300 hover:bg-gray-50'}`}
+                title="Hide items with 0 expected (and sizes not yet in the catalog)"
+              >
+                {hideZeros ? <CheckCircle size={16} /> : <Circle size={16} />} Hide zero-stock
+              </button>
               {(search || filterCategory) && (
                 <button
                   onClick={() => { setSearch(''); setFilterCategory('') }}
@@ -285,9 +425,10 @@ export default function InventoryCountPage() {
           )}
 
           {/* Showing count when filtered */}
-          {entries.length > 0 && displayEntries.length !== entries.length && (
+          {entries.length > 0 && (search || filterCategory || hideZeros) && (
             <p className="text-sm text-gray-500 mb-2">
-              Showing {displayEntries.length} of {entries.length} items
+              Showing {visibleRowCount} item{visibleRowCount === 1 ? '' : 's'}
+              {hideZeros ? ' (zero-stock hidden)' : ''}
             </p>
           )}
 
@@ -318,54 +459,26 @@ export default function InventoryCountPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 bg-white">
-                  {displayEntries.map(entry => {
-                    const variance = entry.actual_quantity !== null ? entry.actual_quantity - entry.expected_quantity : null
-                    return (
-                      <tr key={entry.id} className={`hover:bg-gray-50 transition-colors ${variance !== null && variance !== 0 ? 'bg-amber-50/30' : ''}`}>
-                        <td className="px-4 py-3">
-                          <div className="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden shadow-sm">
-                            {entry.sku?.image_url ? (
-                              <img src={entry.sku.image_url} alt="" className="w-full h-full object-cover" />
-                            ) : (
-                              <Package size={28} className="text-gray-300" />
-                            )}
+                  {groups.map(g => (
+                    <Fragment key={g.base}>
+                      <tr className="bg-gray-50/70 border-t-2 border-gray-200">
+                        <td className="px-4 py-2">
+                          <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden shadow-sm">
+                            {g.sample.sku?.image_url ? <img src={g.sample.sku.image_url} alt="" className="w-full h-full object-cover" /> : <Package size={22} className="text-gray-300" />}
                           </div>
                         </td>
-                        <td className="px-4 py-3">
-                          <p className="text-gray-900 font-medium">{entry.sku?.product_name}</p>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="inline-block px-2 py-0.5 bg-gray-100 text-gray-700 rounded-full text-xs font-medium">
-                            {entry.sku?.category?.name || 'Uncategorized'}
+                        <td className="px-4 py-2" colSpan={2}>
+                          <p className="font-bold text-gray-900">{g.base}</p>
+                          <span className="inline-block mt-0.5 px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-[11px] font-medium">
+                            {g.sample.sku?.category?.name || 'Uncategorized'}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-gray-600 font-mono text-xs">{entry.sku?.sku_code}</td>
-                        <td className="px-4 py-3 text-right">
-                          <span className="text-lg font-bold text-gray-900">{entry.expected_quantity}</span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <input
-                            type="number"
-                            value={entry.actual_quantity ?? ''}
-                            onChange={e => handleActualChange(entry.id, e.target.value)}
-                            className="w-28 px-3 py-2 border-2 border-gray-300 rounded-lg text-center text-lg font-bold focus:outline-none focus:ring-2 focus:ring-red-600 focus:border-red-600"
-                            placeholder="—"
-                          />
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          {variance !== null ? (
-                            <div className="inline-flex items-center gap-1">
-                              <span className={`text-lg font-bold ${variance < 0 ? 'text-red-600' : variance > 0 ? 'text-green-600' : 'text-gray-600'}`}>
-                                {variance > 0 ? '+' : ''}{variance}
-                              </span>
-                            </div>
-                          ) : (
-                            <span className="text-gray-400 text-lg">—</span>
-                          )}
-                        </td>
+                        <td colSpan={4} />
                       </tr>
-                    )
-                  })}
+                      {g.rows.map(r => r.entry ? renderRealRow(r.entry, r.size) : renderPlaceholderRow(g, r.size))}
+                    </Fragment>
+                  ))}
+                  {visibleSingles.map(entry => renderRealRow(entry, null))}
                 </tbody>
               </table>
             </div>
@@ -380,12 +493,12 @@ export default function InventoryCountPage() {
               </div>
             )}
 
-            {entries.length > 0 && displayEntries.length === 0 && (
+            {entries.length > 0 && visibleRowCount === 0 && (
               <div className="p-16 text-center text-gray-500">
                 <Search size={64} className="mx-auto text-gray-300 mb-4" />
                 <p className="text-lg font-semibold text-gray-700 mb-2">No items match your filters</p>
                 <button
-                  onClick={() => { setSearch(''); setFilterCategory('') }}
+                  onClick={() => { setSearch(''); setFilterCategory(''); setHideZeros(false) }}
                   className="text-sm text-red-600 hover:underline mt-1"
                 >
                   Clear filters
