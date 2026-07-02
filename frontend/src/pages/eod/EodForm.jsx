@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { CheckCircle, ExternalLink, AlertTriangle, Phone, MessageSquare, Sparkles, ClipboardCheck, Wrench, ShieldAlert, Loader2, GraduationCap, ShoppingCart, UserMinus } from 'lucide-react'
 import { apiGet, apiPost } from '@/hooks/useApi'
+import { todayCT } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { REASONS as CANCEL_REASONS, OUTCOMES as CANCEL_OUTCOMES } from '@/pages/cancellations/CancellationsPage'
 
@@ -359,7 +360,7 @@ function StatPill({ label, value, icon: Icon, color }) {
 function ShiftAtAGlance({ missionTitles = [], onToggleMission, topTasks = [], onCompleteTask }) {
   const [cleaning, setCleaning]   = useState(null)
   const [loading,  setLoading]    = useState(true)
-  const today = new Date().toISOString().split('T')[0]
+  const today = todayCT()
 
   useEffect(() => {
     apiGet(`/api/cleaning/today?date=${today}`)
