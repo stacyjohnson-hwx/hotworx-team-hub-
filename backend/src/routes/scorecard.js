@@ -74,7 +74,9 @@ async function computeAutoValues(sb, studioId, year, month) {
   else endDay = Math.min(curD, lastDay)
   const shiftEnd = endDay === 0 ? '1900-01-01' : `${year}-${pad(month)}-${pad(endDay)}`
 
-  const [thisT, prevT, evRes, promoRes, maintRes, taskRes, compRes, shiftRes, goalRes] = await Promise.all([
+  const monthKey = `${year}-${pad(month)}`
+  const [thisT, prevT, evRes, promoRes, maintRes, taskRes, compRes, shiftRes, goalRes,
+         recogRes, newJourneysRes, milestoneRes] = await Promise.all([
     sb.from('studio_trends').select('*').eq('studio_id', studioId).eq('year', year).eq('month', month).maybeSingle(),
     sb.from('studio_trends').select('*').eq('studio_id', studioId).eq('year', py).eq('month', pm).maybeSingle(),
     // Filter by actual date (matches the Events page) so events/promos dated in a
@@ -86,6 +88,10 @@ async function computeAutoValues(sb, studioId, year, month) {
     sb.from('cleaning_completions').select('task_id, completion_date').eq('studio_id', studioId).gte('completion_date', monthStart).lte('completion_date', monthEnd),
     sb.from('shifts').select('id').eq('studio_id', studioId).gte('shift_date', monthStart).lte('shift_date', shiftEnd),
     sb.from('studio_goals').select('memberships_target').eq('studio_id', studioId).eq('year', year).eq('month', month).maybeSingle(),
+    // Member Activation feeds for Retention & Experience (done vs total this month).
+    sb.from('onboarding_recognition_tasks').select('type, status').eq('studio_id', studioId).eq('month_key', monthKey),
+    sb.from('onboarding_journeys').select('id').eq('studio_id', studioId).gte('start_date', monthStart).lte('start_date', monthEnd),
+    sb.from('onboarding_journey_tasks').select('journey_id, trigger_ref, status').eq('studio_id', studioId).gte('due_date', monthStart).lte('due_date', monthEnd),
   ])
 
   const t = thisT.data || null
@@ -108,6 +114,23 @@ async function computeAutoValues(sb, studioId, year, month) {
 
   // Cleaning compliance, month-to-date: expected task occurrences vs completed.
   const cleaningPct = computeCleaningCompliance(taskRes.data || [], compRes.data || [], year, month, lastDay)
+
+  // ── Retention & Experience (Member Activation) ─────────────────────────
+  const recog = recogRes.data || []
+  const countDone = (rows) => rows.filter(r => r.status === 'completed').length
+  const cards = recog.filter(r => r.type === 'thank_you_card')
+  const bdays = recog.filter(r => r.type === 'birthday')
+
+  // Week-1 check-ins: of members who joined this month, how many got a Day-2/Day-5
+  // touch completed (that's the team's first-week check-in action).
+  const newJourneyIds = new Set((newJourneysRes.data || []).map(j => j.id))
+  const jTasks = milestoneRes.data || []
+  const week1Done = new Set(
+    jTasks.filter(t => ['day_2', 'day_5'].includes(t.trigger_ref) && t.status === 'completed' && newJourneyIds.has(t.journey_id))
+          .map(t => t.journey_id)
+  ).size
+  // Milestone check-ins hit this month (visit-day milestones + workout passport).
+  const milestoneTasks = jTasks.filter(t => /^milestone/.test(t.trigger_ref || '') || t.trigger_ref === 'passport_sticker')
 
   // Outreach per shift = (calls + texts this month) ÷ shifts scheduled to date.
   const shiftsToDate = (shiftRes.data || []).length
@@ -138,6 +161,15 @@ async function computeAutoValues(sb, studioId, year, month) {
     team_outing_date:       teamOuting?.start_date || null,
     // New-member goal sourced from the Goals page (studio_goals.memberships_target).
     memberships_goal:       goalRes.data && Number(goalRes.data.memberships_target) > 0 ? Number(goalRes.data.memberships_target) : null,
+    // Retention & Experience — done vs total this month, from Member Activation.
+    thankyou_cards_done:    countDone(cards),
+    thankyou_cards_total:   cards.length || null,
+    birthdays_done:         countDone(bdays),
+    birthdays_total:        bdays.length || null,
+    week1_checkins_done:    week1Done,
+    week1_checkins_total:   newJourneyIds.size || null,
+    milestone_checkins_done:  countDone(milestoneTasks),
+    milestone_checkins_total: milestoneTasks.length || null,
   }
 
   // Business-of-the-Month card: first such event + its linked B2B contact (logo).
