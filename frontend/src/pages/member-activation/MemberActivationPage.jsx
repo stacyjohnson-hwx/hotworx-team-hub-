@@ -1294,9 +1294,9 @@ function RecognitionTab({ canImport }) {
   const [loading, setLoading] = useState(true)
   const [bdayMember, setBdayMember] = useState('Happy Birthday, {first_name}! 🎂')
   const [bdayNonMember, setBdayNonMember] = useState('Happy Birthday, {first_name}! 🎂 Come in for a FREE workout on us! 🔥')
-  const [drafts, setDrafts] = useState({})
   const [uploading, setUploading] = useState(false)
   const [msg, setMsg] = useState('')
+  const [scriptFor, setScriptFor] = useState(null)
   const fileRef = useRef(null)
 
   const load = useCallback(async () => {
@@ -1412,7 +1412,7 @@ function RecognitionTab({ canImport }) {
             const done = r.status === 'completed'
             const isBday = sub === 'birthdays'
             const isMemberRow = /^(member|customer|reciprocal member|employee)$/i.test((r.lead_status || '').trim())
-            const script = drafts[r.id] != null ? drafts[r.id] : htmlToText(renderBday(isMemberRow ? bdayMember : bdayNonMember, r.member_name))
+            const script = htmlToText(renderBday(isMemberRow ? bdayMember : bdayNonMember, r.member_name))
             return (
               <div key={r.id} className={`border rounded-xl p-3 transition-colors ${done ? 'bg-blue-50 border-blue-200 opacity-70' : 'bg-white border-gray-200'}`}>
                 <div className="flex items-start gap-3">
@@ -1435,24 +1435,22 @@ function RecognitionTab({ canImport }) {
                         {r.lead_status || ''}{r.last_session ? `${r.lead_status ? ' · ' : ''}last session ${r.last_session}` : ''}
                       </p>
                     )}
-                    {isBday && !done && (
-                      <>
-                        <textarea value={script} onChange={e => setDrafts(d => ({ ...d, [r.id]: e.target.value }))} rows={2}
-                          className="w-full mt-2 border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none bg-gray-50 focus:outline-none focus:border-red-400" />
-                        <div className="flex items-center gap-3 mt-1.5">
-                          {r.phone && <a href={`sms:${r.phone}?&body=${encodeURIComponent(script)}`} className="text-xs font-semibold text-blue-600 hover:underline flex items-center gap-1"><MessageSquare size={12} /> Open text</a>}
-                          <button onClick={() => navigator.clipboard?.writeText(script)} className="text-xs text-gray-500 hover:text-gray-800">Copy</button>
-                        </div>
-                      </>
-                    )}
                     {!isBday && !done && <p className="text-xs text-gray-500 mt-0.5">Write & mail a thank-you card. Tap the circle when sent.</p>}
                   </div>
+                  {isBday && !done && (
+                    <button onClick={() => setScriptFor({ channel: 'text', member_name: r.member_name, phone: r.phone, label: isMemberRow ? 'Birthday text' : 'Birthday — free workout offer', script })}
+                      title="See & copy script"
+                      className="mt-0.5 flex-shrink-0 p-2 rounded-lg border border-gray-200 text-gray-500 hover:text-blue-600 hover:border-blue-300">
+                      <MessageSquare size={16} />
+                    </button>
+                  )}
                 </div>
               </div>
             )
           })}
         </div>
       )}
+      {scriptFor && <ScriptModal item={scriptFor} onClose={() => setScriptFor(null)} />}
     </div>
   )
 }
