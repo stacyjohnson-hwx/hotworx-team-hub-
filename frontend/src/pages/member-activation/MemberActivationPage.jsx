@@ -8,39 +8,61 @@ import * as XLSX from 'xlsx'
 
 const BASE = '/api/member-activation'
 
-// ─── Rich-text helpers (scripts can hold bold + bullet HTML) ──────────────────
-const isHtml = (s) => /<[a-z][\s\S]*>/i.test(s || '')
-// Convert script HTML to plain text for SMS / copy (bullets → •, blocks → newlines).
-function htmlToText(h) {
-  if (!h) return ''
-  if (!isHtml(h)) return h
-  return h
-    .replace(/<li[^>]*>/gi, '• ').replace(/<\/li>/gi, '\n')
-    .replace(/<br\s*\/?>(?!\n)/gi, '\n').replace(/<\/(p|div|ul|ol|h[1-6])>/gi, '\n')
-    .replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/\n{3,}/g, '\n\n').trim()
+// ─── Script formatting (markdown-lite: **bold** and "- " bullets) ─────────────
+// Render markdown-lite (or legacy HTML) to display HTML.
+function mdToHtml(s) {
+  let t = String(s || '')
+  if (/<[a-z][\s\S]*>/i.test(t)) return t   // legacy HTML body — show as-is
+  t = t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  t = t.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+  const out = []; let inList = false
+  for (const ln of t.split(/\n/)) {
+    const bl = ln.match(/^\s*[-*]\s+(.*)/)
+    if (bl) { if (!inList) { out.push('<ul>'); inList = true } out.push(`<li>${bl[1]}</li>`) }
+    else { if (inList) { out.push('</ul>'); inList = false } if (ln.trim()) out.push(`${ln}<br>`) }
+  }
+  if (inList) out.push('</ul>')
+  return out.join('')
 }
-// Render a script for display: formatted HTML, or plain text with line breaks preserved.
+// Plain text for SMS / copy (strip **, bullets → •, strip any legacy HTML tags).
+function htmlToText(s) {
+  let t = String(s || '')
+  if (/<[a-z]/i.test(t)) t = t.replace(/<li[^>]*>/gi, '• ').replace(/<\/li>/gi, '\n')
+    .replace(/<br\s*\/?>(?!\n)/gi, '\n').replace(/<\/(p|div|ul|ol)>/gi, '\n').replace(/<[^>]+>/g, '')
+  t = t.replace(/\*\*(.+?)\*\*/g, '$1').replace(/^\s*[-*]\s+/gm, '• ')
+  return t.replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/\n{3,}/g, '\n\n').trim()
+}
+// Render a script for display (formatted).
 function RichView({ html, className = '' }) {
-  if (isHtml(html)) return <div className={`prose-script text-sm text-gray-800 ${className}`} dangerouslySetInnerHTML={{ __html: html }} />
-  return <p className={`text-sm text-gray-800 whitespace-pre-wrap ${className}`}>{html}</p>
+  return <div className={`prose-script text-sm text-gray-800 ${className}`} dangerouslySetInnerHTML={{ __html: mdToHtml(html) }} />
 }
-// Minimal rich-text editor (Bold + Bullets) storing HTML. Uncontrolled; key it to reset.
+// Reliable script editor: a real textarea (always editable) + Bold / Bullet buttons.
 function RichEditor({ value, onChange, disabled }) {
   const ref = useRef(null)
-  useEffect(() => { if (ref.current) ref.current.innerHTML = value || '' }, [])
-  const exec = (cmd) => { document.execCommand(cmd, false, null); if (ref.current) { ref.current.focus(); onChange(ref.current.innerHTML) } }
+  const bold = () => {
+    const ta = ref.current; if (!ta) return
+    const s = ta.selectionStart, e = ta.selectionEnd, v = value || ''
+    onChange(v.slice(0, s) + '**' + v.slice(s, e) + '**' + v.slice(e))
+    setTimeout(() => { ta.focus(); ta.selectionStart = ta.selectionEnd = e + 2 }, 0)
+  }
+  const bullet = () => {
+    const ta = ref.current; if (!ta) return
+    const s = ta.selectionStart, v = value || ''
+    const ls = v.lastIndexOf('\n', s - 1) + 1
+    onChange(v.slice(0, ls) + '- ' + v.slice(ls))
+    setTimeout(() => { ta.focus(); ta.selectionStart = ta.selectionEnd = s + 2 }, 0)
+  }
   return (
     <div className="border border-gray-200 rounded-lg overflow-hidden">
       {!disabled && (
         <div className="flex items-center gap-1 px-2 py-1.5 border-b border-gray-100 bg-gray-50">
-          <button type="button" onMouseDown={e => { e.preventDefault(); exec('bold') }} className="p-1 rounded hover:bg-gray-200 text-gray-600" title="Bold"><Bold size={13} /></button>
-          <button type="button" onMouseDown={e => { e.preventDefault(); exec('insertUnorderedList') }} className="p-1 rounded hover:bg-gray-200 text-gray-600" title="Bullet list"><List size={13} /></button>
+          <button type="button" onClick={bold} className="p-1 rounded hover:bg-gray-200 text-gray-600" title="Bold (**text**)"><Bold size={13} /></button>
+          <button type="button" onClick={bullet} className="p-1 rounded hover:bg-gray-200 text-gray-600" title="Bullet (- item)"><List size={13} /></button>
+          <span className="text-[10px] text-gray-400 ml-1">**bold** · "- " for a bullet</span>
         </div>
       )}
-      <div ref={ref} contentEditable={!disabled} suppressContentEditableWarning
-        onInput={e => onChange(e.currentTarget.innerHTML)}
-        className="prose-script min-h-[120px] px-3 py-2 text-sm text-gray-800 focus:outline-none" />
+      <textarea ref={ref} value={value || ''} onChange={e => onChange(e.target.value)} disabled={disabled} rows={7}
+        className="w-full px-3 py-2 text-sm text-gray-800 resize-none focus:outline-none disabled:bg-gray-50" />
     </div>
   )
 }
