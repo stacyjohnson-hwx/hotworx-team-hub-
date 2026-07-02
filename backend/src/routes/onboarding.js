@@ -395,11 +395,12 @@ router.get('/members/lookup', authenticate, requireStudio, async (req, res) => {
 // triggering onboarding/re-engagement (is_new_member=false, non-'member' type).
 const MEMBER_TYPES = ['member', 'employee', 'comp', 'pif', 'reciprocal', 'guest']
 router.post('/members', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
-  const { email, full_name, member_type, phone, origin_studio, expiration_date } = req.body
+  const { email, full_name, member_type, phone, origin_studio, expiration_date, is_cancelled, cancelled_date } = req.body
   if (!email) return res.status(400).json({ error: 'email required' })
   const type = MEMBER_TYPES.includes(member_type) ? member_type : 'guest'
   const supabase = db()
   const lower = String(email).trim().toLowerCase()
+  const cancelled = !!is_cancelled
 
   const { data: member, error } = await supabase.from('onboarding_members').upsert({
     studio_id: req.studio.id,
@@ -410,7 +411,11 @@ router.post('/members', authenticate, requireStudio, requireRole('owner', 'manag
     member_type: type,
     origin_studio: origin_studio || null,
     expiration_date: expiration_date || null,
-    status: 'Active',
+    // A cancelled person still gets their workouts attributed, but is excluded
+    // from the active count and never seeded a journey / onboarding texts.
+    status: cancelled ? 'Cancelled' : 'Active',
+    is_cancelled: cancelled,
+    cancelled_date: cancelled ? (cancelled_date || null) : null,
     is_new_member: false,
     seen_in_last_import: true,
     updated_at: new Date().toISOString(),
@@ -474,6 +479,11 @@ router.patch('/members/:id', authenticate, requireStudio, requireRole('owner', '
   if (req.body.expiration_date !== undefined) updates.expiration_date = req.body.expiration_date || null
   for (const k of ['address', 'city', 'state', 'postal_code']) if (req.body[k] !== undefined) updates[k] = req.body[k] || null
   if (req.body.member_type !== undefined && MEMBER_TYPES.includes(req.body.member_type)) updates.member_type = req.body.member_type
+  if (req.body.is_cancelled !== undefined) {
+    updates.is_cancelled = !!req.body.is_cancelled
+    if (!req.body.is_cancelled) updates.cancelled_date = null
+  }
+  if (req.body.cancelled_date !== undefined && req.body.is_cancelled !== false) updates.cancelled_date = req.body.cancelled_date || null
   const { data, error } = await db().from('onboarding_members')
     .update(updates).eq('id', req.params.id).eq('studio_id', req.studio.id).select().single()
   if (error) return res.status(500).json({ error: error.message })

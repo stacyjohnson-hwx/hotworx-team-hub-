@@ -485,7 +485,7 @@ function UnreconciledTab() {
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [addFor, setAddFor] = useState(null)   // email being added
-  const [form, setForm] = useState({ full_name: '', member_type: 'employee', origin_studio: '', expiration_date: '' })
+  const [form, setForm] = useState({ full_name: '', member_type: 'employee', origin_studio: '', expiration_date: '', is_cancelled: false, cancelled_date: '' })
   const [saving, setSaving] = useState(false)
 
   const load = useCallback(async () => {
@@ -498,11 +498,11 @@ function UnreconciledTab() {
   // Rows arrive pre-grouped by email (one person per row, across all months).
   const groups = rows
 
-  const openAdd = (email) => { setAddFor(email); setForm({ full_name: '', member_type: 'employee', origin_studio: '', expiration_date: '' }) }
+  const openAdd = (email) => { setAddFor(email); setForm({ full_name: '', member_type: 'employee', origin_studio: '', expiration_date: '', is_cancelled: false, cancelled_date: '' }) }
   const addPerson = async () => {
     setSaving(true)
     try {
-      await apiPost(`${BASE}/members`, { email: addFor, full_name: form.full_name, member_type: form.member_type, origin_studio: form.origin_studio, expiration_date: form.expiration_date })
+      await apiPost(`${BASE}/members`, { email: addFor, full_name: form.full_name, member_type: form.member_type, origin_studio: form.origin_studio, expiration_date: form.expiration_date, is_cancelled: form.is_cancelled, cancelled_date: form.is_cancelled ? form.cancelled_date : null })
       setAddFor(null); load()
     } catch { /* ignore */ }
     finally { setSaving(false) }
@@ -552,6 +552,18 @@ function UnreconciledTab() {
                     <input type="date" value={form.expiration_date} onChange={e => setForm(f => ({ ...f, expiration_date: e.target.value }))}
                       className="border border-gray-300 rounded px-2 py-1 text-sm" />
                   </div>
+                  <label className="flex items-center gap-1.5 text-xs text-gray-700 self-end pb-1.5">
+                    <input type="checkbox" checked={form.is_cancelled}
+                      onChange={e => setForm(f => ({ ...f, is_cancelled: e.target.checked, member_type: e.target.checked && f.member_type === 'employee' ? 'member' : f.member_type }))} />
+                    Cancelled member
+                  </label>
+                  {form.is_cancelled && (
+                    <div>
+                      <label className="block text-[11px] text-gray-500 mb-0.5">Cancelled on</label>
+                      <input type="date" value={form.cancelled_date} onChange={e => setForm(f => ({ ...f, cancelled_date: e.target.value }))}
+                        className="border border-gray-300 rounded px-2 py-1 text-sm" />
+                    </div>
+                  )}
                   <button onClick={addPerson} disabled={saving}
                     className="bg-red-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg disabled:opacity-50">
                     {saving ? 'Adding…' : `Add & link ${g.count}`}
@@ -721,6 +733,7 @@ function MemberEditModal({ member, onClose, onSaved }) {
     phone: member.phone || '', email: member.email || '', origin_studio: member.origin_studio || '',
     expiration_date: member.expiration_date || '',
     address: member.address || '', city: member.city || '', state: member.state || '', postal_code: member.postal_code || '',
+    is_cancelled: !!member.is_cancelled, cancelled_date: member.cancelled_date || '',
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
@@ -790,6 +803,21 @@ function MemberEditModal({ member, onClose, onSaved }) {
               <input value={form.postal_code} onChange={e => set('postal_code', e.target.value)} placeholder="ZIP"
                 className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
             </div>
+          </div>
+          <div className="border-t border-gray-100 pt-3">
+            <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+              <input type="checkbox" checked={form.is_cancelled}
+                onChange={e => set('is_cancelled', e.target.checked)} />
+              Cancelled member
+            </label>
+            <p className="text-[11px] text-gray-400 mt-0.5">Keeps their workout history but drops them from the active count and stops onboarding texts.</p>
+            {form.is_cancelled && (
+              <div className="mt-2">
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Cancelled on</label>
+                <input type="date" value={form.cancelled_date} onChange={e => set('cancelled_date', e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+              </div>
+            )}
           </div>
           {error && <p className="text-xs text-red-600">{error}</p>}
         </div>
