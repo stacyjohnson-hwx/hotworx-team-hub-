@@ -104,6 +104,7 @@ function CancellationForm({ entry, users, currentUserId, onSave, onClose }) {
     handled_by: entry?.handled_by || currentUserId || '',
     cancel_reason: entry?.cancel_reason || '',
     reason_notes: entry?.reason_notes || '',
+    competitor_name: entry?.competitor_name || '',
     conversation_notes: entry?.conversation_notes || '',
     offers_presented: Array.isArray(entry?.offers_presented) ? entry.offers_presented : [],
     offer_accepted: entry?.offer_accepted || 'none',
@@ -168,6 +169,9 @@ function CancellationForm({ entry, users, currentUserId, onSave, onClose }) {
             </select>
             {form.cancel_reason === 'other' && (
               <input className={`${input} mt-2`} value={form.reason_notes} onChange={e => set('reason_notes', e.target.value)} placeholder="What was the reason?" />
+            )}
+            {form.cancel_reason === 'competitor' && (
+              <input className={`${input} mt-2`} value={form.competitor_name} onChange={e => set('competitor_name', e.target.value)} placeholder="Which competitor? (e.g. Orangetheory, Planet Fitness)" />
             )}
           </div>
 
@@ -523,7 +527,7 @@ export default function CancellationsPage() {
                     {r.source === 'sail_import' && <span className="ml-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700 align-middle">SAIL</span>}
                   </td>
                   <td className="px-3 py-2.5 text-gray-600">{fmtDate(r.date_requested)}</td>
-                  <td className="px-3 py-2.5 text-gray-600">{labelOf(REASONS, r.cancel_reason)}</td>
+                  <td className="px-3 py-2.5 text-gray-600">{labelOf(REASONS, r.cancel_reason)}{r.cancel_reason === 'competitor' && r.competitor_name ? ` · ${r.competitor_name}` : ''}</td>
                   <td className="px-3 py-2.5 text-gray-600 text-xs">{r.package_name || '—'}{r.monthly_payment != null ? ` · $${r.monthly_payment}/mo` : ''}</td>
                   <td className="px-3 py-2.5 text-gray-600">{r.handled_by_name || '—'}</td>
                   <td className="px-3 py-2.5"><span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold border ${oc?.cls || ''}`}>{oc?.label || r.outcome}</span></td>

@@ -8,7 +8,7 @@ const authenticate = require('../middleware/authMiddleware')
 const supabase = () =>
   createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 
-const REASONS  = ['cost', 'not_using', 'no_results', 'moving', 'medical', 'unhappy', 'competitor', 'other']
+const REASONS  = ['non_payment', 'cost', 'not_using', 'no_results', 'moving', 'medical', 'unhappy', 'competitor', 'other']
 const OUTCOMES = ['saved', 'pending', 'cancelled']
 
 // Derive the follow-up date + terminal date from the outcome (PRD §3–4).
@@ -103,6 +103,7 @@ router.post('/', authenticate, requireStudio, async (req, res) => {
     handled_by: b.handled_by || req.user.id,
     cancel_reason: b.cancel_reason,
     reason_notes: b.reason_notes || null,
+    competitor_name: b.cancel_reason === 'competitor' ? (b.competitor_name || null) : null,
     conversation_notes: b.conversation_notes || null,
     offers_presented: Array.isArray(b.offers_presented) ? b.offers_presented : [],
     offer_accepted: b.offer_accepted || 'none',
@@ -129,6 +130,7 @@ router.put('/:id', authenticate, requireStudio, async (req, res) => {
     ...(b.handled_by !== undefined ? { handled_by: b.handled_by || null } : {}),
     ...(b.cancel_reason && REASONS.includes(b.cancel_reason) ? { cancel_reason: b.cancel_reason } : {}),
     ...(b.reason_notes !== undefined ? { reason_notes: b.reason_notes || null } : {}),
+    ...(b.competitor_name !== undefined ? { competitor_name: b.competitor_name || null } : {}),
     ...(b.conversation_notes !== undefined ? { conversation_notes: b.conversation_notes || null } : {}),
     ...(Array.isArray(b.offers_presented) ? { offers_presented: b.offers_presented } : {}),
     ...(b.offer_accepted !== undefined ? { offer_accepted: b.offer_accepted || 'none' } : {}),
