@@ -105,6 +105,7 @@ function CancellationForm({ entry, users, currentUserId, onSave, onClose }) {
     cancel_reason: entry?.cancel_reason || '',
     reason_notes: entry?.reason_notes || '',
     competitor_name: entry?.competitor_name || '',
+    likely_to_return: entry?.likely_to_return || false,
     conversation_notes: entry?.conversation_notes || '',
     offers_presented: Array.isArray(entry?.offers_presented) ? entry.offers_presented : [],
     offer_accepted: entry?.offer_accepted || 'none',
@@ -194,6 +195,12 @@ function CancellationForm({ entry, users, currentUserId, onSave, onClose }) {
             <input type="checkbox" checked={form.goal_recaptured} onChange={e => set('goal_recaptured', e.target.checked)} className="w-4 h-4 rounded border-gray-300 text-orange-500" />
             <Target size={15} className="text-orange-500" />
             <span className="text-sm font-semibold text-gray-800">3 · Recaptured their original goal + rebooked a session</span>
+          </label>
+
+          {/* Likely to return — warm win-back prospect */}
+          <label className="flex items-center gap-2.5 cursor-pointer bg-green-50 border border-green-200 rounded-lg px-3 py-2.5">
+            <input type="checkbox" checked={form.likely_to_return} onChange={e => set('likely_to_return', e.target.checked)} className="w-4 h-4 rounded border-gray-300 text-green-600" />
+            <span className="text-sm font-semibold text-gray-800">Likely to return — flag as a warm win-back</span>
           </label>
 
           {/* Step 4 — offers presented */}
@@ -521,10 +528,11 @@ export default function CancellationsPage() {
             ) : sorted.map(r => {
               const oc = OUTCOMES.find(o => o.value === r.outcome)
               return (
-                <tr key={r.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => setModal(r)}>
+                <tr key={r.id} className={`cursor-pointer ${r.likely_to_return ? 'bg-green-50 hover:bg-green-100' : 'hover:bg-gray-50'}`} onClick={() => setModal(r)}>
                   <td className="px-4 py-2.5 font-semibold text-gray-900">
                     {r.member_name}
                     {r.source === 'sail_import' && <span className="ml-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700 align-middle">SAIL</span>}
+                    {r.likely_to_return && <span className="ml-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 align-middle">LIKELY TO RETURN</span>}
                   </td>
                   <td className="px-3 py-2.5 text-gray-600">{fmtDate(r.date_requested)}</td>
                   <td className="px-3 py-2.5 text-gray-600">{labelOf(REASONS, r.cancel_reason)}{r.cancel_reason === 'competitor' && r.competitor_name ? ` · ${r.competitor_name}` : ''}</td>
