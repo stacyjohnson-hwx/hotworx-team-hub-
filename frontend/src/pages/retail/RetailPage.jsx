@@ -122,7 +122,8 @@ export default function RetailPage() {
       s.product_name?.toLowerCase().includes(search.toLowerCase())
     const matchesCategory = !filterCategory || s.category_id === filterCategory
     const matchesTopSeller = !filterTopSellers || s.top_seller === true
-    const matchesInventory = !hideZeroInventory || (s.inventory && s.inventory.quantity_on_hand > 0)
+    // inventory is joined as an array (inventory_levels); read the first row.
+    const matchesInventory = !hideZeroInventory || (s.inventory?.[0]?.quantity_on_hand || 0) > 0
     return matchesSearch && matchesCategory && matchesTopSeller && matchesInventory
   })
 
