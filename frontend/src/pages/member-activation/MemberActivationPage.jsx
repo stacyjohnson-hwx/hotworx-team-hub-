@@ -1160,47 +1160,94 @@ const SAMPLE = { first_name: 'Sarah', visit_days: 25, total_sessions: 30, workou
 const renderPreview = (body) => String(body || '').replace(/\{(\w+)\}/g, (_, k) => (SAMPLE[k] != null ? String(SAMPLE[k]) : `{${k}}`))
 const VARS = ['first_name', 'visit_days', 'total_sessions', 'workouts_tried', 'days_lapsed', 'milestone', 'event_name', 'goal_text']
 
+const CHANNEL_OPTS = [{ v: 'text', label: 'Text' }, { v: 'call', label: 'Call' }, { v: 'in_studio', label: 'In studio' }]
+
 function ScriptAdminTab({ canEdit }) {
   const { currentStudio } = useStudio()
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
-  const [sel, setSel] = useState(null)
+  const [sel, setSel] = useState(null)       // template_key, or '__new__'
   const [body, setBody] = useState('')
+  const [label, setLabel] = useState('')
+  const [channel, setChannel] = useState('text')
   const [saved, setSaved] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
-    try { const d = await apiGet(`${BASE}/templates`); setRows(d); if (d[0]) { setSel(d[0].template_key); setBody(d[0].body || '') } }
+    try { const d = await apiGet(`${BASE}/templates`); setRows(d); if (d[0]) { setSel(d[0].template_key); setBody(d[0].body || ''); setLabel(d[0].label || ''); setChannel(d[0].channel || 'text') } }
     catch { setRows([]) }
     finally { setLoading(false) }
   }, [currentStudio?.id])
   useEffect(() => { load() }, [load])
 
-  const select = (t) => { setSel(t.template_key); setBody(t.body || ''); setSaved(false) }
-  const current = rows.find(t => t.template_key === sel)
+  const select = (t) => { setSel(t.template_key); setBody(t.body || ''); setLabel(t.label || ''); setChannel(t.channel || 'text'); setSaved(false) }
+  const startNew = () => { setSel('__new__'); setBody(''); setLabel(''); setChannel('text'); setSaved(false) }
+  const isNew = sel === '__new__'
+  const current = isNew ? { template_key: '__new__' } : rows.find(t => t.template_key === sel)
+
   const save = async () => {
-    await apiPut(`${BASE}/templates/${sel}`, { body })
-    setRows(rs => rs.map(t => t.template_key === sel ? { ...t, body } : t))
+    if (isNew) {
+      if (!label.trim()) return
+      const created = await apiPost(`${BASE}/templates`, { label: label.trim(), channel, body })
+      setRows(rs => [...rs, created].sort((a, b) => a.template_key.localeCompare(b.template_key)))
+      setSel(created.template_key)
+    } else {
+      await apiPut(`${BASE}/templates/${sel}`, { body, label: label.trim(), channel })
+      setRows(rs => rs.map(t => t.template_key === sel ? { ...t, body, label: label.trim(), channel } : t))
+    }
     setSaved(true); setTimeout(() => setSaved(false), 2000)
+  }
+  const del = async () => {
+    if (isNew) { startNew(); return }
+    if (!window.confirm(`Delete "${current.label || sel}"? It will stop appearing in the Daily List.`)) return
+    await apiDelete(`${BASE}/templates/${sel}`)
+    const remaining = rows.filter(t => t.template_key !== sel)
+    setRows(remaining)
+    if (remaining[0]) select(remaining[0]); else setSel(null)
   }
 
   if (loading) return <Spinner />
   return (
     <div className="grid md:grid-cols-[240px_1fr] gap-4">
-      <div className="border border-gray-200 rounded-xl overflow-hidden max-h-[70vh] overflow-y-auto">
-        {rows.map(t => (
-          <button key={t.template_key} onClick={() => select(t)}
-            className={`w-full text-left px-3 py-2 text-xs border-b border-gray-100 ${sel === t.template_key ? 'bg-red-50 text-red-700 font-semibold' : 'text-gray-600 hover:bg-gray-50'}`}>
-            {t.label || t.template_key}
-            <span className="block text-[10px] text-gray-400">{t.channel}</span>
+      <div>
+        {canEdit && (
+          <button onClick={startNew}
+            className={`w-full mb-2 text-sm font-semibold px-3 py-2 rounded-xl border ${isNew ? 'bg-red-600 text-white border-red-600' : 'border-red-200 text-red-600 hover:bg-red-50'}`}>
+            + New script
           </button>
-        ))}
+        )}
+        <div className="border border-gray-200 rounded-xl overflow-hidden max-h-[70vh] overflow-y-auto">
+          {rows.map(t => (
+            <button key={t.template_key} onClick={() => select(t)}
+              className={`w-full text-left px-3 py-2 text-xs border-b border-gray-100 ${sel === t.template_key ? 'bg-red-50 text-red-700 font-semibold' : 'text-gray-600 hover:bg-gray-50'}`}>
+              {t.label || t.template_key}
+              <span className="block text-[10px] text-gray-400">{t.channel}</span>
+            </button>
+          ))}
+        </div>
       </div>
       <div>
-        {!current ? <Empty msg="Select a template to edit." /> : (
+        {!current ? <Empty msg="Select a template to edit, or add a new one." /> : (
           <>
-            <p className="text-sm font-semibold text-gray-800 mb-1">{current.label}</p>
-            <p className="text-[11px] text-gray-400 mb-2">Key: {current.template_key} · {current.channel}. Use <b>B</b> for bold and the list button for bullets. Edits apply on the next Daily List refresh.</p>
+            {canEdit ? (
+              <div className="flex flex-wrap items-end gap-2 mb-2">
+                <div className="flex-1 min-w-[180px]">
+                  <label className="block text-[11px] text-gray-500 mb-0.5">Label</label>
+                  <input value={label} onChange={e => setLabel(e.target.value)} placeholder="e.g. 100 visit-days 🎉"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-red-400" />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-gray-500 mb-0.5">Channel</label>
+                  <select value={channel} onChange={e => setChannel(e.target.value)}
+                    className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm bg-white">
+                    {CHANNEL_OPTS.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
+                  </select>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm font-semibold text-gray-800 mb-1">{current.label}</p>
+            )}
+            <p className="text-[11px] text-gray-400 mb-2">{isNew ? 'New script' : `Key: ${current.template_key} · ${current.channel}`}. Use <b>B</b> for bold and the list button for bullets. Edits apply on the next Daily List refresh.</p>
             <RichEditor key={sel} value={body} onChange={setBody} disabled={!canEdit} />
             <div className="flex flex-wrap gap-1.5 mt-2">
               {VARS.map(v => <span key={v} className="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded font-mono">{`{${v}}`}</span>)}
@@ -1210,9 +1257,16 @@ function ScriptAdminTab({ canEdit }) {
               <RichView html={renderPreview(body)} />
             </div>
             {canEdit && (
-              <button onClick={save} className="mt-3 bg-red-600 text-white text-sm font-semibold px-5 py-2 rounded-xl hover:bg-red-700">
-                {saved ? '✓ Saved' : 'Save template'}
-              </button>
+              <div className="flex items-center gap-2 mt-3">
+                <button onClick={save} className="bg-red-600 text-white text-sm font-semibold px-5 py-2 rounded-xl hover:bg-red-700">
+                  {saved ? '✓ Saved' : isNew ? 'Create script' : 'Save template'}
+                </button>
+                {!isNew && (
+                  <button onClick={del} className="text-sm font-semibold text-gray-500 px-3 py-2 rounded-xl hover:bg-gray-100 hover:text-red-600 flex items-center gap-1">
+                    <X size={14} /> Delete
+                  </button>
+                )}
+              </div>
             )}
           </>
         )}

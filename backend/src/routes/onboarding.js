@@ -829,9 +829,30 @@ router.get('/templates', authenticate, requireStudio, async (req, res) => {
   const supabase = db()
   await seedTemplates(supabase, req.studio.id)
   const { data, error } = await supabase.from('onboarding_touchpoint_templates')
-    .select('*').eq('studio_id', req.studio.id).order('template_key')
+    .select('*').eq('studio_id', req.studio.id).eq('active', true).order('template_key')
   if (error) return res.status(500).json({ error: error.message })
   res.json(data || [])
+})
+
+// Add a new custom script/milestone template.
+router.post('/templates', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
+  const { label, channel, body } = req.body
+  if (!label || !String(label).trim()) return res.status(400).json({ error: 'label required' })
+  const ch = ['text', 'call', 'in_studio'].includes(channel) ? channel : 'text'
+  const slug = String(label).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40) || 'script'
+  const supabase = db()
+  // Ensure a unique key within the studio (custom_<slug>, then _2, _3, …).
+  const { data: existing } = await supabase.from('onboarding_touchpoint_templates')
+    .select('template_key').eq('studio_id', req.studio.id)
+  const have = new Set((existing || []).map(t => t.template_key))
+  let key = `custom_${slug}`
+  for (let i = 2; have.has(key); i++) key = `custom_${slug}_${i}`
+  const { data, error } = await supabase.from('onboarding_touchpoint_templates').insert({
+    studio_id: req.studio.id, template_key: key, label: String(label).trim(), channel: ch,
+    body: body || '', active: true, updated_by: req.user.email || req.user.id, updated_at: new Date().toISOString(),
+  }).select().single()
+  if (error) return res.status(500).json({ error: error.message })
+  res.status(201).json(data)
 })
 
 router.put('/templates/:key', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
@@ -844,6 +865,15 @@ router.put('/templates/:key', authenticate, requireStudio, requireRole('owner', 
     .update(updates).eq('studio_id', req.studio.id).eq('template_key', req.params.key).select().single()
   if (error) return res.status(500).json({ error: error.message })
   res.json(data)
+})
+
+// Soft-delete: hide from the list but keep the row so seeded defaults don't respawn.
+router.delete('/templates/:key', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
+  const { error } = await db().from('onboarding_touchpoint_templates')
+    .update({ active: false, updated_by: req.user.email || req.user.id, updated_at: new Date().toISOString() })
+    .eq('studio_id', req.studio.id).eq('template_key', req.params.key)
+  if (error) return res.status(500).json({ error: error.message })
+  res.status(204).end()
 })
 
 // ─── Cards & Birthdays recognition checklist ──────────────────────────────────
