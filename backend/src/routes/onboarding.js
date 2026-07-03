@@ -519,6 +519,74 @@ router.get('/unreconciled', authenticate, requireStudio, async (req, res) => {
   })))
 })
 
+// ─── Suggested cancelled matches (review before applying) ─────────────────────
+// Fuzzy-match unreconciled emails to known cancelled people (by name), so a Lead
+// can approve links in bulk instead of adding each person by hand.
+router.get('/reconcile/suggestions', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
+  const supabase = db(); const sid = req.studio.id
+  const [{ data: un }, { data: ledger }, { data: cancMembers }] = await Promise.all([
+    supabase.from('onboarding_unreconciled_emails').select('email, booking_count, last_booking_date').eq('studio_id', sid).limit(2000),
+    supabase.from('cancellation_log').select('member_name').eq('studio_id', sid),
+    supabase.from('onboarding_members').select('full_name').eq('studio_id', sid).eq('is_cancelled', true),
+  ])
+  // Candidate cancelled names → first/last tokens.
+  const names = new Map()
+  const addName = (nm) => {
+    const toks = String(nm || '').toLowerCase().split(/[^a-z]+/).filter(t => t.length >= 2)
+    if (toks.length < 2) return
+    const first = toks[0], last = toks[toks.length - 1]
+    const key = `${first}|${last}`
+    if (!names.has(key)) names.set(key, { name: nm, first, last })
+  }
+  for (const r of ledger || []) addName(r.member_name)
+  for (const m of cancMembers || []) addName(m.full_name)
+  const cand = [...names.values()]
+
+  const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+  const out = []
+  for (const u of un || []) {
+    if (!u.email || u.email === '(no email)') continue
+    const lp = norm(u.email.split('@')[0])
+    if (!lp) continue
+    let best = null
+    for (const c of cand) {
+      let score = 0, conf = null
+      if (lp === c.first + c.last || lp === c.last + c.first) { score = 100; conf = 'high' }
+      else if (lp.includes(c.first) && lp.includes(c.last)) { score = 80; conf = 'high' }
+      else if (lp.includes(c.last) && c.last.length >= 4 && lp.startsWith(c.first[0])) { score = 55; conf = 'medium' }
+      else if (lp.includes(c.last) && c.last.length >= 5) { score = 35; conf = 'low' }
+      if (conf && (!best || score > best.score)) best = { name: c.name, score, conf }
+    }
+    if (best) out.push({ email: u.email, bookings: u.booking_count, last_booking_date: u.last_booking_date, suggested_name: best.name, confidence: best.conf, score: best.score })
+  }
+  out.sort((a, b) => b.score - a.score || b.bookings - a.bookings)
+  res.json(out)
+})
+
+// Apply approved matches: create a cancelled member per email + link its bookings.
+router.post('/reconcile/apply', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
+  const matches = Array.isArray(req.body.matches) ? req.body.matches : []
+  const supabase = db(); const sid = req.studio.id
+  let reconciled = 0, linked = 0
+  for (const m of matches) {
+    const email = String(m.email || '').trim().toLowerCase()
+    if (!email) continue
+    const { data: mem, error } = await supabase.from('onboarding_members').upsert({
+      studio_id: sid, customer_id: `MANUAL_${email}`, email,
+      full_name: m.full_name || null, member_type: 'member',
+      is_cancelled: true, status: 'Cancelled', is_new_member: false, seen_in_last_import: true,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'studio_id,customer_id' }).select().single()
+    if (error || !mem) continue
+    reconciled++
+    const { data: upd } = await supabase.from('onboarding_bookings')
+      .update({ member_id: mem.id })
+      .eq('studio_id', sid).is('member_id', null).eq('member_email', email).select('booking_id')
+    linked += (upd || []).length
+  }
+  res.json({ reconciled, bookings_linked: linked })
+})
+
 // ─── Cancellation ledger ──────────────────────────────────────────────────────
 router.get('/ledger', authenticate, requireStudio, async (req, res) => {
   let q = db().from('onboarding_cancellation_ledger').select('*')

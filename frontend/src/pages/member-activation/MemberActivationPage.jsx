@@ -502,6 +502,7 @@ function UnreconciledTab() {
   const [addFor, setAddFor] = useState(null)   // email being added
   const [form, setForm] = useState({ full_name: '', member_type: 'employee', origin_studio: '', expiration_date: '', is_cancelled: false, cancelled_date: '' })
   const [saving, setSaving] = useState(false)
+  const [showSuggest, setShowSuggest] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -531,6 +532,14 @@ function UnreconciledTab() {
         add them here (with the right type) so their visits track — they won't count toward the active-member number
         or get onboarding texts. Otherwise fix the email on the member in SAIL.
       </div>
+      <div className="mb-3">
+        <button onClick={() => setShowSuggest(true)}
+          className="text-sm font-semibold bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700">
+          Suggest cancelled matches
+        </button>
+        <span className="ml-2 text-xs text-gray-400">Match emails to known cancelled members, then approve in bulk.</span>
+      </div>
+      {showSuggest && <SuggestMatchesModal onClose={() => setShowSuggest(false)} onApplied={() => { setShowSuggest(false); load() }} />}
       {groups.length === 0 ? <Empty msg="Every booking matched a member. Nothing to fix. 🎉" /> : (
         <div className="border border-gray-200 rounded-xl divide-y divide-gray-100">
           {groups.map(g => (
@@ -589,6 +598,84 @@ function UnreconciledTab() {
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+// Review-before-apply: fuzzy-match unreconciled emails to cancelled people, approve in bulk.
+const CONF_BADGE = {
+  high: 'bg-green-100 text-green-700',
+  medium: 'bg-amber-100 text-amber-700',
+  low: 'bg-gray-100 text-gray-500',
+}
+function SuggestMatchesModal({ onClose, onApplied }) {
+  const [loading, setLoading] = useState(true)
+  const [rows, setRows] = useState([])
+  const [sel, setSel] = useState(() => new Set())   // selected emails
+  const [applying, setApplying] = useState(false)
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const d = await apiGet(`${BASE}/reconcile/suggestions`)
+        setRows(d)
+        setSel(new Set(d.filter(r => r.confidence === 'high').map(r => r.email)))  // pre-check high confidence
+      } catch { setRows([]) }
+      finally { setLoading(false) }
+    })()
+  }, [])
+
+  const toggle = (email) => setSel(s => { const n = new Set(s); n.has(email) ? n.delete(email) : n.add(email); return n })
+  const apply = async () => {
+    const matches = rows.filter(r => sel.has(r.email)).map(r => ({ email: r.email, full_name: r.suggested_name }))
+    if (!matches.length) return
+    setApplying(true)
+    try {
+      const res = await apiPost(`${BASE}/reconcile/apply`, { matches })
+      alert(`Reconciled ${res.reconciled} member${res.reconciled === 1 ? '' : 's'} · ${res.bookings_linked} bookings linked.`)
+      onApplied()
+    } catch (e) { alert('Failed: ' + (e?.message || 'error')); setApplying(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div>
+            <h3 className="font-bold text-gray-900">Suggested cancelled matches</h3>
+            <p className="text-[11px] text-gray-400 mt-0.5">Emails that likely belong to a known cancelled member. Review, then apply — each creates a cancelled member and links their workouts.</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">✕</button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-5 py-3">
+          {loading ? <Spinner /> : rows.length === 0 ? (
+            <Empty msg="No likely cancelled matches found." />
+          ) : (
+            <div className="border border-gray-200 rounded-xl divide-y divide-gray-100">
+              {rows.map(r => (
+                <label key={r.email} className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-gray-50">
+                  <input type="checkbox" checked={sel.has(r.email)} onChange={() => toggle(r.email)} className="flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-gray-900">{r.suggested_name}</span>
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase ${CONF_BADGE[r.confidence] || ''}`}>{r.confidence}</span>
+                    </div>
+                    <p className="text-xs text-gray-500 truncate">{r.email} · {r.bookings} booking{r.bookings === 1 ? '' : 's'}{r.last_booking_date ? ` · last ${r.last_booking_date}` : ''}</p>
+                  </div>
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-3 px-5 py-4 border-t border-gray-100">
+          <span className="text-xs text-gray-500">{sel.size} selected</span>
+          <button onClick={apply} disabled={applying || sel.size === 0}
+            className="ml-auto bg-red-600 text-white text-sm font-semibold px-5 py-2 rounded-lg hover:bg-red-700 disabled:opacity-50">
+            {applying ? 'Applying…' : `Reconcile ${sel.size} as cancelled`}
+          </button>
+          <button onClick={onClose} className="text-sm text-gray-500 px-3 py-2">Close</button>
+        </div>
+      </div>
     </div>
   )
 }
