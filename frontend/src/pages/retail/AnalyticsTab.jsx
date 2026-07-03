@@ -150,8 +150,12 @@ export function AnalyticsTab() {
     }
   }
 
-  const totalShrinkageValue = shrinkageData.reduce((sum, item) => sum + (item.shrinkage_value || 0), 0)
-  const flaggedShrinkage = shrinkageData.filter(item => item.flagged).length
+  // shrinkage_quantity = expected − actual → POSITIVE means missing (a real loss);
+  // negative is a surplus/overage, not shrinkage. Derive here so existing records
+  // (which stored the old, inverted flag) display correctly without recalculating.
+  const isRealLoss = (item) => (item.shrinkage_value || 0) > 50
+  const totalShrinkageValue = shrinkageData.reduce((sum, item) => sum + Math.max(0, item.shrinkage_value || 0), 0)
+  const flaggedShrinkage = shrinkageData.filter(isRealLoss).length
   const totalDeadStockValue = deadStockData.reduce((sum, item) => sum + (item.retail_value || 0), 0)
 
   return (
@@ -522,10 +526,15 @@ function StatCard({ label, value, icon: Icon, color }) {
 }
 
 function ShrinkageCard({ item }) {
-  const isLoss = item.shrinkage_quantity < 0
+  // Show the change vs expected from the user's view: negative = units missing
+  // (loss, red), positive = extra units found (surplus, green).
+  const unitsDelta = -(item.shrinkage_quantity || 0)          // actual − expected
+  const valueDelta = -(item.shrinkage_value || 0)             // + = gain, − = loss
+  const isLoss = unitsDelta < 0
+  const flagged = isLoss && (item.shrinkage_value || 0) > 50
 
   return (
-    <div className={`p-4 ${item.flagged ? 'bg-red-50' : ''}`}>
+    <div className={`p-4 ${flagged ? 'bg-red-50' : ''}`}>
       <div className="flex items-start justify-between">
         <div className="flex gap-3 flex-1">
           <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
@@ -560,15 +569,15 @@ function ShrinkageCard({ item }) {
         </div>
         <div className="text-right">
           <div className={`text-lg font-bold ${isLoss ? 'text-red-600' : 'text-green-600'}`}>
-            {isLoss ? '' : '+'}{item.shrinkage_quantity}
+            {unitsDelta > 0 ? '+' : ''}{unitsDelta}
           </div>
           <div className={`text-sm font-semibold ${isLoss ? 'text-red-600' : 'text-green-600'}`}>
-            {isLoss ? '-' : '+'}${Math.abs(item.shrinkage_value || 0).toFixed(2)}
+            {valueDelta >= 0 ? '+' : '-'}${Math.abs(valueDelta).toFixed(2)}
           </div>
           <div className="text-xs text-gray-500 mt-1">
             {item.shrinkage_rate?.toFixed(1)}% rate
           </div>
-          {item.flagged && (
+          {flagged && (
             <div className="mt-2">
               <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-600">
                 <AlertTriangle size={12} /> Flagged

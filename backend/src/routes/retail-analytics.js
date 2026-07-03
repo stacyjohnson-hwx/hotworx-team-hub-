@@ -256,7 +256,9 @@ router.post('/calculate-shrinkage', authenticate, requireStudio, requireRole('ow
         actual_ending_quantity: actualEndingQty,
         shrinkage_value: shrinkageValue,
         shrinkage_rate: shrinkageRate,
-        flagged: shrinkageQty < 0 && Math.abs(shrinkageValue) > 50, // Flag if >$50 loss
+        // shrinkage_quantity = expected − actual, so POSITIVE = missing units (loss).
+        // Only flag genuine losses over $50 (a surplus/overage is not shrinkage).
+        flagged: shrinkageQty > 0 && shrinkageValue > 50,
       })
     }
   }
