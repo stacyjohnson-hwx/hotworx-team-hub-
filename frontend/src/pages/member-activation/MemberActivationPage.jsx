@@ -1154,12 +1154,14 @@ function DailyListTab() {
     drop(r.id)
     try {
       if (r.kind === 'reengage') await apiPost(`${BASE}/reengage/${r.member_id}/complete`, {})
+      else if (r.kind === 'passport') await apiPost(`${BASE}/passport/${r.member_id}/complete`, { fulfilled: !!fulfil[r.id] })
       else await apiPost(`${BASE}/daily-list/${r.id}/complete`, { fulfilled: !!fulfil[r.id] })
     } catch { /* ignore */ }
   }
   const skip = async (r) => {
     try {
       if (r.kind === 'reengage') await apiPost(`${BASE}/reengage/${r.member_id}/snooze`, {})  // "not now" — snooze the tier cooldown
+      else if (r.kind === 'passport') await apiPost(`${BASE}/passport/${r.member_id}/complete`, { fulfilled: false })
       else await apiPost(`${BASE}/daily-list/${r.id}/skip`, {})
     } catch { /* ignore */ }
     setRows(rs => rs.filter(x => x.id !== r.id))
@@ -1170,6 +1172,7 @@ function DailyListTab() {
     setRows(rs => rs.filter(x => x.id !== r.id))
     try {
       if (r.kind === 'reengage') await apiPost(`${BASE}/reengage/${r.member_id}/dismiss`, {})
+      else if (r.kind === 'passport') await apiPost(`${BASE}/passport/${r.member_id}/complete`, { fulfilled: false })
       else await apiPost(`${BASE}/daily-list/${r.id}/skip`, {})
     } catch { /* ignore */ }
   }

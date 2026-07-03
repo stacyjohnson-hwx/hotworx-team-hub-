@@ -769,7 +769,7 @@ router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
   const logWindow = new Date(Date.now() - 90 * 86400000).toISOString()
   const [{ data: allMembers }, { data: actAll }, { data: allJourneys }, { data: reengRows }, { data: upcoming }] = await Promise.all([
     supabase.from('onboarding_members').select('id, full_name, phone, status, is_cancelled, join_date, member_type').eq('studio_id', studioId),
-    supabase.from('onboarding_member_activity').select('member_id, last_booking_date').eq('studio_id', studioId),
+    supabase.from('onboarding_member_activity').select('member_id, last_booking_date, workouts_tried').eq('studio_id', studioId),
     supabase.from('onboarding_journeys').select('member_id, status, start_date').eq('studio_id', studioId),
     supabase.from('onboarding_reengage_log').select('member_id, contacted_at, contacted_by').eq('studio_id', studioId).gte('contacted_at', logWindow).order('contacted_at', { ascending: false }),
     supabase.from('events').select('title, start_date').eq('studio_id', studioId).gte('start_date', today).order('start_date').limit(1),
@@ -819,6 +819,31 @@ router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
     })
   }
 
+  // Workout passport (roster-wide, live): any active member who has tried all 12
+  // workout types and hasn't been celebrated yet (no sticker reward, no passport task).
+  const [{ data: stickers }, { data: passportTasks }] = await Promise.all([
+    supabase.from('onboarding_rewards_awarded').select('member_id').eq('studio_id', studioId).eq('reward_key', 'sticker'),
+    supabase.from('onboarding_journey_tasks').select('journey:onboarding_journeys!inner(member_id)').eq('studio_id', studioId).eq('trigger_ref', 'passport_sticker'),
+  ])
+  const celebrated = new Set((stickers || []).map(r => r.member_id))
+  for (const pt of passportTasks || []) if (pt.journey?.member_id) celebrated.add(pt.journey.member_id)
+  const workoutsMap = new Map((actAll || []).map(a => [a.member_id, a.workouts_tried || 0]))
+  const passTpl = tplMap.get('passport_sticker') || {}
+  for (const mm of (allMembers || [])) {
+    if (mm.is_cancelled || !/active/i.test(mm.status || '')) continue
+    if (mm.member_type && mm.member_type !== 'member') continue
+    if (celebrated.has(mm.id) || (workoutsMap.get(mm.id) || 0) < 12) continue
+    const ctx = { first_name: firstName(mm.full_name) }
+    items.push({
+      id: `passport:${mm.id}`, kind: 'passport', member_id: mm.id,
+      member_name: mm.full_name || ctx.first_name, phone: mm.phone || null,
+      channel: passTpl.channel || 'text', label: passTpl.label || 'Workout passport complete 🎉',
+      trigger_kind: 'event_based', trigger_ref: 'passport_sticker', priority: 4,
+      reward_key: 'sticker', script: renderTemplate(passTpl.body || '', ctx), due_date: today,
+      last_booking_date: lastBookMap.get(mm.id) || null, days_lapsed: null,
+    })
+  }
+
   // Order by category — Onboarding first, then Milestones, then Re-engagement —
   // and within each by priority (re-engagement 14→30→60) then due date.
   const catRank = (it) => {
@@ -850,6 +875,17 @@ router.post('/reengage/:memberId/snooze', authenticate, requireStudio, async (re
   const { error } = await db().from('onboarding_reengage_log').insert({
     studio_id: req.studio.id, member_id: req.params.memberId, contacted_by: `snoozed:${req.user.email || req.user.id}`,
   })
+  if (error) return res.status(500).json({ error: error.message })
+  res.status(201).json({ ok: true })
+})
+
+// Celebrate / dismiss a workout-passport item — award the sticker (idempotent) so
+// it drops off the list. fulfilled=true means the physical sticker was handed over.
+router.post('/passport/:memberId/complete', authenticate, requireStudio, async (req, res) => {
+  const { error } = await db().from('onboarding_rewards_awarded').upsert({
+    studio_id: req.studio.id, member_id: req.params.memberId, reward_key: 'sticker',
+    awarded_at: new Date().toISOString(), fulfilled: !!req.body.fulfilled,
+  }, { onConflict: 'studio_id,member_id,reward_key' })
   if (error) return res.status(500).json({ error: error.message })
   res.status(201).json({ ok: true })
 })
