@@ -155,6 +155,23 @@ export default function RetailPage() {
     }
   }
 
+  const qtyOf = (s) => s?.inventory?.[0]?.quantity_on_hand ?? 0
+  // Optimistically update on-hand in local state while typing.
+  const setLocalQty = (id, val) => setSkus(prev => prev.map(s =>
+    s.id === id ? { ...s, inventory: [{ ...(s.inventory?.[0] || {}), quantity_on_hand: val }] } : s))
+  // Persist on blur.
+  const saveQty = async (sku, raw) => {
+    const qty = raw === '' ? 0 : Number(raw) || 0
+    try {
+      await apiPut(`/api/retail/inventory/${sku.id}`, {
+        quantity_on_hand: qty,
+        size_quantities: sku.inventory?.[0]?.size_quantities || null,
+      }, currentStudio.id)
+    } catch (err) {
+      alert('Failed to save quantity: ' + err.message)
+    }
+  }
+
   const filteredSkus = skus.filter(s => {
     const matchesSearch = !search ||
       s.sku_code?.toLowerCase().includes(search.toLowerCase()) ||
@@ -356,6 +373,8 @@ export default function RetailPage() {
                       <th onClick={() => toggleSort('category')} className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer select-none hover:text-gray-900">Category{sortArrow('category')}</th>
                       <th onClick={() => toggleSort('retail')} className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer select-none hover:text-gray-900">Retail{sortArrow('retail')}</th>
                       <th onClick={() => toggleSort('wholesale')} className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer select-none hover:text-gray-900">Wholesale{sortArrow('wholesale')}</th>
+                      <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider w-28">On Hand</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider w-28">Value</th>
                       <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Sizes</th>
                       {isOwnerOrManager && (
                         <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider w-24">Actions</th>
@@ -382,6 +401,22 @@ export default function RetailPage() {
                         </td>
                         <td className="px-4 py-3 text-right text-gray-600">
                           {sku.wholesale_cost ? `$${parseFloat(sku.wholesale_cost).toFixed(2)}` : '-'}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          {isOwnerOrManager ? (
+                            <input
+                              type="number" min="0" onWheel={e => e.currentTarget.blur()}
+                              value={qtyOf(sku)}
+                              onChange={e => setLocalQty(sku.id, e.target.value)}
+                              onBlur={e => saveQty(sku, e.target.value)}
+                              className="w-20 px-2 py-1 border border-gray-300 rounded-lg text-center focus:outline-none focus:ring-2 focus:ring-red-600/30"
+                            />
+                          ) : (
+                            <span className="font-semibold text-gray-900">{qtyOf(sku)}</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-right font-semibold text-gray-900">
+                          ${((Number(qtyOf(sku)) || 0) * (Number(sku.retail_price) || 0)).toFixed(2)}
                         </td>
                         <td className="px-4 py-3 text-center">
                           {sku.has_sizes ? (
@@ -415,6 +450,20 @@ export default function RetailPage() {
                       </tr>
                     ))}
                   </tbody>
+                  <tfoot className="bg-gray-50 border-t-2 border-gray-200">
+                    <tr>
+                      <td className="px-4 py-3 text-xs font-semibold text-gray-600 uppercase" colSpan={5}>
+                        Total on hand ({sortedSkus.length} product{sortedSkus.length === 1 ? '' : 's'})
+                      </td>
+                      <td className="px-4 py-3 text-center font-bold text-gray-900">
+                        {sortedSkus.reduce((n, s) => n + (Number(qtyOf(s)) || 0), 0)}
+                      </td>
+                      <td className="px-4 py-3 text-right font-bold text-gray-900">
+                        ${sortedSkus.reduce((n, s) => n + (Number(qtyOf(s)) || 0) * (Number(s.retail_price) || 0), 0).toFixed(2)}
+                      </td>
+                      <td colSpan={isOwnerOrManager ? 2 : 1} />
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
             </div>
