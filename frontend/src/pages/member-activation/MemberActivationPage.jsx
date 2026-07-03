@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Upload, Users, HeartHandshake, AlertTriangle, Check, Loader2, RefreshCw, Gauge, ListChecks, Phone, MessageSquare, SkipForward, FileText, Trophy, Gift, Cake, Pencil, Building2, Bold, List, Play, Camera, X } from 'lucide-react'
+import { Upload, Users, HeartHandshake, AlertTriangle, Check, Loader2, RefreshCw, Gauge, ListChecks, Phone, MessageSquare, SkipForward, FileText, Trophy, Gift, Cake, Pencil, Building2, Bold, List, Play, Camera, X, Trash2 } from 'lucide-react'
 import { apiGet, apiPost, apiPatch, apiPut, apiDelete } from '@/hooks/useApi'
 import { useRole } from '@/hooks/useRole'
 import { useStudio } from '@/contexts/StudioContext'
@@ -956,6 +956,15 @@ function DailyListTab() {
     } catch { /* ignore */ }
     setRows(rs => rs.filter(x => x.id !== r.id))
   }
+  // Permanently remove a task that isn't needed (won't come back).
+  const del = async (r) => {
+    if (!window.confirm("Delete this task? It won't come back.")) return
+    setRows(rs => rs.filter(x => x.id !== r.id))
+    try {
+      if (r.kind === 'reengage') await apiPost(`${BASE}/reengage/${r.member_id}/dismiss`, {})
+      else await apiPost(`${BASE}/daily-list/${r.id}/skip`, {})
+    } catch { /* ignore */ }
+  }
   const setFlag = async (r, flag) => {
     try { await apiPatch(`${BASE}/journeys/${r.journey_id}`, { first_session_flag: flag }) } catch { /* ignore */ }
     load()
@@ -1049,6 +1058,7 @@ function DailyListTab() {
                     <div className="flex items-center gap-3 mt-2">
                       <button onClick={() => setScriptFor(r)} className="text-xs font-semibold text-red-600 hover:underline flex items-center gap-1"><FileText size={12} /> {isStudio ? 'View orientation' : isCall ? 'View call script' : 'View / send text'}</button>
                       <button onClick={() => skip(r)} className="text-xs text-gray-400 hover:text-gray-700 flex items-center gap-1 ml-auto"><SkipForward size={12} /> Skip</button>
+                      <button onClick={() => del(r)} className="text-xs text-gray-400 hover:text-red-600 flex items-center gap-1"><Trash2 size={12} /> Delete</button>
                     </div>
                   </div>
                 </div>

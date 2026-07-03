@@ -710,8 +710,9 @@ router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
   const jMap = new Map((allJourneys || []).map(j => [j.member_id, j]))
   // Most-recent contact per member (rows come newest-first), plus a real-attempt count
   // (snoozes count toward the cooldown but not toward the displayed follow-up tally).
-  const lastContactMap = new Map(), attemptsMap = new Map()
+  const lastContactMap = new Map(), attemptsMap = new Map(), dismissedSet = new Set()
   for (const r of (reengRows || [])) {
+    if (String(r.contacted_by || '').startsWith('dismissed:')) { dismissedSet.add(r.member_id); continue }  // deleted by the team
     if (!lastContactMap.has(r.member_id)) lastContactMap.set(r.member_id, r.contacted_at)
     if (!String(r.contacted_by || '').startsWith('snoozed:')) attemptsMap.set(r.member_id, (attemptsMap.get(r.member_id) || 0) + 1)
   }
@@ -719,7 +720,7 @@ router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
   const addDaysStr = (d, n) => { const x = new Date(d + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10) }
 
   for (const mm of (allMembers || [])) {
-    if (mm.is_cancelled || !/active/i.test(mm.status || '')) continue
+    if (mm.is_cancelled || !/active/i.test(mm.status || '') || dismissedSet.has(mm.id)) continue
     if (mm.member_type && mm.member_type !== 'member') continue  // don't re-engage employees/comp/reciprocal
     const j = jMap.get(mm.id)
     const inFirst90 = j && j.status === 'active' && j.start_date && addDaysStr(j.start_date, 90) >= today
@@ -780,6 +781,15 @@ router.post('/reengage/:memberId/complete', authenticate, requireStudio, async (
 router.post('/reengage/:memberId/snooze', authenticate, requireStudio, async (req, res) => {
   const { error } = await db().from('onboarding_reengage_log').insert({
     studio_id: req.studio.id, member_id: req.params.memberId, contacted_by: `snoozed:${req.user.email || req.user.id}`,
+  })
+  if (error) return res.status(500).json({ error: error.message })
+  res.status(201).json({ ok: true })
+})
+
+// Permanently remove a member from re-engagement (team decided it's not needed).
+router.post('/reengage/:memberId/dismiss', authenticate, requireStudio, async (req, res) => {
+  const { error } = await db().from('onboarding_reengage_log').insert({
+    studio_id: req.studio.id, member_id: req.params.memberId, contacted_by: `dismissed:${req.user.email || req.user.id}`,
   })
   if (error) return res.status(500).json({ error: error.message })
   res.status(201).json({ ok: true })
