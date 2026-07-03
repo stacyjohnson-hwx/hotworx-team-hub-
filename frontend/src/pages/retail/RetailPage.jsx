@@ -46,6 +46,7 @@ export default function RetailPage() {
   const [editingSku, setEditingSku] = useState(null)
   const [showImportModal, setShowImportModal] = useState(false)
   const [showSizeManager, setShowSizeManager] = useState(false)
+  const [sizeManagerFocus, setSizeManagerFocus] = useState('')
   const [viewMode, setViewMode] = useState('grid') // 'grid' or 'table'
 
   const handleTabChange = (newTab) => {
@@ -325,7 +326,7 @@ export default function RetailPage() {
               {isOwnerOrManager && (
                 <>
                   <button
-                    onClick={() => setShowSizeManager(true)}
+                    onClick={() => { setSizeManagerFocus(''); setShowSizeManager(true) }}
                     className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 whitespace-nowrap"
                     title="Set the on-hand quantity for each size of each garment"
                   >
@@ -350,19 +351,34 @@ export default function RetailPage() {
           </div>
 
           {/* Product Grid View */}
-          {viewMode === 'grid' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {sortedSkus.map(sku => (
-                <ProductCard
-                  key={sku.id}
-                  sku={sku}
-                  onEdit={() => { setEditingSku(sku); setShowModal(true) }}
-                  onDelete={() => handleDelete(sku.id)}
-                  isOwnerOrManager={isOwnerOrManager}
-                />
-              ))}
-            </div>
-          )}
+          {viewMode === 'grid' && (() => {
+            // Group sized apparel (Product … - SIZE) into one card per garment so
+            // stock totals across sizes; everything else is its own card.
+            const gmap = new Map(); const singles = []
+            for (const sku of sortedSkus) {
+              const { base, size } = parseSize(sku.product_name)
+              if (!size) { singles.push(sku); continue }
+              if (!gmap.has(base)) gmap.set(base, { base, sample: sku, bySize: {} })
+              gmap.get(base).bySize[size] = sku
+            }
+            return (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {[...gmap.values()].map(g => (
+                  <GarmentCard key={g.base} group={g} isOwnerOrManager={isOwnerOrManager}
+                    onManage={() => { setSizeManagerFocus(g.base); setShowSizeManager(true) }} />
+                ))}
+                {singles.map(sku => (
+                  <ProductCard
+                    key={sku.id}
+                    sku={sku}
+                    onEdit={() => { setEditingSku(sku); setShowModal(true) }}
+                    onDelete={() => handleDelete(sku.id)}
+                    isOwnerOrManager={isOwnerOrManager}
+                  />
+                ))}
+              </div>
+            )
+          })()}
 
           {/* Table View */}
           {viewMode === 'table' && (
@@ -560,6 +576,7 @@ export default function RetailPage() {
         <SizeManagerModal
           skus={skus}
           currentStudio={currentStudio}
+          initialSearch={sizeManagerFocus}
           onClose={() => setShowSizeManager(false)}
           onSaved={() => { setShowSizeManager(false); loadData() }}
         />
@@ -570,8 +587,8 @@ export default function RetailPage() {
 
 // Manage on-hand quantity per size for garments stored as single-size SKUs
 // ("Product / COLOR - SIZE"). Grouped by garment; missing sizes are created on save.
-function SizeManagerModal({ skus, currentStudio, onClose, onSaved }) {
-  const [search, setSearch] = useState('')
+function SizeManagerModal({ skus, currentStudio, initialSearch = '', onClose, onSaved }) {
+  const [search, setSearch] = useState(initialSearch)
   const [drafts, setDrafts] = useState({})   // `${base}|${size}` -> string value
   const [saving, setSaving] = useState(false)
 
@@ -712,6 +729,50 @@ function TabButton({ active, onClick, children }) {
     >
       {children}
     </button>
+  )
+}
+
+// One card per garment (sized apparel): total stock across sizes + a per-size breakdown.
+function GarmentCard({ group, isOwnerOrManager, onManage }) {
+  const qtyOf = (s) => s?.inventory?.[0]?.quantity_on_hand || 0
+  const sizes = Object.entries(group.bySize).sort((a, b) => sizeRank(a[0]) - sizeRank(b[0]))
+  const total = sizes.reduce((n, [, s]) => n + qtyOf(s), 0)
+  const sample = group.sample
+  const margin = sample.retail_price && sample.wholesale_cost
+    ? ((sample.retail_price - sample.wholesale_cost) / sample.retail_price * 100).toFixed(0) : null
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 overflow-hidden hover:shadow-md transition-shadow">
+      <div className="aspect-square bg-gray-100 relative">
+        {sample.image_url ? <img src={sample.image_url} alt={group.base} className="w-full h-full object-cover" />
+          : <div className="flex items-center justify-center h-full"><Package size={48} className="text-gray-300" /></div>}
+        <div className="absolute top-2 left-2 bg-gray-900/70 text-white px-2 py-0.5 rounded-full text-[11px] font-semibold">{sizes.length} size{sizes.length === 1 ? '' : 's'}</div>
+        {sample.top_seller && <div className="absolute top-2 right-2 bg-amber-500 text-white px-2 py-1 rounded-full text-xs font-bold shadow-lg">⭐ Top Seller</div>}
+      </div>
+      <div className="p-4">
+        <div className="flex items-start justify-between mb-2">
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-gray-900 truncate">{group.base}</h3>
+            <p className="text-xs text-gray-500">Apparel · {sizes.length} sizes</p>
+          </div>
+          {isOwnerOrManager && (
+            <button onClick={onManage} className="p-1 text-gray-400 hover:text-red-600" title="Update sizes / quantities"><Edit2 size={14} /></button>
+          )}
+        </div>
+        <div className="flex items-center gap-3 mb-3">
+          {sample.retail_price && <div className="text-lg font-bold text-gray-900">${sample.retail_price.toFixed(2)}</div>}
+          {margin && <div className="text-xs text-green-600 font-semibold">{margin}% margin</div>}
+        </div>
+        <div className="flex items-center gap-2 mb-2">
+          {total > 0 ? <CheckCircle size={16} className="text-green-500" /> : <AlertCircle size={16} className="text-amber-500" />}
+          <span className="text-sm font-semibold text-gray-700">{total} in stock</span>
+        </div>
+        <div className="flex flex-wrap gap-1">
+          {sizes.map(([sz, s]) => (
+            <span key={sz} className="text-[11px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600"><b>{sz}</b> {qtyOf(s)}</span>
+          ))}
+        </div>
+      </div>
+    </div>
   )
 }
 
