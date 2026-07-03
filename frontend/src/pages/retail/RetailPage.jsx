@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useRole } from '@/hooks/useRole'
 import { useStudio } from '@/contexts/StudioContext'
@@ -11,6 +11,19 @@ import {
   AlertCircle, BarChart3, ShoppingCart, CheckCircle, X, ClipboardList,
   Calendar, PlayCircle, Upload, Grid3x3, List, Download, Eye,
 } from 'lucide-react'
+
+// Clothing size grouping (mirrors the count page) so single-size SKUs
+// ("Product / COLOR - SIZE") can be managed together by garment.
+const SIZE_RUN = ['XS', 'S', 'M', 'L', 'XL', 'XXL']
+const SIZE_RANK = { '2XS': -2, 'XXS': -2, 'XS': 0, 'S': 1, 'M': 2, 'L': 3, 'XL': 4, 'XXL': 5, '2XL': 5, 'XXXL': 6, '3XL': 6, 'OS': 98, 'ONE SIZE': 99 }
+const SIZE_SET = new Set(Object.keys(SIZE_RANK))
+const sizeRank = (s) => (s in SIZE_RANK ? SIZE_RANK[s] : 50)
+function parseSize(name) {
+  const m = (name || '').match(/^(.*?)\s*-\s*([A-Za-z][A-Za-z0-9 ]{0,8})$/)
+  if (!m) return { base: name || '', size: null }
+  const size = m[2].trim().toUpperCase()
+  return SIZE_SET.has(size) ? { base: m[1].trim(), size } : { base: name || '', size: null }
+}
 
 export default function RetailPage() {
   const navigate = useNavigate()
@@ -32,6 +45,7 @@ export default function RetailPage() {
   const [showModal, setShowModal] = useState(false)
   const [editingSku, setEditingSku] = useState(null)
   const [showImportModal, setShowImportModal] = useState(false)
+  const [showSizeManager, setShowSizeManager] = useState(false)
   const [viewMode, setViewMode] = useState('grid') // 'grid' or 'table'
 
   const handleTabChange = (newTab) => {
@@ -292,6 +306,13 @@ export default function RetailPage() {
               {isOwnerOrManager && (
                 <>
                   <button
+                    onClick={() => setShowSizeManager(true)}
+                    className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 whitespace-nowrap"
+                    title="Set the on-hand quantity for each size of each garment"
+                  >
+                    <Grid3x3 size={18} /> Update Sizes
+                  </button>
+                  <button
                     onClick={() => setShowImportModal(true)}
                     className="flex items-center gap-2 px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800 whitespace-nowrap"
                   >
@@ -482,6 +503,145 @@ export default function RetailPage() {
           onSuccess={() => { setShowImportModal(false); loadData() }}
         />
       )}
+
+      {showSizeManager && (
+        <SizeManagerModal
+          skus={skus}
+          currentStudio={currentStudio}
+          onClose={() => setShowSizeManager(false)}
+          onSaved={() => { setShowSizeManager(false); loadData() }}
+        />
+      )}
+    </div>
+  )
+}
+
+// Manage on-hand quantity per size for garments stored as single-size SKUs
+// ("Product / COLOR - SIZE"). Grouped by garment; missing sizes are created on save.
+function SizeManagerModal({ skus, currentStudio, onClose, onSaved }) {
+  const [search, setSearch] = useState('')
+  const [drafts, setDrafts] = useState({})   // `${base}|${size}` -> string value
+  const [saving, setSaving] = useState(false)
+
+  const qtyOf = (s) => s?.inventory?.[0]?.quantity_on_hand ?? 0
+  const keyOf = (base, size) => `${base}|${size}`
+
+  const groups = useMemo(() => {
+    const map = new Map()
+    for (const s of skus || []) {
+      const { base, size } = parseSize(s.product_name)
+      if (!size) continue
+      if (!map.has(base)) map.set(base, { base, bySize: {}, sample: s })
+      map.get(base).bySize[size] = s
+    }
+    return [...map.values()]
+      .map(g => {
+        const extra = Object.keys(g.bySize).filter(s => !SIZE_RUN.includes(s))
+        return { ...g, sizeList: [...SIZE_RUN, ...extra].sort((a, b) => sizeRank(a) - sizeRank(b)) }
+      })
+      .filter(g => !search || g.base.toLowerCase().includes(search.toLowerCase()))
+      .sort((a, b) => a.base.localeCompare(b.base))
+  }, [skus, search])
+
+  const valFor = (g, size) => {
+    const k = keyOf(g.base, size)
+    if (k in drafts) return drafts[k]
+    const s = g.bySize[size]
+    return s ? String(qtyOf(s)) : ''
+  }
+  const setVal = (base, size, v) => setDrafts(d => ({ ...d, [keyOf(base, size)]: v }))
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      for (const g of groups) {
+        for (const size of g.sizeList) {
+          const k = keyOf(g.base, size)
+          if (!(k in drafts)) continue           // untouched
+          const raw = String(drafts[k]).trim()
+          if (raw === '') continue                // left blank
+          const qty = Number(raw) || 0
+          let sku = g.bySize[size]
+          if (!sku) {
+            // Clone a sibling to materialize the missing size.
+            const b = g.sample
+            sku = await apiPost('/api/retail/skus', {
+              sku_code: `${b.sku_code}-${size}`,
+              product_name: `${g.base} - ${size}`,
+              category_id: b.category_id, vendor_id: b.vendor_id,
+              retail_price: b.retail_price, wholesale_cost: b.wholesale_cost,
+              image_url: b.image_url, has_sizes: false, active: true,
+            }, currentStudio.id)
+          }
+          await apiPut(`/api/retail/inventory/${sku.id}`, { quantity_on_hand: qty, size_quantities: null }, currentStudio.id)
+        }
+      }
+      onSaved()
+    } catch (err) {
+      alert('Save failed: ' + err.message)
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] flex flex-col">
+        <div className="border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-bold text-gray-900">Update Sizes</h2>
+            <p className="text-xs text-gray-500 mt-0.5">Set the on-hand quantity for each size. Sizes not in the catalog are created when you enter a number.</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+        </div>
+
+        <div className="px-6 pt-4">
+          <div className="relative">
+            <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search a garment (e.g. Be You Do You Tank)…"
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-600/30" />
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+          {groups.length === 0 ? (
+            <p className="text-center text-gray-400 py-12 text-sm">No sized garments found{search ? ' for that search' : ''}.</p>
+          ) : groups.map(g => (
+            <div key={g.base} className="border border-gray-200 rounded-lg p-3">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
+                  {g.sample.image_url ? <img src={g.sample.image_url} alt="" className="w-full h-full object-cover" /> : <Package size={18} className="text-gray-300" />}
+                </div>
+                <p className="font-semibold text-gray-900 text-sm">{g.base}</p>
+              </div>
+              <div className="flex flex-wrap gap-2.5">
+                {g.sizeList.map(size => {
+                  const exists = !!g.bySize[size]
+                  return (
+                    <div key={size} className="w-16">
+                      <label className="block text-[11px] font-medium text-gray-500 mb-0.5 text-center">
+                        {size}{!exists && <span className="text-gray-300"> +</span>}
+                      </label>
+                      <input
+                        type="number" min="0" onWheel={e => e.currentTarget.blur()}
+                        value={valFor(g, size)} onChange={e => setVal(g.base, size, e.target.value)}
+                        placeholder="—"
+                        className={`w-full px-2 py-1.5 rounded-lg text-center text-sm focus:outline-none focus:ring-2 focus:ring-red-600/30 border ${exists ? 'border-gray-300' : 'border-dashed border-gray-300 bg-gray-50'}`}
+                      />
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="border-t border-gray-200 px-6 py-4 flex gap-3">
+          <button onClick={onClose} className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">Cancel</button>
+          <button onClick={save} disabled={saving} className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50">
+            {saving ? 'Saving…' : 'Save quantities'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
