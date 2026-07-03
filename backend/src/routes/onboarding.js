@@ -742,14 +742,27 @@ router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
       member_name: mm.full_name || ctx.first_name, phone: mm.phone || null,
       channel: tpl.channel || (lapse >= 60 ? 'call' : 'text'),
       label: tpl.label || key, trigger_kind: 'reengage', trigger_ref: key,
-      priority: lapse >= 60 ? 2 : 4, reward_key: null,
+      // De-prioritized vs onboarding/milestones; the coldest (60+) rank last.
+      priority: lapse >= 60 ? 8 : lapse >= 30 ? 7 : 6, reward_key: null,
       script: renderTemplate(tpl.body || '', ctx), due_date: today,
       last_booking_date: lastBookMap.get(mm.id) || null, days_lapsed: lapse,
       last_contacted_at: lastContact || null, attempts: attemptsMap.get(mm.id) || 0,
     })
   }
 
-  items.sort((x, y) => x.priority - y.priority || String(x.due_date).localeCompare(String(y.due_date)))
+  // Order by category — Onboarding first, then Milestones, then Re-engagement —
+  // and within each by priority (re-engagement 14→30→60) then due date.
+  const catRank = (it) => {
+    const r = it.trigger_ref || ''
+    if (r.startsWith('reengage')) return 2
+    if (r.startsWith('milestone') || r === 'passport_sticker') return 1
+    return 0
+  }
+  items.sort((x, y) =>
+    catRank(x) - catRank(y) ||
+    x.priority - y.priority ||
+    String(x.due_date).localeCompare(String(y.due_date))
+  )
   res.json(items)
 })
 
