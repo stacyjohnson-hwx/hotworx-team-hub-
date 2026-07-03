@@ -228,8 +228,6 @@ async function evaluateEventTriggers(supabase, studioId) {
       if (lapse >= 14) {
         if (j.current_track !== 'save') await supabase.from('onboarding_journeys').update({ current_track: 'save' }).eq('id', j.id)
         await addTask(j, { type: 'call', template_key: 'save_14d', trigger_kind: 'event_based', trigger_ref: 'save_14d', priority: 3, context: { first_name: first, days_lapsed: lapse } })
-      } else if (lapse >= 7) {
-        await addTask(j, { type: 'text', template_key: 'save_7d', trigger_kind: 'event_based', trigger_ref: 'save_7d', priority: 3, context: { first_name: first, days_lapsed: lapse } })
       } else if (j.current_track === 'save') {
         await supabase.from('onboarding_journeys').update({ current_track: 'onboarding' }).eq('id', j.id)  // rebooked → exit save fork
       }
