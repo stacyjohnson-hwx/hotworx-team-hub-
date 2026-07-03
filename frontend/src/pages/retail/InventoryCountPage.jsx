@@ -573,6 +573,25 @@ function HistoryView({ sessions, onBack, currentStudio }) {
     }
   }
 
+  const exportSession = () => {
+    const rows = entries.map(e => {
+      const { base, size } = parseSize(e.sku?.product_name)
+      return {
+        'Product Name': e.sku?.product_name || '',
+        'Product': size ? base : (e.sku?.product_name || ''),
+        'Size': size || '',
+        'SKU Code': e.sku?.sku_code || '',
+        'Expected': e.expected_quantity ?? '',
+        'Counted': e.actual_quantity ?? '',
+        'Variance': e.variance ?? '',
+      }
+    }).sort((a, b) => a.Product.localeCompare(b.Product) || sizeRank(a.Size) - sizeRank(b.Size))
+    const ws = XLSX.utils.json_to_sheet(rows)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Inventory Count')
+    XLSX.writeFile(wb, `inventory-count-${selectedSession.count_date}.xlsx`)
+  }
+
   if (selectedSession) {
     const variances = entries.filter(e => e.variance !== 0)
     const totalVarianceValue = entries.reduce((sum, e) => sum + (e.variance_value || 0), 0)
@@ -584,8 +603,20 @@ function HistoryView({ sessions, onBack, currentStudio }) {
             <ArrowLeft size={20} />
             <span className="font-medium">Back to History</span>
           </button>
-          <h1 className="text-xl font-bold text-gray-900">Count from {selectedSession.count_date}</h1>
-          <p className="text-sm text-gray-500">Status: {selectedSession.status}</p>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <h1 className="text-xl font-bold text-gray-900">Count from {selectedSession.count_date}</h1>
+              <p className="text-sm text-gray-500">Status: {selectedSession.status}</p>
+            </div>
+            <button
+              onClick={exportSession}
+              disabled={entries.length === 0}
+              className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium disabled:opacity-50"
+              title="Download this completed count as an Excel file to enter into SAIL"
+            >
+              <Download size={18} /> Export for SAIL
+            </button>
+          </div>
         </div>
 
         <div className="p-4">
