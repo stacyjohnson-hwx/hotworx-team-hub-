@@ -246,9 +246,9 @@ export default function RetailPage() {
         <div>
           {/* Toolbar */}
           <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4">
-            <div className="flex flex-col md:flex-row gap-3">
-              {/* Search */}
-              <div className="flex-1 relative">
+            <div className="space-y-3">
+              {/* Search — own row so the typed query is fully visible */}
+              <div className="relative">
                 <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input
                   type="text"
@@ -259,6 +259,8 @@ export default function RetailPage() {
                 />
               </div>
 
+              {/* Filters + actions */}
+              <div className="flex flex-col md:flex-row md:flex-wrap md:items-center gap-3">
               {/* Category Filter */}
               <select
                 value={filterCategory}
@@ -343,6 +345,7 @@ export default function RetailPage() {
                   </button>
                 </>
               )}
+              </div>
             </div>
           </div>
 
