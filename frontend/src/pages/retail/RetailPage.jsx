@@ -5,10 +5,11 @@ import { useStudio } from '@/contexts/StudioContext'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
 import { AnalyticsTab } from './AnalyticsTab'
 import { InventoryImportModal } from './InventoryImportModal'
+import * as XLSX from 'xlsx'
 import {
   Package, Plus, Search, Filter, Edit2, Trash2, DollarSign,
   AlertCircle, BarChart3, ShoppingCart, CheckCircle, X, ClipboardList,
-  Calendar, PlayCircle, Upload, Grid3x3, List,
+  Calendar, PlayCircle, Upload, Grid3x3, List, Download, Eye,
 } from 'lucide-react'
 
 export default function RetailPage() {
@@ -86,6 +87,26 @@ export default function RetailPage() {
       loadData() // Reload to refresh the list
     } catch (err) {
       alert('Failed to delete count: ' + err.message)
+    }
+  }
+
+  // Download a submitted count as .xlsx for entering into SAIL.
+  const handleExportCount = async (session) => {
+    try {
+      const full = await apiGet(`/api/retail/counts/${session.id}`, currentStudio.id)
+      const rows = (full.entries || []).map(e => ({
+        'Product Name': e.sku?.product_name || '',
+        'SKU Code': e.sku?.sku_code || '',
+        'Expected': e.expected_quantity ?? '',
+        'Counted': e.actual_quantity ?? '',
+        'Variance': e.variance ?? (e.actual_quantity != null ? e.actual_quantity - (e.expected_quantity || 0) : ''),
+      })).sort((a, b) => a['Product Name'].localeCompare(b['Product Name']))
+      const ws = XLSX.utils.json_to_sheet(rows)
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Inventory Count')
+      XLSX.writeFile(wb, `inventory-count-${session.count_date}.xlsx`)
+    } catch (err) {
+      alert('Failed to export count: ' + err.message)
     }
   }
 
@@ -418,6 +439,7 @@ export default function RetailPage() {
                 key={session.id}
                 session={session}
                 onResume={() => navigate(`/retail/count/${session.id}`)}
+                onExport={() => handleExportCount(session)}
                 onDelete={handleDeleteCount}
               />
             ))}
@@ -812,7 +834,7 @@ function ProductModal({ sku, categories, vendors, onSave, onClose }) {
   )
 }
 
-function CountSessionCard({ session, onResume, onDelete }) {
+function CountSessionCard({ session, onResume, onExport, onDelete }) {
   const isSubmitted = session.status === 'submitted'
   const progress = session.items_counted || 0
   const total = session.total_items || 0
@@ -873,7 +895,23 @@ function CountSessionCard({ session, onResume, onDelete }) {
       )}
 
       {/* Actions */}
-      {!isSubmitted && (
+      {isSubmitted ? (
+        <div className="flex gap-2">
+          <button
+            onClick={onExport}
+            className="flex-1 flex items-center justify-center gap-2 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors"
+          >
+            <Download size={18} /> Export for SAIL
+          </button>
+          <button
+            onClick={onResume}
+            className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors flex items-center gap-1.5"
+            title="View this count"
+          >
+            <Eye size={18} /> View
+          </button>
+        </div>
+      ) : (
         <div className="flex gap-2">
           <button
             onClick={onResume}
