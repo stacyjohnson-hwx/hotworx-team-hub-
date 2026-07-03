@@ -91,12 +91,16 @@ export default function RetailPage() {
 
   const handleSave = async (skuData) => {
     try {
-      if (editingSku?.id) {
-        const updated = await apiPut(`/api/retail/skus/${editingSku.id}`, skuData, currentStudio.id)
-        setSkus(prev => prev.map(s => s.id === updated.id ? updated : s))
-      } else {
-        const created = await apiPost('/api/retail/skus', skuData, currentStudio.id)
-        setSkus(prev => [...prev, created])
+      const saved = editingSku?.id
+        ? await apiPut(`/api/retail/skus/${editingSku.id}`, skuData, currentStudio.id)
+        : await apiPost('/api/retail/skus', skuData, currentStudio.id)
+      setSkus(prev => editingSku?.id ? prev.map(s => s.id === saved.id ? saved : s) : [...prev, saved])
+      // Persist the manual inventory count (upsert on sku_id+studio).
+      if (saved?.id && skuData.quantity_on_hand !== undefined) {
+        await apiPut(`/api/retail/inventory/${saved.id}`, {
+          quantity_on_hand: skuData.quantity_on_hand,
+          size_quantities: skuData.size_quantities || null,
+        }, currentStudio.id)
       }
       setShowModal(false)
       setEditingSku(null)
@@ -558,7 +562,12 @@ function ProductCard({ sku, onEdit, onDelete, isOwnerOrManager }) {
 }
 
 function ProductModal({ sku, categories, vendors, onSave, onClose }) {
-  const [form, setForm] = useState(sku || {
+  const inv = sku?.inventory?.[0]
+  const [form, setForm] = useState(sku ? {
+    ...sku,
+    quantity_on_hand: inv?.quantity_on_hand ?? 0,
+    size_quantities: inv?.size_quantities || {},
+  } : {
     sku_code: '',
     product_name: '',
     description: '',
@@ -573,9 +582,14 @@ function ProductModal({ sku, categories, vendors, onSave, onClose }) {
     reorder_quantity: 0,
     active: true,
     top_seller: false,
+    quantity_on_hand: 0,
+    size_quantities: {},
   })
 
   const set = (key, val) => setForm(prev => ({ ...prev, [key]: val }))
+  const setSizeQty = (size, val) => setForm(prev => ({ ...prev, size_quantities: { ...(prev.size_quantities || {}), [size]: val === '' ? '' : Number(val) } }))
+  // Apparel total = sum of per-size counts; single items use the plain field.
+  const sizeTotal = (form.available_sizes || []).reduce((s, sz) => s + (Number(form.size_quantities?.[sz]) || 0), 0)
 
   const handleSubmit = (e) => {
     e.preventDefault()
@@ -583,7 +597,12 @@ function ProductModal({ sku, categories, vendors, onSave, onClose }) {
       alert('SKU code and product name are required')
       return
     }
-    onSave(form)
+    const useSizes = form.has_sizes && (form.available_sizes || []).length > 0
+    onSave({
+      ...form,
+      quantity_on_hand: useSizes ? sizeTotal : (Number(form.quantity_on_hand) || 0),
+      size_quantities: useSizes ? form.size_quantities : null,
+    })
   }
 
   return (
@@ -737,6 +756,39 @@ function ProductModal({ sku, categories, vendors, onSave, onClose }) {
                 </p>
               </div>
             )}
+
+            {/* Inventory on hand — manual update */}
+            <div className="md:col-span-2 p-4 bg-gray-50 rounded-lg border border-gray-200">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Quantity on hand</label>
+              {form.has_sizes && (form.available_sizes || []).length > 0 ? (
+                <>
+                  <div className="flex flex-wrap gap-3">
+                    {(form.available_sizes || []).map(size => (
+                      <div key={size} className="w-20">
+                        <label className="block text-xs font-medium text-gray-500 mb-1 text-center">{size}</label>
+                        <input
+                          type="number" min="0" onWheel={e => e.currentTarget.blur()}
+                          value={form.size_quantities?.[size] ?? ''}
+                          onChange={e => setSizeQty(size, e.target.value)}
+                          placeholder="0"
+                          className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-center focus:outline-none focus:ring-2 focus:ring-red-600/30"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">Total on hand: <span className="font-semibold text-gray-700">{sizeTotal}</span> (sum of sizes)</p>
+                </>
+              ) : (
+                <input
+                  type="number" min="0" onWheel={e => e.currentTarget.blur()}
+                  value={form.quantity_on_hand ?? ''}
+                  onChange={e => set('quantity_on_hand', e.target.value)}
+                  placeholder="0"
+                  className="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-600/30"
+                />
+              )}
+              <p className="text-xs text-gray-400 mt-2">Sets stock directly — use this for quick adjustments outside a full count.</p>
+            </div>
           </div>
 
           <div className="flex gap-3 mt-6">
