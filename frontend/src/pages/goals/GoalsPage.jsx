@@ -76,7 +76,10 @@ const MEDALS = ['🥇', '🥈', '🥉']
 // ─── Reusable components ──────────────────────────────────────────────────────
 
 function ProgressBar({ value, target, color = 'bg-red-600' }) {
-  const pct = target > 0 ? Math.min(100, (value / target) * 100) : 0
+  // Coerce so a missing/undefined actual reads as 0% (never NaN → broken bar).
+  const v = Number(value) || 0
+  const t = Number(target) || 0
+  const pct = t > 0 ? Math.min(100, (v / t) * 100) : 0
   return (
     <div className="flex items-center gap-2">
       <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
