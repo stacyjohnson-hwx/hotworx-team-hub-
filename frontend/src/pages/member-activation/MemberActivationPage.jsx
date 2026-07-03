@@ -99,6 +99,7 @@ function parseCSV(text) {
 const TABS = [
   { k: 'daily',    label: 'Daily List',          icon: ListChecks },
   { k: 'members',  label: 'Members',            icon: Users },
+  { k: 'reciprocals', label: 'Reciprocals',     icon: Building2 },
   { k: 'scripts',  label: 'Scripts',             icon: FileText },
   { k: 'recognition', label: 'Cards & Birthdays', icon: Gift },
   { k: 'import',   label: 'Daily Import',        icon: Upload },
@@ -134,6 +135,7 @@ export default function MemberActivationPage() {
       {tab === 'daily'   && <DailyListTab />}
       {tab === 'scripts' && <ScriptAdminTab canEdit={isOwnerOrManager} />}
       {tab === 'members' && <MembersTab />}
+      {tab === 'reciprocals' && <ReciprocalsTab />}
       {tab === 'recognition' && <RecognitionTab canImport={isOwnerOrManager} />}
       {tab === 'import'  && <ImportTab canImport={isOwnerOrManager} />}
       {tab === 'unrecon' && <UnreconciledTab />}
@@ -258,6 +260,125 @@ function MembersTab() {
 
       {editing && <MemberEditModal member={editing} onClose={() => setEditing(null)}
         onSaved={(m) => { setRows(rs => rs.map(x => x.id === m.id ? { ...x, ...m } : x)); setEditing(null) }} />}
+      {detailFor && <MemberDetailModal memberId={detailFor} onClose={() => setDetailFor(null)} />}
+    </div>
+  )
+}
+
+// ─── Reciprocals — where visiting members come from & how they use the studio ──
+const RECIP_BARS = ['bg-red-500', 'bg-orange-500', 'bg-amber-500', 'bg-emerald-500', 'bg-sky-500', 'bg-violet-500', 'bg-pink-500', 'bg-teal-500']
+function ReciprocalsTab() {
+  const { currentStudio } = useStudio()
+  const [rows, setRows] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [detailFor, setDetailFor] = useState(null)
+  const [sort, setSort] = useState('sessions')  // sessions | recent | name
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true)
+      try { const all = await apiGet(`${BASE}/members`); setRows((all || []).filter(m => m.member_type === 'reciprocal')) }
+      catch { setRows([]) }
+      finally { setLoading(false) }
+    })()
+  }, [currentStudio?.id])
+
+  const daysSince = (d) => (d ? Math.floor((Date.now() - new Date(d).getTime()) / 86400000) : null)
+  const homeOf = (m) => (m.origin_studio || '').trim() || 'Unknown home studio'
+
+  // Group by home studio for the "where they're from" chart.
+  const homeMap = new Map()
+  for (const m of rows) {
+    const h = homeOf(m)
+    if (!homeMap.has(h)) homeMap.set(h, { home: h, members: 0, sessions: 0, visitDays: 0 })
+    const g = homeMap.get(h)
+    g.members++; g.sessions += (m.total_sessions || 0); g.visitDays += (m.visit_days || 0)
+  }
+  const homes = [...homeMap.values()].sort((a, b) => b.members - a.members || b.sessions - a.sessions)
+  const maxMembers = Math.max(1, ...homes.map(h => h.members))
+  const totalSessions = rows.reduce((n, m) => n + (m.total_sessions || 0), 0)
+
+  const recency = (m) => {
+    const d = daysSince(m.last_booking_date)
+    if (d == null) return { label: 'No visits', cls: 'bg-gray-100 text-gray-500' }
+    if (d <= 14) return { label: `Active · ${d}d`, cls: 'bg-green-100 text-green-700' }
+    if (d <= 30) return { label: `Lapsing · ${d}d`, cls: 'bg-amber-100 text-amber-700' }
+    return { label: `Cold · ${d}d`, cls: 'bg-red-100 text-red-700' }
+  }
+  const sorted = [...rows].sort((a, b) =>
+    sort === 'name' ? (a.full_name || '').localeCompare(b.full_name || '')
+    : sort === 'recent' ? ((daysSince(a.last_booking_date) ?? 1e9) - (daysSince(b.last_booking_date) ?? 1e9))
+    : (b.total_sessions || 0) - (a.total_sessions || 0))
+
+  if (loading) return <Spinner />
+  if (rows.length === 0) return <Empty msg="No reciprocal members yet. Add them from the Members or Unreconciled tab (type: Reciprocal)." />
+
+  return (
+    <div>
+      {/* Stat cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+        {[
+          { label: 'Reciprocal members', val: rows.length },
+          { label: 'Home studios', val: homes.length },
+          { label: 'Total sessions', val: totalSessions },
+          { label: 'Avg sessions / member', val: rows.length ? Math.round(totalSessions / rows.length) : 0 },
+        ].map(s => (
+          <div key={s.label} className="bg-white border border-gray-200 rounded-xl p-4">
+            <p className="text-2xl font-bold text-gray-900">{s.val}</p>
+            <p className="text-xs text-gray-500 mt-0.5">{s.label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Where they're from */}
+      <div className="bg-white border border-gray-200 rounded-xl p-4 mb-5">
+        <h3 className="text-sm font-bold text-gray-900 mb-1 flex items-center gap-1.5"><Building2 size={15} className="text-red-600" /> Where they come from</h3>
+        <p className="text-[11px] text-gray-400 mb-3">Home studios our visiting members belong to, by number of members (with total sessions here).</p>
+        <div className="space-y-2.5">
+          {homes.map((h, i) => (
+            <div key={h.home} className="flex items-center gap-3">
+              <div className="w-40 flex-shrink-0 text-sm text-gray-700 truncate" title={h.home}>{h.home}</div>
+              <div className="flex-1 h-6 bg-gray-100 rounded-md overflow-hidden">
+                <div className={`h-full ${RECIP_BARS[i % RECIP_BARS.length]} rounded-md flex items-center justify-end px-2`} style={{ width: `${Math.max(8, (h.members / maxMembers) * 100)}%` }}>
+                  <span className="text-[11px] font-bold text-white">{h.members}</span>
+                </div>
+              </div>
+              <div className="w-24 flex-shrink-0 text-right text-xs text-gray-500">{h.sessions} sessions</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Member list */}
+      <div className="flex items-center gap-2 mb-2">
+        <h3 className="text-sm font-bold text-gray-900">Who they are</h3>
+        <div className="ml-auto flex items-center gap-1">
+          {[['sessions', 'Most active'], ['recent', 'Recently in'], ['name', 'Name']].map(([k, lbl]) => (
+            <button key={k} onClick={() => setSort(k)}
+              className={`text-xs px-2.5 py-1 rounded-full font-semibold ${sort === k ? 'bg-red-600 text-white' : 'text-gray-500 hover:bg-gray-100'}`}>{lbl}</button>
+          ))}
+        </div>
+      </div>
+      <div className="grid sm:grid-cols-2 gap-3">
+        {sorted.map(m => {
+          const rec = recency(m)
+          return (
+            <div key={m.id} className="bg-white border border-gray-200 rounded-xl p-3.5">
+              <div className="flex items-start justify-between gap-2">
+                <button onClick={() => setDetailFor(m.id)} className="font-bold text-gray-900 hover:text-red-600 hover:underline text-left">{m.full_name || m.email}</button>
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap ${rec.cls}`}>{rec.label}</span>
+              </div>
+              <p className="text-xs text-gray-500 mt-0.5 flex items-center gap-1"><Building2 size={11} className="text-gray-400" /> {homeOf(m)}</p>
+              <div className="flex items-center gap-4 mt-2.5">
+                <div><p className="text-lg font-bold text-gray-900 leading-none">{m.total_sessions || 0}</p><p className="text-[10px] text-gray-400 mt-0.5">sessions</p></div>
+                <div><p className="text-lg font-bold text-gray-900 leading-none">{m.visit_days || 0}</p><p className="text-[10px] text-gray-400 mt-0.5">visit-days</p></div>
+                <div className="ml-auto text-right"><p className="text-xs font-medium text-gray-700">{m.last_booking_date || '—'}</p><p className="text-[10px] text-gray-400">last booking</p></div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
       {detailFor && <MemberDetailModal memberId={detailFor} onClose={() => setDetailFor(null)} />}
     </div>
   )
