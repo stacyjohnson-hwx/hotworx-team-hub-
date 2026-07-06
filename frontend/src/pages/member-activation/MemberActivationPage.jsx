@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Upload, Users, HeartHandshake, AlertTriangle, Check, Loader2, RefreshCw, Gauge, ListChecks, Phone, MessageSquare, SkipForward, FileText, Trophy, Gift, Cake, Pencil, Building2, Bold, List, Play, Camera, X, Trash2, CreditCard } from 'lucide-react'
+import { Upload, Users, HeartHandshake, AlertTriangle, Check, Loader2, RefreshCw, Gauge, ListChecks, Phone, MessageSquare, SkipForward, FileText, Trophy, Gift, Cake, Pencil, Building2, Bold, List, Play, Camera, X, Trash2, CreditCard, ChevronsUpDown, ChevronUp, ChevronDown } from 'lucide-react'
 import { apiGet, apiPost, apiPatch, apiPut, apiDelete } from '@/hooks/useApi'
 import { useRole } from '@/hooks/useRole'
 import { useStudio } from '@/contexts/StudioContext'
@@ -424,6 +424,7 @@ function PifTab() {
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [detailFor, setDetailFor] = useState(null)
+  const [sort, setSort] = useState({ key: 'default', dir: 'asc' })  // default = active-first, expired last
 
   useEffect(() => {
     (async () => {
@@ -435,32 +436,79 @@ function PifTab() {
   }, [currentStudio?.id])
 
   const daysSince = (d) => (d ? Math.floor((Date.now() - new Date(d).getTime()) / 86400000) : null)
+  const todayISO = new Date().toISOString().slice(0, 10)
+  const curYM = todayISO.slice(0, 7)
+  const isExpired = (m) => m.expiration_date && m.expiration_date < todayISO
+  const isExpiringThisMonth = (m) => m.expiration_date && !isExpired(m) && m.expiration_date.slice(0, 7) === curYM
+
   if (loading) return <Spinner />
   if (rows.length === 0) return <Empty msg="No PIF members yet. Set a member's type to 'Paid in full' (Members tab or Unreconciled → Add person) to track them here." />
 
-  const sorted = [...rows].sort((a, b) => (daysSince(a.last_booking_date) ?? 1e9) - (daysSince(b.last_booking_date) ?? 1e9))
+  const expiringCount = rows.filter(isExpiringThisMonth).length
+  const expiredCount = rows.filter(isExpired).length
+
+  const val = {
+    name: m => (m.full_name || m.email || '').toLowerCase(),
+    sessions: m => m.total_sessions || 0,
+    last: m => m.last_booking_date || '',
+    expires: m => m.expiration_date || '',
+  }
+  const sorted = [...rows].sort((a, b) => {
+    if (sort.key === 'default') {
+      const ea = isExpired(a) ? 1 : 0, eb = isExpired(b) ? 1 : 0
+      if (ea !== eb) return ea - eb                                  // expired pinned to bottom
+      const xa = a.expiration_date || '', xb = b.expiration_date || ''
+      if (ea === 0) { if (!xa && !xb) return 0; if (!xa) return 1; if (!xb) return -1; return xa.localeCompare(xb) }  // soonest first
+      return xb.localeCompare(xa)                                     // expired: most recent first
+    }
+    const dir = sort.dir === 'asc' ? 1 : -1
+    let va = val[sort.key](a), vb = val[sort.key](b)
+    if (va === '') va = sort.dir === 'asc' ? '9999' : ''             // blanks last
+    if (vb === '') vb = sort.dir === 'asc' ? '9999' : ''
+    return va < vb ? -1 * dir : va > vb ? 1 * dir : 0
+  })
+
+  const clickSort = (k, defDir) => setSort(s => s.key === k ? { key: k, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key: k, dir: defDir })
+  const Arrow = ({ k }) => sort.key !== k ? <ChevronsUpDown size={12} className="inline text-gray-300" /> : (sort.dir === 'asc' ? <ChevronUp size={12} className="inline text-red-600" /> : <ChevronDown size={12} className="inline text-red-600" />)
+  const Th = ({ k, defDir, align = 'left', children }) => (
+    <th onClick={() => clickSort(k, defDir)}
+      className={`text-${align} px-3 py-2.5 font-semibold cursor-pointer select-none hover:text-gray-800`}>
+      {children} <Arrow k={k} />
+    </th>
+  )
+
   return (
     <div>
-      <p className="text-sm text-gray-500 mb-3">{rows.length} paid-in-full member{rows.length === 1 ? '' : 's'}. Click anyone to see the sessions they're attending.</p>
+      <div className="flex items-center gap-2 flex-wrap mb-3">
+        <p className="text-sm text-gray-500">{rows.length} paid-in-full member{rows.length === 1 ? '' : 's'}. Click anyone to see their sessions.</p>
+        {expiringCount > 0 && <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">{expiringCount} expiring this month</span>}
+        {expiredCount > 0 && <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700">{expiredCount} expired</span>}
+      </div>
       <div className="border border-gray-200 rounded-xl overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide">
             <tr>
-              <th className="text-left px-4 py-2.5 font-semibold">Member</th>
-              <th className="text-right px-3 py-2.5 font-semibold">Sessions</th>
-              <th className="text-left px-3 py-2.5 font-semibold">Last booking</th>
-              <th className="text-left px-3 py-2.5 font-semibold">Expires (PIF)</th>
+              <Th k="name" defDir="asc">Member</Th>
+              <Th k="sessions" defDir="desc" align="right">Sessions</Th>
+              <Th k="last" defDir="desc">Last booking</Th>
+              <Th k="expires" defDir="asc">Expires (PIF)</Th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {sorted.map(m => {
               const ds = daysSince(m.last_booking_date)
+              const exp = isExpired(m), soon = isExpiringThisMonth(m)
               return (
-                <tr key={m.id} onClick={() => setDetailFor(m.id)} className="hover:bg-gray-50 cursor-pointer">
-                  <td className="px-4 py-2.5 font-semibold text-gray-900">{m.full_name || m.email}</td>
+                <tr key={m.id} onClick={() => setDetailFor(m.id)}
+                  className={`cursor-pointer ${exp ? 'bg-red-50/40 hover:bg-red-50' : 'hover:bg-gray-50'}`}>
+                  <td className={`px-4 py-2.5 font-semibold ${exp ? 'text-gray-500' : 'text-gray-900'}`}>{m.full_name || m.email}</td>
                   <td className="px-3 py-2.5 text-right text-gray-700 font-medium">{m.total_sessions || 0}</td>
                   <td className={`px-3 py-2.5 ${ds >= 30 ? 'text-red-600' : ds >= 14 ? 'text-amber-600' : 'text-gray-600'}`}>{m.last_booking_date || '—'}{ds != null ? ` · ${ds}d ago` : ''}</td>
-                  <td className="px-3 py-2.5 text-gray-600">{m.expiration_date || '—'}</td>
+                  <td className="px-3 py-2.5">
+                    <span className={exp ? 'text-gray-400 line-through' : 'text-gray-600'}>{m.expiration_date || '—'}</span>
+                    {exp && <span className="ml-2 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 align-middle">EXPIRED</span>}
+                    {soon && <span className="ml-2 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 align-middle">EXPIRES THIS MONTH</span>}
+                  </td>
                 </tr>
               )
             })}
