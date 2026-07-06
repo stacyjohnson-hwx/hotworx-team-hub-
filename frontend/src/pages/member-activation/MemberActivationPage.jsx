@@ -425,6 +425,7 @@ function PifTab() {
   const [loading, setLoading] = useState(true)
   const [detailFor, setDetailFor] = useState(null)
   const [sort, setSort] = useState({ key: 'default', dir: 'asc' })  // default = active-first, expired last
+  const [editExp, setEditExp] = useState(null)  // member id whose expiry is being edited
 
   useEffect(() => {
     (async () => {
@@ -434,6 +435,12 @@ function PifTab() {
       finally { setLoading(false) }
     })()
   }, [currentStudio?.id])
+
+  const saveExp = async (m, value) => {
+    setRows(rs => rs.map(x => x.id === m.id ? { ...x, expiration_date: value || null } : x))
+    setEditExp(null)
+    try { await apiPatch(`${BASE}/members/${m.id}`, { expiration_date: value || null }) } catch { /* ignore */ }
+  }
 
   const daysSince = (d) => (d ? Math.floor((Date.now() - new Date(d).getTime()) / 86400000) : null)
   const todayISO = new Date().toISOString().slice(0, 10)
@@ -504,10 +511,19 @@ function PifTab() {
                   <td className={`px-4 py-2.5 font-semibold ${exp ? 'text-gray-500' : 'text-gray-900'}`}>{m.full_name || m.email}</td>
                   <td className="px-3 py-2.5 text-right text-gray-700 font-medium">{m.total_sessions || 0}</td>
                   <td className={`px-3 py-2.5 ${ds >= 30 ? 'text-red-600' : ds >= 14 ? 'text-amber-600' : 'text-gray-600'}`}>{m.last_booking_date || '—'}{ds != null ? ` · ${ds}d ago` : ''}</td>
-                  <td className="px-3 py-2.5">
-                    <span className={exp ? 'text-gray-400 line-through' : 'text-gray-600'}>{m.expiration_date || '—'}</span>
-                    {exp && <span className="ml-2 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 align-middle">EXPIRED</span>}
-                    {soon && <span className="ml-2 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 align-middle">EXPIRES THIS MONTH</span>}
+                  <td className="px-3 py-2.5" onClick={e => e.stopPropagation()}>
+                    {editExp === m.id ? (
+                      <input type="date" defaultValue={m.expiration_date || ''} autoFocus
+                        onChange={e => saveExp(m, e.target.value)} onBlur={() => setEditExp(null)}
+                        className="border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-red-500/30" />
+                    ) : (
+                      <button onClick={() => setEditExp(m.id)} className="inline-flex items-center gap-1.5 group" title="Edit expiration date">
+                        <span className={exp ? 'text-gray-400 line-through' : 'text-gray-600'}>{m.expiration_date || 'Set date'}</span>
+                        <Pencil size={11} className="text-gray-300 group-hover:text-red-500" />
+                        {exp && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 align-middle">EXPIRED</span>}
+                        {soon && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 align-middle">EXPIRES THIS MONTH</span>}
+                      </button>
+                    )}
                   </td>
                 </tr>
               )
