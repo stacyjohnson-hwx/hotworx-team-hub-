@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Upload, Users, HeartHandshake, AlertTriangle, Check, Loader2, RefreshCw, Gauge, ListChecks, Phone, MessageSquare, SkipForward, FileText, Trophy, Gift, Cake, Pencil, Building2, Bold, List, Play, Camera, X, Trash2 } from 'lucide-react'
+import { Upload, Users, HeartHandshake, AlertTriangle, Check, Loader2, RefreshCw, Gauge, ListChecks, Phone, MessageSquare, SkipForward, FileText, Trophy, Gift, Cake, Pencil, Building2, Bold, List, Play, Camera, X, Trash2, CreditCard } from 'lucide-react'
 import { apiGet, apiPost, apiPatch, apiPut, apiDelete } from '@/hooks/useApi'
 import { useRole } from '@/hooks/useRole'
 import { useStudio } from '@/contexts/StudioContext'
@@ -100,6 +100,7 @@ const TABS = [
   { k: 'daily',    label: 'Daily List',          icon: ListChecks },
   { k: 'members',  label: 'Members',            icon: Users },
   { k: 'reciprocals', label: 'Reciprocals',     icon: Building2 },
+  { k: 'pif',      label: 'PIF Members',         icon: CreditCard },
   { k: 'scripts',  label: 'Scripts',             icon: FileText },
   { k: 'recognition', label: 'Cards & Birthdays', icon: Gift },
   { k: 'import',   label: 'Daily Import',        icon: Upload },
@@ -136,6 +137,7 @@ export default function MemberActivationPage() {
       {tab === 'scripts' && <ScriptAdminTab canEdit={isOwnerOrManager} />}
       {tab === 'members' && <MembersTab />}
       {tab === 'reciprocals' && <ReciprocalsTab />}
+      {tab === 'pif' && <PifTab />}
       {tab === 'recognition' && <RecognitionTab canImport={isOwnerOrManager} />}
       {tab === 'import'  && <ImportTab canImport={isOwnerOrManager} />}
       {tab === 'unrecon' && <UnreconciledTab />}
@@ -273,15 +275,21 @@ function ReciprocalsTab() {
   const [loading, setLoading] = useState(true)
   const [detailFor, setDetailFor] = useState(null)
   const [sort, setSort] = useState('sessions')  // sessions | recent | name
+  const [tod, setTod] = useState(null)           // time-of-day buckets
 
   useEffect(() => {
     (async () => {
       setLoading(true)
-      try { const all = await apiGet(`${BASE}/members`); setRows((all || []).filter(m => m.member_type === 'reciprocal')) }
-      catch { setRows([]) }
+      try {
+        const [all, t] = await Promise.all([apiGet(`${BASE}/members`), apiGet(`${BASE}/reciprocals/timeofday`).catch(() => null)])
+        setRows((all || []).filter(m => m.member_type === 'reciprocal'))
+        setTod(t)
+      } catch { setRows([]) }
       finally { setLoading(false) }
     })()
   }, [currentStudio?.id])
+
+  const hourLabel = (h) => { const ap = h < 12 ? 'a' : 'p'; const hr = h % 12 === 0 ? 12 : h % 12; return `${hr}${ap}` }
 
   const daysSince = (d) => (d ? Math.floor((Date.now() - new Date(d).getTime()) / 86400000) : null)
   const homeOf = (m) => (m.origin_studio || '').trim() || 'Unknown home studio'
@@ -349,6 +357,31 @@ function ReciprocalsTab() {
         </div>
       </div>
 
+      {/* Time of day */}
+      {tod && tod.total > 0 && (() => {
+        // Show the active window (first→last hour with any sessions).
+        const active = tod.buckets.filter(b => b.count > 0)
+        const lo = Math.min(...active.map(b => b.hour)), hi = Math.max(...active.map(b => b.hour))
+        const shown = tod.buckets.filter(b => b.hour >= lo && b.hour <= hi)
+        const maxC = Math.max(1, ...shown.map(b => b.count))
+        const peak = tod.buckets.reduce((a, b) => (b.count > a.count ? b : a), { hour: 0, count: 0 })
+        return (
+          <div className="bg-white border border-gray-200 rounded-xl p-4 mb-5">
+            <h3 className="text-sm font-bold text-gray-900 mb-1">When they train here</h3>
+            <p className="text-[11px] text-gray-400 mb-3">Reciprocal sessions by time of day — busiest around <b className="text-gray-600">{hourLabel(peak.hour)}</b> ({tod.total} sessions).</p>
+            <div className="flex items-end gap-1 h-40">
+              {shown.map(b => (
+                <div key={b.hour} className="flex-1 flex flex-col items-center justify-end h-full" title={`${hourLabel(b.hour)} · ${b.count}`}>
+                  <span className="text-[9px] text-gray-400 mb-0.5">{b.count || ''}</span>
+                  <div className={`w-full rounded-t ${b.hour === peak.hour ? 'bg-red-600' : 'bg-red-300'}`} style={{ height: `${Math.max(2, (b.count / maxC) * 100)}%` }} />
+                  <span className="text-[9px] text-gray-400 mt-1">{hourLabel(b.hour)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      })()}
+
       {/* Member list */}
       <div className="flex items-center gap-2 mb-2">
         <h3 className="text-sm font-bold text-gray-900">Who they are</h3>
@@ -363,9 +396,10 @@ function ReciprocalsTab() {
         {sorted.map(m => {
           const rec = recency(m)
           return (
-            <div key={m.id} className="bg-white border border-gray-200 rounded-xl p-3.5">
+            <div key={m.id} onClick={() => setDetailFor(m.id)}
+              className="bg-white border border-gray-200 rounded-xl p-3.5 cursor-pointer hover:border-red-300 hover:shadow-sm transition">
               <div className="flex items-start justify-between gap-2">
-                <button onClick={() => setDetailFor(m.id)} className="font-bold text-gray-900 hover:text-red-600 hover:underline text-left">{m.full_name || m.email}</button>
+                <span className="font-bold text-gray-900">{m.full_name || m.email}</span>
                 <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap ${rec.cls}`}>{rec.label}</span>
               </div>
               <p className="text-xs text-gray-500 mt-0.5 flex items-center gap-1"><Building2 size={11} className="text-gray-400" /> {homeOf(m)}</p>
@@ -379,6 +413,60 @@ function ReciprocalsTab() {
         })}
       </div>
 
+      {detailFor && <MemberDetailModal memberId={detailFor} onClose={() => setDetailFor(null)} />}
+    </div>
+  )
+}
+
+// ─── PIF members — paid-in-full, with last booking + click-in to sessions ─────
+function PifTab() {
+  const { currentStudio } = useStudio()
+  const [rows, setRows] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [detailFor, setDetailFor] = useState(null)
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true)
+      try { const all = await apiGet(`${BASE}/members`); setRows((all || []).filter(m => m.member_type === 'pif')) }
+      catch { setRows([]) }
+      finally { setLoading(false) }
+    })()
+  }, [currentStudio?.id])
+
+  const daysSince = (d) => (d ? Math.floor((Date.now() - new Date(d).getTime()) / 86400000) : null)
+  if (loading) return <Spinner />
+  if (rows.length === 0) return <Empty msg="No PIF members yet. Set a member's type to 'Paid in full' (Members tab or Unreconciled → Add person) to track them here." />
+
+  const sorted = [...rows].sort((a, b) => (daysSince(a.last_booking_date) ?? 1e9) - (daysSince(b.last_booking_date) ?? 1e9))
+  return (
+    <div>
+      <p className="text-sm text-gray-500 mb-3">{rows.length} paid-in-full member{rows.length === 1 ? '' : 's'}. Click anyone to see the sessions they're attending.</p>
+      <div className="border border-gray-200 rounded-xl overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide">
+            <tr>
+              <th className="text-left px-4 py-2.5 font-semibold">Member</th>
+              <th className="text-right px-3 py-2.5 font-semibold">Sessions</th>
+              <th className="text-left px-3 py-2.5 font-semibold">Last booking</th>
+              <th className="text-left px-3 py-2.5 font-semibold">Expires (PIF)</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {sorted.map(m => {
+              const ds = daysSince(m.last_booking_date)
+              return (
+                <tr key={m.id} onClick={() => setDetailFor(m.id)} className="hover:bg-gray-50 cursor-pointer">
+                  <td className="px-4 py-2.5 font-semibold text-gray-900">{m.full_name || m.email}</td>
+                  <td className="px-3 py-2.5 text-right text-gray-700 font-medium">{m.total_sessions || 0}</td>
+                  <td className={`px-3 py-2.5 ${ds >= 30 ? 'text-red-600' : ds >= 14 ? 'text-amber-600' : 'text-gray-600'}`}>{m.last_booking_date || '—'}{ds != null ? ` · ${ds}d ago` : ''}</td>
+                  <td className="px-3 py-2.5 text-gray-600">{m.expiration_date || '—'}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
       {detailFor && <MemberDetailModal memberId={detailFor} onClose={() => setDetailFor(null)} />}
     </div>
   )
@@ -883,6 +971,23 @@ function MemberDetailModal({ memberId, onClose }) {
                   <Row label="Coming from" value={m.origin_studio} />
                   <Row label="Expires (PIF)" value={m.expiration_date} />
                 </div>
+              </div>
+
+              {/* Sessions attended */}
+              <div>
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Sessions attended ({(data.sessions || []).length})</p>
+                {(data.sessions || []).length === 0 ? <p className="text-xs text-gray-400">No sessions on record.</p> : (
+                  <div className="border border-gray-100 rounded-xl divide-y divide-gray-50 max-h-56 overflow-y-auto">
+                    {data.sessions.map((s, idx) => (
+                      <div key={idx} className="flex items-center gap-2 px-3 py-1.5 text-sm">
+                        <span className="font-medium text-gray-800 w-24 flex-shrink-0">{s.booking_date}</span>
+                        <span className="text-gray-500 w-20 flex-shrink-0">{s.time_slot || '—'}</span>
+                        <span className="text-gray-700 truncate">{s.session_type || '—'}</span>
+                        {s.home_studio && <span className="ml-auto text-[10px] text-gray-400 whitespace-nowrap">{s.home_studio}</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Photos */}

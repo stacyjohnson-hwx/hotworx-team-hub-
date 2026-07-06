@@ -444,13 +444,14 @@ router.post('/members', authenticate, requireStudio, requireRole('owner', 'manag
 router.get('/members/:id/detail', authenticate, requireStudio, async (req, res) => {
   const supabase = db()
   const sid = req.studio.id, mid = req.params.id
-  const [{ data: member }, { data: act }, { data: journeys }, { data: recog }, { data: reeng }, { data: templates }] = await Promise.all([
+  const [{ data: member }, { data: act }, { data: journeys }, { data: recog }, { data: reeng }, { data: templates }, { data: sessions }] = await Promise.all([
     supabase.from('onboarding_members').select('*').eq('studio_id', sid).eq('id', mid).maybeSingle(),
     supabase.from('onboarding_member_activity').select('*').eq('member_id', mid).maybeSingle(),
     supabase.from('onboarding_journeys').select('id, current_track, status, start_date').eq('studio_id', sid).eq('member_id', mid),
     supabase.from('onboarding_recognition_tasks').select('type, status, completed_by, completed_at').eq('studio_id', sid).eq('member_id', mid),
     supabase.from('onboarding_reengage_log').select('contacted_at, contacted_by').eq('studio_id', sid).eq('member_id', mid),
     supabase.from('onboarding_touchpoint_templates').select('template_key, label').eq('studio_id', sid),
+    supabase.from('onboarding_bookings').select('booking_date, time_slot, session_type, home_studio').eq('studio_id', sid).eq('member_id', mid).order('booking_date', { ascending: false }).limit(400),
   ])
   if (!member) return res.status(404).json({ error: 'not found' })
   const tplMap = new Map((templates || []).map(t => [t.template_key, t.label]))
@@ -475,7 +476,43 @@ router.get('/members/:id/detail', authenticate, requireStudio, async (req, res) 
       workouts_tried: act?.workouts_tried || 0, last_booking_date: act?.last_booking_date || null,
       journey: (journeys || [])[0] || null },
     interactions,
+    sessions: sessions || [],
   })
+})
+
+// Parse a SAIL time slot (e.g. "6:00 AM", "18:00", "6 PM") to an hour 0–23.
+function parseHour(slot) {
+  const s = String(slot || '').trim()
+  const m = s.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i)
+  if (!m) return null
+  let h = parseInt(m[1], 10)
+  const mer = (m[3] || '').toLowerCase()
+  if (mer === 'pm' && h < 12) h += 12
+  if (mer === 'am' && h === 12) h = 0
+  return h >= 0 && h <= 23 ? h : null
+}
+
+// Time-of-day distribution for reciprocal members (when they train here).
+router.get('/reciprocals/timeofday', authenticate, requireStudio, async (req, res) => {
+  const supabase = db(); const sid = req.studio.id
+  const { data: recips } = await supabase.from('onboarding_members')
+    .select('id').eq('studio_id', sid).eq('member_type', 'reciprocal')
+  const ids = (recips || []).map(m => m.id)
+  const buckets = Array.from({ length: 24 }, () => 0)
+  let total = 0
+  for (const chunkIds of chunk(ids, 100)) {
+    if (!chunkIds.length) continue
+    // Page through bookings for these members.
+    for (let from = 0; ; from += 1000) {
+      const { data: page } = await supabase.from('onboarding_bookings')
+        .select('time_slot').eq('studio_id', sid).in('member_id', chunkIds)
+        .order('booking_id').range(from, from + 999)
+      if (!page || page.length === 0) break
+      for (const b of page) { const h = parseHour(b.time_slot); if (h != null) { buckets[h]++; total++ } }
+      if (page.length < 1000) break
+    }
+  }
+  res.json({ total, buckets: buckets.map((count, hour) => ({ hour, count })) })
 })
 
 // Edit a member (name/type/contact/status) — owner/manager.
