@@ -514,7 +514,8 @@ function PifTab() {
                   <td className="px-3 py-2.5" onClick={e => e.stopPropagation()}>
                     {editExp === m.id ? (
                       <input type="date" defaultValue={m.expiration_date || ''} autoFocus
-                        onChange={e => saveExp(m, e.target.value)} onBlur={() => setEditExp(null)}
+                        onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') setEditExp(null) }}
+                        onBlur={e => saveExp(m, e.target.value)}
                         className="border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-red-500/30" />
                     ) : (
                       <button onClick={() => setEditExp(m.id)} className="inline-flex items-center gap-1.5 group" title="Edit expiration date">
