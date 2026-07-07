@@ -423,7 +423,7 @@ export default function Announcements({ role }) {
   const visible = showAll ? posts : posts?.slice(0, 4)
 
   return (
-    <div className="mb-8 max-w-xl">
+    <div className="w-full">
       {/* Editor + heart animation styles */}
       <style>{`
         .announcement-editor:empty:before { content: attr(data-placeholder); color: #9ca3af; pointer-events: none; }

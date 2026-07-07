@@ -306,7 +306,7 @@ function ImportantLinks({ role }) {
   }
 
   if (loading) return (
-    <div className="mt-8 flex items-center gap-2 text-gray-400">
+    <div className="flex items-center gap-2 text-gray-400">
       <Loader2 size={14} className="animate-spin" />
       <span className="text-sm">Loading links…</span>
     </div>
@@ -316,7 +316,7 @@ function ImportantLinks({ role }) {
   if (!canEdit && links.length === 0) return null
 
   return (
-    <div className="mt-8">
+    <div>
       {editing && (
         <LinkModal
           link={editing === 'new' ? null : editing}
@@ -349,7 +349,7 @@ function ImportantLinks({ role }) {
           <p className="text-xs text-gray-400 mt-0.5">Add links your team uses every day — portals, tools, reports</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3">
           {links.map(link => (
             <LinkCard
               key={link.id}
@@ -375,7 +375,7 @@ export default function Dashboard() {
   const roleLabel   = role === 'owner' ? 'Owner' : role === 'manager' ? 'Manager' : 'TSA'
 
   return (
-    <div className="max-w-4xl">
+    <div className="mx-auto w-full max-w-[1400px]">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">
           Welcome back, {displayName} 👋
@@ -389,17 +389,11 @@ export default function Dashboard() {
       {/* Overdue-coaching alert (owner/manager) */}
       {isOwnerOrManager && <CoachingAlerts />}
 
-      {/* Team announcements feed */}
-      <Announcements role={role} />
-
-      {/* Live contest highlight */}
-      <ContestWidget meId={user?.id} />
-
-      {/* Quick-access cards */}
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+      {/* Quick-access cards — full-width band */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 mb-6">
         <QuickCard
           title="Tasks"
-          description="View today's cleaning and operations tasks"
+          description="Cleaning & operations tasks"
           href="/cleaning"
           color="bg-blue-50 border-blue-200"
           iconColor="text-blue-600"
@@ -413,14 +407,14 @@ export default function Dashboard() {
         />
         <QuickCard
           title="Goals"
-          description="Check studio & personal goals"
+          description="Studio & personal goals"
           href="/goals"
           color="bg-red-50 border-red-200"
           iconColor="text-red-600"
         />
         <QuickCard
           title="Schedule"
-          description="View the weekly shift schedule"
+          description="Weekly shift schedule"
           href="/schedule"
           color="bg-purple-50 border-purple-200"
           iconColor="text-purple-600"
@@ -466,8 +460,19 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* Important Links */}
-      <ImportantLinks role={role} />
+      {/* Widget region: team feed + right rail */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* Main column — team feed */}
+        <div className="lg:col-span-7 min-w-0">
+          <Announcements role={role} />
+        </div>
+
+        {/* Right rail — live contest + important links */}
+        <div className="lg:col-span-5 min-w-0 space-y-6">
+          <ContestWidget meId={user?.id} />
+          <ImportantLinks role={role} />
+        </div>
+      </div>
     </div>
   )
 }

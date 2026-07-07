@@ -24,7 +24,7 @@ export default function ContestWidget({ meId }) {
 
   return (
     <Link to="/contest"
-      className="block mt-8 rounded-2xl border border-orange-200 bg-gradient-to-br from-white to-orange-50/40 shadow-sm overflow-hidden hover:shadow-md transition-all">
+      className="block rounded-2xl border border-orange-200 bg-gradient-to-br from-white to-orange-50/40 shadow-sm overflow-hidden hover:shadow-md transition-all">
       <div className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-[#C8102E] to-[#E8611A] text-white">
         <Trophy size={15} />
         <span className="text-xs font-bold uppercase tracking-wider">Live Contest</span>
