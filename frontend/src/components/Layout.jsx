@@ -4,6 +4,7 @@ import { NavLink } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { MonthNav } from './MonthNav'
 import { useMonth } from '@/contexts/MonthContext'
+import { useStudio } from '@/contexts/StudioContext'
 import { useRole } from '@/hooks/useRole'
 import { useAuth } from '@/contexts/AuthContext'
 import {
@@ -25,7 +26,8 @@ const BOTTOM_NAV = [
 const MONTH_AWARE_PATHS = ['/dashboard', '/goals', '/advisor', '/studio-trends', '/events', '/scorecard']
 
 export function Layout() {
-  const { isCurrentMonth } = useMonth()
+  const { isCurrentMonth, isFutureMonth } = useMonth()
+  const { currentStudio } = useStudio()
   const { role } = useRole()
   const { signOut } = useAuth()
   const { pathname } = useLocation()
@@ -75,17 +77,21 @@ export function Layout() {
           {showMonthNav && <MonthNav />}
 
           {showMonthNav && !isCurrentMonth && (
-            <span className="hidden sm:inline text-xs text-yellow-400 bg-yellow-400/10 border border-yellow-400/30 px-2 py-0.5 rounded-full">
-              Past month — read only
+            <span className="text-xs text-yellow-400 bg-yellow-400/10 border border-yellow-400/30 px-2 py-0.5 rounded-full">
+              {isFutureMonth ? 'Planning ahead' : 'Past month — read only'}
             </span>
           )}
           {/* Spacer on mobile to balance the hamburger */}
           <div className="w-8 md:hidden" />
         </header>
 
-        {/* Page content — smaller padding on mobile, pb for bottom nav */}
+        {/* Page content — smaller padding on mobile, pb for bottom nav.
+            Keyed on the studio so switching studios remounts the page and
+            refetches its data instead of showing the previous studio's rows. */}
         <main className="flex-1 overflow-y-auto p-3 md:p-6 pb-20 md:pb-6">
-          <Outlet />
+          <div key={currentStudio?.id}>
+            <Outlet />
+          </div>
         </main>
 
         {/* ── Mobile bottom nav ──────────────────────────────────────────── */}

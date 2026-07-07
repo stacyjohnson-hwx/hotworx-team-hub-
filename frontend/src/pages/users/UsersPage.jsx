@@ -385,6 +385,8 @@ function QuizModal({ user, onClose }) {
 function UserCard({ user, currentUserId, currentRole, onEdit, onToggleActive, onResetPassword, onViewQuiz, trainingCompleted, trainingTotal }) {
   const [confirm, setConfirm] = useState(false)
   const isSelf = user.id === currentUserId
+  // Managers can only manage TSA accounts; owners can manage anyone. (Backend enforces this too.)
+  const canManage = isSelf || currentRole === 'owner' || (currentRole === 'manager' && user.role === 'tsa')
   const canDeactivate = !isSelf && (currentRole === 'owner' || (currentRole === 'manager' && user.role === 'tsa'))
 
   return (
@@ -451,20 +453,24 @@ function UserCard({ user, currentUserId, currentRole, onEdit, onToggleActive, on
         )}
 
         <div className="flex items-center gap-1.5 mt-4 flex-wrap">
-          <button onClick={() => onEdit(user)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-gray-50 border border-gray-200 hover:border-orange-300 hover:text-orange-600 text-gray-600 rounded-lg transition-colors">
-            <Edit2 size={11} /> Edit
-          </button>
+          {canManage && (
+            <button onClick={() => onEdit(user)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-gray-50 border border-gray-200 hover:border-orange-300 hover:text-orange-600 text-gray-600 rounded-lg transition-colors">
+              <Edit2 size={11} /> Edit
+            </button>
+          )}
           {(user.role === 'tsa' || user.role === 'manager') && (
             <button onClick={() => onViewQuiz(user)}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-gray-50 border border-gray-200 hover:border-purple-300 hover:text-purple-600 text-gray-600 rounded-lg transition-colors">
               <ClipboardList size={11} /> {user.quiz_answers && Object.keys(user.quiz_answers).length > 0 ? 'View Quiz' : 'No Quiz Yet'}
             </button>
           )}
-          <button onClick={() => onResetPassword(user)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-gray-50 border border-gray-200 hover:border-blue-300 hover:text-blue-600 text-gray-600 rounded-lg transition-colors">
-            <RefreshCw size={11} /> Reset PW
-          </button>
+          {canManage && (
+            <button onClick={() => onResetPassword(user)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-gray-50 border border-gray-200 hover:border-blue-300 hover:text-blue-600 text-gray-600 rounded-lg transition-colors">
+              <RefreshCw size={11} /> Reset PW
+            </button>
+          )}
           {canDeactivate && !confirm && (
             <button onClick={() => setConfirm(true)}
               className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold border rounded-lg transition-colors ${

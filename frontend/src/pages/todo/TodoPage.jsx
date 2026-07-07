@@ -383,7 +383,7 @@ function ListSection({ meta, items, onAdd, onToggle, onEdit, onDelete }) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function TodoPage() {
-  const { isOwnerOrManager } = useRole()
+  const { isOwnerOrManager, isOwner } = useRole()
   const [items, setItems]     = useState([])
   const [managers, setManagers] = useState([])
   const [loading, setLoading] = useState(true)
@@ -437,12 +437,13 @@ export default function TodoPage() {
       items: unassigned,
       target: { list_target: 'manager', assigned_to: '' },
     }] : []),
-    {
+    // The Owner To-Do list is private to the owner — managers never see it.
+    ...(isOwner ? [{
       key: 'owner',
       meta: { label: 'Owner To-Do', icon: Shield, bg: 'bg-red-600' },
       items: ownerItems,
       target: { list_target: 'owner', assigned_to: '' },
-    },
+    }] : []),
   ]
 
   const handleSave = (saved) => {
