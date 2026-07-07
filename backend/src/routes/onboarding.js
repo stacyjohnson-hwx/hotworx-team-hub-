@@ -765,7 +765,7 @@ router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
 
   const daysBetween = (d) => d ? Math.floor((new Date(today) - new Date(d)) / 86400000) : null
 
-  const items = live.map(t => {
+  let items = live.map(t => {
     const m = t.journey.member
     const a = actMap.get(m.id) || {}
     const tpl = tplMap.get(t.template_key) || {}
@@ -888,6 +888,17 @@ router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
     })
   }
 
+  // Collapse a member's onboarding day-based touches to the CURRENT one: if an
+  // earlier touch (Day-2) was missed and a later one (Day-10) is now due, only
+  // show the latest — so a member appears once with their most-current step.
+  const latestDayTask = new Map()
+  for (const it of items) {
+    if (it.trigger_kind !== 'day_based') continue
+    const cur = latestDayTask.get(it.journey_id)
+    if (!cur || String(it.due_date) > String(cur.due_date)) latestDayTask.set(it.journey_id, it)
+  }
+  items = items.filter(it => it.trigger_kind !== 'day_based' || latestDayTask.get(it.journey_id)?.id === it.id)
+
   // Order by category — Onboarding first, then Milestones, then Re-engagement —
   // and within each by priority (re-engagement 14→30→60) then due date.
   const catRank = (it) => {
@@ -902,6 +913,89 @@ router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
     String(x.due_date).localeCompare(String(y.due_date))
   )
   res.json(items)
+})
+
+// ─── New-member roster: last 60 days + per-member journey checklist ────────────
+router.get('/new-members', authenticate, requireStudio, async (req, res) => {
+  const supabase = db(); const sid = req.studio.id
+  const today = new Date().toISOString().slice(0, 10)
+  const since = new Date(Date.now() - 60 * 86400000).toISOString().slice(0, 10)
+
+  const { data: members } = await supabase.from('onboarding_members')
+    .select('id, full_name, phone, join_date, member_type, is_cancelled')
+    .eq('studio_id', sid).gte('join_date', since).order('join_date', { ascending: false })
+  const cohort = (members || []).filter(m => !m.is_cancelled && (!m.member_type || m.member_type === 'member') && m.join_date)
+  const ids = cohort.map(m => m.id)
+  if (!ids.length) return res.json([])
+
+  const [{ data: journeys }, { data: recog }, { data: rewards }, { data: xforms }, { data: activity }] = await Promise.all([
+    supabase.from('onboarding_journeys').select('id, member_id').eq('studio_id', sid).in('member_id', ids),
+    supabase.from('onboarding_recognition_tasks').select('member_id, type, status').eq('studio_id', sid).in('member_id', ids),
+    supabase.from('onboarding_rewards_awarded').select('member_id, reward_key').eq('studio_id', sid).in('member_id', ids),
+    supabase.from('onboarding_transformation_records').select('member_id, before_photo_url').eq('studio_id', sid).in('member_id', ids),
+    supabase.from('onboarding_member_activity').select('member_id, workouts_tried, visit_days, last_booking_date').eq('studio_id', sid).in('member_id', ids),
+  ])
+  const jIds = (journeys || []).map(j => j.id)
+  const jMember = new Map((journeys || []).map(j => [j.id, j.member_id]))
+  const { data: jtasks } = jIds.length
+    ? await supabase.from('onboarding_journey_tasks').select('journey_id, trigger_ref, status, due_date, completed_at').in('journey_id', jIds)
+    : { data: [] }
+
+  const tasksBy = new Map()
+  for (const t of jtasks || []) {
+    const mid = jMember.get(t.journey_id); if (!mid) continue
+    if (!tasksBy.has(mid)) tasksBy.set(mid, {})
+    tasksBy.get(mid)[t.trigger_ref] = t   // one task per (journey, trigger_ref)
+  }
+  const cardStatus = new Map((recog || []).filter(r => r.type === 'thank_you_card').map(r => [r.member_id, r.status]))
+  const stickerSet = new Set((rewards || []).filter(r => r.reward_key === 'sticker').map(r => r.member_id))
+  const photoSet = new Set((xforms || []).filter(x => x.before_photo_url).map(x => x.member_id))
+  const actBy = new Map((activity || []).map(a => [a.member_id, a]))
+
+  const DAY_TP = [
+    { key: 'day_0_orientation', label: 'Orientation' },
+    { key: 'day_2', label: 'Day 2 goal' },
+    { key: 'day_5', label: 'Day 5 check-in' },
+    { key: 'day_21', label: 'Day 21 friend' },
+    { key: 'day_30', label: 'Day 30 review' },
+    { key: 'day_60', label: 'Day 60 review' },
+    { key: 'day_90', label: 'Day 90 close' },
+  ]
+  const dayStatus = (task) => {
+    if (!task) return { status: 'na' }
+    if (task.status === 'completed') return { status: 'done', when: task.completed_at }
+    if (task.status === 'skipped') return { status: 'skipped' }
+    return { status: (task.due_date && task.due_date <= today) ? 'due' : 'upcoming', due_date: task.due_date }
+  }
+
+  const out = cohort.map(m => {
+    const tks = tasksBy.get(m.id) || {}
+    const daysIn = Math.floor((new Date(today) - new Date(m.join_date)) / 86400000)
+    const tps = []
+    // Orientation
+    tps.push({ key: 'day_0_orientation', label: 'Orientation', ...dayStatus(tks['day_0_orientation']) })
+    // 1st-day photo (captured with the Day-2 goal call)
+    const day2 = tks['day_2']
+    tps.push({ key: 'photo', label: '1st-day photo',
+      status: photoSet.has(m.id) ? 'done' : (day2 && day2.due_date && day2.due_date <= today ? 'due' : 'upcoming') })
+    for (const tp of DAY_TP.slice(1)) tps.push({ key: tp.key, label: tp.label, ...dayStatus(tks[tp.key]) })
+    // Thank-you card
+    const cs = cardStatus.get(m.id)
+    tps.push({ key: 'thank_you_card', label: 'Thank-you card', status: cs === 'completed' ? 'done' : cs ? 'due' : 'na' })
+    // Passport (all 12 workouts)
+    const wt = actBy.get(m.id)?.workouts_tried || 0
+    tps.push({ key: 'passport', label: 'Passport', status: stickerSet.has(m.id) ? 'done' : (wt >= 12 ? 'due' : 'upcoming') })
+
+    return {
+      member_id: m.id, full_name: m.full_name, join_date: m.join_date, days_in: daysIn,
+      visit_days: actBy.get(m.id)?.visit_days || 0,
+      last_booking_date: actBy.get(m.id)?.last_booking_date || null,
+      due_count: tps.filter(t => t.status === 'due').length,
+      done_count: tps.filter(t => t.status === 'done').length,
+      touchpoints: tps,
+    }
+  })
+  res.json(out)
 })
 
 // Log a re-engagement contact (starts the cooldown; member drops off until it expires or they book).

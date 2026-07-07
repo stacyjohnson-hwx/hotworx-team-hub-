@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Upload, Users, HeartHandshake, AlertTriangle, Check, Loader2, RefreshCw, Gauge, ListChecks, Phone, MessageSquare, SkipForward, FileText, Trophy, Gift, Cake, Pencil, Building2, Bold, List, Play, Camera, X, Trash2, CreditCard, ChevronsUpDown, ChevronUp, ChevronDown } from 'lucide-react'
+import { Upload, Users, HeartHandshake, AlertTriangle, Check, Loader2, RefreshCw, Gauge, ListChecks, Phone, MessageSquare, SkipForward, FileText, Trophy, Gift, Cake, Pencil, Building2, Bold, List, Play, Camera, X, Trash2, CreditCard, ChevronsUpDown, ChevronUp, ChevronDown, UserPlus } from 'lucide-react'
 import { apiGet, apiPost, apiPatch, apiPut, apiDelete } from '@/hooks/useApi'
 import { useRole } from '@/hooks/useRole'
 import { useStudio } from '@/contexts/StudioContext'
@@ -98,6 +98,7 @@ function parseCSV(text) {
 
 const TABS = [
   { k: 'daily',    label: 'Daily List',          icon: ListChecks },
+  { k: 'newmembers', label: 'New Members',       icon: UserPlus },
   { k: 'members',  label: 'Members',            icon: Users },
   { k: 'reciprocals', label: 'Reciprocals',     icon: Building2 },
   { k: 'pif',      label: 'PIF Members',         icon: CreditCard },
@@ -134,6 +135,7 @@ export default function MemberActivationPage() {
       </div>
 
       {tab === 'daily'   && <DailyListTab />}
+      {tab === 'newmembers' && <NewMembersTab />}
       {tab === 'scripts' && <ScriptAdminTab canEdit={isOwnerOrManager} />}
       {tab === 'members' && <MembersTab />}
       {tab === 'reciprocals' && <ReciprocalsTab />}
@@ -544,6 +546,75 @@ function PifTab() {
             })}
           </tbody>
         </table>
+      </div>
+      {detailFor && <MemberDetailModal memberId={detailFor} onClose={() => setDetailFor(null)} />}
+    </div>
+  )
+}
+
+// ─── New Members — last 60 days, each with their full onboarding checklist ─────
+const TP_STYLE = {
+  done: 'bg-green-100 text-green-700',
+  due: 'bg-red-100 text-red-700 ring-1 ring-red-200',
+  upcoming: 'bg-gray-50 text-gray-400 border border-gray-100',
+  na: 'bg-gray-50 text-gray-300 border border-gray-100',
+  skipped: 'bg-gray-100 text-gray-400 line-through',
+}
+function NewMembersTab() {
+  const { currentStudio } = useStudio()
+  const [rows, setRows] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [detailFor, setDetailFor] = useState(null)
+  const [sort, setSort] = useState('due')  // due | newest | progress
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true)
+      try { setRows(await apiGet(`${BASE}/new-members`)) } catch { setRows([]) }
+      finally { setLoading(false) }
+    })()
+  }, [currentStudio?.id])
+
+  if (loading) return <Spinner />
+  if (rows.length === 0) return <Empty msg="No new members in the last 60 days." />
+
+  const sorted = [...rows].sort((a, b) =>
+    sort === 'newest' ? (a.days_in - b.days_in)
+    : sort === 'progress' ? (b.done_count - a.done_count)
+    : (b.due_count - a.due_count || a.days_in - b.days_in))
+  const totalDue = rows.reduce((n, r) => n + r.due_count, 0)
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 flex-wrap mb-3">
+        <p className="text-sm text-gray-500">{rows.length} new member{rows.length === 1 ? '' : 's'} in the last 60 days. Each shows their full onboarding checklist — click a name for sessions & details.</p>
+        {totalDue > 0 && <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700">{totalDue} touchpoint{totalDue === 1 ? '' : 's'} due</span>}
+        <div className="ml-auto flex items-center gap-1">
+          {[['due', 'Needs attention'], ['newest', 'Newest'], ['progress', 'Most progress']].map(([k, lbl]) => (
+            <button key={k} onClick={() => setSort(k)}
+              className={`text-xs px-2.5 py-1 rounded-full font-semibold ${sort === k ? 'bg-red-600 text-white' : 'text-gray-500 hover:bg-gray-100'}`}>{lbl}</button>
+          ))}
+        </div>
+      </div>
+      <div className="space-y-2.5">
+        {sorted.map(m => (
+          <div key={m.member_id} className="bg-white border border-gray-200 rounded-xl p-3.5">
+            <div className="flex items-center gap-2 flex-wrap">
+              <button onClick={() => setDetailFor(m.member_id)} className="font-bold text-gray-900 hover:text-red-600 hover:underline">{m.full_name || '—'}</button>
+              <span className="text-xs text-gray-400">Day {m.days_in} · {m.visit_days} visit-days · joined {m.join_date}</span>
+              {m.due_count > 0
+                ? <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-700">{m.due_count} due</span>
+                : <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-green-100 text-green-700">on track</span>}
+            </div>
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {m.touchpoints.map(t => (
+                <span key={t.key} title={t.status} className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${TP_STYLE[t.status] || TP_STYLE.na}`}>
+                  {t.status === 'done' ? '✓ ' : ''}{t.label}
+                </span>
+              ))}
+            </div>
+          </div>
+        ))}
       </div>
       {detailFor && <MemberDetailModal memberId={detailFor} onClose={() => setDetailFor(null)} />}
     </div>
