@@ -774,9 +774,10 @@ router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
       visit_days: a.visit_days || 0,
       total_sessions: a.total_sessions || 0,
       workouts_tried: a.workouts_tried || 0,
-      days_lapsed: daysBetween(a.last_booking_date),
       goal_text: goalMap.get(m.id) || 'their goal',
       ...t.context,
+      // Live lapse (wins over any value stored when the task was created).
+      days_lapsed: daysBetween(a.last_booking_date),
     }
     return {
       id: t.id,
@@ -797,6 +798,12 @@ router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
       days_lapsed: ctx.days_lapsed,
       join_date: m.join_date || null,
     }
+  }).filter(it => {
+    // A "quiet N days" save call is moot once the member has booked again —
+    // hide it live (the engine reverts the journey on the next import).
+    if (it.trigger_ref === 'save_14d') return (it.days_lapsed ?? 999) >= 14
+    if (it.trigger_ref === 'save_7d') return (it.days_lapsed ?? 999) >= 7
+    return true
   })
 
   // Re-engagement (roster-wide, live-computed): any active member lapsed 14+ days,
