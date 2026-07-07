@@ -5,6 +5,7 @@ const authenticate = require('../middleware/authMiddleware')
 const { requireRole } = require('../middleware/roleGuard')
 const { requireStudio } = require('../middleware/studioMiddleware')
 const { calcCommission } = require('../services/commissionCalc')
+const { computeLeaderboard } = require('../services/leaderboard')
 const { todayInChicago } = require('../utils/dates')
 
 const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
@@ -72,22 +73,6 @@ async function getMonthlyHours(month, year, studioId) {
     hoursMap[s.tsa_id] = (hoursMap[s.tsa_id] || 0) + hrs
   }
   return hoursMap
-}
-
-async function getMonthlyShiftCounts(month, year, studioId) {
-  const m = String(month).padStart(2, '0')
-  const lastDay = new Date(year, month, 0).getDate()
-  const { data } = await db()
-    .from('shifts')
-    .select('tsa_id')
-    .eq('studio_id', studioId)
-    .gte('shift_date', `${year}-${m}-01`)
-    .lte('shift_date', `${year}-${m}-${String(lastDay).padStart(2, '0')}`)
-  const countMap = {}
-  for (const s of (data || [])) {
-    countMap[s.tsa_id] = (countMap[s.tsa_id] || 0) + 1
-  }
-  return countMap
 }
 
 async function getStudioGoalTargets(month, year, studioId) {
@@ -364,73 +349,11 @@ router.put('/personal/:tsaId', requireRole('owner', 'manager'), async (req, res)
 router.get('/leaderboard', async (req, res) => {
   const { month, year } = req.query
   if (!month || !year) return res.status(400).json({ error: 'month and year required' })
-
-  const [{ data: { users }, error: uErr }, inactiveIds] = await Promise.all([
-    db().auth.admin.listUsers(),
-    getInactiveUserIds(),
-  ])
-  if (uErr) return res.status(500).json({ error: uErr.message })
-
-  const studioUsers = users.filter(u =>
-    ['tsa', 'manager'].includes(u.app_metadata?.role) &&
-    !inactiveIds.has(u.id)
-  )
-
-  const [{ data: goalsData, error: gErr }, hoursMap, shiftCountMap, studioTargets, studioData] = await Promise.all([
-    db().from('personal_goals')
-      .select('tsa_id, total_memberships, retail_actual, sweat_basic, sweat_elite, pos_collected, eft_actual, pif_6mo, pif_12mo, itb_bonus_override, calls_made, texts_made')
-      .eq('studio_id', req.studio.id).eq('month', month).eq('year', year),
-    getMonthlyHours(Number(month), Number(year), req.studio.id),
-    getMonthlyShiftCounts(Number(month), Number(year), req.studio.id),
-    getStudioGoalTargets(month, year, req.studio.id),
-    getStudioTrends(Number(month), Number(year), req.studio.id),
-  ])
-
-  if (gErr) return res.status(500).json({ error: gErr.message })
-
-  const goalsMap = {}
-  for (const g of (goalsData || [])) goalsMap[g.tsa_id] = g
-
-  const totalHours = studioUsers.reduce((sum, u) => sum + (hoursMap[u.id] || 0), 0)
-
-  const result = studioUsers
-    .filter(u => (hoursMap[u.id] || 0) > 0)
-    .map(u => {
-      const userRole = u.app_metadata?.role
-      const goals = goalsMap[u.id] || {}
-      const scheduledHours = hoursMap[u.id] || 0
-      const hoursPct = totalHours > 0 ? scheduledHours / totalHours : 0
-      const membersGoal = studioTargets.memberships_target ? Math.round(studioTargets.memberships_target * hoursPct) : null
-      const retailGoal  = studioTargets.retail_target ? Math.round(studioTargets.retail_target * hoursPct * 100) / 100 : null
-      const commission  = calcCommission(goals, userRole, studioData)
-      return {
-        tsa_id:       u.id,
-        tsa_name:     u.user_metadata?.full_name || u.email?.split('@')[0] || 'Team Member',
-        tsa_role:     userRole,
-        avatar_url:   u.user_metadata?.avatar_url || null,
-        total_memberships:         goals.total_memberships || 0,
-        sweat_basic:               goals.sweat_basic        || 0,
-        sweat_elite:               goals.sweat_elite        || 0,
-        retail_actual:             goals.retail_actual      || 0,
-        pos_collected:             goals.pos_collected      || 0,
-        calls_made:                goals.calls_made         || 0,
-        texts_made:                goals.texts_made         || 0,
-        outreach:                  (goals.calls_made || 0) + (goals.texts_made || 0),
-        shift_count:               shiftCountMap[u.id]      || 0,
-        outreach_goal:             (shiftCountMap[u.id] || 0) * 50,
-        scheduled_hours:           Math.round(scheduledHours * 10) / 10,
-        hours_pct:                 hoursPct,
-        memberships_goal_computed: membersGoal,
-        retail_goal_computed:      retailGoal,
-        commission_total:          commission.total,
-        commission_retail_rate:    commission.retail_rate   || 0,
-        commission_retail:         commission.retail_commission || 0,
-        commission_eft:            commission.eft_commission    || 0,
-        commission_itb:            commission.itb_bonus         || 0,
-      }
-    })
-
-  res.json(result)
+  try {
+    res.json(await computeLeaderboard(req.studio.id, month, year))
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
 })
 
 // ─── POST /api/goals/suggest ──────────────────────────────────────────────────

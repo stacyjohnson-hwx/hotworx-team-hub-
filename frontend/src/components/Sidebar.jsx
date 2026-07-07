@@ -33,6 +33,7 @@ import {
   Gauge,
   Award,
   HeartHandshake,
+  Trophy,
 } from 'lucide-react'
 
 // Sidebar organized into sections. Dashboard is pinned (no header); the footer
@@ -78,6 +79,7 @@ const NAV_SECTIONS = [
     title: 'Sales & Growth',
     items: [
       { to: '/goals',       label: 'Goals',           icon: Target,     roles: ['owner', 'manager', 'tsa'] },
+      { to: '/contest',     label: 'Contests',        icon: Trophy,     roles: ['owner', 'manager', 'tsa'] },
       { to: '/events',      label: 'Events & Promos', icon: Megaphone,  roles: ['owner', 'manager', 'tsa'] },
       { to: '/b2b',         label: 'B2B Outreach',    icon: Building2,  roles: ['owner', 'manager', 'tsa'] },
       { to: '/competitors', label: 'Competitors',     icon: Swords,     roles: ['owner', 'manager', 'tsa'] },

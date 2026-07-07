@@ -35,6 +35,7 @@ import MemberActivationPage from '@/pages/member-activation/MemberActivationPage
 import CompetitorsPage from '@/pages/competitors/CompetitorsPage'
 import RetailPage from '@/pages/retail/RetailPage'
 import InventoryCountPage from '@/pages/retail/InventoryCountPage'
+import ContestPage from '@/pages/contest/ContestPage'
 
 function ProtectedRoute({ children }) {
   const { session, loading, profile } = useAuth()
@@ -107,6 +108,7 @@ function AppRoutes() {
           }
         />
         <Route path="/events"    element={<EventsPage />} />
+        <Route path="/contest"   element={<ContestPage />} />
         <Route path="/b2b"       element={<B2bPage />} />
         <Route path="/orders"    element={<OrdersPage />} />
         <Route path="/eod"       element={<EodPage />} />
