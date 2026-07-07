@@ -4,6 +4,7 @@ const { createClient } = require('@supabase/supabase-js')
 const { requireRole } = require('../middleware/roleGuard')
 const { requireStudio } = require('../middleware/studioMiddleware')
 const authenticate = require('../middleware/authMiddleware')
+const { todayInChicago } = require('../utils/dates')
 
 const supabase = () =>
   createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
@@ -18,7 +19,7 @@ function deriveDates({ outcome, date_requested, follow_up_date }) {
   const plus = (days) => { const d = new Date(base); d.setDate(d.getDate() + days); return d.toISOString().split('T')[0] }
   if (outcome === 'cancelled') return { follow_up_date: follow_up_date || plus(7), date_resolved: null }
   if (outcome === 'pending')   return { follow_up_date: follow_up_date || plus(7), date_resolved: null }
-  return { follow_up_date: follow_up_date || null, date_resolved: new Date().toISOString().split('T')[0] } // saved = resolved
+  return { follow_up_date: follow_up_date || null, date_resolved: todayInChicago() } // saved = resolved
 }
 
 // GET /api/cancellations  (filters: reason, outcome, win_back_step, handled_by)
@@ -99,7 +100,7 @@ router.post('/', authenticate, requireStudio, async (req, res) => {
     studio_id: req.studio.id,
     member_name: b.member_name,
     member_id: b.member_id || null,
-    date_requested: b.date_requested || new Date().toISOString().split('T')[0],
+    date_requested: b.date_requested || todayInChicago(),
     handled_by: b.handled_by || req.user.id,
     cancel_reason: b.cancel_reason,
     reason_notes: b.reason_notes || null,
@@ -146,7 +147,7 @@ router.put('/:id', authenticate, requireStudio, async (req, res) => {
   }
   // Terminal win-back steps resolve the entry.
   if (['reactivated', 'lost_declined', 'lost_no_response'].includes(b.win_back_step)) {
-    updates.date_resolved = new Date().toISOString().split('T')[0]
+    updates.date_resolved = todayInChicago()
   }
 
   const { data, error } = await supabase().from('cancellation_log')

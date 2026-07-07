@@ -5,6 +5,8 @@ const authenticate = require('../middleware/authMiddleware')
 const { requireRole } = require('../middleware/roleGuard')
 const { requireStudio } = require('../middleware/studioMiddleware')
 
+const { todayInChicago } = require('../utils/dates')
+
 const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 
 // ─── POST /api/retail/analytics/import-sales ────────────────────────────────
@@ -295,7 +297,7 @@ router.get('/dead-stock', authenticate, requireStudio, async (req, res) => {
 // ─── POST /api/retail/analytics/calculate-dead-stock ────────────────────────
 // Calculate dead stock from sales history
 router.post('/calculate-dead-stock', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
-  const today = new Date().toISOString().split('T')[0]
+  const today = todayInChicago()
   const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
 

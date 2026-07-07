@@ -5,8 +5,10 @@ const authenticate = require('../middleware/authMiddleware')
 const { requireRole } = require('../middleware/roleGuard')
 const { requireStudio } = require('../middleware/studioMiddleware')
 
+const { todayInChicago } = require('../utils/dates')
+
 const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
-const todayStr = () => new Date().toISOString().slice(0, 10)
+const todayStr = todayInChicago
 function weekStartStr() {
   const d = new Date(); d.setDate(d.getDate() - d.getDay()); return d.toISOString().slice(0, 10)
 }

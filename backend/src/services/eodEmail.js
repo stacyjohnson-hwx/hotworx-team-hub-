@@ -1,6 +1,7 @@
 const { Resend }    = require('resend')
 const nodemailer    = require('nodemailer')
 const { createClient } = require('@supabase/supabase-js')
+const { todayInChicago } = require('../utils/dates')
 
 // ─── Transport: Gmail SMTP preferred, Resend fallback ─────────────────────────
 // Gmail SMTP sends to anyone. Resend sandbox only sends to the account owner.
@@ -532,7 +533,7 @@ async function fetchSubmissionsForDate(dateStr, studioId) {
 // open escalations, and pending orders.
 async function fetchOpsSummary(db, studioId) {
   if (!studioId) return { maintenance: [], escalations: [], orders: [], cancelCalls: [] }
-  const today = new Date().toISOString().split('T')[0]
+  const today = todayInChicago()
   const [maint, esc, ord, cancels] = await Promise.all([
     db.from('maintenance_logs').select('title, area, priority, status').eq('studio_id', studioId).in('status', ['open', 'in_progress']),
     db.from('escalation_logs').select('title, type, priority, member_name, status').eq('studio_id', studioId).neq('status', 'resolved'),

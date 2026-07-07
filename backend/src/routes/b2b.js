@@ -5,6 +5,7 @@ const { requireRole } = require('../middleware/roleGuard')
 const { requireStudio } = require('../middleware/studioMiddleware')
 const { markContacted } = require('../services/b2bAutomation')
 const authenticate = require('../middleware/authMiddleware')
+const { todayInChicago } = require('../utils/dates')
 
 const supabase = () =>
   createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
@@ -23,7 +24,7 @@ router.get('/contacts', authenticate, requireStudio, async (req, res) => {
 
   // "Last contacted" = most recent of a logged interaction OR a linked event
   // that has already occurred.
-  const today = new Date().toISOString().split('T')[0]
+  const today = todayInChicago()
 
   const [{ data: lastRows }, { data: evRows }] = await Promise.all([
     db.from('b2b_interactions').select('contact_id, logged_at').order('logged_at', { ascending: false }),

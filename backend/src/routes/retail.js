@@ -5,6 +5,8 @@ const authenticate = require('../middleware/authMiddleware')
 const { requireRole } = require('../middleware/roleGuard')
 const { requireStudio } = require('../middleware/studioMiddleware')
 
+const { todayInChicago } = require('../utils/dates')
+
 const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 
 // ─── GET /api/retail/categories ─────────────────────────────────────────────
@@ -166,7 +168,7 @@ router.put('/inventory/:sku_id', authenticate, requireStudio, requireRole('owner
       quantity_on_hand: quantity_on_hand || 0,
       size_quantities: size_quantities || null,
       last_updated_by: req.user.id,
-      last_count_date: new Date().toISOString().split('T')[0],
+      last_count_date: todayInChicago(),
       updated_at: new Date().toISOString(),
     }, {
       onConflict: 'sku_id,studio_id'

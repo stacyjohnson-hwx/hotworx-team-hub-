@@ -9,8 +9,9 @@ function addDays(dateStr, n) {
   d.setUTCDate(d.getUTCDate() + n)
   return d.toISOString().slice(0, 10)
 }
+const { todayInChicago } = require('../utils/dates')
 const firstName = (full) => (full || '').trim().split(/\s+/)[0] || 'there'
-const todayStr = () => new Date().toISOString().slice(0, 10)
+const todayStr = todayInChicago
 
 // Substitute {var} placeholders from a context object; unknown vars render blank.
 function renderTemplate(body, ctx) {

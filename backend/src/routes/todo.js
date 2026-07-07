@@ -32,6 +32,9 @@ router.get('/', authenticate, requireStudio, requireRole('owner', 'manager'), as
 
   if (status) query = query.eq('status', status)
 
+  // The Owner To-Do list is private to the owner — hide it from managers.
+  if (req.role !== 'owner') query = query.neq('list_target', 'owner')
+
   const [{ data, error }, userMap] = await Promise.all([query, buildUserMap(db)])
   if (error) return res.status(500).json({ error: error.message })
 
@@ -69,6 +72,10 @@ router.get('/managers', authenticate, requireStudio, requireRole('owner', 'manag
 router.post('/', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const { title, notes, due_date, priority, area, source, coaching_session_id, list_target, assigned_to } = req.body
   if (!title) return res.status(400).json({ error: 'title is required' })
+  // Only the owner may add to the private Owner To-Do list.
+  if (list_target === 'owner' && req.role !== 'owner') {
+    return res.status(403).json({ error: 'Only the owner can add to the Owner To-Do list' })
+  }
 
   const { data, error } = await supabase()
     .from('todo_items')
@@ -105,6 +112,10 @@ router.put('/:id', authenticate, requireStudio, requireRole('owner', 'manager'),
   }
   if (['manager', 'owner'].includes(list_target)) updates.list_target = list_target
   if (assigned_to !== undefined) updates.assigned_to = assigned_to || null
+  // Managers cannot move an item onto the private Owner list.
+  if (updates.list_target === 'owner' && req.role !== 'owner') {
+    return res.status(403).json({ error: 'Only the owner can use the Owner To-Do list' })
+  }
 
   if (status === 'done') {
     updates.status = 'done'
@@ -116,8 +127,12 @@ router.put('/:id', authenticate, requireStudio, requireRole('owner', 'manager'),
     updates.completed_at = null
   }
 
+  // Non-owners can never touch an existing Owner-list item.
+  let updateQ = db.from('todo_items').update(updates).eq('id', req.params.id).eq('studio_id', req.studio.id)
+  if (req.role !== 'owner') updateQ = updateQ.neq('list_target', 'owner')
+
   const [{ data, error }, userMap] = await Promise.all([
-    db.from('todo_items').update(updates).eq('id', req.params.id).eq('studio_id', req.studio.id).select().single(),
+    updateQ.select().single(),
     buildUserMap(db),
   ])
 
@@ -132,12 +147,15 @@ router.put('/:id', authenticate, requireStudio, requireRole('owner', 'manager'),
 
 // ─── DELETE /api/todo/:id ─────────────────────────────────────────────────────
 router.delete('/:id', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
-  const { error } = await supabase()
+  let delQ = supabase()
     .from('todo_items')
     .delete()
     .eq('id', req.params.id)
     .eq('studio_id', req.studio.id)
+  // Managers cannot delete items on the private Owner list.
+  if (req.role !== 'owner') delQ = delQ.neq('list_target', 'owner')
 
+  const { error } = await delQ
   if (error) return res.status(500).json({ error: error.message })
   res.status(204).end()
 })

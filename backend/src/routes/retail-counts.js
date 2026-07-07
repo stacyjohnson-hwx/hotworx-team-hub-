@@ -5,6 +5,8 @@ const authenticate = require('../middleware/authMiddleware')
 const { requireRole } = require('../middleware/roleGuard')
 const { requireStudio } = require('../middleware/studioMiddleware')
 
+const { todayInChicago } = require('../utils/dates')
+
 const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 
 // ─── GET /api/retail/counts ─────────────────────────────────────────────────
@@ -81,7 +83,7 @@ router.post('/', authenticate, requireStudio, requireRole('owner', 'manager'), a
     .from('inventory_count_sessions')
     .insert({
       studio_id: req.studio.id,
-      count_date: count_date || new Date().toISOString().split('T')[0],
+      count_date: count_date || todayInChicago(),
       counted_by: req.user.id,
       status: 'in_progress',
     })

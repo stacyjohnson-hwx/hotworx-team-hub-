@@ -5,6 +5,8 @@ const authenticate = require('../middleware/authMiddleware')
 const { requireRole } = require('../middleware/roleGuard')
 const { requireStudio } = require('../middleware/studioMiddleware')
 
+const { todayInChicago } = require('../utils/dates')
+
 const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 
 // ─── POST /api/retail/import/inventory ──────────────────────────────────────
@@ -107,7 +109,7 @@ router.post('/inventory', authenticate, requireStudio, requireRole('owner', 'man
           sku_id: skuId,
           studio_id: req.studio.id,
           quantity_on_hand: quantity,
-          last_count_date: count_date || new Date().toISOString().split('T')[0],
+          last_count_date: count_date || todayInChicago(),
           last_updated_by: req.user.id,
           updated_at: new Date().toISOString(),
         }, {

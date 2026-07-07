@@ -4,6 +4,7 @@ const { createClient } = require('@supabase/supabase-js')
 const { requireRole } = require('../middleware/roleGuard')
 const authenticate = require('../middleware/authMiddleware')
 const { syncOutreach, isConfigured } = require('../services/outreachSync')
+const { todayInChicago } = require('../utils/dates')
 
 const supabase = () =>
   createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
@@ -192,7 +193,7 @@ router.delete('/tiles/:id/contacts', authenticate, requireRole('owner', 'manager
 router.get('/logs', authenticate, async (req, res) => {
   const { date, allUsers } = req.query
   const role = req.user.app_metadata?.role
-  const today = date || new Date().toISOString().split('T')[0]
+  const today = date || todayInChicago()
 
   let query = supabase()
     .from('outreach_logs')
@@ -273,7 +274,7 @@ router.post('/logs/upsert', authenticate, async (req, res) => {
 // Daily totals for EOD email — total calls + texts across all tiles
 router.get('/logs/summary', authenticate, async (req, res) => {
   const { date } = req.query
-  const today = date || new Date().toISOString().split('T')[0]
+  const today = date || todayInChicago()
   const role = req.user.app_metadata?.role
 
   let query = supabase()

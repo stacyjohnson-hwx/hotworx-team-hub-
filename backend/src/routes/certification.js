@@ -5,6 +5,8 @@ const authenticate = require('../middleware/authMiddleware')
 const { requireRole } = require('../middleware/roleGuard')
 const { requireStudio } = require('../middleware/studioMiddleware')
 
+const { todayInChicago } = require('../utils/dates')
+
 const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 
 router.use(authenticate, requireStudio)
@@ -281,7 +283,7 @@ router.post('/skills/:id/demo', canAuthor, async (req, res) => {
     const { data: cur } = await sb.from('script').select('version').eq('skill_id', skillId).eq('is_current', true).maybeSingle()
     await sb.from('tsa_skill_status').upsert({
       studio_id: req.studio.id, tsa_user_id, skill_id: skillId, status: 'certified',
-      certified_on: new Date().toISOString().slice(0, 10), certified_by: req.user.id,
+      certified_on: todayInChicago(), certified_by: req.user.id,
       current_script_version: cur?.version || null, updated_at: new Date().toISOString(),
     }, { onConflict: 'studio_id, tsa_user_id, skill_id' })
   } else {
@@ -418,7 +420,7 @@ router.post('/coaching/:employeeId/log', canAuthor, async (req, res) => {
   const { data, error } = await db().from('coaching_log').insert({
     studio_id: req.studio.id, employee_user_id: req.params.employeeId,
     coach_user_id: coach_user_id || req.user.id,
-    met_on: met_on || new Date().toISOString().slice(0, 10),
+    met_on: met_on || todayInChicago(),
     type: type || '1_on_1', skill_id: skill_id || null,
     rating: rating || null, wins: wins || null, focus: focus || null,
     action_items: action_items || null, next_session_on: next_session_on || null,

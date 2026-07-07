@@ -5,6 +5,8 @@ const authenticate = require('../middleware/authMiddleware')
 const { requireRole } = require('../middleware/roleGuard')
 const { requireStudio } = require('../middleware/studioMiddleware')
 
+const { todayInChicago } = require('../utils/dates')
+
 const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 
 router.use(authenticate, requireStudio)
@@ -43,7 +45,7 @@ router.get('/', async (req, res) => {
     }
   }
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayInChicago()
   const nameMap = await nameMapFor(database, (zones || []).map(z => z.assigned_to))
 
   // Linked B2B contacts (apartments live in both Canvassing and B2B)
@@ -148,7 +150,7 @@ router.post('/:id/visits', async (req, res) => {
       territory_id: req.params.id,
       studio_id: req.studio.id,
       visited_by: req.user.id,
-      visit_date: visit_date || new Date().toISOString().slice(0, 10),
+      visit_date: visit_date || todayInChicago(),
       activity_type: activity_type || null,
       notes: notes || null,
     })

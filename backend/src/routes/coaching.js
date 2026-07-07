@@ -4,6 +4,7 @@ const { createClient } = require('@supabase/supabase-js')
 const { requireRole } = require('../middleware/roleGuard')
 const { requireStudio } = require('../middleware/studioMiddleware')
 const authenticate = require('../middleware/authMiddleware')
+const { todayInChicago } = require('../utils/dates')
 
 const supabase = () =>
   createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
@@ -62,7 +63,7 @@ router.post('/', authenticate, requireStudio, requireRole('owner', 'manager'), a
   const { data: session, error: sessErr } = await db
     .from('coaching_sessions')
     .insert({
-      session_date: session_date || new Date().toISOString().split('T')[0],
+      session_date: session_date || todayInChicago(),
       session_time: session_time || null,
       staff_name,
       session_type: session_type || 'one-on-one',

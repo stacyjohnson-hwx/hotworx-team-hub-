@@ -4,6 +4,7 @@ const { createClient } = require('@supabase/supabase-js')
 const { requireRole } = require('../middleware/roleGuard')
 const authenticate = require('../middleware/authMiddleware')
 const { requireStudio } = require('../middleware/studioMiddleware')
+const { todayInChicago } = require('../utils/dates')
 
 const supabase = () =>
   createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
@@ -54,7 +55,7 @@ async function buildUserMap(db) {
 // ─── GET /api/cleaning/today?date=YYYY-MM-DD ────────────────────────────────
 // Returns tasks that should appear today + their completion status + last completion
 router.get('/today', async (req, res) => {
-  const date = req.query.date || new Date().toISOString().slice(0, 10)
+  const date = req.query.date || todayInChicago()
   const db = supabase()
 
   const [tasksRes, completionsRes, recentRes] = await Promise.all([
@@ -311,7 +312,7 @@ router.get('/analytics', async (req, res) => {
 // TSA marks a task done
 router.post('/complete', async (req, res) => {
   const { task_id, date } = req.body
-  const completion_date = date || new Date().toISOString().slice(0, 10)
+  const completion_date = date || todayInChicago()
 
   const { data, error} = await supabase()
     .from('cleaning_completions')
@@ -333,7 +334,7 @@ router.post('/complete', async (req, res) => {
 // TSA un-checks a task
 router.delete('/complete', async (req, res) => {
   const { task_id, date } = req.body
-  const completion_date = date || new Date().toISOString().slice(0, 10)
+  const completion_date = date || todayInChicago()
   const db = supabase()
 
   // Weekly tasks may have been completed on a different day this week — clear the

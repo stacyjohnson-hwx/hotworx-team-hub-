@@ -4,6 +4,7 @@ const { createClient } = require('@supabase/supabase-js')
 const authenticate = require('../middleware/authMiddleware')
 const { requireRole } = require('../middleware/roleGuard')
 const { requireStudio } = require('../middleware/studioMiddleware')
+const { todayInChicago } = require('../utils/dates')
 
 const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 
@@ -15,7 +16,7 @@ function weekStartStr() {
   d.setDate(d.getDate() - d.getDay())
   return d.toISOString().slice(0, 10)
 }
-const todayStr = () => new Date().toISOString().slice(0, 10)
+const todayStr = todayInChicago
 
 // Does this task's role target apply to the given role? owner+manager => manager.
 function targetsRole(roleTarget, role) {
@@ -143,7 +144,7 @@ router.delete('/tasks/:id', requireRole('owner', 'manager'), async (req, res) =>
 // completed on a given date (content + marketing), for the EOD summary ─────────
 router.get('/my-completions', async (req, res) => {
   const database = db()
-  const date = req.query.date || new Date().toISOString().slice(0, 10)
+  const date = req.query.date || todayInChicago()
   const [{ data: mc }, { data: lc }] = await Promise.all([
     database.from('marketing_task_completions').select('marketing_tasks(title)')
       .eq('studio_id', req.studio.id).eq('staff_id', req.user.id).eq('completion_date', date),
