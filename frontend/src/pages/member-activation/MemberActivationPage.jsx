@@ -625,14 +625,42 @@ function NewMembersTab() {
 }
 
 function TouchpointEditModal({ member, tp, onClose, onSaved }) {
+  const { currentStudio } = useStudio()
   const [done, setDone] = useState(tp.status === 'done')
   const [notes, setNotes] = useState(tp.notes || '')
   const [saving, setSaving] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [uploaded, setUploaded] = useState(null)  // {url, type}
+  const fileRef = useRef(null)
+
   const save = async () => {
     setSaving(true)
     try { await apiPost(`${BASE}/new-members/${member.member_id}/touchpoint`, { key: tp.key, done, notes }); onSaved() }
     catch (e) { alert('Save failed: ' + (e?.message || 'error')); setSaving(false) }
   }
+  // Upload a photo/video → store, add to the content library, tag this member.
+  const onUpload = async (e) => {
+    const file = e.target.files?.[0]
+    if (fileRef.current) fileRef.current.value = ''
+    if (!file || !currentStudio?.id) return
+    setUploading(true)
+    try {
+      const isVideo = file.type.startsWith('video')
+      const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+      const path = `${currentStudio.id}/library/${Date.now()}-${safe}`
+      const { error: upErr } = await supabase.storage.from('marketing-content').upload(path, file, { upsert: false, contentType: file.type })
+      if (upErr) throw upErr
+      const { data: { publicUrl } } = supabase.storage.from('marketing-content').getPublicUrl(path)
+      await apiPost('/api/marketing/content', {
+        file_url: publicUrl, file_path: path, file_type: isVideo ? 'video' : 'photo',
+        category: isVideo ? 'member_videos' : 'member_photos', member_ids: [member.member_id], member_name: member.full_name || null,
+      })
+      setUploaded({ url: publicUrl, type: isVideo ? 'video' : 'photo' })
+      setDone(true)  // a photo on file completes this touchpoint
+    } catch (err) { alert('Upload failed: ' + (err?.message || 'error')) }
+    finally { setUploading(false) }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm" onClick={e => e.stopPropagation()}>
@@ -641,6 +669,25 @@ function TouchpointEditModal({ member, tp, onClose, onSaved }) {
           <p className="text-xs text-gray-400">{member.full_name}</p>
         </div>
         <div className="p-5 space-y-4">
+          {/* Photo upload — tags the member + adds to the content library */}
+          <div>
+            <input ref={fileRef} type="file" accept="image/*,video/*" onChange={onUpload} className="hidden" />
+            {uploaded ? (
+              <div className="flex items-center gap-3">
+                {uploaded.type === 'photo'
+                  ? <img src={uploaded.url} alt="" className="w-16 h-16 rounded-lg object-cover border border-gray-200" />
+                  : <video src={`${uploaded.url}#t=0.5`} className="w-16 h-16 rounded-lg object-cover border border-gray-200" />}
+                <div className="text-xs text-green-600 font-semibold flex items-center gap-1"><Check size={13} /> Added to library & tagged</div>
+              </div>
+            ) : (
+              <button onClick={() => fileRef.current?.click()} disabled={uploading}
+                className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-gray-300 rounded-xl py-3 text-sm font-semibold text-gray-600 hover:border-red-400 hover:text-red-600 disabled:opacity-50">
+                {uploading ? <Loader2 size={15} className="animate-spin" /> : <Camera size={15} />}
+                {uploading ? 'Uploading…' : 'Upload a photo'}
+              </button>
+            )}
+            <p className="text-[11px] text-gray-400 mt-1">Auto-tags {member.full_name?.split(' ')[0] || 'them'} and saves to the Content Library.</p>
+          </div>
           <label className="flex items-center gap-2.5 cursor-pointer">
             <input type="checkbox" checked={done} onChange={e => setDone(e.target.checked)} className="w-4 h-4 accent-red-600" />
             <span className="text-sm font-semibold text-gray-800">Done</span>
