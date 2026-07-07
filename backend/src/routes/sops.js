@@ -30,6 +30,11 @@ router.get('/', authenticate, async (req, res) => {
   if (category) query = query.eq('category', category)
   if (q) query = query.ilike('title', `%${q}%`)
 
+  // TSAs only see published, all-hands SOPs — never manager-only docs or drafts.
+  if (req.role === 'tsa') {
+    query = query.eq('visibility', 'all').neq('status', 'draft')
+  }
+
   const [{ data, error }, userMap] = await Promise.all([query, buildUserMap(db)])
   if (error) return res.status(500).json({ error: error.message })
 
@@ -48,6 +53,10 @@ router.get('/:id', authenticate, async (req, res) => {
     buildUserMap(db),
   ])
   if (error) return res.status(404).json({ error: 'SOP not found' })
+  // TSAs cannot open manager-only docs or unpublished drafts by direct id.
+  if (req.role === 'tsa' && (data.visibility === 'manager_only' || data.status === 'draft')) {
+    return res.status(404).json({ error: 'SOP not found' })
+  }
   res.json({
     ...data,
     updated_by_name: userMap[data.updated_by] || userMap[data.created_by] || 'Team Member',

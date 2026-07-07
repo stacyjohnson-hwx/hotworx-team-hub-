@@ -117,7 +117,7 @@ router.put('/:id', authenticate, requireStudio, requireRole('owner', 'manager'),
   }
 
   const [{ data, error }, userMap] = await Promise.all([
-    db.from('todo_items').update(updates).eq('id', req.params.id).select().single(),
+    db.from('todo_items').update(updates).eq('id', req.params.id).eq('studio_id', req.studio.id).select().single(),
     buildUserMap(db),
   ])
 
@@ -136,6 +136,7 @@ router.delete('/:id', authenticate, requireStudio, requireRole('owner', 'manager
     .from('todo_items')
     .delete()
     .eq('id', req.params.id)
+    .eq('studio_id', req.studio.id)
 
   if (error) return res.status(500).json({ error: error.message })
   res.status(204).end()

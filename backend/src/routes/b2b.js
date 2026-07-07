@@ -159,6 +159,7 @@ router.put('/contacts/:id', authenticate, requireStudio, async (req, res) => {
       updated_at: new Date().toISOString(),
     })
     .eq('id', req.params.id)
+    .eq('studio_id', req.studio.id)
     .select()
     .single()
 
@@ -173,6 +174,7 @@ router.delete('/contacts/:id', authenticate, requireStudio, requireRole('owner',
     .from('b2b_contacts')
     .delete()
     .eq('id', req.params.id)
+    .eq('studio_id', req.studio.id)
 
   if (error) return res.status(500).json({ error: error.message })
   res.status(204).end()
@@ -244,6 +246,7 @@ router.put('/interactions/:id', authenticate, requireStudio, requireRole('owner'
       ...(logged_at ? { logged_at } : {}),
     })
     .eq('id', req.params.id)
+    .eq('studio_id', req.studio.id)
     .select()
     .single()
 
@@ -257,6 +260,7 @@ router.delete('/interactions/:id', authenticate, requireStudio, requireRole('own
     .from('b2b_interactions')
     .delete()
     .eq('id', req.params.id)
+    .eq('studio_id', req.studio.id)
 
   if (error) return res.status(500).json({ error: error.message })
   res.status(204).end()

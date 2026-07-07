@@ -144,7 +144,7 @@ router.put('/:id', authenticate, requireStudio, requireRole('owner', 'manager'),
       ...(marketing_plan_items !== undefined ? { marketing_plan_items: Array.isArray(marketing_plan_items) ? marketing_plan_items : [] } : {}),
       ...(supplies !== undefined ? { supplies: Array.isArray(supplies) ? supplies : [] } : {}),
       updated_at: new Date().toISOString(),
-    }).eq('id', req.params.id).select().single()
+    }).eq('id', req.params.id).eq('studio_id', req.studio.id).select().single()
     if (error) throw error
     await syncPartners(req.params.id, b2b_contact_ids)
     const [enriched] = await attachPartners([data])
@@ -190,7 +190,7 @@ router.put('/:id/marketing-plan', authenticate, requireStudio, requireRole('owne
 // DELETE /api/events/:id  — owner/manager only
 router.delete('/:id', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   try {
-    const { error } = await supabase().from('events').delete().eq('id', req.params.id)
+    const { error } = await supabase().from('events').delete().eq('id', req.params.id).eq('studio_id', req.studio.id)
     if (error) throw error
     res.json({ ok: true })
   } catch (err) {
@@ -272,7 +272,7 @@ router.put('/promotions/:id', authenticate, requireStudio, requireRole('owner', 
       start_date: start_date || null, end_date: end_date || null,
       ongoing: ongoing ?? false, active: active ?? true,
       notes, month: parseInt(month), year: parseInt(year), updated_at: new Date().toISOString(),
-    }).eq('id', req.params.id).select().single()
+    }).eq('id', req.params.id).eq('studio_id', req.studio.id).select().single()
     if (error) throw error
     res.json(data)
   } catch (err) {
@@ -283,7 +283,7 @@ router.put('/promotions/:id', authenticate, requireStudio, requireRole('owner', 
 
 router.delete('/promotions/:id', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   try {
-    const { error } = await supabase().from('promotions').delete().eq('id', req.params.id)
+    const { error } = await supabase().from('promotions').delete().eq('id', req.params.id).eq('studio_id', req.studio.id)
     if (error) throw error
     res.json({ ok: true })
   } catch (err) {
@@ -294,11 +294,12 @@ router.delete('/promotions/:id', authenticate, requireStudio, requireRole('owner
 
 // ─── B2B DISCOUNTS ────────────────────────────────────────────────────────────
 
-router.get('/b2b-discounts', authenticate, async (req, res) => {
+router.get('/b2b-discounts', authenticate, requireStudio, async (req, res) => {
   try {
     const { data, error } = await supabase()
       .from('b2b_contacts')
       .select('id, business_name, contact_name, phone, email, industry, discount_desc, discount_ongoing, status')
+      .eq('studio_id', req.studio.id)
       .not('discount_desc', 'is', null)
       .neq('discount_desc', '')
       .order('business_name', { ascending: true })

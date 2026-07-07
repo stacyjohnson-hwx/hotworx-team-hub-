@@ -212,7 +212,17 @@ router.post('/:id/entries/add-size', authenticate, requireStudio, requireRole('o
 router.put('/:id/entries/:entry_id', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const { actual_quantity, actual_size_quantities, flagged, notes, photo_url } = req.body
 
-  // Get entry with SKU info for variance calculation
+  // inventory_count_entries has no studio_id; scope via the parent session's studio.
+  const { data: parentSession, error: sessErr } = await db()
+    .from('inventory_count_sessions')
+    .select('id')
+    .eq('id', req.params.id)
+    .eq('studio_id', req.studio.id)
+    .single()
+
+  if (sessErr || !parentSession) return res.status(404).json({ error: 'Count session not found' })
+
+  // Get entry with SKU info for variance calculation (constrained to this session)
   const { data: entry, error: getError } = await db()
     .from('inventory_count_entries')
     .select(`
@@ -220,6 +230,7 @@ router.put('/:id/entries/:entry_id', authenticate, requireStudio, requireRole('o
       sku:sku_master(retail_price)
     `)
     .eq('id', req.params.entry_id)
+    .eq('session_id', req.params.id)
     .single()
 
   if (getError) return res.status(500).json({ error: getError.message })
@@ -241,6 +252,7 @@ router.put('/:id/entries/:entry_id', authenticate, requireStudio, requireRole('o
       updated_at: new Date().toISOString(),
     })
     .eq('id', req.params.entry_id)
+    .eq('session_id', req.params.id)
     .select()
     .single()
 

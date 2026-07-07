@@ -8,6 +8,13 @@ const Anthropic       = require('@anthropic-ai/sdk')
 
 const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 
+// Strip fields a client must never set on write (prevents moving a row to another
+// studio or overwriting its identity via mass assignment).
+function sanitize(body = {}) {
+  const { id, studio_id, created_at, created_by, ...safe } = body
+  return safe
+}
+
 // ─── GET /api/competitors ────────────────────────────────────────────────────
 router.get('/', authenticate, requireStudio, async (req, res) => {
   const { data, error } = await db()
@@ -25,7 +32,7 @@ router.get('/', authenticate, requireStudio, async (req, res) => {
 router.post('/', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const { data, error } = await db()
     .from('competitors')
-    .insert({ ...req.body, studio_id: req.studio.id })
+    .insert({ ...sanitize(req.body), studio_id: req.studio.id })
     .select()
     .single()
   if (error) return res.status(500).json({ error: error.message })
@@ -36,7 +43,7 @@ router.post('/', authenticate, requireStudio, requireRole('owner', 'manager'), a
 router.put('/:id', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const { data, error } = await db()
     .from('competitors')
-    .update({ ...req.body, updated_at: new Date().toISOString() })
+    .update({ ...sanitize(req.body), updated_at: new Date().toISOString() })
     .eq('id', req.params.id)
     .eq('studio_id', req.studio.id)
     .select()
@@ -53,11 +60,19 @@ router.delete('/:id', authenticate, requireStudio, requireRole('owner', 'manager
 })
 
 // ─── GET /api/competitors/:id/visits ─────────────────────────────────────────
-router.get('/:id/visits', authenticate, async (req, res) => {
+router.get('/:id/visits', authenticate, requireStudio, async (req, res) => {
+  // competitor_visits has no studio_id of its own — scope through the parent competitor.
+  const { data: comp } = await db()
+    .from('competitors')
+    .select('id')
+    .eq('id', req.params.id)
+    .eq('studio_id', req.studio.id)
+    .maybeSingle()
+  if (!comp) return res.status(404).json({ error: 'Competitor not found' })
+
   const { data, error } = await db()
     .from('competitor_visits')
     .select('*')
-    .eq('studio_id', req.studio.id)
     .eq('competitor_id', req.params.id)
     .order('visited_at', { ascending: false })
   if (error) return res.status(500).json({ error: error.message })
@@ -74,10 +89,19 @@ router.get('/:id/visits', authenticate, async (req, res) => {
 })
 
 // ─── POST /api/competitors/:id/visits ────────────────────────────────────────
-router.post('/:id/visits', authenticate, async (req, res) => {
+router.post('/:id/visits', authenticate, requireStudio, async (req, res) => {
+  // Verify the competitor belongs to the caller's studio before logging a visit.
+  const { data: comp } = await db()
+    .from('competitors')
+    .select('id')
+    .eq('id', req.params.id)
+    .eq('studio_id', req.studio.id)
+    .maybeSingle()
+  if (!comp) return res.status(404).json({ error: 'Competitor not found' })
+
   const { data, error } = await db()
     .from('competitor_visits')
-    .insert({ ...req.body, competitor_id: req.params.id, visited_by: req.user.id })
+    .insert({ ...sanitize(req.body), competitor_id: req.params.id, visited_by: req.user.id })
     .select()
     .single()
   if (error) return res.status(500).json({ error: error.message })

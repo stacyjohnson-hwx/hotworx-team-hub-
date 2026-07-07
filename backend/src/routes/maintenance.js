@@ -76,6 +76,7 @@ router.put('/:id', authenticate, requireStudio, requireRole('owner', 'manager'),
     .from('maintenance_logs')
     .update(updates)
     .eq('id', req.params.id)
+    .eq('studio_id', req.studio.id)
     .select()
     .single()
 
@@ -89,6 +90,7 @@ router.delete('/:id', authenticate, requireStudio, requireRole('owner', 'manager
     .from('maintenance_logs')
     .delete()
     .eq('id', req.params.id)
+    .eq('studio_id', req.studio.id)
 
   if (error) return res.status(500).json({ error: error.message })
   res.status(204).end()

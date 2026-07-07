@@ -78,6 +78,7 @@ router.patch('/:id', requireRole('owner', 'manager'), async (req, res) => {
       reviewed_at: new Date().toISOString(),
     })
     .eq('id', req.params.id)
+    .eq('studio_id', req.studio.id)
     .select()
     .single()
 
@@ -94,6 +95,7 @@ router.delete('/:id', async (req, res) => {
     .from('time_off_requests')
     .delete()
     .eq('id', req.params.id)
+    .eq('studio_id', req.studio.id)
 
   // TSA: can only delete their own pending requests
   if (role === 'tsa') {

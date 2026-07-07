@@ -214,6 +214,7 @@ router.put('/:id', authenticate, requireStudio, async (req, res) => {
     .from('orders')
     .select('status')
     .eq('id', req.params.id)
+    .eq('studio_id', req.studio.id)
     .single()
 
   if (fetchErr) return res.status(404).json({ error: 'Order not found' })
@@ -227,6 +228,7 @@ router.put('/:id', authenticate, requireStudio, async (req, res) => {
       .from('orders')
       .update({ status: 'received', received_at: new Date().toISOString(), updated_at: new Date().toISOString() })
       .eq('id', req.params.id)
+      .eq('studio_id', req.studio.id)
       .select()
       .single()
     if (error) return res.status(500).json({ error: error.message })
@@ -267,6 +269,7 @@ router.put('/:id', authenticate, requireStudio, async (req, res) => {
     .from('orders')
     .update(updates)
     .eq('id', req.params.id)
+    .eq('studio_id', req.studio.id)
     .select()
     .single()
 
@@ -286,6 +289,7 @@ router.delete('/:id', authenticate, requireStudio, requireRole('owner', 'manager
     .from('orders')
     .delete()
     .eq('id', req.params.id)
+    .eq('studio_id', req.studio.id)
 
   if (error) return res.status(500).json({ error: error.message })
   res.status(204).end()

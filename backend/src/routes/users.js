@@ -21,6 +21,37 @@ async function getProfile(supabase, userId) {
   return data || {}
 }
 
+const ROLE_RANK = { tsa: 1, manager: 2, owner: 3 }
+
+// Guard an admin action against a target user. Verifies the target is a member
+// of the current studio and that the actor is allowed to act on them:
+//  - the target must belong to req.studio (no cross-studio user management)
+//  - a manager may only act on TSA accounts (never on owners or other managers)
+//  - nobody may act on an account whose studio-role outranks their own
+// Returns { ok } or { status, error } for the caller to relay.
+async function authorizeTargetUser(supabase, req, targetId) {
+  if (targetId === req.user.id) return { ok: true, targetRole: req.studio.role }
+
+  const { data: membership, error } = await supabase
+    .from('user_studios')
+    .select('role')
+    .eq('user_id', targetId)
+    .eq('studio_id', req.studio.id)
+    .maybeSingle()
+  if (error) return { status: 500, error: error.message }
+  if (!membership) return { status: 404, error: 'User is not a member of this studio' }
+
+  const actorRank = ROLE_RANK[req.studio.role] || ROLE_RANK[req.role] || 0
+  const targetRank = ROLE_RANK[membership.role] || 0
+  if (req.studio.role === 'manager' && membership.role !== 'tsa') {
+    return { status: 403, error: 'Managers can only manage TSA accounts' }
+  }
+  if (targetRank > actorRank) {
+    return { status: 403, error: 'You cannot manage an account with a higher role' }
+  }
+  return { ok: true, targetRole: membership.role }
+}
+
 function formatUser(u, p, roleOverride) {
   return {
     id:                      u.id,
@@ -203,6 +234,9 @@ router.put('/:id', authenticate, requireStudio, requireRole('owner', 'manager'),
 
   try {
     const supabase = adminClient()
+    const auth = await authorizeTargetUser(supabase, req, id)
+    if (!auth.ok) return res.status(auth.status).json({ error: auth.error })
+
     const authUpdates = {}
     if (full_name) authUpdates.user_metadata = { full_name }
     if (role)      authUpdates.app_metadata  = { role }
@@ -247,11 +281,14 @@ router.put('/:id', authenticate, requireStudio, requireRole('owner', 'manager'),
 })
 
 // PATCH /api/users/:id/deactivate
-router.patch('/:id/deactivate', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.patch('/:id/deactivate', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const { id } = req.params
   if (id === req.user.id) return res.status(400).json({ error: 'Cannot deactivate your own account' })
   try {
     const supabase = adminClient()
+    const auth = await authorizeTargetUser(supabase, req, id)
+    if (!auth.ok) return res.status(auth.status).json({ error: auth.error })
+
     const { error } = await supabase.auth.admin.updateUserById(id, { ban_duration: '876000h' })
     if (error) return res.status(400).json({ error: error.message })
     // Upsert: many users have no profile row yet, so UPDATE alone would be a no-op
@@ -278,10 +315,13 @@ router.patch('/:id/deactivate', authenticate, requireRole('owner', 'manager'), a
 })
 
 // PATCH /api/users/:id/reactivate
-router.patch('/:id/reactivate', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.patch('/:id/reactivate', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const { id } = req.params
   try {
     const supabase = adminClient()
+    const auth = await authorizeTargetUser(supabase, req, id)
+    if (!auth.ok) return res.status(auth.status).json({ error: auth.error })
+
     const { error } = await supabase.auth.admin.updateUserById(id, { ban_duration: 'none' })
     if (error) return res.status(400).json({ error: error.message })
     const { error: profileError } = await supabase
@@ -297,10 +337,13 @@ router.patch('/:id/reactivate', authenticate, requireRole('owner', 'manager'), a
 // POST /api/users/:id/reset-password
 // Supabase generateLink (type: 'recovery') both generates the link AND sends
 // the reset email via Supabase's own email system — no nodemailer needed here.
-router.post('/:id/reset-password', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.post('/:id/reset-password', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const { id } = req.params
   try {
     const sb = adminClient()
+    const auth = await authorizeTargetUser(sb, req, id)
+    if (!auth.ok) return res.status(auth.status).json({ error: auth.error })
+
     const { data: { user }, error: userErr } = await sb.auth.admin.getUserById(id)
     if (userErr || !user) return res.status(404).json({ error: 'User not found' })
 
@@ -322,14 +365,18 @@ router.post('/:id/reset-password', authenticate, requireRole('owner', 'manager')
 // POST /api/users/:id/set-password
 // Owner/manager sets a password directly — no email needed.
 // They share the temp password with the TSA in person or via text.
-router.post('/:id/set-password', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.post('/:id/set-password', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const { id } = req.params
   const { password } = req.body
   if (!password || password.length < 8) {
     return res.status(400).json({ error: 'Password must be at least 8 characters.' })
   }
   try {
-    const { error } = await adminClient().auth.admin.updateUserById(id, { password })
+    const supabase = adminClient()
+    const auth = await authorizeTargetUser(supabase, req, id)
+    if (!auth.ok) return res.status(auth.status).json({ error: auth.error })
+
+    const { error } = await supabase.auth.admin.updateUserById(id, { password })
     if (error) return res.status(400).json({ error: error.message })
     res.json({ ok: true })
   } catch (err) {

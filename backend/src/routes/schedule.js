@@ -135,7 +135,7 @@ router.post('/blocked', requireRole('owner', 'manager'), async (req, res) => {
 
 // DELETE /api/schedule/blocked/:id
 router.delete('/blocked/:id', requireRole('owner', 'manager'), async (req, res) => {
-  const { error } = await db().from('blocked_days').delete().eq('id', req.params.id)
+  const { error } = await db().from('blocked_days').delete().eq('id', req.params.id).eq('studio_id', req.studio.id)
   if (error) return res.status(500).json({ error: error.message })
   res.status(204).end()
 })
@@ -173,6 +173,7 @@ router.put('/:id', requireRole('owner', 'manager'), async (req, res) => {
     .from('shifts')
     .update({ tsa_id, shift_date, start_time, end_time, notes: notes || null })
     .eq('id', req.params.id)
+    .eq('studio_id', req.studio.id)
     .select()
     .single()
 
@@ -183,7 +184,7 @@ router.put('/:id', requireRole('owner', 'manager'), async (req, res) => {
 
 // DELETE /api/schedule/:id
 router.delete('/:id', requireRole('owner', 'manager'), async (req, res) => {
-  const { error } = await db().from('shifts').delete().eq('id', req.params.id)
+  const { error } = await db().from('shifts').delete().eq('id', req.params.id).eq('studio_id', req.studio.id)
   if (error) return res.status(500).json({ error: error.message })
   res.status(204).end()
 })

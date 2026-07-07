@@ -63,6 +63,7 @@ router.get('/', async (req, res) => {
   const { data: completions } = await db()
     .from('cleaning_completions')
     .select('task_id, completion_date')
+    .eq('studio_id', req.studio.id)
     .gte('completion_date', from)
     .lte('completion_date', to)
 
@@ -216,6 +217,7 @@ router.delete('/:id', requireRole('owner', 'manager'), async (req, res) => {
     .from('eod_submissions')
     .delete()
     .eq('id', req.params.id)
+    .eq('studio_id', req.studio.id)
 
   if (error) return res.status(500).json({ error: error.message })
   res.status(204).end()

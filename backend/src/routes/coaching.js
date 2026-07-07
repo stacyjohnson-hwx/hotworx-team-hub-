@@ -105,6 +105,7 @@ router.put('/:id', authenticate, requireStudio, requireRole('owner', 'manager'),
       updated_at: new Date().toISOString(),
     })
     .eq('id', req.params.id)
+    .eq('studio_id', req.studio.id)
     .select()
     .single()
 
@@ -115,6 +116,7 @@ router.put('/:id', authenticate, requireStudio, requireRole('owner', 'manager'),
     .from('coaching_action_items')
     .select('*')
     .eq('session_id', req.params.id)
+    .eq('studio_id', req.studio.id)
     .order('created_at')
 
   res.json({ ...data, action_items: actions || [] })
@@ -126,6 +128,7 @@ router.delete('/:id', authenticate, requireStudio, requireRole('owner', 'manager
     .from('coaching_sessions')
     .delete()
     .eq('id', req.params.id)
+    .eq('studio_id', req.studio.id)
 
   if (error) return res.status(500).json({ error: error.message })
   res.status(204).end()
@@ -137,7 +140,19 @@ router.post('/actions', authenticate, requireStudio, requireRole('owner', 'manag
   const { session_id, title, notes } = req.body
   if (!session_id || !title) return res.status(400).json({ error: 'session_id and title required' })
 
-  const { data, error } = await supabase()
+  const db = supabase()
+
+  // Validate the target session belongs to the caller's studio before attaching an action to it
+  const { data: session, error: sessErr } = await db
+    .from('coaching_sessions')
+    .select('id')
+    .eq('id', session_id)
+    .eq('studio_id', req.studio.id)
+    .single()
+
+  if (sessErr || !session) return res.status(404).json({ error: 'Coaching session not found' })
+
+  const { data, error } = await db
     .from('coaching_action_items')
     .insert({ session_id, title, notes: notes || null, studio_id: req.studio.id })
     .select()
@@ -153,6 +168,7 @@ router.delete('/actions/:id', authenticate, requireStudio, requireRole('owner', 
     .from('coaching_action_items')
     .delete()
     .eq('id', req.params.id)
+    .eq('studio_id', req.studio.id)
 
   if (error) return res.status(500).json({ error: error.message })
   res.status(204).end()
@@ -168,6 +184,7 @@ router.post('/actions/:id/push-to-todo', authenticate, requireStudio, requireRol
     .from('coaching_action_items')
     .select('*, coaching_sessions(id, staff_name, session_date)')
     .eq('id', req.params.id)
+    .eq('studio_id', req.studio.id)
     .single()
 
   if (actErr) return res.status(404).json({ error: 'Action item not found' })
@@ -203,6 +220,7 @@ router.post('/actions/:id/push-to-todo', authenticate, requireStudio, requireRol
     .from('coaching_action_items')
     .update({ pushed_to_todo: true, todo_id: todo.id })
     .eq('id', req.params.id)
+    .eq('studio_id', req.studio.id)
 
   res.json({ todo, action_id: req.params.id })
 })
