@@ -480,6 +480,107 @@ router.get('/members/:id/detail', authenticate, requireStudio, async (req, res) 
   })
 })
 
+// ─── Rich member journey: timeline, touchpoints, photos, bookings, milestones ──
+router.get('/members/:id/journey', authenticate, requireStudio, async (req, res) => {
+  const supabase = db(); const sid = req.studio.id, mid = req.params.id
+  const today = new Date().toISOString().slice(0, 10)
+
+  const { data: member } = await supabase.from('onboarding_members').select('*').eq('studio_id', sid).eq('id', mid).maybeSingle()
+  if (!member) return res.status(404).json({ error: 'not found' })
+
+  const [{ data: act }, { data: journeys }, { data: recog }, { data: rewards }, { data: xform }, { data: log }, { data: bookings }, { data: tags }, { data: reeng }, { data: templates }] = await Promise.all([
+    supabase.from('onboarding_member_activity').select('*').eq('member_id', mid).maybeSingle(),
+    supabase.from('onboarding_journeys').select('id, start_date, current_track, status').eq('studio_id', sid).eq('member_id', mid),
+    supabase.from('onboarding_recognition_tasks').select('type, status, ref_date, completed_at, completed_by').eq('studio_id', sid).eq('member_id', mid),
+    supabase.from('onboarding_rewards_awarded').select('reward_key, awarded_at').eq('studio_id', sid).eq('member_id', mid),
+    supabase.from('onboarding_transformation_records').select('goal_text, before_photo_url, progress_photo_url, after_photo_url').eq('studio_id', sid).eq('member_id', mid).maybeSingle(),
+    supabase.from('onboarding_touchpoint_log').select('touchpoint_key, done, notes, completed_by, completed_at, updated_at').eq('studio_id', sid).eq('member_id', mid),
+    supabase.from('onboarding_bookings').select('booking_date, time_slot, session_type').eq('studio_id', sid).eq('member_id', mid).order('booking_date', { ascending: false }).limit(60),
+    supabase.from('marketing_content_member_tags').select('content_id').eq('studio_id', sid).eq('member_id', mid),
+    supabase.from('onboarding_reengage_log').select('contacted_at, contacted_by').eq('studio_id', sid).eq('member_id', mid),
+    supabase.from('onboarding_touchpoint_templates').select('template_key, label').eq('studio_id', sid),
+  ])
+  const jIds = (journeys || []).map(j => j.id)
+  const { data: jtasks } = jIds.length
+    ? await supabase.from('onboarding_journey_tasks').select('trigger_ref, template_key, status, due_date, completed_at, completed_by').in('journey_id', jIds)
+    : { data: [] }
+  // Tagged marketing photos.
+  const contentIds = (tags || []).map(t => t.content_id)
+  const { data: assets } = contentIds.length
+    ? await supabase.from('marketing_content_assets').select('file_url, file_type, caption, uploaded_at').in('id', contentIds)
+    : { data: [] }
+
+  const logBy = {}; for (const l of log || []) logBy[l.touchpoint_key] = l
+  const taskBy = {}; for (const t of jtasks || []) taskBy[t.trigger_ref] = t
+  const tplLabel = new Map((templates || []).map(t => [t.template_key, t.label]))
+  const cardTask = (recog || []).find(r => r.type === 'thank_you_card')
+  const bdayTask = (recog || []).find(r => r.type === 'birthday')
+  const rewardKeys = new Set((rewards || []).map(r => r.reward_key))
+  const visitDays = act?.visit_days || 0, workouts = act?.workouts_tried || 0
+
+  const dayStatus = (task, key) => {
+    const l = logBy[key]
+    if (l?.done) return { status: 'done', notes: l.notes || null, when: l.completed_at }
+    let s = 'na'
+    if (task) {
+      if (task.status === 'completed') s = 'done'
+      else if (task.status === 'skipped') s = 'skipped'
+      else s = (task.due_date && task.due_date <= today) ? 'due' : 'upcoming'
+    }
+    return { status: s, notes: l?.notes || null, due_date: task?.due_date || null, when: task?.completed_at || null }
+  }
+  const tp = (key, label, base) => ({ key, label, ...base, notes: logBy[key]?.notes ?? base.notes ?? null, ...(logBy[key]?.done ? { status: 'done' } : {}) })
+
+  const touchpoints = [
+    tp('day_0_orientation', 'Orientation', dayStatus(taskBy['day_0_orientation'], 'day_0_orientation')),
+    tp('photo', '1st-day photo', { status: xform?.before_photo_url ? 'done' : (taskBy['day_2']?.due_date && taskBy['day_2'].due_date <= today ? 'due' : 'upcoming') }),
+    tp('day_2', 'Day 2 goal', dayStatus(taskBy['day_2'], 'day_2')),
+    tp('day_5', 'Day 5 check-in', dayStatus(taskBy['day_5'], 'day_5')),
+    tp('day_21', 'Day 21 friend', dayStatus(taskBy['day_21'], 'day_21')),
+    tp('day_30', 'Day 30 review', dayStatus(taskBy['day_30'], 'day_30')),
+    tp('day_60', 'Day 60 review', dayStatus(taskBy['day_60'], 'day_60')),
+    tp('day_90', 'Day 90 close', dayStatus(taskBy['day_90'], 'day_90')),
+    tp('thank_you_card', 'Thank-you card', { status: (logBy['thank_you_card']?.done || cardTask?.status === 'completed') ? 'done' : cardTask ? 'due' : 'na' }),
+    tp('passport', 'Passport', { status: (rewardKeys.has('sticker') || logBy['passport']?.done) ? 'done' : (workouts >= 12 ? 'due' : 'upcoming') }),
+  ]
+
+  const MILES = [[10, '10 visit-days'], [25, '25 · keychain'], [50, '50 visit-days'], [100, '100 · T-shirt'], [500, '500 · premium'], [1000, '1,000 · legacy']]
+  const milestones = [
+    { key: 'passport', label: 'Passport · all 12', earned: rewardKeys.has('sticker') || workouts >= 12 },
+    ...MILES.map(([n, label]) => ({ key: `m${n}`, label, earned: visitDays >= n })),
+  ]
+
+  const photos = [
+    ...(xform?.before_photo_url ? [{ url: xform.before_photo_url, type: 'photo', caption: 'Before' }] : []),
+    ...(xform?.progress_photo_url ? [{ url: xform.progress_photo_url, type: 'photo', caption: 'Progress' }] : []),
+    ...(xform?.after_photo_url ? [{ url: xform.after_photo_url, type: 'photo', caption: 'After' }] : []),
+    ...(assets || []).map(a => ({ url: a.file_url, type: a.file_type === 'video' ? 'video' : 'photo', caption: a.caption || null })),
+  ]
+
+  // Interaction timeline: completed tasks + notes + recognition + re-engagement.
+  const timeline = []
+  for (const t of jtasks || []) if (['completed', 'skipped'].includes(t.status) && t.completed_at)
+    timeline.push({ when: t.completed_at, label: tplLabel.get(t.template_key) || t.trigger_ref, by: t.completed_by, kind: 'task', note: null, done: t.status === 'completed' })
+  for (const l of log || []) if (l.notes)
+    timeline.push({ when: l.completed_at || l.updated_at, label: (touchpoints.find(x => x.key === l.touchpoint_key)?.label) || l.touchpoint_key, by: l.completed_by, kind: 'note', note: l.notes, done: l.done })
+  for (const r of recog || []) if (r.status === 'completed' && r.completed_at)
+    timeline.push({ when: r.completed_at, label: r.type === 'birthday' ? 'Birthday text' : 'Thank-you card', by: r.completed_by, kind: 'recognition', note: null, done: true })
+  for (const r of reeng || [])
+    timeline.push({ when: r.contacted_at, label: 'Re-engagement contact', by: r.contacted_by, kind: 'reengage', note: null, done: true })
+  timeline.sort((a, b) => String(b.when).localeCompare(String(a.when)))
+
+  const daysIn = member.join_date ? Math.floor((new Date(today) - new Date(member.join_date)) / 86400000) : null
+  const doneCount = touchpoints.filter(t => t.status === 'done').length
+  res.json({
+    member: { id: member.id, full_name: member.full_name, join_date: member.join_date, days_in: daysIn,
+      phone: member.phone, email: member.email, origin_studio: member.origin_studio, member_type: member.member_type,
+      goal_text: xform?.goal_text || null, birthday: bdayTask?.ref_date || null },
+    activity: { visit_days: visitDays, total_sessions: act?.total_sessions || 0, workouts_tried: workouts, last_booking_date: act?.last_booking_date || null },
+    progress: { done: doneCount, total: touchpoints.length },
+    touchpoints, milestones, photos, bookings: bookings || [], timeline,
+  })
+})
+
 // Parse a SAIL time slot (e.g. "6:00 AM", "18:00", "6 PM") to an hour 0–23.
 function parseHour(slot) {
   const s = String(slot || '').trim()

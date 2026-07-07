@@ -619,7 +619,7 @@ function NewMembersTab() {
       </div>
       {editing && <TouchpointEditModal member={editing.member} tp={editing.tp}
         onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load() }} />}
-      {detailFor && <MemberDetailModal memberId={detailFor} onClose={() => setDetailFor(null)} />}
+      {detailFor && <JourneyModal memberId={detailFor} onClose={() => setDetailFor(null)} />}
     </div>
   )
 }
@@ -659,6 +659,179 @@ function TouchpointEditModal({ member, tp, onClose, onSaved }) {
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ─── Member journey — a visual, fun view of a new member's first-90 ───────────
+const NODE_STYLE = {
+  done: 'bg-green-500 text-white ring-2 ring-green-200',
+  due: 'bg-red-500 text-white ring-2 ring-red-200 animate-pulse',
+  upcoming: 'bg-white text-gray-400 border-2 border-dashed border-gray-300',
+  skipped: 'bg-gray-200 text-gray-400',
+  na: 'bg-gray-50 text-gray-300 border border-gray-200',
+}
+const NODE_SHORT = { day_0_orientation: 'Orient', photo: '📸', day_2: 'Day 2', day_5: 'Day 5', day_21: 'Day 21', day_30: 'Day 30', day_60: 'Day 60', day_90: 'Day 90', thank_you_card: '💌', passport: '🎟' }
+const fmtWhen2 = (w) => { if (!w) return ''; try { return new Date(w).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) } catch { return String(w).slice(0, 10) } }
+
+function JourneyModal({ memberId, onClose }) {
+  const [d, setD] = useState(null)
+  const [editing, setEditing] = useState(null)
+  const [viewer, setViewer] = useState(null)
+
+  const load = useCallback(async () => {
+    try { setD(await apiGet(`${BASE}/members/${memberId}/journey`)) } catch { setD(false) }
+  }, [memberId])
+  useEffect(() => { load() }, [load])
+
+  const pct = d && d.progress.total ? Math.round(d.progress.done / d.progress.total * 100) : 0
+  const cheer = pct === 100 ? 'Journey complete! 🎉' : pct >= 60 ? 'Crushing it 💪' : pct >= 30 ? 'Great momentum 🔥' : 'Just getting started 🌱'
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        {!d ? <div className="p-16"><Spinner /></div> : (
+          <>
+            {/* Banner */}
+            <div className="relative px-6 py-5 bg-gradient-to-r from-red-600 to-orange-500 text-white rounded-t-2xl">
+              <button onClick={onClose} className="absolute top-3 right-4 text-white/80 hover:text-white text-lg">✕</button>
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center text-2xl font-black flex-shrink-0">{(d.member.full_name || '?').slice(0, 1).toUpperCase()}</div>
+                <div className="flex-1 min-w-0">
+                  <h2 className="text-xl font-black truncate">{d.member.full_name}</h2>
+                  <p className="text-white/80 text-sm">{d.member.days_in != null ? `Day ${d.member.days_in} of their first 90` : 'Member'} · joined {d.member.join_date || '—'}</p>
+                </div>
+                <div className="text-center flex-shrink-0">
+                  <div className="relative w-16 h-16">
+                    <svg viewBox="0 0 36 36" className="w-16 h-16 -rotate-90">
+                      <circle cx="18" cy="18" r="15.9" fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="3" />
+                      <circle cx="18" cy="18" r="15.9" fill="none" stroke="white" strokeWidth="3" strokeDasharray={`${pct} 100`} strokeLinecap="round" />
+                    </svg>
+                    <span className="absolute inset-0 flex items-center justify-center text-sm font-black">{pct}%</span>
+                  </div>
+                  <p className="text-[10px] text-white/80 mt-0.5">{d.progress.done}/{d.progress.total}</p>
+                </div>
+              </div>
+              <p className="mt-2 text-sm font-semibold">{cheer}</p>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {d.member.goal_text && (
+                <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-2.5 text-sm">
+                  <span className="text-orange-700 font-bold">🎯 Their goal:</span> <span className="text-gray-700">{d.member.goal_text}</span>
+                </div>
+              )}
+
+              {/* Journey path */}
+              <div>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">The journey — tap a step to check it off</p>
+                <div className="flex items-start gap-1 overflow-x-auto pb-2">
+                  {d.touchpoints.map((t, i) => (
+                    <div key={t.key} className="flex items-start">
+                      {i > 0 && <div className="w-4 h-9 flex items-center"><div className="h-0.5 w-full bg-gray-200" /></div>}
+                      <button onClick={() => setEditing(t)} className="flex flex-col items-center gap-1 group flex-shrink-0 w-16">
+                        <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold ${NODE_STYLE[t.status] || NODE_STYLE.na} group-hover:scale-110 transition`}>
+                          {t.status === 'done' ? '✓' : (NODE_SHORT[t.key] || '').slice(0, 3)}
+                        </div>
+                        <span className="text-[9px] text-gray-500 text-center leading-tight">{t.label}{t.notes ? ' 📝' : ''}</span>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Achievements */}
+              <div>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Achievements</p>
+                <div className="flex flex-wrap gap-2">
+                  {d.milestones.map(mi => (
+                    <span key={mi.key} className={`text-xs font-bold px-2.5 py-1 rounded-full ${mi.earned ? 'bg-gradient-to-r from-amber-400 to-yellow-500 text-white shadow-sm' : 'bg-gray-100 text-gray-300'}`}>
+                      {mi.earned ? '🏅 ' : '🔒 '}{mi.label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* Stats */}
+              <div className="grid grid-cols-4 gap-2 text-center">
+                {[['Visit-days', d.activity.visit_days], ['Sessions', d.activity.total_sessions], ['Workouts', `${d.activity.workouts_tried}/12`], ['Last in', d.activity.last_booking_date || '—']].map(([l, v]) => (
+                  <div key={l} className="bg-gray-50 rounded-xl py-2"><p className="text-sm font-bold text-gray-900">{v}</p><p className="text-[10px] text-gray-400">{l}</p></div>
+                ))}
+              </div>
+
+              {/* Quick chips */}
+              <div className="flex flex-wrap gap-2">
+                {d.member.birthday && <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-pink-100 text-pink-700">🎂 Birthday {d.member.birthday}</span>}
+                <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${d.touchpoints.find(t => t.key === 'thank_you_card')?.status === 'done' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>💌 Thank-you card {d.touchpoints.find(t => t.key === 'thank_you_card')?.status === 'done' ? 'sent' : 'not yet'}</span>
+              </div>
+
+              {/* Photos */}
+              <div>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Photos ({d.photos.length})</p>
+                {d.photos.length === 0 ? <p className="text-xs text-gray-400">No photos yet — snap a 1st-day pic to kick off their story! 📸</p> : (
+                  <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                    {d.photos.map((p, i) => (
+                      <button key={i} onClick={() => setViewer(p)} className="relative block aspect-square rounded-lg overflow-hidden border border-gray-200 bg-gray-100 group">
+                        {p.type === 'photo'
+                          ? <img src={p.url} alt="" className="w-full h-full object-cover" />
+                          : <><video src={`${p.url}#t=0.5`} preload="metadata" muted playsInline className="w-full h-full object-cover" /><div className="absolute inset-0 flex items-center justify-center bg-black/10 group-hover:bg-black/25"><Play size={16} className="text-white" fill="currentColor" /></div></>}
+                        {p.caption && <span className="absolute bottom-0 inset-x-0 bg-black/50 text-white text-[8px] px-1 truncate">{p.caption}</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Bookings + Timeline side by side on wide */}
+              <div className="grid md:grid-cols-2 gap-5">
+                <div>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Recent sessions ({d.bookings.length})</p>
+                  {d.bookings.length === 0 ? <p className="text-xs text-gray-400">No sessions yet.</p> : (
+                    <div className="border border-gray-100 rounded-xl divide-y divide-gray-50 max-h-56 overflow-y-auto">
+                      {d.bookings.slice(0, 40).map((s, i) => (
+                        <div key={i} className="flex items-center gap-2 px-3 py-1.5 text-xs">
+                          <span className="font-medium text-gray-800 w-20 flex-shrink-0">{s.booking_date}</span>
+                          <span className="text-gray-400 w-16 flex-shrink-0">{s.time_slot || ''}</span>
+                          <span className="text-gray-600 truncate">{s.session_type || ''}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Our story together</p>
+                  {d.timeline.length === 0 ? <p className="text-xs text-gray-400">No interactions logged yet — be the first to reach out! 💛</p> : (
+                    <div className="space-y-2 max-h-56 overflow-y-auto pl-1">
+                      {d.timeline.map((e, i) => (
+                        <div key={i} className="flex gap-2.5">
+                          <div className="flex flex-col items-center">
+                            <div className={`w-2.5 h-2.5 rounded-full mt-1 ${e.kind === 'reengage' ? 'bg-orange-400' : e.kind === 'recognition' ? 'bg-pink-400' : e.kind === 'note' ? 'bg-blue-400' : 'bg-green-400'}`} />
+                            {i < d.timeline.length - 1 && <div className="w-0.5 flex-1 bg-gray-200 my-0.5" />}
+                          </div>
+                          <div className="flex-1 min-w-0 pb-1">
+                            <p className="text-xs font-semibold text-gray-800">{e.label}<span className="ml-1 text-[10px] font-normal text-gray-400">{fmtWhen2(e.when)}{e.by ? ` · ${e.by}` : ''}</span></p>
+                            {e.note && <p className="text-xs text-gray-600 bg-gray-50 rounded-lg px-2 py-1 mt-0.5">{e.note}</p>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
+      {editing && <TouchpointEditModal member={{ member_id: memberId, full_name: d?.member?.full_name }} tp={editing}
+        onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load() }} />}
+      {viewer && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4" onClick={() => setViewer(null)}>
+          {viewer.type === 'photo'
+            ? <img src={viewer.url} alt="" className="max-w-full max-h-[90vh] rounded-lg" onClick={e => e.stopPropagation()} />
+            : <video src={viewer.url} controls autoPlay className="max-w-full max-h-[90vh] rounded-lg" onClick={e => e.stopPropagation()} />}
+        </div>
+      )}
     </div>
   )
 }
@@ -1576,7 +1749,7 @@ function DailyListTab() {
       )}
 
       {scriptFor && <ScriptModal item={scriptFor} onClose={() => setScriptFor(null)} />}
-      {detailFor && <MemberDetailModal memberId={detailFor} onClose={() => setDetailFor(null)} />}
+      {detailFor && <JourneyModal memberId={detailFor} onClose={() => setDetailFor(null)} />}
       {day2 && <Day2Modal item={day2} onClose={() => setDay2(null)}
         onDone={() => { const id = day2.id; setDay2(null); drop(id) }} />}
       {photosFor && <MemberPhotosModal member={photosFor} onClose={() => setPhotosFor(null)} />}
