@@ -989,16 +989,9 @@ router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
     })
   }
 
-  // Collapse a member's onboarding day-based touches to the CURRENT one: if an
-  // earlier touch (Day-2) was missed and a later one (Day-10) is now due, only
-  // show the latest — so a member appears once with their most-current step.
-  const latestDayTask = new Map()
-  for (const it of items) {
-    if (it.trigger_kind !== 'day_based') continue
-    const cur = latestDayTask.get(it.journey_id)
-    if (!cur || String(it.due_date) > String(cur.due_date)) latestDayTask.set(it.journey_id, it)
-  }
-  items = items.filter(it => it.trigger_kind !== 'day_based' || latestDayTask.get(it.journey_id)?.id === it.id)
+  // The scheduled day-based touches (Day 0/2/5/21/30/60/90) now live in the New
+  // Members roster + journey checklist, so keep them off the task feed here.
+  items = items.filter(it => it.trigger_kind !== 'day_based')
 
   // Order by category — Onboarding first, then Milestones, then Re-engagement —
   // and within each by priority (re-engagement 14→30→60) then due date.

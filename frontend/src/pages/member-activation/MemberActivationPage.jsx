@@ -98,7 +98,6 @@ function parseCSV(text) {
 
 const TABS = [
   { k: 'daily',    label: 'Daily List',          icon: ListChecks },
-  { k: 'newmembers', label: 'New Members',       icon: UserPlus },
   { k: 'members',  label: 'Members',            icon: Users },
   { k: 'reciprocals', label: 'Reciprocals',     icon: Building2 },
   { k: 'pif',      label: 'PIF Members',         icon: CreditCard },
@@ -135,7 +134,6 @@ export default function MemberActivationPage() {
       </div>
 
       {tab === 'daily'   && <DailyListTab />}
-      {tab === 'newmembers' && <NewMembersTab />}
       {tab === 'scripts' && <ScriptAdminTab canEdit={isOwnerOrManager} />}
       {tab === 'members' && <MembersTab />}
       {tab === 'reciprocals' && <ReciprocalsTab />}
@@ -1713,7 +1711,7 @@ function DailyListTab() {
             {x.label}
           </button>
         ))}
-        <span className="ml-auto text-xs text-gray-400">{shown.length} to reach</span>
+        {filter !== 'onboarding' && <span className="ml-auto text-xs text-gray-400">{shown.length} to reach</span>}
       </div>
       {subs && (
         <div className="flex flex-wrap items-center gap-1.5 mb-4 pl-1">
@@ -1726,7 +1724,7 @@ function DailyListTab() {
         </div>
       )}
 
-      {shown.length === 0 ? <Empty msg="Nobody to reach right now. Run a Daily Import to refresh the queue. 🎉" /> : (
+      {shown.length === 0 ? (filter === 'onboarding' ? null : <Empty msg="Nobody to reach right now. Run a Daily Import to refresh the queue. 🎉" />) : (
         <div className="space-y-2.5">
           {shown.map(r => {
             const isDone = done[r.id]
@@ -1794,6 +1792,9 @@ function DailyListTab() {
           })}
         </div>
       )}
+
+      {/* Onboarding filter → the new-member roster (journeys) lives here now. */}
+      {filter === 'onboarding' && <div className={shown.length ? 'mt-5 pt-5 border-t border-gray-100' : ''}><NewMembersTab /></div>}
 
       {scriptFor && <ScriptModal item={scriptFor} onClose={() => setScriptFor(null)} />}
       {detailFor && <JourneyModal memberId={detailFor} onClose={() => setDetailFor(null)} />}
