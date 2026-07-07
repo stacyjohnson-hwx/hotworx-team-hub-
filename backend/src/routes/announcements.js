@@ -24,6 +24,19 @@ function requireManagerStudio(req, res, next) {
   next()
 }
 
+// Anyone can post to the feed, but a post may only be modified/removed by its
+// author or by an owner/manager (moderation). Returns the post row or null.
+async function loadEditablePost(req, res) {
+  const { data: post } = await db()
+    .from('announcements').select('*').eq('id', req.params.id).eq('studio_id', req.studio.id).single()
+  if (!post) { res.status(404).json({ error: 'Not found' }); return null }
+  const isManager = ['owner', 'manager'].includes(req.studio.role)
+  if (post.author_id !== req.user.id && !isManager) {
+    res.status(403).json({ error: 'You can only edit your own posts' }); return null
+  }
+  return post
+}
+
 // GET /api/announcements — feed for the current studio, all roles
 router.get('/', authenticate, requireStudio, async (req, res) => {
   const { data: posts, error } = await db()
@@ -65,8 +78,8 @@ router.get('/', authenticate, requireStudio, async (req, res) => {
   }))
 })
 
-// POST /api/announcements — owner/manager only
-router.post('/', authenticate, requireStudio, requireManagerStudio, async (req, res) => {
+// POST /api/announcements — any team member can post to the feed
+router.post('/', authenticate, requireStudio, async (req, res) => {
   const { content_html, images } = req.body
   const html = sanitizeHtml(content_html)
   const imgs = Array.isArray(images) ? images.filter(i => i?.url) : []
@@ -88,8 +101,9 @@ router.post('/', authenticate, requireStudio, requireManagerStudio, async (req, 
   res.status(201).json({ ...data, reactions: [] })
 })
 
-// PUT /api/announcements/:id — owner/manager only; edits text/images
-router.put('/:id', authenticate, requireStudio, requireManagerStudio, async (req, res) => {
+// PUT /api/announcements/:id — author or owner/manager; edits text/images
+router.put('/:id', authenticate, requireStudio, async (req, res) => {
+  if (!await loadEditablePost(req, res)) return
   const { content_html, images } = req.body
   const update = { updated_at: new Date().toISOString() }
   if (content_html !== undefined) update.content_html = sanitizeHtml(content_html)
@@ -120,11 +134,10 @@ router.post('/:id/pin', authenticate, requireStudio, requireManagerStudio, async
   res.json(data)
 })
 
-// DELETE /api/announcements/:id — owner/manager only; also removes storage files
-router.delete('/:id', authenticate, requireStudio, requireManagerStudio, async (req, res) => {
-  const { data: post } = await db()
-    .from('announcements').select('images').eq('id', req.params.id).eq('studio_id', req.studio.id).single()
-  if (!post) return res.status(404).json({ error: 'Not found' })
+// DELETE /api/announcements/:id — author or owner/manager; also removes storage files
+router.delete('/:id', authenticate, requireStudio, async (req, res) => {
+  const post = await loadEditablePost(req, res)
+  if (!post) return
 
   const paths = (post.images || []).map(i => i.path).filter(Boolean)
   if (paths.length) await db().storage.from('marketing-content').remove(paths).catch(() => {})

@@ -266,9 +266,10 @@ function ImageCarousel({ images, onDoubleTapHeart }) {
 }
 
 // ─── Single post card ─────────────────────────────────────────────────────────
-function PostCard({ post, canManage, onReact, onPin, onEdit, onDelete }) {
+function PostCard({ post, isManager, isAuthor, onReact, onPin, onEdit, onDelete }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const totalReactions = (post.reactions || []).reduce((s, r) => s + r.count, 0)
+  const canModify = isManager || isAuthor  // author edits/deletes own; managers moderate all
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden hover:shadow-md transition-shadow">
@@ -287,7 +288,7 @@ function PostCard({ post, canManage, onReact, onPin, onEdit, onDelete }) {
             <Pin size={9} /> Pinned
           </span>
         )}
-        {canManage && (
+        {canModify && (
           <div className="relative">
             <button onClick={() => setMenuOpen(o => !o)}
               className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100">
@@ -297,10 +298,12 @@ function PostCard({ post, canManage, onReact, onPin, onEdit, onDelete }) {
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
                 <div className="absolute right-0 top-8 z-20 bg-white rounded-xl border border-gray-100 shadow-lg py-1 w-36">
-                  <button onClick={() => { setMenuOpen(false); onPin(post) }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">
-                    <Pin size={12} /> {post.pinned ? 'Unpin' : 'Pin to top'}
-                  </button>
+                  {isManager && (
+                    <button onClick={() => { setMenuOpen(false); onPin(post) }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                      <Pin size={12} /> {post.pinned ? 'Unpin' : 'Pin to top'}
+                    </button>
+                  )}
                   <button onClick={() => { setMenuOpen(false); onEdit(post) }}
                     className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">
                     <Pencil size={12} /> Edit
@@ -365,11 +368,13 @@ function PostCard({ post, canManage, onReact, onPin, onEdit, onDelete }) {
 
 // ─── Announcements feed section ───────────────────────────────────────────────
 export default function Announcements({ role }) {
+  const { user } = useAuth()
   const { currentStudio } = useStudio()
   const [posts, setPosts]       = useState(null)
   const [composing, setComposing] = useState(false)  // false | true (new) | post object (edit)
   const [showAll, setShowAll]   = useState(false)
-  const canPost = role === 'owner' || role === 'manager'
+  const canPost   = true  // any team member can post to the feed
+  const isManager = role === 'owner' || role === 'manager'
 
   useEffect(() => {
     setPosts(null)
@@ -414,9 +419,6 @@ export default function Announcements({ role }) {
       setPosts(prev => prev.filter(p => p.id !== post.id))
     } catch (err) { alert('Delete failed: ' + err.message) }
   }
-
-  // TSAs with an empty feed see nothing at all
-  if (posts && posts.length === 0 && !canPost) return null
 
   const visible = showAll ? posts : posts?.slice(0, 4)
 
@@ -487,7 +489,8 @@ export default function Announcements({ role }) {
               <PostCard
                 key={post.id}
                 post={post}
-                canManage={canPost}
+                isManager={isManager}
+                isAuthor={post.author_id === user?.id}
                 onReact={handleReact}
                 onPin={handlePin}
                 onEdit={p => setComposing(p)}
