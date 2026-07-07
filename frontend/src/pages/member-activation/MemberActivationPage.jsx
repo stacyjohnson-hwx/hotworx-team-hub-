@@ -276,6 +276,7 @@ function ReciprocalsTab() {
   const [detailFor, setDetailFor] = useState(null)
   const [sort, setSort] = useState('sessions')  // sessions | recent | name
   const [tod, setTod] = useState(null)           // time-of-day buckets
+  const [homeFilter, setHomeFilter] = useState(null)  // filter member list by home studio
 
   useEffect(() => {
     (async () => {
@@ -313,10 +314,12 @@ function ReciprocalsTab() {
     if (d <= 30) return { label: `Lapsing · ${d}d`, cls: 'bg-amber-100 text-amber-700' }
     return { label: `Cold · ${d}d`, cls: 'bg-red-100 text-red-700' }
   }
-  const sorted = [...rows].sort((a, b) =>
-    sort === 'name' ? (a.full_name || '').localeCompare(b.full_name || '')
-    : sort === 'recent' ? ((daysSince(a.last_booking_date) ?? 1e9) - (daysSince(b.last_booking_date) ?? 1e9))
-    : (b.total_sessions || 0) - (a.total_sessions || 0))
+  const sorted = [...rows]
+    .filter(m => !homeFilter || homeOf(m) === homeFilter)
+    .sort((a, b) =>
+      sort === 'name' ? (a.full_name || '').localeCompare(b.full_name || '')
+      : sort === 'recent' ? ((daysSince(a.last_booking_date) ?? 1e9) - (daysSince(b.last_booking_date) ?? 1e9))
+      : (b.total_sessions || 0) - (a.total_sessions || 0))
 
   if (loading) return <Spinner />
   if (rows.length === 0) return <Empty msg="No reciprocal members yet. Add them from the Members or Unreconciled tab (type: Reciprocal)." />
@@ -341,19 +344,23 @@ function ReciprocalsTab() {
       {/* Where they're from */}
       <div className="bg-white border border-gray-200 rounded-xl p-4 mb-5">
         <h3 className="text-sm font-bold text-gray-900 mb-1 flex items-center gap-1.5"><Building2 size={15} className="text-red-600" /> Where they come from</h3>
-        <p className="text-[11px] text-gray-400 mb-3">Home studios our visiting members belong to, by number of members (with total sessions here).</p>
+        <p className="text-[11px] text-gray-400 mb-3">Home studios our visiting members belong to, by number of members. Click a bar to see who they are.</p>
         <div className="space-y-2.5">
-          {homes.map((h, i) => (
-            <div key={h.home} className="flex items-center gap-3">
-              <div className="w-40 flex-shrink-0 text-sm text-gray-700 truncate" title={h.home}>{h.home}</div>
-              <div className="flex-1 h-6 bg-gray-100 rounded-md overflow-hidden">
-                <div className={`h-full ${RECIP_BARS[i % RECIP_BARS.length]} rounded-md flex items-center justify-end px-2`} style={{ width: `${Math.max(8, (h.members / maxMembers) * 100)}%` }}>
-                  <span className="text-[11px] font-bold text-white">{h.members}</span>
+          {homes.map((h, i) => {
+            const on = homeFilter === h.home
+            return (
+              <button key={h.home} onClick={() => setHomeFilter(on ? null : h.home)}
+                className={`w-full flex items-center gap-3 rounded-md px-1 py-0.5 -mx-1 text-left transition-colors ${on ? 'bg-red-50 ring-1 ring-red-200' : 'hover:bg-gray-50'}`}>
+                <div className={`w-40 flex-shrink-0 text-sm truncate ${on ? 'text-red-700 font-semibold' : 'text-gray-700'}`} title={h.home}>{h.home}</div>
+                <div className="flex-1 h-6 bg-gray-100 rounded-md overflow-hidden">
+                  <div className={`h-full ${RECIP_BARS[i % RECIP_BARS.length]} rounded-md flex items-center justify-end px-2`} style={{ width: `${Math.max(8, (h.members / maxMembers) * 100)}%` }}>
+                    <span className="text-[11px] font-bold text-white">{h.members}</span>
+                  </div>
                 </div>
-              </div>
-              <div className="w-24 flex-shrink-0 text-right text-xs text-gray-500">{h.sessions} sessions</div>
-            </div>
-          ))}
+                <div className="w-24 flex-shrink-0 text-right text-xs text-gray-500">{h.sessions} sessions</div>
+              </button>
+            )
+          })}
         </div>
       </div>
 
@@ -383,8 +390,14 @@ function ReciprocalsTab() {
       })()}
 
       {/* Member list */}
-      <div className="flex items-center gap-2 mb-2">
+      <div className="flex items-center gap-2 mb-2 flex-wrap">
         <h3 className="text-sm font-bold text-gray-900">Who they are</h3>
+        {homeFilter && (
+          <button onClick={() => setHomeFilter(null)}
+            className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-700 hover:bg-red-200">
+            {homeFilter} · {sorted.length} <X size={11} />
+          </button>
+        )}
         <div className="ml-auto flex items-center gap-1">
           {[['sessions', 'Most active'], ['recent', 'Recently in'], ['name', 'Name']].map(([k, lbl]) => (
             <button key={k} onClick={() => setSort(k)}
