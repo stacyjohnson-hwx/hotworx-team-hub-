@@ -5,6 +5,7 @@ import { useMonth } from '@/contexts/MonthContext'
 import { formatMonthYear } from '@/lib/utils'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
 import { Plus, Pencil, Trash2, ExternalLink, Lock, X, Link as LinkIcon, Loader2, Image, AlertTriangle } from 'lucide-react'
+import Announcements from './dashboard/Announcements'
 
 // ─── Extract domain for favicon fallback ──────────────────────────────────────
 function getDomain(url) {
@@ -386,6 +387,9 @@ export default function Dashboard() {
 
       {/* Overdue-coaching alert (owner/manager) */}
       {isOwnerOrManager && <CoachingAlerts />}
+
+      {/* Team announcements feed */}
+      <Announcements role={role} />
 
       {/* Quick-access cards */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
