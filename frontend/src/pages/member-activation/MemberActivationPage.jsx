@@ -565,15 +565,15 @@ function NewMembersTab() {
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [detailFor, setDetailFor] = useState(null)
+  const [editing, setEditing] = useState(null)  // { member, tp }
   const [sort, setSort] = useState('due')  // due | newest | progress
 
-  useEffect(() => {
-    (async () => {
-      setLoading(true)
-      try { setRows(await apiGet(`${BASE}/new-members`)) } catch { setRows([]) }
-      finally { setLoading(false) }
-    })()
+  const load = useCallback(async () => {
+    setLoading(true)
+    try { setRows(await apiGet(`${BASE}/new-members`)) } catch { setRows([]) }
+    finally { setLoading(false) }
   }, [currentStudio?.id])
+  useEffect(() => { load() }, [load])
 
   if (loading) return <Spinner />
   if (rows.length === 0) return <Empty msg="No new members in the last 60 days." />
@@ -608,15 +608,57 @@ function NewMembersTab() {
             </div>
             <div className="flex flex-wrap gap-1.5 mt-2">
               {m.touchpoints.map(t => (
-                <span key={t.key} title={t.status} className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${TP_STYLE[t.status] || TP_STYLE.na}`}>
-                  {t.status === 'done' ? '✓ ' : ''}{t.label}
-                </span>
+                <button key={t.key} onClick={() => setEditing({ member: m, tp: t })} title="Check off / add notes"
+                  className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full hover:ring-1 hover:ring-gray-300 ${TP_STYLE[t.status] || TP_STYLE.na}`}>
+                  {t.status === 'done' ? '✓ ' : ''}{t.label}{t.notes ? ' 📝' : ''}
+                </button>
               ))}
             </div>
           </div>
         ))}
       </div>
+      {editing && <TouchpointEditModal member={editing.member} tp={editing.tp}
+        onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load() }} />}
       {detailFor && <MemberDetailModal memberId={detailFor} onClose={() => setDetailFor(null)} />}
+    </div>
+  )
+}
+
+function TouchpointEditModal({ member, tp, onClose, onSaved }) {
+  const [done, setDone] = useState(tp.status === 'done')
+  const [notes, setNotes] = useState(tp.notes || '')
+  const [saving, setSaving] = useState(false)
+  const save = async () => {
+    setSaving(true)
+    try { await apiPost(`${BASE}/new-members/${member.member_id}/touchpoint`, { key: tp.key, done, notes }); onSaved() }
+    catch (e) { alert('Save failed: ' + (e?.message || 'error')); setSaving(false) }
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm" onClick={e => e.stopPropagation()}>
+        <div className="px-5 py-4 border-b border-gray-100">
+          <h3 className="font-bold text-gray-900">{tp.label}</h3>
+          <p className="text-xs text-gray-400">{member.full_name}</p>
+        </div>
+        <div className="p-5 space-y-4">
+          <label className="flex items-center gap-2.5 cursor-pointer">
+            <input type="checkbox" checked={done} onChange={e => setDone(e.target.checked)} className="w-4 h-4 accent-red-600" />
+            <span className="text-sm font-semibold text-gray-800">Done</span>
+          </label>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">Notes</label>
+            <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3}
+              placeholder="How it went, what they said, follow-ups…"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-red-500/30" />
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-100">
+          <button onClick={onClose} className="px-3 py-1.5 text-sm text-gray-600 border border-gray-300 rounded-lg">Cancel</button>
+          <button onClick={save} disabled={saving} className="px-4 py-1.5 text-sm font-semibold text-white bg-red-600 rounded-lg disabled:opacity-50">
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

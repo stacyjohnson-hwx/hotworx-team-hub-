@@ -928,13 +928,17 @@ router.get('/new-members', authenticate, requireStudio, async (req, res) => {
   const ids = cohort.map(m => m.id)
   if (!ids.length) return res.json([])
 
-  const [{ data: journeys }, { data: recog }, { data: rewards }, { data: xforms }, { data: activity }] = await Promise.all([
+  const [{ data: journeys }, { data: recog }, { data: rewards }, { data: xforms }, { data: activity }, { data: logs }] = await Promise.all([
     supabase.from('onboarding_journeys').select('id, member_id').eq('studio_id', sid).in('member_id', ids),
     supabase.from('onboarding_recognition_tasks').select('member_id, type, status').eq('studio_id', sid).in('member_id', ids),
     supabase.from('onboarding_rewards_awarded').select('member_id, reward_key').eq('studio_id', sid).in('member_id', ids),
     supabase.from('onboarding_transformation_records').select('member_id, before_photo_url').eq('studio_id', sid).in('member_id', ids),
     supabase.from('onboarding_member_activity').select('member_id, workouts_tried, visit_days, last_booking_date').eq('studio_id', sid).in('member_id', ids),
+    supabase.from('onboarding_touchpoint_log').select('member_id, touchpoint_key, done, notes').eq('studio_id', sid).in('member_id', ids),
   ])
+  // Manual check-off / notes overlay, keyed by member_id → { key → {done, notes} }.
+  const logBy = new Map()
+  for (const l of logs || []) { if (!logBy.has(l.member_id)) logBy.set(l.member_id, {}); logBy.get(l.member_id)[l.touchpoint_key] = l }
   const jIds = (journeys || []).map(j => j.id)
   const jMember = new Map((journeys || []).map(j => [j.id, j.member_id]))
   const { data: jtasks } = jIds.length
@@ -986,6 +990,13 @@ router.get('/new-members', authenticate, requireStudio, async (req, res) => {
     const wt = actBy.get(m.id)?.workouts_tried || 0
     tps.push({ key: 'passport', label: 'Passport', status: stickerSet.has(m.id) ? 'done' : (wt >= 12 ? 'due' : 'upcoming') })
 
+    // Overlay manual check-off + notes: a logged 'done' wins; notes always attach.
+    const mlog = logBy.get(m.id) || {}
+    for (const t of tps) {
+      const l = mlog[t.key]
+      if (l) { if (l.done) t.status = 'done'; if (l.notes) t.notes = l.notes }
+    }
+
     return {
       member_id: m.id, full_name: m.full_name, join_date: m.join_date, days_in: daysIn,
       visit_days: actBy.get(m.id)?.visit_days || 0,
@@ -996,6 +1007,43 @@ router.get('/new-members', authenticate, requireStudio, async (req, res) => {
     }
   })
   res.json(out)
+})
+
+// Check off (or reopen) a new-member touchpoint + save notes. Layered store; also
+// nudges the native record so other surfaces stay in sync where one exists.
+router.post('/new-members/:memberId/touchpoint', authenticate, requireStudio, async (req, res) => {
+  const supabase = db(); const sid = req.studio.id, mid = req.params.memberId
+  const { key, done, notes } = req.body
+  if (!key) return res.status(400).json({ error: 'key required' })
+  const who = req.user.email || req.user.id
+  const { error } = await supabase.from('onboarding_touchpoint_log').upsert({
+    studio_id: sid, member_id: mid, touchpoint_key: key,
+    done: !!done, notes: notes || null,
+    completed_by: done ? who : null, completed_at: done ? new Date().toISOString() : null,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'studio_id,member_id,touchpoint_key' })
+  if (error) return res.status(500).json({ error: error.message })
+
+  // Keep native records consistent for the touchpoints that have them.
+  if (done) {
+    if (key === 'passport') {
+      await supabase.from('onboarding_rewards_awarded').upsert({
+        studio_id: sid, member_id: mid, reward_key: 'sticker', awarded_at: new Date().toISOString(), fulfilled: true,
+      }, { onConflict: 'studio_id,member_id,reward_key' })
+    } else if (key === 'thank_you_card') {
+      await supabase.from('onboarding_recognition_tasks')
+        .update({ status: 'completed', completed_by: who, completed_at: new Date().toISOString() })
+        .eq('studio_id', sid).eq('member_id', mid).eq('type', 'thank_you_card').eq('status', 'pending')
+    } else if (key.startsWith('day_')) {
+      // Complete the matching journey task so it also leaves the Daily List.
+      const { data: js } = await supabase.from('onboarding_journeys').select('id').eq('studio_id', sid).eq('member_id', mid)
+      const jIds = (js || []).map(j => j.id)
+      if (jIds.length) await supabase.from('onboarding_journey_tasks')
+        .update({ status: 'completed', completed_by: who, completed_at: new Date().toISOString() })
+        .in('journey_id', jIds).eq('trigger_ref', key).eq('status', 'pending')
+    }
+  }
+  res.json({ ok: true })
 })
 
 // Log a re-engagement contact (starts the cooldown; member drops off until it expires or they book).
