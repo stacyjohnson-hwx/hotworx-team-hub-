@@ -338,7 +338,8 @@ function TableTab() {
 
   const prevYearMap = {}
   if (yoy) {
-    for (const r of rows) prevYearMap[`${r.year - 1}-${r.month}`] = r
+    // Key each row by its own year-month; a row then looks up (year-1) below.
+    for (const r of rows) prevYearMap[`${r.year}-${r.month}`] = r
   }
 
   const sel = 'bg-white border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-gray-700 focus:outline-none focus:border-red-600'
@@ -426,7 +427,7 @@ function TableTab() {
                 const redToMbr   = pct(r.new_members,       r.red_appts_held)
                 const leadToMbr  = pct(r.new_members,       r.leads)
                 const netMbr     = (r.new_members || 0) - (r.cancellations || 0)
-                const ly         = yoy ? (prevYearMap[`${r.year}-${r.month}`] || null) : null
+                const ly         = yoy ? (prevYearMap[`${r.year - 1}-${r.month}`] || null) : null
                 const itbDiff    = ly ? ((r.in_the_bank || 0) - (ly.in_the_bank || 0)) : null
                 const isSameMonth = r.month === (now.getMonth() + 1)
 
