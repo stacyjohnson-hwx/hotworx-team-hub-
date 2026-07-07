@@ -85,7 +85,7 @@ async function computeAutoValues(sb, studioId, year, month) {
     sb.from('events').select('id, title, start_date, event_type').eq('studio_id', studioId).gte('start_date', monthStart).lte('start_date', monthEnd).order('start_date'),
     sb.from('promotions').select('id, title, promo_type, start_date').eq('studio_id', studioId).gte('start_date', monthStart).lte('start_date', monthEnd).order('start_date'),
     sb.from('maintenance_logs').select('id, status').eq('studio_id', studioId).in('status', ['open', 'in_progress']),
-    sb.from('cleaning_tasks').select('*').eq('active', true),
+    sb.from('cleaning_tasks').select('*').eq('studio_id', studioId).eq('active', true),
     sb.from('cleaning_completions').select('task_id, completion_date').eq('studio_id', studioId).gte('completion_date', monthStart).lte('completion_date', monthEnd),
     sb.from('shifts').select('id').eq('studio_id', studioId).gte('shift_date', monthStart).lte('shift_date', shiftEnd),
     sb.from('studio_goals').select('memberships_target').eq('studio_id', studioId).eq('year', year).eq('month', month).maybeSingle(),

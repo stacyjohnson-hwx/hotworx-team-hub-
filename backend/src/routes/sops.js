@@ -2,6 +2,7 @@ const express = require('express')
 const router = express.Router()
 const { createClient } = require('@supabase/supabase-js')
 const { requireRole } = require('../middleware/roleGuard')
+const { requireStudio } = require('../middleware/studioMiddleware')
 const authenticate = require('../middleware/authMiddleware')
 
 const supabase = () =>
@@ -17,13 +18,14 @@ async function buildUserMap(db) {
 }
 
 // ─── GET /api/sops ────────────────────────────────────────────────────────────
-router.get('/', authenticate, async (req, res) => {
+router.get('/', authenticate, requireStudio, async (req, res) => {
   const { category, q } = req.query
   const db = supabase()
 
   let query = db
     .from('sops')
     .select('id, title, category, version, created_by, updated_by, created_at, updated_at, pdf_path, video_url, content, status, visibility')
+    .eq('studio_id', req.studio.id)
     .order('category')
     .order('title')
 
@@ -46,10 +48,10 @@ router.get('/', authenticate, async (req, res) => {
 })
 
 // ─── GET /api/sops/:id ────────────────────────────────────────────────────────
-router.get('/:id', authenticate, async (req, res) => {
+router.get('/:id', authenticate, requireStudio, async (req, res) => {
   const db = supabase()
   const [{ data, error }, userMap] = await Promise.all([
-    db.from('sops').select('*').eq('id', req.params.id).single(),
+    db.from('sops').select('*').eq('id', req.params.id).eq('studio_id', req.studio.id).single(),
     buildUserMap(db),
   ])
   if (error) return res.status(404).json({ error: 'SOP not found' })
@@ -64,7 +66,7 @@ router.get('/:id', authenticate, async (req, res) => {
 })
 
 // ─── GET /api/sops/:id/versions ───────────────────────────────────────────────
-router.get('/:id/versions', authenticate, async (req, res) => {
+router.get('/:id/versions', authenticate, requireStudio, async (req, res) => {
   const db = supabase()
   const [{ data, error }, userMap] = await Promise.all([
     db.from('sop_versions')
@@ -82,7 +84,7 @@ router.get('/:id/versions', authenticate, async (req, res) => {
 })
 
 // ─── POST /api/sops ───────────────────────────────────────────────────────────
-router.post('/', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.post('/', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const { title, category, content, pdf_path, video_url, status, visibility } = req.body
   if (!title) return res.status(400).json({ error: 'title is required' })
 
@@ -99,6 +101,7 @@ router.post('/', authenticate, requireRole('owner', 'manager'), async (req, res)
       version: 1,
       created_by: req.user.id,
       updated_by: req.user.id,
+      studio_id: req.studio.id,
     })
     .select()
     .single()
@@ -108,7 +111,7 @@ router.post('/', authenticate, requireRole('owner', 'manager'), async (req, res)
 })
 
 // ─── PUT /api/sops/:id ────────────────────────────────────────────────────────
-router.put('/:id', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.put('/:id', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const { title, category, content, pdf_path, video_url, status, visibility } = req.body
   const db = supabase()
 
@@ -117,6 +120,7 @@ router.put('/:id', authenticate, requireRole('owner', 'manager'), async (req, re
     .from('sops')
     .select('*')
     .eq('id', req.params.id)
+    .eq('studio_id', req.studio.id)
     .single()
 
   if (fetchErr) return res.status(404).json({ error: 'SOP not found' })
@@ -148,6 +152,7 @@ router.put('/:id', authenticate, requireRole('owner', 'manager'), async (req, re
       updated_at: new Date().toISOString(),
     })
     .eq('id', req.params.id)
+    .eq('studio_id', req.studio.id)
     .select()
     .single()
 
@@ -156,11 +161,12 @@ router.put('/:id', authenticate, requireRole('owner', 'manager'), async (req, re
 })
 
 // ─── DELETE /api/sops/:id ─────────────────────────────────────────────────────
-router.delete('/:id', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.delete('/:id', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const { error } = await supabase()
     .from('sops')
     .delete()
     .eq('id', req.params.id)
+    .eq('studio_id', req.studio.id)
 
   if (error) return res.status(500).json({ error: error.message })
   res.status(204).end()

@@ -4,7 +4,9 @@ const MANAGER_EFT_QUOTA = 750
 const round2 = n => Math.round(n * 100) / 100
 
 // ─── TSA Commission ────────────────────────────────────────────────────────
-function calcTSACommission({ eft_actual, pos_collected, pif_6mo, pif_12mo, retail_actual, itb_bonus_override }) {
+// studioData (from studio_trends for the month) supplies the In-The-Bank
+// figures: { in_the_bank, itb_goal }.
+function calcTSACommission({ eft_actual, pos_collected, pif_6mo, pif_12mo, retail_actual, itb_bonus_override }, studioData = {}) {
   const eft    = Number(eft_actual)    || 0
   const pos    = Number(pos_collected) || 0
   const p6     = Number(pif_6mo)       || 0
@@ -23,12 +25,18 @@ function calcTSACommission({ eft_actual, pos_collected, pif_6mo, pif_12mo, retai
   else if (retail >= 1000) retail_rate = 0.10
   const retail_commission = retail * retail_rate
 
+  // In-The-Bank bonus: paid when the studio's In-The-Bank total meets its
+  // monthly goal ($50), or exceeds it by ≥10% ($100). Manual override wins.
   let itb_bonus
-  if (itb_bonus_override !== null && itb_bonus_override !== undefined) {
+  if (itb_bonus_override !== null && itb_bonus_override !== undefined && itb_bonus_override !== '') {
     itb_bonus = Number(itb_bonus_override)
-  } else if (eft >= TSA_EFT_QUOTA * 1.10) { itb_bonus = 100 }
-  else if (eft >= TSA_EFT_QUOTA)           { itb_bonus = 50 }
-  else                                     { itb_bonus = 0 }
+  } else {
+    const itb      = Number(studioData.in_the_bank) || 0
+    const itb_goal = Number(studioData.itb_goal)    || 0
+    if      (itb_goal > 0 && itb >= itb_goal * 1.10) itb_bonus = 100
+    else if (itb_goal > 0 && itb >= itb_goal)        itb_bonus = 50
+    else                                             itb_bonus = 0
+  }
 
   return {
     type: 'tsa',
@@ -115,9 +123,10 @@ function calcManagerCommission(personal, studioData = {}) {
 }
 
 // ─── Unified entry point ───────────────────────────────────────────────────
-// Everyone (TSAs and managers) is on the TSA commission structure.
-function calcCommission(personalGoals, role, studioData) {
-  return calcTSACommission(personalGoals)
+// Everyone (TSAs and managers) is on the TSA commission structure. studioData
+// carries the studio's In-The-Bank figures used for the ITB bonus.
+function calcCommission(personalGoals, role, studioData = {}) {
+  return calcTSACommission(personalGoals, studioData)
 }
 
 module.exports = { calcCommission, calcTSACommission, calcManagerCommission, TSA_EFT_QUOTA, MANAGER_EFT_QUOTA }

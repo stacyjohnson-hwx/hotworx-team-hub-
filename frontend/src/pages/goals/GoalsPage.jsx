@@ -30,12 +30,18 @@ function calcCommission(goals, role, studioData = {}) {
   else if (retail >= 1000) retail_rate = 0.10
   const retail_comm = retail * retail_rate
 
+  // In-The-Bank bonus: paid when the studio's In-The-Bank total meets its
+  // monthly goal ($50), or exceeds it by ≥10% ($100). Manual override wins.
   let itb_bonus
   if (goals.itb_bonus_override != null && goals.itb_bonus_override !== '') {
     itb_bonus = Number(goals.itb_bonus_override)
-  } else if (eft >= quota * 1.10) { itb_bonus = 100 }
-  else if (eft >= quota)           { itb_bonus = 50 }
-  else                             { itb_bonus = 0 }
+  } else {
+    const itb      = Number(studioData.in_the_bank) || 0
+    const itb_goal = Number(studioData.itb_goal)    || 0
+    if      (itb_goal > 0 && itb >= itb_goal * 1.10) itb_bonus = 100
+    else if (itb_goal > 0 && itb >= itb_goal)        itb_bonus = 50
+    else                                             itb_bonus = 0
+  }
 
   return {
     type: 'tsa', eft_rate, eft_exceeds, eft_quota: quota,

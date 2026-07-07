@@ -59,7 +59,7 @@ router.get('/today', async (req, res) => {
   const db = supabase()
 
   const [tasksRes, completionsRes, recentRes] = await Promise.all([
-    db.from('cleaning_tasks').select('*').eq('active', true).order('sort_order').order('created_at'),
+    db.from('cleaning_tasks').select('*').eq('studio_id', req.studio.id).eq('active', true).order('sort_order').order('created_at'),
     db.from('cleaning_completions').select('*').eq('studio_id', req.studio.id).eq('completion_date', date),
     // Last 90 days of completions to find "last completed" per task
     db.from('cleaning_completions').select('task_id, completion_date, completed_by, completed_at')
@@ -146,6 +146,7 @@ router.get('/tasks', requireRole('owner', 'manager'), async (req, res) => {
   const { data, error } = await supabase()
     .from('cleaning_tasks')
     .select('*')
+    .eq('studio_id', req.studio.id)
     .order('sort_order')
     .order('frequency')
     .order('created_at')
@@ -174,6 +175,7 @@ router.post('/tasks', requireRole('owner', 'manager'), async (req, res) => {
       one_off_date: one_off_date ?? null,
       sort_order: sort_order ?? 0,
       created_by: req.user.id,
+      studio_id: req.studio.id,
     })
     .select()
     .single()
@@ -190,6 +192,7 @@ router.put('/tasks/:id', requireRole('owner', 'manager'), async (req, res) => {
     .from('cleaning_tasks')
     .update({ title, area, description, task_type, frequency, day_of_week, days_of_week, day_of_month, quarterly_dates, one_off_date, active, sort_order })
     .eq('id', req.params.id)
+    .eq('studio_id', req.studio.id)
     .select()
     .single()
 
@@ -203,6 +206,7 @@ router.delete('/tasks/:id', requireRole('owner', 'manager'), async (req, res) =>
     .from('cleaning_tasks')
     .delete()
     .eq('id', req.params.id)
+    .eq('studio_id', req.studio.id)
 
   if (error) return res.status(500).json({ error: error.message })
   res.status(204).end()
@@ -229,7 +233,7 @@ router.get('/analytics', async (req, res) => {
   }
 
   const [tasksRes, completionsRes, userMapRes, inactiveRes] = await Promise.all([
-    db.from('cleaning_tasks').select('*').eq('active', true),
+    db.from('cleaning_tasks').select('*').eq('studio_id', req.studio.id).eq('active', true),
     db.from('cleaning_completions')
       .select('task_id, completed_by, completion_date')
       .eq('studio_id', req.studio.id)

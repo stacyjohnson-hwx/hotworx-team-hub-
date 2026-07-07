@@ -5,6 +5,7 @@ const authenticate = require('../middleware/authMiddleware')
 const { requireRole } = require('../middleware/roleGuard')
 const { requireStudio } = require('../middleware/studioMiddleware')
 const { calcCommission } = require('../services/commissionCalc')
+const { todayInChicago } = require('../utils/dates')
 
 const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 
@@ -222,19 +223,20 @@ router.get('/personal', authenticate, async (req, res) => {
     const startDate = `${year}-${m}-01`
     const endDate   = `${year}-${m}-${String(lastDay).padStart(2, '0')}`
 
-    const [{ data, error }, hoursMap, studioTargets, { data: myShifts }] = await Promise.all([
+    const [{ data, error }, hoursMap, studioTargets, { data: myShifts }, studioData] = await Promise.all([
       db().from('personal_goals').select('*').eq('studio_id', req.studio.id).eq('tsa_id', req.user.id).eq('month', month).eq('year', year).maybeSingle(),
       getMonthlyHours(Number(month), Number(year), req.studio.id),
       getStudioGoalTargets(month, year, req.studio.id),
       db().from('shifts').select('id, shift_date, start_time, end_time, notes')
         .eq('studio_id', req.studio.id).eq('tsa_id', req.user.id).gte('shift_date', startDate).lte('shift_date', endDate)
         .order('shift_date').order('start_time'),
+      getStudioTrends(Number(month), Number(year), req.studio.id),
     ])
 
     if (error) return res.status(500).json({ error: error.message })
     const goals = data || { ...PERSONAL_GOAL_DEFAULTS, tsa_id: req.user.id, studio_id: req.studio.id, month: Number(month), year: Number(year) }
     const { name, avatar_url } = await getUserName(req.user.id)
-    const commission = calcCommission(goals, 'tsa')
+    const commission = calcCommission(goals, 'tsa', studioData)
 
     const myHours    = hoursMap[req.user.id] || 0
     const totalHours = Object.values(hoursMap).reduce((s, h) => s + h, 0)
@@ -246,11 +248,11 @@ router.get('/personal', authenticate, async (req, res) => {
     const membersGoal = studioTargets.memberships_target ? Math.round(studioTargets.memberships_target * hoursPct)           : null
     const retailGoal  = studioTargets.retail_target     ? Math.round(studioTargets.retail_target     * hoursPct * 100) / 100 : null
 
-    const todayStr    = new Date().toLocaleDateString('en-CA')
+    const todayStr    = todayInChicago()
 
     return res.json([{
       ...goals,
-      tsa_name: name, avatar_url, commission,
+      tsa_name: name, avatar_url, commission, studio_data: studioData,
       scheduled_hours:          Math.round(myHours * 10) / 10,
       scheduled_shifts:         shiftCount,
       total_team_hours:         Math.round(totalHours * 10) / 10,
@@ -315,7 +317,7 @@ router.get('/personal', authenticate, async (req, res) => {
       tsa_role:   userRole,
       avatar_url: u.user_metadata?.avatar_url || null,
       commission,
-      studio_data: userRole === 'manager' ? studioData : undefined,
+      studio_data: studioData,
       // Hours-based goal allocation
       scheduled_hours:          Math.round(scheduledHours * 10) / 10,
       hours_pct:                hoursPct,
@@ -350,9 +352,11 @@ router.put('/personal/:tsaId', requireRole('owner', 'manager'), async (req, res)
   if (error) return res.status(500).json({ error: error.message })
 
   const { name, avatar_url, role: userRole } = await getUserName(req.params.tsaId)
-  const studioData = userRole === 'manager' ? await getStudioTrends(month, year, req.studio.id) : {}
+  // ITB bonus is studio-based for everyone, so always load studio trends and
+  // return them so the client's commission preview matches this calculation.
+  const studioData = await getStudioTrends(month, year, req.studio.id)
   const commission = calcCommission(data, userRole, studioData)
-  res.json({ ...data, tsa_name: name, avatar_url, tsa_role: userRole, commission, studio_data: userRole === 'manager' ? studioData : undefined })
+  res.json({ ...data, tsa_name: name, avatar_url, tsa_role: userRole, commission, studio_data: studioData })
 })
 
 // ── Team Performance Leaderboard (all roles) ──────────────────────────────────
@@ -372,13 +376,14 @@ router.get('/leaderboard', async (req, res) => {
     !inactiveIds.has(u.id)
   )
 
-  const [{ data: goalsData, error: gErr }, hoursMap, shiftCountMap, studioTargets] = await Promise.all([
+  const [{ data: goalsData, error: gErr }, hoursMap, shiftCountMap, studioTargets, studioData] = await Promise.all([
     db().from('personal_goals')
       .select('tsa_id, total_memberships, retail_actual, sweat_basic, sweat_elite, pos_collected, eft_actual, pif_6mo, pif_12mo, itb_bonus_override, calls_made, texts_made')
       .eq('studio_id', req.studio.id).eq('month', month).eq('year', year),
     getMonthlyHours(Number(month), Number(year), req.studio.id),
     getMonthlyShiftCounts(Number(month), Number(year), req.studio.id),
     getStudioGoalTargets(month, year, req.studio.id),
+    getStudioTrends(Number(month), Number(year), req.studio.id),
   ])
 
   if (gErr) return res.status(500).json({ error: gErr.message })
@@ -397,7 +402,7 @@ router.get('/leaderboard', async (req, res) => {
       const hoursPct = totalHours > 0 ? scheduledHours / totalHours : 0
       const membersGoal = studioTargets.memberships_target ? Math.round(studioTargets.memberships_target * hoursPct) : null
       const retailGoal  = studioTargets.retail_target ? Math.round(studioTargets.retail_target * hoursPct * 100) / 100 : null
-      const commission  = calcCommission(goals, userRole)
+      const commission  = calcCommission(goals, userRole, studioData)
       return {
         tsa_id:       u.id,
         tsa_name:     u.user_metadata?.full_name || u.email?.split('@')[0] || 'Team Member',

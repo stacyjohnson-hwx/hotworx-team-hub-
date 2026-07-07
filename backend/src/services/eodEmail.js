@@ -495,6 +495,7 @@ async function fetchSubmissionsForDate(dateStr, studioId) {
   const { data: cleaningCompletions } = await db
     .from('cleaning_completions')
     .select('task_id')
+    .eq('studio_id', studioId)
     .eq('completion_date', dateStr)
 
   const sharedTasks = { cleaning: [], operations: [] }

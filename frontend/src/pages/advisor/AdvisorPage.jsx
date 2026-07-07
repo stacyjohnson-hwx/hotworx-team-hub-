@@ -237,11 +237,13 @@ function ChatPanel({ month, year }) {
       const { data: { session } } = await supabase.auth.getSession()
       const token = session?.access_token || null
 
+      const studioId = localStorage.getItem('selectedStudioId')
       const response = await fetch(`${apiUrl}/api/advisor/chat`, {
         method:  'POST',
         headers: {
           'Content-Type':  'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(studioId ? { 'X-Studio-ID': studioId } : {}),
         },
         body: JSON.stringify({ messages: history, month, year }),
       })

@@ -12,18 +12,20 @@ const { createClient } = require('@supabase/supabase-js')
 const Anthropic  = require('@anthropic-ai/sdk')
 const authenticate  = require('../middleware/authMiddleware')
 const { requireRole } = require('../middleware/roleGuard')
+const { requireStudio } = require('../middleware/studioMiddleware')
 
 const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 
 // ─── GET /api/advisor ─────────────────────────────────────────────────────────
 // Returns the most-recent cached recommendations for the given month/year.
-router.get('/', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.get('/', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const month = parseInt(req.query.month) || new Date().getMonth() + 1
   const year  = parseInt(req.query.year)  || new Date().getFullYear()
   try {
     const { data, error } = await db()
       .from('advisor_cache')
       .select('*')
+      .eq('studio_id', req.studio.id)
       .eq('month', month)
       .eq('year', year)
       .order('generated_at', { ascending: false })
@@ -39,7 +41,7 @@ router.get('/', authenticate, requireRole('owner', 'manager'), async (req, res) 
 
 // ─── POST /api/advisor/generate ──────────────────────────────────────────────
 // Aggregates data, calls Claude, persists result, returns it.
-router.post('/generate', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.post('/generate', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const month = parseInt(req.body.month) || new Date().getMonth() + 1
   const year  = parseInt(req.body.year)  || new Date().getFullYear()
 
@@ -51,10 +53,10 @@ router.post('/generate', authenticate, requireRole('owner', 'manager'), async (r
 
   try {
     // ── 1. Gather context ──────────────────────────────────────────────────────
-    const context = await gatherContext(month, year)
+    const context = await gatherContext(month, year, req.studio.id)
 
     // ── 2. Build prompt ────────────────────────────────────────────────────────
-    const prompt = buildPrompt(month, year, context)
+    const prompt = buildPrompt(month, year, context, req.studio.name)
 
     // ── 3. Call Claude ─────────────────────────────────────────────────────────
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -88,6 +90,7 @@ router.post('/generate', authenticate, requireRole('owner', 'manager'), async (r
     const { data: saved, error: saveErr } = await db()
       .from('advisor_cache')
       .insert({
+        studio_id:      req.studio.id,
         month,
         year,
         generated_by:   req.user.id,
@@ -133,7 +136,7 @@ function parseJsonResponse(text) {
 
 // ─── Data aggregation ─────────────────────────────────────────────────────────
 
-async function gatherContext(month, year) {
+async function gatherContext(month, year, studioId) {
   const client = db()
 
   // Previous 3 months for trend context
@@ -149,29 +152,29 @@ async function gatherContext(month, year) {
     leadsRes,
     eodRes,
   ] = await Promise.all([
-    // All feedback signals ever recorded
-    client.from('feedback_signals').select('entity_type,entity_id,entity_label,signal,created_at'),
+    // All feedback signals ever recorded for this studio
+    client.from('feedback_signals').select('entity_type,entity_id,entity_label,signal,created_at').eq('studio_id', studioId),
 
     // All B2B contacts
-    client.from('b2b_contacts').select('id,business_name,industry,status,next_action,next_action_date,notes').order('created_at', { ascending: false }),
+    client.from('b2b_contacts').select('id,business_name,industry,status,next_action,next_action_date,notes').eq('studio_id', studioId).order('created_at', { ascending: false }),
 
     // B2B interactions (last 90 days)
-    client.from('b2b_interactions').select('contact_id,interaction_type,notes,logged_at').gte('logged_at', ninetyDaysAgo()),
+    client.from('b2b_interactions').select('contact_id,type,notes,logged_at').eq('studio_id', studioId).gte('logged_at', ninetyDaysAgo()),
 
     // Events from last 3 months + current
-    client.from('events').select('id,title,event_type,start_date,month,year').in('year', [...new Set(periods.map(p => p.year))]).in('month', [...new Set(periods.map(p => p.month))]),
+    client.from('events').select('id,title,event_type,start_date,month,year').eq('studio_id', studioId).in('year', [...new Set(periods.map(p => p.year))]).in('month', [...new Set(periods.map(p => p.month))]),
 
     // Promotions from last 3 months + current
-    client.from('promotions').select('id,title,promo_type,ongoing,active,month,year').in('year', [...new Set(periods.map(p => p.year))]).in('month', [...new Set(periods.map(p => p.month))]),
+    client.from('promotions').select('id,title,promo_type,ongoing,active,month,year').eq('studio_id', studioId).in('year', [...new Set(periods.map(p => p.year))]).in('month', [...new Set(periods.map(p => p.month))]),
 
     // Studio goals for last 3 months
-    client.from('studio_goals').select('month,year,eft_target,eft_actual,memberships_target,memberships_actual,retail_target,retail_actual,total_leads_target,in_the_bank_target').in('year', [...new Set(periods.map(p => p.year))]).in('month', [...new Set(periods.map(p => p.month))]),
+    client.from('studio_goals').select('month,year,eft_target,eft_actual,memberships_target,memberships_actual,retail_target,retail_actual,total_leads_target,in_the_bank_target').eq('studio_id', studioId).in('year', [...new Set(periods.map(p => p.year))]).in('month', [...new Set(periods.map(p => p.month))]),
 
     // Lead counts for last 90 days
-    client.from('leads').select('lead_date,count').gte('lead_date', ninetyDaysAgo()),
+    client.from('leads').select('lead_date,count').eq('studio_id', studioId).gte('lead_date', ninetyDaysAgo()),
 
     // EOD submissions last 60 days — key sales metrics
-    client.from('eod_submissions').select('shift_date,shift_type,sweat_basic,sweat_elite,cancellations_count,retail_amount,phone_calls,sms_sent,red_appt_scheduled,support_notes').gte('shift_date', sixtyDaysAgo()).order('shift_date', { ascending: false }),
+    client.from('eod_submissions').select('shift_date,shift_type,sweat_basic,sweat_elite,cancellations_count,retail_amount,phone_calls,sms_sent,red_appt_scheduled,support_notes').eq('studio_id', studioId).gte('shift_date', sixtyDaysAgo()).order('shift_date', { ascending: false }),
   ])
 
   // Build feedback signal summary by entity type
@@ -238,7 +241,7 @@ async function gatherContext(month, year) {
   }
 }
 
-function buildPrompt(month, year, ctx) {
+function buildPrompt(month, year, ctx, studioName = 'this HOTWORX studio') {
   const monthName = new Date(year, month - 1, 1).toLocaleString('default', { month: 'long' })
 
   // Serialize feedback signals compactly
@@ -290,7 +293,7 @@ function buildPrompt(month, year, ctx) {
     ? support_notes.map(n => `  • ${n.date}: "${n.note}"`).join('\n')
     : '  (none)'
 
-  return `You are an AI advisor for HOTWORX Pewaukee, a boutique infrared sauna fitness studio. The owner uses you to get monthly recommendations to improve studio performance.
+  return `You are an AI advisor for ${studioName}, a boutique infrared sauna fitness studio. The owner uses you to get monthly recommendations to improve studio performance.
 
 Today is ${monthName} ${year}. Analyze the following studio data and provide specific, actionable recommendations.
 
@@ -403,7 +406,7 @@ Be specific and grounded in the actual data above. Mention business names, event
 // ─── POST /api/advisor/chat ───────────────────────────────────────────────────
 // Streaming SSE chat endpoint — answers natural-language questions about the studio.
 // Body: { messages: [{role, content}], month, year }
-router.post('/chat', authenticate, requireRole('owner', 'manager'), async (req, res) => {
+router.post('/chat', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const { messages = [], month, year } = req.body
   const m = parseInt(month) || new Date().getMonth() + 1
   const y = parseInt(year)  || new Date().getFullYear()
@@ -427,8 +430,8 @@ router.post('/chat', authenticate, requireRole('owner', 'manager'), async (req, 
 
   try {
     // Gather studio context to ground the AI's answers
-    const context = await gatherContext(m, y)
-    const systemPrompt = buildChatSystemPrompt(m, y, context)
+    const context = await gatherContext(m, y, req.studio.id)
+    const systemPrompt = buildChatSystemPrompt(m, y, context, req.studio.name)
 
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -462,7 +465,7 @@ router.post('/chat', authenticate, requireRole('owner', 'manager'), async (req, 
 
 // ─── Chat system prompt ───────────────────────────────────────────────────────
 
-function buildChatSystemPrompt(month, year, ctx) {
+function buildChatSystemPrompt(month, year, ctx, studioName = 'this HOTWORX studio') {
   const monthName = new Date(year, month - 1, 1).toLocaleString('default', { month: 'long' })
 
   const signalText = (type) => {
@@ -503,7 +506,7 @@ function buildChatSystemPrompt(month, year, ctx) {
     ? support_notes.map(n => `${n.date}: "${n.note}"`).join('; ')
     : 'none'
 
-  return `You are the AI Advisor for HOTWORX Pewaukee, a boutique infrared sauna fitness studio in Pewaukee, Wisconsin. You help the owner (Stacy) and manager (Bailey) make smart, data-grounded decisions for their studio.
+  return `You are the AI Advisor for ${studioName}, a boutique infrared sauna fitness studio. You help the studio's owner and manager make smart, data-grounded decisions for their studio.
 
 Today is ${monthName} ${year}.
 

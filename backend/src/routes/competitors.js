@@ -122,7 +122,7 @@ router.post('/ai-refresh', authenticate, requireStudio, requireRole('owner', 'ma
   const now    = new Date().toISOString()
   const updates = []
 
-  const prompt = `You are a competitive intelligence analyst for HOTWORX Pewaukee, WI (an infrared sauna workout studio).
+  const prompt = `You are a competitive intelligence analyst for ${req.studio.name} (an infrared sauna workout studio).
 Research these local fitness competitors and provide a brief current summary for each.
 Focus on: current pricing, any notable recent changes, what they're currently promoting, and how they compare to HOTWORX.
 Be factual and concise. Format each as JSON.
