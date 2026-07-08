@@ -90,7 +90,7 @@ const WOULD_RETURN = [
 ]
 
 const labelOf = (arr, v) => arr.find(x => x.value === v)?.label || v || '—'
-const fmtDate = s => s ? new Date(s + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'
+const fmtDate = s => s ? new Date(s + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
 const fmtMoney = n => `$${Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
 const todayStr = () => new Date().toISOString().split('T')[0]
 const input = 'w-full rounded-lg border border-gray-300 bg-white text-gray-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-500'
