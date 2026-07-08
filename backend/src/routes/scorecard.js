@@ -77,7 +77,7 @@ async function computeAutoValues(sb, studioId, year, month) {
   const monthKey = `${year}-${pad(month)}`
   const [thisT, prevT, evRes, promoRes, maintRes, taskRes, compRes, shiftRes, goalRes,
          recogRes, newJourneysRes, milestoneRes,
-         b2bContactsRes, b2bInterRes, terrRes, terrVisitRes] = await Promise.all([
+         b2bContactsRes, b2bInterRes, terrRes, terrVisitRes, membersRes, tpLogRes] = await Promise.all([
     sb.from('studio_trends').select('*').eq('studio_id', studioId).eq('year', year).eq('month', month).maybeSingle(),
     sb.from('studio_trends').select('*').eq('studio_id', studioId).eq('year', py).eq('month', pm).maybeSingle(),
     // Filter by actual date (matches the Events page) so events/promos dated in a
@@ -90,14 +90,18 @@ async function computeAutoValues(sb, studioId, year, month) {
     sb.from('shifts').select('id').eq('studio_id', studioId).gte('shift_date', monthStart).lte('shift_date', shiftEnd),
     sb.from('studio_goals').select('memberships_target').eq('studio_id', studioId).eq('year', year).eq('month', month).maybeSingle(),
     // Member Activation feeds for Retention & Experience (done vs total this month).
-    sb.from('onboarding_recognition_tasks').select('type, status').eq('studio_id', studioId).eq('month_key', monthKey),
-    sb.from('onboarding_journeys').select('id').eq('studio_id', studioId).gte('start_date', monthStart).lte('start_date', monthEnd),
+    sb.from('onboarding_recognition_tasks').select('member_id, type, status').eq('studio_id', studioId).eq('month_key', monthKey),
+    sb.from('onboarding_journeys').select('id, member_id').eq('studio_id', studioId).gte('start_date', monthStart).lte('start_date', monthEnd),
     sb.from('onboarding_journey_tasks').select('journey_id, trigger_ref, status').eq('studio_id', studioId).gte('due_date', monthStart).lte('due_date', monthEnd),
     // B2B / Canvassing feeds for Outreach & Lead Gen.
     sb.from('b2b_contacts').select('id, industry, partner_type, has_lead_box').eq('studio_id', studioId),
     sb.from('b2b_interactions').select('contact_id, type, logged_at').eq('studio_id', studioId).gte('logged_at', monthStart).lte('logged_at', `${monthEnd}T23:59:59.999Z`),
     sb.from('territories').select('id, type').eq('studio_id', studioId),
     sb.from('territory_visits').select('territory_id, visit_date').eq('studio_id', studioId).gte('visit_date', monthStart).lte('visit_date', monthEnd),
+    // Roster + manual touchpoint check-offs — so retention metrics count only real,
+    // active members and credit the work logged in the Member Activation page.
+    sb.from('onboarding_members').select('id, is_cancelled, join_date, member_type').eq('studio_id', studioId),
+    sb.from('onboarding_touchpoint_log').select('member_id, touchpoint_key, done').eq('studio_id', studioId).eq('done', true),
   ])
 
   const t = thisT.data || null
@@ -122,19 +126,49 @@ async function computeAutoValues(sb, studioId, year, month) {
   const cleaningPct = computeCleaningCompliance(taskRes.data || [], compRes.data || [], year, month, lastDay)
 
   // ── Retention & Experience (Member Activation) ─────────────────────────
+  // Only count work tied to a real, active member. Birthday uploads that never
+  // matched a member (member_id NULL) and cancelled members inflated the goals.
+  const members = membersRes.data || []
+  const activeMemberIds = new Set(members.filter(m => !m.is_cancelled).map(m => m.id))
+  const newMemberIds = new Set(members.filter(m =>
+    !m.is_cancelled && (!m.member_type || m.member_type === 'member') &&
+    m.join_date && m.join_date >= monthStart && m.join_date <= monthEnd
+  ).map(m => m.id))
+
+  // Manual touchpoint check-offs from the Member Activation page: member_id → Set(keys done).
+  const doneLog = new Map()
+  for (const l of (tpLogRes.data || [])) {
+    if (!l.done || !l.member_id) continue
+    if (!doneLog.has(l.member_id)) doneLog.set(l.member_id, new Set())
+    doneLog.get(l.member_id).add(l.touchpoint_key)
+  }
+  const loggedDone = (mid, key) => doneLog.get(mid)?.has(key) || false
+
   const recog = recogRes.data || []
   const countDone = (rows) => rows.filter(r => r.status === 'completed').length
-  const cards = recog.filter(r => r.type === 'thank_you_card')
-  const bdays = recog.filter(r => r.type === 'birthday')
+  // Recognition tasks, scoped to real active members (drops orphaned/cancelled rows).
+  const cards = recog.filter(r => r.type === 'thank_you_card' && r.member_id && activeMemberIds.has(r.member_id))
+  const bdays = recog.filter(r => r.type === 'birthday'       && r.member_id && activeMemberIds.has(r.member_id))
+  // A card counts done if the recognition task is complete OR it was checked off in the log.
+  const cardsDone = cards.filter(r => r.status === 'completed' || loggedDone(r.member_id, 'thank_you_card')).length
 
-  // Week-1 check-ins: of members who joined this month, how many got a Day-2/Day-5
-  // touch completed (that's the team's first-week check-in action).
-  const newJourneyIds = new Set((newJourneysRes.data || []).map(j => j.id))
+  // Week-1 check-ins: of members who JOINED this month, how many got a first-week
+  // touch (orientation / Day-2 goal / Day-5 check-in) done — via the journey engine
+  // OR a manual check-off in the Member Activation page.
+  const FIRST_WEEK = ['day_0_orientation', 'day_2', 'day_5']
+  const journeyMember = new Map((newJourneysRes.data || []).map(j => [j.id, j.member_id]))
   const jTasks = milestoneRes.data || []
-  const week1Done = new Set(
-    jTasks.filter(t => ['day_2', 'day_5'].includes(t.trigger_ref) && t.status === 'completed' && newJourneyIds.has(t.journey_id))
-          .map(t => t.journey_id)
-  ).size
+  const week1Members = new Set()
+  for (const t of jTasks) {
+    if (t.status === 'completed' && FIRST_WEEK.includes(t.trigger_ref)) {
+      const mid = journeyMember.get(t.journey_id)
+      if (mid && newMemberIds.has(mid)) week1Members.add(mid)
+    }
+  }
+  for (const mid of newMemberIds) {
+    if (FIRST_WEEK.some(k => loggedDone(mid, k))) week1Members.add(mid)
+  }
+  const week1Done = week1Members.size
   // Milestone check-ins hit this month (visit-day milestones + workout passport).
   const milestoneTasks = jTasks.filter(t => /^milestone/.test(t.trigger_ref || '') || t.trigger_ref === 'passport_sticker')
 
@@ -186,12 +220,12 @@ async function computeAutoValues(sb, studioId, year, month) {
     // New-member goal sourced from the Goals page (studio_goals.memberships_target).
     memberships_goal:       goalRes.data && Number(goalRes.data.memberships_target) > 0 ? Number(goalRes.data.memberships_target) : null,
     // Retention & Experience — done vs total this month, from Member Activation.
-    thankyou_cards_done:    countDone(cards),
+    thankyou_cards_done:    cardsDone,
     thankyou_cards_total:   cards.length || null,
     birthdays_done:         countDone(bdays),
     birthdays_total:        bdays.length || null,
     week1_checkins_done:    week1Done,
-    week1_checkins_total:   newJourneyIds.size || null,
+    week1_checkins_total:   newMemberIds.size || null,
     milestone_checkins_done:  countDone(milestoneTasks),
     milestone_checkins_total: milestoneTasks.length || null,
     // Outreach & Lead Gen — pulled from B2B outreach + canvassing.

@@ -66,7 +66,7 @@ const CATALOG = [
   { key: 'overall_star_rating',  group: 'reputation', label: 'Overall Star Rating',  type: 'rating', goal: 4.8, source: 'reviews', note: 'Owner-set; Google/FB/Yelp snapshot' },
 
   // ── Retention & Experience (Marisa) ────────────────────────────────────
-  { key: 'new_member_week1',     group: 'retention', label: 'New-Member Week-1 Check-ins', type: 'number', goal: 0, auto: 'week1_checkins_done',    autoGoal: 'week1_checkins_total',   source: 'Member Activation', note: 'Day-2/5 touch done ÷ new members this month' },
+  { key: 'new_member_week1',     group: 'retention', label: 'New-Member Week-1 Check-ins', type: 'number', goal: 0, auto: 'week1_checkins_done',    autoGoal: 'week1_checkins_total',   source: 'Member Activation', note: 'Orientation/Day-2/Day-5 touch done ÷ new members this month' },
   { key: 'thankyou_cards',       group: 'retention', label: 'Thank-You Cards w/ $5 Cert',  type: 'number', goal: 0, auto: 'thankyou_cards_done',   autoGoal: 'thankyou_cards_total',   source: 'Member Activation', note: 'Cards done ÷ new members this month' },
   { key: 'birthdays_reached',    group: 'retention', label: 'Birthdays Reached Out To',    type: 'number', goal: 0, auto: 'birthdays_done',       autoGoal: 'birthdays_total',        source: 'Member Activation', note: 'Reached ÷ birthdays this month' },
   { key: 'milestone_checkins',   group: 'retention', label: 'Milestone Check-ins',         type: 'number', goal: 0, auto: 'milestone_checkins_done', autoGoal: 'milestone_checkins_total', source: 'Member Activation', note: 'Celebrated ÷ milestones hit this month' },
