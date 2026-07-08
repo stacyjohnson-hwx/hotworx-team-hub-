@@ -499,7 +499,7 @@ router.get('/members/:id/journey', authenticate, requireStudio, async (req, res)
     supabase.from('onboarding_bookings').select('booking_date, time_slot, session_type').eq('studio_id', sid).eq('member_id', mid).order('booking_date', { ascending: false }).limit(60),
     supabase.from('marketing_content_member_tags').select('content_id').eq('studio_id', sid).eq('member_id', mid),
     supabase.from('onboarding_reengage_log').select('contacted_at, contacted_by').eq('studio_id', sid).eq('member_id', mid),
-    supabase.from('onboarding_touchpoint_templates').select('template_key, label, sort_order').eq('studio_id', sid),
+    supabase.from('onboarding_touchpoint_templates').select('template_key, label, sort_order, active').eq('studio_id', sid),
   ])
   const jIds = (journeys || []).map(j => j.id)
   const { data: jtasks } = jIds.length
@@ -532,6 +532,19 @@ router.get('/members/:id/journey', authenticate, requireStudio, async (req, res)
   }
   const tp = (key, label, base) => ({ key, label, ...base, notes: logBy[key]?.notes ?? base.notes ?? null, ...(logBy[key]?.done ? { status: 'done' } : {}) })
 
+  // The journey path is driven by the Script Admin templates: a deactivated script
+  // drops off, a renamed/added custom script shows up, and the order follows sort_order.
+  const TP_TEMPLATE = { day_0_orientation: 'day0_orientation', day_2: 'day2_goal_call', day_5: 'day5_checkin', day_21: 'day21_bring_friend', day_30: 'day30_review', day_60: 'day60_review', day_90: 'day90_close', thank_you_card: 'thank_you_card', passport: 'passport_sticker' }
+  const tplActive = new Map((templates || []).map(t => [t.template_key, t.active !== false]))
+  const isActiveKey = (key) => key === 'photo'
+    ? tplActive.get('day2_goal_call') !== false
+    : (TP_TEMPLATE[key] ? tplActive.get(TP_TEMPLATE[key]) !== false : true)
+  const shortJourney = (lbl = '') => {
+    const mo = lbl.match(/day\s*(\d+)/i)
+    const base = mo ? `Day ${mo[1]}` : (lbl || '').split(/[—\-:•]/)[0].trim()
+    return base.length > 20 ? base.slice(0, 19) + '…' : base
+  }
+
   const touchpoints = [
     tp('day_0_orientation', 'Orientation', dayStatus(taskBy['day_0_orientation'], 'day_0_orientation')),
     tp('photo', '1st-day photo', { status: xform?.before_photo_url ? 'done' : (taskBy['day_2']?.due_date && taskBy['day_2'].due_date <= today ? 'due' : 'upcoming') }),
@@ -543,11 +556,17 @@ router.get('/members/:id/journey', authenticate, requireStudio, async (req, res)
     tp('day_90', 'Day 90 close', dayStatus(taskBy['day_90'], 'day_90')),
     tp('thank_you_card', 'Thank-you card', { status: (logBy['thank_you_card']?.done || cardTask?.status === 'completed') ? 'done' : cardTask ? 'due' : 'na' }),
     tp('passport', 'Passport', { status: (rewardKeys.has('sticker') || logBy['passport']?.done) ? 'done' : (workouts >= 12 ? 'due' : 'upcoming') }),
-  ]
+  ].filter(t => isActiveKey(t.key))
+
+  // Custom journey steps added in Script Admin appear automatically.
+  for (const t of (templates || [])) {
+    if (t.active === false || !t.template_key.startsWith('custom_')) continue
+    touchpoints.push(tp(t.template_key, shortJourney(t.label), dayStatus(taskBy[t.template_key], t.template_key)))
+  }
+
   // Order the journey path to match the Script Admin order (by template sort_order).
   const orderMap = new Map((templates || []).map(t => [t.template_key, t.sort_order ?? 900]))
-  const TP_TEMPLATE = { day_0_orientation: 'day0_orientation', day_2: 'day2_goal_call', day_5: 'day5_checkin', day_21: 'day21_bring_friend', day_30: 'day30_review', day_60: 'day60_review', day_90: 'day90_close', thank_you_card: 'thank_you_card', passport: 'passport_sticker' }
-  const tpOrder = (key) => key === 'photo' ? (orderMap.get('day2_goal_call') ?? 20) + 1 : (orderMap.get(TP_TEMPLATE[key]) ?? 900)
+  const tpOrder = (key) => key === 'photo' ? (orderMap.get('day2_goal_call') ?? 20) + 1 : (orderMap.get(TP_TEMPLATE[key] || key) ?? 900)
   touchpoints.sort((a, b) => tpOrder(a.key) - tpOrder(b.key))
 
   const MILES = [[10, '10 visit-days'], [25, '25 · keychain'], [50, '50 visit-days'], [100, '100 · T-shirt'], [500, '500 · premium'], [1000, '1,000 · legacy']]
@@ -1028,13 +1047,14 @@ router.get('/new-members', authenticate, requireStudio, async (req, res) => {
   const ids = cohort.map(m => m.id)
   if (!ids.length) return res.json([])
 
-  const [{ data: journeys }, { data: recog }, { data: rewards }, { data: xforms }, { data: activity }, { data: logs }] = await Promise.all([
+  const [{ data: journeys }, { data: recog }, { data: rewards }, { data: xforms }, { data: activity }, { data: logs }, { data: templates }] = await Promise.all([
     supabase.from('onboarding_journeys').select('id, member_id').eq('studio_id', sid).in('member_id', ids),
     supabase.from('onboarding_recognition_tasks').select('member_id, type, status').eq('studio_id', sid).in('member_id', ids),
     supabase.from('onboarding_rewards_awarded').select('member_id, reward_key').eq('studio_id', sid).in('member_id', ids),
     supabase.from('onboarding_transformation_records').select('member_id, before_photo_url').eq('studio_id', sid).in('member_id', ids),
     supabase.from('onboarding_member_activity').select('member_id, workouts_tried, visit_days, last_booking_date').eq('studio_id', sid).in('member_id', ids),
     supabase.from('onboarding_touchpoint_log').select('member_id, touchpoint_key, done, notes').eq('studio_id', sid).in('member_id', ids),
+    supabase.from('onboarding_touchpoint_templates').select('template_key, label, sort_order, active').eq('studio_id', sid),
   ])
   // Manual check-off / notes overlay, keyed by member_id → { key → {done, notes} }.
   const logBy = new Map()
@@ -1056,15 +1076,6 @@ router.get('/new-members', authenticate, requireStudio, async (req, res) => {
   const photoSet = new Set((xforms || []).filter(x => x.before_photo_url).map(x => x.member_id))
   const actBy = new Map((activity || []).map(a => [a.member_id, a]))
 
-  const DAY_TP = [
-    { key: 'day_0_orientation', label: 'Orientation' },
-    { key: 'day_2', label: 'Day 2 goal' },
-    { key: 'day_5', label: 'Day 5 check-in' },
-    { key: 'day_21', label: 'Day 21 friend' },
-    { key: 'day_30', label: 'Day 30 review' },
-    { key: 'day_60', label: 'Day 60 review' },
-    { key: 'day_90', label: 'Day 90 close' },
-  ]
   const dayStatus = (task) => {
     if (!task) return { status: 'na' }
     if (task.status === 'completed') return { status: 'done', when: task.completed_at }
@@ -1072,23 +1083,63 @@ router.get('/new-members', authenticate, requireStudio, async (req, res) => {
     return { status: (task.due_date && task.due_date <= today) ? 'due' : 'upcoming', due_date: task.due_date }
   }
 
+  // The roster checklist is DRIVEN BY the Script Admin templates so it stays in sync:
+  // reordering, renaming, deactivating, or adding a custom journey script all reflect
+  // here. Each known template maps to a short chip label + its status source; custom
+  // journey scripts (custom_*) show up automatically with a derived short label.
+  const KNOWN_CHIP = {
+    day0_orientation:   { key: 'day_0_orientation', label: 'Orientation' },
+    day2_goal_call:     { key: 'day_2',             label: 'Day 2 goal' },
+    day5_checkin:       { key: 'day_5',             label: 'Day 5 check-in' },
+    day21_bring_friend: { key: 'day_21',            label: 'Day 21 friend' },
+    day30_review:       { key: 'day_30',            label: 'Day 30 review' },
+    day60_review:       { key: 'day_60',            label: 'Day 60 review' },
+    day90_close:        { key: 'day_90',            label: 'Day 90 close' },
+    thank_you_card:     { key: 'thank_you_card',    label: 'Thank-you card' },
+    passport_sticker:   { key: 'passport',          label: 'Passport' },
+  }
+  const shortChip = (lbl = '') => {
+    const mo = lbl.match(/day\s*(\d+)/i)
+    const base = mo ? `Day ${mo[1]}` : lbl.split(/[—\-:•]/)[0].trim()
+    return base.length > 18 ? base.slice(0, 17) + '…' : base
+  }
+  // Active journey-category templates, in Script Admin (sort_order) order.
+  let journeyTpls = (templates || [])
+    .filter(t => t.active !== false && (KNOWN_CHIP[t.template_key] || t.template_key.startsWith('custom_')))
+    .sort((a, b) => (a.sort_order ?? 900) - (b.sort_order ?? 900))
+  // Fallback to the canonical order if templates are unavailable, so the roster is never blank.
+  if (!journeyTpls.length) {
+    journeyTpls = ['day0_orientation', 'day2_goal_call', 'day5_checkin', 'day21_bring_friend', 'day30_review', 'day60_review', 'day90_close', 'thank_you_card', 'passport_sticker']
+      .map(k => ({ template_key: k, label: KNOWN_CHIP[k].label }))
+  }
+
   const out = cohort.map(m => {
     const tks = tasksBy.get(m.id) || {}
     const daysIn = Math.floor((new Date(today) - new Date(m.join_date)) / 86400000)
-    const tps = []
-    // Orientation
-    tps.push({ key: 'day_0_orientation', label: 'Orientation', ...dayStatus(tks['day_0_orientation']) })
-    // 1st-day photo (captured with the Day-2 goal call)
-    const day2 = tks['day_2']
-    tps.push({ key: 'photo', label: '1st-day photo',
-      status: photoSet.has(m.id) ? 'done' : (day2 && day2.due_date && day2.due_date <= today ? 'due' : 'upcoming') })
-    for (const tp of DAY_TP.slice(1)) tps.push({ key: tp.key, label: tp.label, ...dayStatus(tks[tp.key]) })
-    // Thank-you card
-    const cs = cardStatus.get(m.id)
-    tps.push({ key: 'thank_you_card', label: 'Thank-you card', status: cs === 'completed' ? 'done' : cs ? 'due' : 'na' })
-    // Passport (all 12 workouts)
     const wt = actBy.get(m.id)?.workouts_tried || 0
-    tps.push({ key: 'passport', label: 'Passport', status: stickerSet.has(m.id) ? 'done' : (wt >= 12 ? 'due' : 'upcoming') })
+    const cs = cardStatus.get(m.id)
+    const tps = []
+    for (const tpl of journeyTpls) {
+      const k = tpl.template_key
+      const known = KNOWN_CHIP[k]
+      if (known && known.key === 'thank_you_card') {
+        tps.push({ key: 'thank_you_card', label: known.label, status: cs === 'completed' ? 'done' : cs ? 'due' : 'na' })
+      } else if (known && known.key === 'passport') {
+        tps.push({ key: 'passport', label: known.label, status: stickerSet.has(m.id) ? 'done' : (wt >= 12 ? 'due' : 'upcoming') })
+      } else if (known) {
+        tps.push({ key: known.key, label: known.label, ...dayStatus(tks[known.key]) })
+      } else {
+        // Custom journey step added in Script Admin — status from its journey task (if any),
+        // else driven purely by the manual check-off overlay below.
+        tps.push({ key: k, label: shortChip(tpl.label), ...dayStatus(tks[k]) })
+      }
+      // Pin the synthetic 1st-day photo right after the Day-2 goal call.
+      if (k === 'day2_goal_call') {
+        const day2 = tks['day_2']
+        tps.push({ key: 'photo', label: '1st-day photo',
+          status: photoSet.has(m.id) ? 'done' : (day2 && day2.due_date && day2.due_date <= today ? 'due' : 'upcoming') })
+      }
+    }
 
     // Overlay manual check-off + notes: a logged 'done' wins; notes always attach.
     const mlog = logBy.get(m.id) || {}
