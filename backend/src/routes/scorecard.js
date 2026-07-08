@@ -77,7 +77,8 @@ async function computeAutoValues(sb, studioId, year, month) {
   const monthKey = `${year}-${pad(month)}`
   const [thisT, prevT, evRes, promoRes, maintRes, taskRes, compRes, shiftRes, goalRes,
          recogRes, newJourneysRes, milestoneRes,
-         b2bContactsRes, b2bInterRes, terrRes, terrVisitRes, membersRes, tpLogRes] = await Promise.all([
+         b2bContactsRes, b2bInterRes, terrRes, terrVisitRes, membersRes, tpLogRes,
+         contestsRes] = await Promise.all([
     sb.from('studio_trends').select('*').eq('studio_id', studioId).eq('year', year).eq('month', month).maybeSingle(),
     sb.from('studio_trends').select('*').eq('studio_id', studioId).eq('year', py).eq('month', pm).maybeSingle(),
     // Filter by actual date (matches the Events page) so events/promos dated in a
@@ -102,6 +103,8 @@ async function computeAutoValues(sb, studioId, year, month) {
     // active members and credit the work logged in the Member Activation page.
     sb.from('onboarding_members').select('id, is_cancelled, join_date, member_type').eq('studio_id', studioId),
     sb.from('onboarding_touchpoint_log').select('member_id, touchpoint_key, done').eq('studio_id', studioId).eq('done', true),
+    // Team & Culture: a contest running this month satisfies the Monthly Challenge.
+    sb.from('contests').select('id, title, starts_on, ends_on, period_month, period_year').eq('studio_id', studioId),
   ])
 
   const t = thisT.data || null
@@ -121,6 +124,14 @@ async function computeAutoValues(sb, studioId, year, month) {
   const teamEvents = events.filter(e => e.event_type === 'team')
   const teamMeeting = teamEvents.find(e => /meeting/i.test(e.title || ''))
   const teamOuting = teamEvents.find(e => /outing/i.test(e.title || ''))
+
+  // Monthly Challenge = met when a contest runs during this month. Matches either an
+  // auto contest tagged to the month, or any contest whose active window overlaps it.
+  const contests = contestsRes.data || []
+  const contestThisMonth = contests.find(c =>
+    (c.period_month === month && c.period_year === year) ||
+    (c.starts_on && c.ends_on && c.starts_on <= monthEnd && c.ends_on >= monthStart)
+  )
 
   // Cleaning compliance, month-to-date: expected task occurrences vs completed.
   const cleaningPct = computeCleaningCompliance(taskRes.data || [], compRes.data || [], year, month, lastDay)
@@ -217,6 +228,9 @@ async function computeAutoValues(sb, studioId, year, month) {
     outreach_per_shift:     outreachPerShift,
     team_meeting_date:      teamMeeting?.start_date || null,
     team_outing_date:       teamOuting?.start_date || null,
+    // Contest running this month → title becomes the challenge value (met). When none,
+    // leave undefined so any manually-typed challenge still shows.
+    monthly_challenge_auto: contestThisMonth ? contestThisMonth.title : undefined,
     // New-member goal sourced from the Goals page (studio_goals.memberships_target).
     memberships_goal:       goalRes.data && Number(goalRes.data.memberships_target) > 0 ? Number(goalRes.data.memberships_target) : null,
     // Retention & Experience — done vs total this month, from Member Activation.

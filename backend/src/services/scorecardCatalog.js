@@ -81,7 +81,7 @@ const CATALOG = [
   // ── Team & Culture (Manager) ───────────────────────────────────────────
   { key: 'team_outing',      group: 'team', label: 'Team Outing Held',  type: 'date', source: 'Events', auto: 'team_outing_date',  note: 'Team event with “outing” in title' },
   { key: 'team_meeting',     group: 'team', label: 'Team Meeting Held', type: 'date', source: 'Events', auto: 'team_meeting_date', note: 'Team event with “meeting” in title' },
-  { key: 'monthly_challenge', group: 'team', label: 'Monthly Challenge', type: 'text', source: 'manual', note: 'Describe this month’s challenge' },
+  { key: 'monthly_challenge', group: 'team', label: 'Monthly Challenge', type: 'text', source: 'Contests', auto: 'monthly_challenge_auto', note: 'Auto-met when a contest runs this month' },
 ]
 
 const HERO_KEYS = CATALOG.filter(m => m.group === 'hero').map(m => m.key)
