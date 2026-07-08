@@ -1949,11 +1949,20 @@ function ScriptAdminTab({ canEdit }) {
   const isNew = sel === '__new__'
   const current = isNew ? { template_key: '__new__' } : rows.find(t => t.template_key === sel)
 
+  // Reorder (up/down) — persists sort_order, which drives the member journey path.
+  const move = async (i, dir) => {
+    const j = i + dir
+    if (j < 0 || j >= rows.length) return
+    const next = [...rows]; const tmp = next[i]; next[i] = next[j]; next[j] = tmp
+    setRows(next)
+    try { await apiPut(`${BASE}/templates/reorder`, { keys: next.map(t => t.template_key) }) } catch { /* ignore */ }
+  }
+
   const save = async () => {
     if (isNew) {
       if (!label.trim()) return
       const created = await apiPost(`${BASE}/templates`, { label: label.trim(), channel, body })
-      setRows(rs => [...rs, created].sort((a, b) => a.template_key.localeCompare(b.template_key)))
+      setRows(rs => [...rs, created])
       setSel(created.template_key)
     } else {
       await apiPut(`${BASE}/templates/${sel}`, { body, label: label.trim(), channel })
@@ -1980,14 +1989,31 @@ function ScriptAdminTab({ canEdit }) {
             + New script
           </button>
         )}
-        <div className="border border-gray-200 rounded-xl overflow-hidden max-h-[70vh] overflow-y-auto">
-          {rows.map(t => (
-            <button key={t.template_key} onClick={() => select(t)}
-              className={`w-full text-left px-3 py-2 text-xs border-b border-gray-100 ${sel === t.template_key ? 'bg-red-50 text-red-700 font-semibold' : 'text-gray-600 hover:bg-gray-50'}`}>
-              {t.label || t.template_key}
-              <span className="block text-[10px] text-gray-400">{t.channel}</span>
-            </button>
-          ))}
+        {canEdit && <p className="text-[10px] text-gray-400 mb-1.5 px-1">↕ Order sets the member's journey path 🎯</p>}
+        <div className="border border-gray-200 rounded-xl overflow-hidden max-h-[70vh] overflow-y-auto divide-y divide-gray-100">
+          {rows.map((t, i) => {
+            const on = sel === t.template_key
+            const Ch = t.channel === 'call' ? Phone : t.channel === 'in_studio' ? Building2 : MessageSquare
+            const chCls = t.channel === 'call' ? 'text-purple-500' : t.channel === 'in_studio' ? 'text-green-500' : 'text-blue-500'
+            return (
+              <div key={t.template_key} className={`flex items-center gap-1.5 pl-2.5 pr-1.5 py-1.5 transition-colors ${on ? 'bg-red-50' : 'hover:bg-gray-50'}`}>
+                <span className={`w-5 text-center text-[9px] font-bold ${on ? 'text-red-400' : 'text-gray-300'}`}>{i + 1}</span>
+                <button onClick={() => select(t)} className="flex items-center gap-2 flex-1 min-w-0 text-left">
+                  <Ch size={13} className={`flex-shrink-0 ${chCls}`} />
+                  <span className="min-w-0">
+                    <span className={`block text-xs truncate ${on ? 'text-red-700 font-semibold' : 'text-gray-700'}`}>{t.label || t.template_key}</span>
+                    <span className="block text-[10px] text-gray-400 capitalize">{(t.channel || '').replace('_', ' ')}</span>
+                  </span>
+                </button>
+                {canEdit && (
+                  <div className="flex flex-col flex-shrink-0">
+                    <button onClick={() => move(i, -1)} disabled={i === 0} className="text-gray-300 hover:text-red-600 disabled:opacity-20"><ChevronUp size={13} /></button>
+                    <button onClick={() => move(i, 1)} disabled={i === rows.length - 1} className="text-gray-300 hover:text-red-600 disabled:opacity-20"><ChevronDown size={13} /></button>
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
       </div>
       <div>

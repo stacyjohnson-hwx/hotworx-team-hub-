@@ -5,6 +5,7 @@ const authenticate = require('../middleware/authMiddleware')
 const { requireRole } = require('../middleware/roleGuard')
 const { requireStudio } = require('../middleware/studioMiddleware')
 const { runJourneyEngine, seedTemplates, renderTemplate, firstName } = require('../services/journeyEngine')
+const { todayInChicago, monthKeyInChicago } = require('../utils/dates')
 
 const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 
@@ -483,7 +484,7 @@ router.get('/members/:id/detail', authenticate, requireStudio, async (req, res) 
 // ─── Rich member journey: timeline, touchpoints, photos, bookings, milestones ──
 router.get('/members/:id/journey', authenticate, requireStudio, async (req, res) => {
   const supabase = db(); const sid = req.studio.id, mid = req.params.id
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayInChicago()
 
   const { data: member } = await supabase.from('onboarding_members').select('*').eq('studio_id', sid).eq('id', mid).maybeSingle()
   if (!member) return res.status(404).json({ error: 'not found' })
@@ -498,7 +499,7 @@ router.get('/members/:id/journey', authenticate, requireStudio, async (req, res)
     supabase.from('onboarding_bookings').select('booking_date, time_slot, session_type').eq('studio_id', sid).eq('member_id', mid).order('booking_date', { ascending: false }).limit(60),
     supabase.from('marketing_content_member_tags').select('content_id').eq('studio_id', sid).eq('member_id', mid),
     supabase.from('onboarding_reengage_log').select('contacted_at, contacted_by').eq('studio_id', sid).eq('member_id', mid),
-    supabase.from('onboarding_touchpoint_templates').select('template_key, label').eq('studio_id', sid),
+    supabase.from('onboarding_touchpoint_templates').select('template_key, label, sort_order').eq('studio_id', sid),
   ])
   const jIds = (journeys || []).map(j => j.id)
   const { data: jtasks } = jIds.length
@@ -543,6 +544,11 @@ router.get('/members/:id/journey', authenticate, requireStudio, async (req, res)
     tp('thank_you_card', 'Thank-you card', { status: (logBy['thank_you_card']?.done || cardTask?.status === 'completed') ? 'done' : cardTask ? 'due' : 'na' }),
     tp('passport', 'Passport', { status: (rewardKeys.has('sticker') || logBy['passport']?.done) ? 'done' : (workouts >= 12 ? 'due' : 'upcoming') }),
   ]
+  // Order the journey path to match the Script Admin order (by template sort_order).
+  const orderMap = new Map((templates || []).map(t => [t.template_key, t.sort_order ?? 900]))
+  const TP_TEMPLATE = { day_0_orientation: 'day0_orientation', day_2: 'day2_goal_call', day_5: 'day5_checkin', day_21: 'day21_bring_friend', day_30: 'day30_review', day_60: 'day60_review', day_90: 'day90_close', thank_you_card: 'thank_you_card', passport: 'passport_sticker' }
+  const tpOrder = (key) => key === 'photo' ? (orderMap.get('day2_goal_call') ?? 20) + 1 : (orderMap.get(TP_TEMPLATE[key]) ?? 900)
+  touchpoints.sort((a, b) => tpOrder(a.key) - tpOrder(b.key))
 
   const MILES = [[10, '10 visit-days'], [25, '25 · keychain'], [50, '50 visit-days'], [100, '100 · T-shirt'], [500, '500 · premium'], [1000, '1,000 · legacy']]
   const milestones = [
@@ -759,7 +765,7 @@ router.patch('/ledger/:id', authenticate, requireStudio, requireRole('owner', 'm
   if (error) return res.status(500).json({ error: error.message })
   if (data?.month_key) {
     const [y, m] = data.month_key.split('-').map(Number)
-    const curKey = new Date().toISOString().slice(0, 7)
+    const curKey = monthKeyInChicago()
     await recomputeStudioTrends(supabase, req.studio.id, m, y, data.month_key === curKey)
   }
   res.json(data)
@@ -770,9 +776,9 @@ router.patch('/ledger/:id', authenticate, requireStudio, requireRole('owner', 'm
 // metrics, so the UI can show the number, badge overrides, and explain them.
 router.get('/metrics', authenticate, requireStudio, async (req, res) => {
   const supabase = db()
-  const mk = req.query.month_key || new Date().toISOString().slice(0, 7)
+  const mk = req.query.month_key || monthKeyInChicago()
   const [y, m] = mk.split('-').map(Number)
-  const curKey = new Date().toISOString().slice(0, 7)
+  const curKey = monthKeyInChicago()
 
   const { count: computedCancels } = await supabase
     .from('onboarding_cancellation_ledger').select('id', { count: 'exact', head: true })
@@ -813,7 +819,7 @@ router.put('/metric-overrides', authenticate, requireStudio, requireRole('owner'
   }, { onConflict: 'studio_id,metric,month_key' }).select().single()
   if (error) return res.status(500).json({ error: error.message })
   const [y, m] = month_key.split('-').map(Number)
-  const curKey = new Date().toISOString().slice(0, 7)
+  const curKey = monthKeyInChicago()
   await recomputeStudioTrends(supabase, req.studio.id, m, y, month_key === curKey)
   res.json(data)
 })
@@ -825,7 +831,7 @@ router.delete('/metric-overrides', authenticate, requireStudio, requireRole('own
     .eq('studio_id', req.studio.id).eq('metric', metric).eq('month_key', month_key)
   if (error) return res.status(500).json({ error: error.message })
   const [y, m] = month_key.split('-').map(Number)
-  const curKey = new Date().toISOString().slice(0, 7)
+  const curKey = monthKeyInChicago()
   await recomputeStudioTrends(supabase, req.studio.id, m, y, month_key === curKey)
   res.status(204).end()
 })
@@ -835,7 +841,7 @@ router.delete('/metric-overrides', authenticate, requireStudio, requireRole('own
 router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
   const supabase = db()
   const studioId = req.studio.id
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayInChicago()
 
   await seedTemplates(supabase, studioId)
 
@@ -1012,7 +1018,7 @@ router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
 // ─── New-member roster: last 60 days + per-member journey checklist ────────────
 router.get('/new-members', authenticate, requireStudio, async (req, res) => {
   const supabase = db(); const sid = req.studio.id
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayInChicago()
   const since = new Date(Date.now() - 60 * 86400000).toISOString().slice(0, 10)
 
   const { data: members } = await supabase.from('onboarding_members')
@@ -1261,9 +1267,22 @@ router.get('/templates', authenticate, requireStudio, async (req, res) => {
   const supabase = db()
   await seedTemplates(supabase, req.studio.id)
   const { data, error } = await supabase.from('onboarding_touchpoint_templates')
-    .select('*').eq('studio_id', req.studio.id).eq('active', true).order('template_key')
+    .select('*').eq('studio_id', req.studio.id).eq('active', true)
+    .order('sort_order', { ascending: true, nullsFirst: false }).order('template_key')
   if (error) return res.status(500).json({ error: error.message })
   res.json(data || [])
+})
+
+// Reorder scripts — the order drives the member journey path. Body: { keys: [...] }
+router.put('/templates/reorder', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
+  const keys = Array.isArray(req.body.keys) ? req.body.keys : []
+  const supabase = db()
+  for (let i = 0; i < keys.length; i++) {
+    await supabase.from('onboarding_touchpoint_templates')
+      .update({ sort_order: (i + 1) * 10, updated_at: new Date().toISOString() })
+      .eq('studio_id', req.studio.id).eq('template_key', keys[i])
+  }
+  res.json({ ok: true })
 })
 
 // Add a new custom script/milestone template.
