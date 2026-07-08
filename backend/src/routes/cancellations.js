@@ -60,11 +60,23 @@ router.get('/report', authenticate, requireStudio, async (req, res) => {
   const reactivated = all.filter(r => r.win_back_step === 'reactivated').length
   const freeMonthGiven = all.filter(r => r.offer_accepted === 'free_month').length
 
-  const byReason = {}, byOutcome = {}
+  const byReason = {}, byOutcome = {}, byCompetitor = {}
+  // Monthly recurring revenue at stake, split by outcome.
+  let savedMrr = 0, lostMrr = 0, pendingMrr = 0
   for (const r of all) {
     byReason[r.cancel_reason] = (byReason[r.cancel_reason] || 0) + 1
     byOutcome[r.outcome] = (byOutcome[r.outcome] || 0) + 1
+    const mrr = Number(r.monthly_payment) || 0
+    if      (r.outcome === 'saved')     savedMrr   += mrr
+    else if (r.outcome === 'cancelled') lostMrr    += mrr
+    else if (r.outcome === 'pending')   pendingMrr += mrr
+    // Which competitors are pulling members away.
+    if (r.cancel_reason === 'competitor' && r.competitor_name) {
+      const key = r.competitor_name.trim()
+      byCompetitor[key] = (byCompetitor[key] || 0) + 1
+    }
   }
+  const round2 = n => Math.round(n * 100) / 100
 
   // Per-rep: requests handled, saves, free months given — the coaching signal.
   const repAgg = {}
@@ -83,7 +95,37 @@ router.get('/report', authenticate, requireStudio, async (req, res) => {
     .sort((a, b) => (b.date_requested || '').localeCompare(a.date_requested || ''))
     .map(r => ({ id: r.id, member_name: r.member_name, date: r.date_requested, would_return: r.would_return, postcancel_feedback: r.postcancel_feedback }))
 
-  res.json({ total, saved, cancelled, pending, reactivated, freeMonthGiven, byReason, byOutcome, byRep, feedback })
+  res.json({
+    total, saved, cancelled, pending, reactivated, freeMonthGiven,
+    savedMrr: round2(savedMrr), lostMrr: round2(lostMrr), pendingMrr: round2(pendingMrr),
+    byReason, byOutcome, byCompetitor, byRep, feedback,
+  })
+})
+
+// GET /api/cancellations/followups — the win-back queue: unresolved entries with
+// a follow-up date on or before today, soonest first. Drives the "reach out
+// today" workflow so saves in progress don't go stale.
+router.get('/followups', authenticate, requireStudio, async (req, res) => {
+  const today = todayInChicago()
+  const { data, error } = await supabase().from('cancellation_log')
+    .select('*')
+    .eq('studio_id', req.studio.id)
+    .in('outcome', ['pending', 'cancelled'])
+    .is('date_resolved', null)
+    .not('follow_up_date', 'is', null)
+    .lte('follow_up_date', today)
+    .order('follow_up_date', { ascending: true })
+  if (error) return res.status(500).json({ error: error.message })
+
+  const { data: { users } } = await supabase().auth.admin.listUsers({ perPage: 200 })
+  const userMap = {}
+  for (const u of users || []) userMap[u.id] = u.user_metadata?.full_name || u.email?.split('@')[0] || 'Team Member'
+
+  res.json((data || []).map(r => ({
+    ...r,
+    handled_by_name: r.handled_by ? (userMap[r.handled_by] || 'Team Member') : null,
+    days_overdue: Math.round((new Date(today) - new Date(r.follow_up_date)) / 86400000),
+  })))
 })
 
 // POST /api/cancellations
@@ -93,7 +135,9 @@ router.post('/', authenticate, requireStudio, async (req, res) => {
   if (!REASONS.includes(b.cancel_reason)) return res.status(400).json({ error: 'valid cancel_reason is required' })
   if (b.cancel_reason === 'other' && !b.reason_notes) return res.status(400).json({ error: 'reason_notes required when reason is Other' })
 
-  const outcome = OUTCOMES.includes(b.outcome) ? b.outcome : 'saved'
+  // Default to 'pending' (not 'saved') so a forgotten dropdown doesn't inflate
+  // the save rate — an unset outcome is an in-progress win-back, not a win.
+  const outcome = OUTCOMES.includes(b.outcome) ? b.outcome : 'pending'
   const dates = deriveDates({ outcome, date_requested: b.date_requested, follow_up_date: b.follow_up_date })
 
   const { data, error } = await supabase().from('cancellation_log').insert({

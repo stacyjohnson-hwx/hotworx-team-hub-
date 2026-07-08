@@ -91,6 +91,7 @@ const WOULD_RETURN = [
 
 const labelOf = (arr, v) => arr.find(x => x.value === v)?.label || v || '—'
 const fmtDate = s => s ? new Date(s + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'
+const fmtMoney = n => `$${Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
 const todayStr = () => new Date().toISOString().split('T')[0]
 const input = 'w-full rounded-lg border border-gray-300 bg-white text-gray-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-500'
 const lbl = 'block text-xs font-semibold text-gray-600 mb-1'
@@ -110,7 +111,7 @@ function CancellationForm({ entry, users, currentUserId, onSave, onClose }) {
     offers_presented: Array.isArray(entry?.offers_presented) ? entry.offers_presented : [],
     offer_accepted: entry?.offer_accepted || 'none',
     goal_recaptured: entry?.goal_recaptured || false,
-    outcome: entry?.outcome || 'saved',
+    outcome: entry?.outcome || 'pending',
     win_back_step: entry?.win_back_step || 'at_pos',
     follow_up_date: entry?.follow_up_date || '',
     postcancel_feedback: entry?.postcancel_feedback || '',
@@ -293,6 +294,8 @@ function CancellationReport() {
 
   const saveRate = d.total ? Math.round((d.saved / d.total) * 100) : 0
   const reasonMax = Math.max(1, ...Object.values(d.byReason || {}))
+  const competitors = Object.entries(d.byCompetitor || {}).sort((a, b) => b[1] - a[1])
+  const compMax = Math.max(1, ...competitors.map(c => c[1]))
 
   return (
     <div className="space-y-6">
@@ -304,6 +307,13 @@ function CancellationReport() {
         <Stat label="Free Months Given" value={d.freeMonthGiven} cls="text-red-500" />
       </div>
 
+      {/* Monthly recurring revenue at stake */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <Stat label="MRR Saved / mo" value={fmtMoney(d.savedMrr)} cls="text-green-600" />
+        <Stat label="MRR Lost / mo" value={fmtMoney(d.lostMrr)} cls="text-red-600" />
+        <Stat label="MRR In Play / mo" value={fmtMoney(d.pendingMrr)} cls="text-amber-600" />
+      </div>
+
       {/* Reasons */}
       <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
         <h3 className="text-sm font-bold text-gray-900 mb-4">Why members cancel</h3>
@@ -311,6 +321,16 @@ function CancellationReport() {
           {REASONS.map(r => <RBar key={r.value} label={r.label} value={d.byReason?.[r.value] || 0} max={reasonMax} />)}
         </div>
       </div>
+
+      {/* Where members are going — competitor takeaway */}
+      {competitors.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+          <h3 className="text-sm font-bold text-gray-900 mb-1">Where members are going <span className="text-gray-400 font-normal">— competitors named at cancel</span></h3>
+          <div className="space-y-2.5 mt-3">
+            {competitors.map(([name, count]) => <RBar key={name} label={name} value={count} max={compMax} />)}
+          </div>
+        </div>
+      )}
 
       {/* Per-rep save rate + free-month coaching signal */}
       <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm overflow-x-auto">
@@ -427,6 +447,7 @@ export default function CancellationsPage() {
     member_name:    r => (r.member_name || '').toLowerCase(),
     date_requested: r => r.date_requested || '',
     cancel_reason:  r => labelOf(REASONS, r.cancel_reason),
+    package_name:   r => (r.package_name || '').toLowerCase(),
     handled_by_name:r => (r.handled_by_name || '').toLowerCase(),
     outcome:        r => r.outcome || '',
     win_back_step:  r => WIN_BACK_STEPS.findIndex(s => s.value === r.win_back_step),
@@ -442,6 +463,13 @@ export default function CancellationsPage() {
   const arrow = (key) => sort.key === key ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''
 
   const saveRate = rows.length ? Math.round((rows.filter(r => r.outcome === 'saved').length / rows.length) * 100) : 0
+
+  // Win-back queue: unresolved saves/cancels whose follow-up is due today or
+  // overdue — the "reach out now" list so in-progress saves don't go stale.
+  const todayLocal = new Date().toLocaleDateString('en-CA')
+  const followUps = rows
+    .filter(r => ['pending', 'cancelled'].includes(r.outcome) && !r.date_resolved && r.follow_up_date && r.follow_up_date <= todayLocal)
+    .sort((a, b) => (a.follow_up_date || '').localeCompare(b.follow_up_date || ''))
 
   if (loading) return <div className="flex items-center justify-center h-64"><div className="w-8 h-8 border-2 border-red-600 border-t-transparent rounded-full animate-spin" /></div>
 
@@ -488,6 +516,34 @@ export default function CancellationsPage() {
       </div>
 
       {tab === 'report' ? <CancellationReport /> : (<>
+
+      {/* Win-back queue — follow-ups due today or overdue */}
+      {followUps.length > 0 && (
+        <div className="mb-5 bg-amber-50 border border-amber-300 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-2.5">
+            <Target size={16} className="text-amber-700" />
+            <h3 className="text-sm font-bold text-amber-900">
+              {followUps.length} win-back follow-up{followUps.length !== 1 ? 's' : ''} due
+            </h3>
+          </div>
+          <div className="space-y-1.5">
+            {followUps.map(r => {
+              const overdue = r.follow_up_date < todayLocal
+              return (
+                <button key={r.id} onClick={() => setModal(r)}
+                  className="w-full flex items-center gap-3 text-left bg-white border border-amber-200 hover:border-amber-400 rounded-lg px-3 py-2 transition-colors">
+                  <span className="font-semibold text-gray-900 text-sm flex-1 min-w-0 truncate">{r.member_name}</span>
+                  <span className="text-xs text-gray-500 hidden sm:inline">{labelOf(REASONS, r.cancel_reason)}</span>
+                  <span className="text-xs text-gray-500 hidden md:inline">{labelOf(WIN_BACK_STEPS, r.win_back_step)}</span>
+                  <span className={`text-xs font-semibold whitespace-nowrap ${overdue ? 'text-red-600' : 'text-amber-700'}`}>
+                    {overdue ? `${Math.round((new Date(todayLocal) - new Date(r.follow_up_date)) / 86400000)}d overdue` : 'due today'}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex gap-2 mb-4 flex-wrap items-center">
