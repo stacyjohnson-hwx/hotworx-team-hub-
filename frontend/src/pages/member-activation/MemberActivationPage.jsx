@@ -1926,6 +1926,29 @@ const VARS = ['first_name', 'visit_days', 'total_sessions', 'workouts_tried', 'd
 
 const CHANNEL_OPTS = [{ v: 'text', label: 'Text' }, { v: 'call', label: 'Call' }, { v: 'in_studio', label: 'In studio' }]
 
+// Script grouping + visual language (shared with the member journey path).
+const SCRIPT_CATEGORY = (k = '') => {
+  if (k.startsWith('milestone_')) return 'milestones'
+  if (k.startsWith('reengage_') || k.startsWith('save_') || k === 'first_session_rough') return 'reengage'
+  if (k.startsWith('birthday_')) return 'birthdays'
+  if (k.startsWith('day') || k === 'thank_you_card' || k === 'passport_sticker' || k.startsWith('custom_')) return 'journey'
+  return 'other'
+}
+const SCRIPT_SECTIONS = [
+  { k: 'journey', label: 'Onboarding journey', emoji: '🌱', text: 'text-emerald-600', border: 'border-emerald-100' },
+  { k: 'milestones', label: 'Milestones', emoji: '🏅', text: 'text-amber-600', border: 'border-amber-100' },
+  { k: 'reengage', label: 'Re-engagement', emoji: '🔁', text: 'text-orange-600', border: 'border-orange-100' },
+  { k: 'birthdays', label: 'Birthdays', emoji: '🎂', text: 'text-pink-600', border: 'border-pink-100' },
+  { k: 'other', label: 'Other', emoji: '✨', text: 'text-gray-500', border: 'border-gray-200' },
+]
+const SCRIPT_EMOJI = (k = '') => {
+  const map = { day0_orientation: '🏫', day0_welcome_pos: '👋', day0_welcome_online: '👋', day2_goal_call: '🎯', day5_checkin: '💬', day21_bring_friend: '🤝', day30_review: '📞', day60_review: '📈', day90_close: '🏁', thank_you_card: '💌', passport_sticker: '🎟', reengage_14: '🔁', reengage_30: '🔁', reengage_60: '📞', birthday_text: '🎂', birthday_text_nonmember: '🎂', first_session_rough: '🆘', save_14d: '🆘', save_7d: '🆘' }
+  if (map[k]) return map[k]
+  if (k.startsWith('milestone_')) return '🏅'
+  return '📝'
+}
+const SCRIPT_DAY = (k = '') => { const m = k.match(/^day(\d+)/); return m ? `Day ${m[1]}` : null }
+
 function ScriptAdminTab({ canEdit }) {
   const { currentStudio } = useStudio()
   const [rows, setRows] = useState([])
@@ -1935,6 +1958,8 @@ function ScriptAdminTab({ canEdit }) {
   const [label, setLabel] = useState('')
   const [channel, setChannel] = useState('text')
   const [saved, setSaved] = useState(false)
+  const [dragKey, setDragKey] = useState(null)
+  const [collapsed, setCollapsed] = useState(() => new Set())
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -1950,13 +1975,17 @@ function ScriptAdminTab({ canEdit }) {
   const current = isNew ? { template_key: '__new__' } : rows.find(t => t.template_key === sel)
 
   // Reorder (up/down) — persists sort_order, which drives the member journey path.
-  const move = async (i, dir) => {
-    const j = i + dir
-    if (j < 0 || j >= rows.length) return
-    const next = [...rows]; const tmp = next[i]; next[i] = next[j]; next[j] = tmp
-    setRows(next)
-    try { await apiPut(`${BASE}/templates/reorder`, { keys: next.map(t => t.template_key) }) } catch { /* ignore */ }
+  const persist = (next) => { setRows(next); apiPut(`${BASE}/templates/reorder`, { keys: next.map(t => t.template_key) }).catch(() => {}) }
+  // Drag-drop reorder (within the same section only).
+  const onDrop = (targetKey) => {
+    if (!dragKey || dragKey === targetKey) { setDragKey(null); return }
+    const from = rows.findIndex(r => r.template_key === dragKey)
+    const to = rows.findIndex(r => r.template_key === targetKey)
+    if (from < 0 || to < 0 || SCRIPT_CATEGORY(rows[from].template_key) !== SCRIPT_CATEGORY(rows[to].template_key)) { setDragKey(null); return }
+    const next = [...rows]; const [it] = next.splice(from, 1); next.splice(next.findIndex(r => r.template_key === targetKey), 0, it)
+    setDragKey(null); persist(next)
   }
+  const toggleSection = (k) => setCollapsed(s => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n })
 
   const save = async () => {
     if (isNew) {
@@ -1980,8 +2009,55 @@ function ScriptAdminTab({ canEdit }) {
   }
 
   if (loading) return <Spinner />
+
+  // Group scripts into member-facing sections, preserving the saved order within each.
+  const journeyItems = rows.filter(t => SCRIPT_CATEGORY(t.template_key) === 'journey')
+  const grouped = SCRIPT_SECTIONS.map(sec => ({
+    ...sec,
+    items: rows.filter(t => SCRIPT_CATEGORY(t.template_key) === sec.k),
+  })).filter(sec => sec.items.length)
+
+  // Reorder two section-neighbors within the global rows order (keeps arrows meaningful per section).
+  const moveInSection = (secItems, idxInSec, dir) => {
+    const j = idxInSec + dir
+    if (j < 0 || j >= secItems.length) return
+    const a = secItems[idxInSec].template_key, b = secItems[j].template_key
+    const next = [...rows]
+    const ia = next.findIndex(r => r.template_key === a), ib = next.findIndex(r => r.template_key === b)
+    const tmp = next[ia]; next[ia] = next[ib]; next[ib] = tmp
+    persist(next)
+  }
+
   return (
-    <div className="grid md:grid-cols-[240px_1fr] gap-4">
+    <div>
+      {/* Live journey preview — mirrors the path the member sees */}
+      <div className="bg-gradient-to-r from-emerald-50 via-white to-white border border-emerald-100 rounded-2xl p-3 mb-4">
+        <p className="text-[10px] font-bold text-emerald-600/70 uppercase tracking-wide mb-2 flex items-center gap-1">
+          🌱 Member journey preview <span className="text-gray-400 font-medium normal-case tracking-normal">· the path your new member walks</span>
+        </p>
+        <div className="flex items-start gap-0 overflow-x-auto pb-1">
+          {journeyItems.length === 0 && <span className="text-xs text-gray-400 py-2">No journey scripts yet.</span>}
+          {journeyItems.map((t, i) => {
+            const on = sel === t.template_key
+            const day = SCRIPT_DAY(t.template_key)
+            return (
+              <div key={t.template_key} className="flex items-start flex-shrink-0">
+                {i > 0 && <div className="w-5 h-9 flex items-center"><div className="h-0.5 w-full bg-emerald-200 rounded" /></div>}
+                <button onClick={() => select(t)} title={t.label}
+                  className="flex flex-col items-center gap-1 w-16 group">
+                  <div className={`w-9 h-9 rounded-full flex items-center justify-center text-base transition-transform group-hover:scale-110 ${on ? 'bg-red-600 text-white ring-2 ring-red-200 shadow' : 'bg-white border-2 border-emerald-200'}`}>
+                    {SCRIPT_EMOJI(t.template_key)}
+                  </div>
+                  {day && <span className={`text-[8px] font-bold ${on ? 'text-red-500' : 'text-emerald-500'}`}>{day}</span>}
+                  <span className="text-[8px] text-gray-500 text-center leading-tight line-clamp-2">{t.label || t.template_key}</span>
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      <div className="grid md:grid-cols-[300px_1fr] gap-4">
       <div>
         {canEdit && (
           <button onClick={startNew}
@@ -1989,26 +2065,59 @@ function ScriptAdminTab({ canEdit }) {
             + New script
           </button>
         )}
-        {canEdit && <p className="text-[10px] text-gray-400 mb-1.5 px-1">↕ Order sets the member's journey path 🎯</p>}
-        <div className="border border-gray-200 rounded-xl overflow-hidden max-h-[70vh] overflow-y-auto divide-y divide-gray-100">
-          {rows.map((t, i) => {
-            const on = sel === t.template_key
-            const Ch = t.channel === 'call' ? Phone : t.channel === 'in_studio' ? Building2 : MessageSquare
-            const chCls = t.channel === 'call' ? 'text-purple-500' : t.channel === 'in_studio' ? 'text-green-500' : 'text-blue-500'
+        {canEdit && <p className="text-[10px] text-gray-400 mb-2 px-1">↕ Drag a card or use the arrows to reorder — order sets the member's journey path 🎯</p>}
+        <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
+          {grouped.map(sec => {
+            const open = !collapsed.has(sec.k)
             return (
-              <div key={t.template_key} className={`flex items-center gap-1.5 pl-2.5 pr-1.5 py-1.5 transition-colors ${on ? 'bg-red-50' : 'hover:bg-gray-50'}`}>
-                <span className={`w-5 text-center text-[9px] font-bold ${on ? 'text-red-400' : 'text-gray-300'}`}>{i + 1}</span>
-                <button onClick={() => select(t)} className="flex items-center gap-2 flex-1 min-w-0 text-left">
-                  <Ch size={13} className={`flex-shrink-0 ${chCls}`} />
-                  <span className="min-w-0">
-                    <span className={`block text-xs truncate ${on ? 'text-red-700 font-semibold' : 'text-gray-700'}`}>{t.label || t.template_key}</span>
-                    <span className="block text-[10px] text-gray-400 capitalize">{(t.channel || '').replace('_', ' ')}</span>
-                  </span>
+              <div key={sec.k}>
+                <button onClick={() => toggleSection(sec.k)}
+                  className="w-full flex items-center gap-1.5 mb-1.5 px-1 text-left">
+                  <span className="text-sm">{sec.emoji}</span>
+                  <span className={`text-xs font-bold ${sec.text}`}>{sec.label}</span>
+                  <span className="text-[10px] text-gray-300 font-semibold">{sec.items.length}</span>
+                  <ChevronDown size={13} className={`ml-auto text-gray-300 transition-transform ${open ? '' : '-rotate-90'}`} />
                 </button>
-                {canEdit && (
-                  <div className="flex flex-col flex-shrink-0">
-                    <button onClick={() => move(i, -1)} disabled={i === 0} className="text-gray-300 hover:text-red-600 disabled:opacity-20"><ChevronUp size={13} /></button>
-                    <button onClick={() => move(i, 1)} disabled={i === rows.length - 1} className="text-gray-300 hover:text-red-600 disabled:opacity-20"><ChevronDown size={13} /></button>
+                {open && (
+                  <div className={`border rounded-xl overflow-hidden divide-y divide-gray-100 ${sec.border}`}>
+                    {sec.items.map((t, idx) => {
+                      const on = sel === t.template_key
+                      const dragging = dragKey === t.template_key
+                      const Ch = t.channel === 'call' ? Phone : t.channel === 'in_studio' ? Building2 : MessageSquare
+                      const chCls = t.channel === 'call' ? 'text-purple-500' : t.channel === 'in_studio' ? 'text-green-500' : 'text-blue-500'
+                      const day = SCRIPT_DAY(t.template_key)
+                      const preview = htmlToText(t.body || '').replace(/\s+/g, ' ').trim().slice(0, 64)
+                      return (
+                        <div key={t.template_key}
+                          draggable={canEdit}
+                          onDragStart={() => setDragKey(t.template_key)}
+                          onDragEnd={() => setDragKey(null)}
+                          onDragOver={e => e.preventDefault()}
+                          onDrop={() => onDrop(t.template_key)}
+                          className={`flex items-start gap-1.5 pl-1.5 pr-1.5 py-2 transition-colors ${on ? 'bg-red-50' : 'hover:bg-gray-50'} ${dragging ? 'opacity-40' : ''}`}>
+                          {canEdit && <span className="text-gray-300 mt-1.5 cursor-grab select-none text-xs leading-none flex-shrink-0" title="Drag to reorder">⠿</span>}
+                          <button onClick={() => select(t)} className="flex items-start gap-2 flex-1 min-w-0 text-left">
+                            <span className="text-lg leading-none mt-0.5 flex-shrink-0">{SCRIPT_EMOJI(t.template_key)}</span>
+                            <span className="min-w-0">
+                              <span className="flex items-center gap-1.5">
+                                <span className={`text-xs font-semibold truncate ${on ? 'text-red-700' : 'text-gray-800'}`}>{t.label || t.template_key}</span>
+                                {day && <span className="text-[9px] bg-gray-100 text-gray-500 px-1 rounded flex-shrink-0">{day}</span>}
+                              </span>
+                              <span className="flex items-center gap-1 text-[10px] text-gray-400 capitalize mt-0.5">
+                                <Ch size={10} className={chCls} />{(t.channel || '').replace('_', ' ')}
+                              </span>
+                              {preview && <span className="block text-[10px] text-gray-400 truncate mt-0.5">{preview}</span>}
+                            </span>
+                          </button>
+                          {canEdit && (
+                            <div className="flex flex-col flex-shrink-0">
+                              <button onClick={() => moveInSection(sec.items, idx, -1)} disabled={idx === 0} className="text-gray-300 hover:text-red-600 disabled:opacity-20"><ChevronUp size={13} /></button>
+                              <button onClick={() => moveInSection(sec.items, idx, 1)} disabled={idx === sec.items.length - 1} className="text-gray-300 hover:text-red-600 disabled:opacity-20"><ChevronDown size={13} /></button>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
               </div>
@@ -2060,6 +2169,7 @@ function ScriptAdminTab({ canEdit }) {
             )}
           </>
         )}
+      </div>
       </div>
     </div>
   )
