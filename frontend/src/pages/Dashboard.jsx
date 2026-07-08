@@ -7,6 +7,7 @@ import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
 import { Plus, Pencil, Trash2, ExternalLink, Lock, X, Link as LinkIcon, Loader2, Image, AlertTriangle } from 'lucide-react'
 import Announcements from './dashboard/Announcements'
 import ContestWidget from './contest/ContestWidget'
+import GoalsLeaderboardWidget from './dashboard/GoalsLeaderboardWidget'
 
 // ─── Extract domain for favicon fallback ──────────────────────────────────────
 function getDomain(url) {
@@ -470,6 +471,7 @@ export default function Dashboard() {
         {/* Right rail — live contest + important links */}
         <div className="lg:col-span-5 min-w-0 space-y-6">
           <ContestWidget meId={user?.id} />
+          <GoalsLeaderboardWidget meId={user?.id} month={selectedMonth.month} year={selectedMonth.year} />
           <ImportantLinks role={role} />
         </div>
       </div>

@@ -1571,9 +1571,10 @@ function MemberEditModal({ member, onClose, onSaved }) {
 // ─── Daily List — members to reach today ──────────────────────────────────────
 const FILTERS = [
   { k: 'all', label: 'All' },
-  { k: 'onboarding', label: 'Onboarding', match: r => r.trigger_kind === 'day_based' || r.trigger_ref?.startsWith('save') || r.trigger_ref === 'first_session_rough' },
+  { k: 'onboarding', label: 'Onboarding', match: r => r.trigger_kind === 'day_based' },
   { k: 'milestone', label: 'Milestones', match: r => r.trigger_ref?.startsWith('milestone') || r.trigger_ref === 'passport_sticker' },
-  { k: 'reengage', label: 'Re-engagement', match: r => r.trigger_ref?.startsWith('reengage') },
+  // Quiet / at-risk members (incl. first-90 "save fork" and rough first sessions) live here, not in Onboarding.
+  { k: 'reengage', label: 'Re-engagement', match: r => r.trigger_ref?.startsWith('reengage') || r.trigger_ref?.startsWith('save') || r.trigger_ref === 'first_session_rough' },
 ]
 
 // Sub-filters within each core area (shown when that area is selected).
@@ -1583,6 +1584,8 @@ const SUBFILTERS = {
     { k: 're14', label: '14–29 days', match: r => r.trigger_ref === 'reengage_14' },
     { k: 're30', label: '30–59 days', match: r => r.trigger_ref === 'reengage_30' },
     { k: 're60', label: '60+ days', match: r => r.trigger_ref === 'reengage_60' },
+    { k: 'save', label: 'Save fork', match: r => r.trigger_ref?.startsWith('save') },
+    { k: 'first', label: 'Rough first session', match: r => r.trigger_ref === 'first_session_rough' },
   ],
   milestone: [
     { k: 'all', label: 'All' },
@@ -1596,8 +1599,6 @@ const SUBFILTERS = {
   onboarding: [
     { k: 'all', label: 'All' },
     { k: 'day', label: 'Day check-ins', match: r => r.trigger_kind === 'day_based' },
-    { k: 'save', label: 'Save fork', match: r => r.trigger_ref?.startsWith('save') },
-    { k: 'first', label: 'Rough first session', match: r => r.trigger_ref === 'first_session_rough' },
   ],
 }
 
