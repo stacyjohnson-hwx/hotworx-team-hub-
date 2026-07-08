@@ -12,6 +12,26 @@ const supabase = () =>
 const REASONS  = ['non_payment', 'cost', 'not_using', 'no_results', 'moving', 'medical', 'unhappy', 'competitor', 'other']
 const OUTCOMES = ['saved', 'pending', 'cancelled']
 
+// Cancelled people carry a SAIL customer_id + name but no contact info. The member
+// roster (onboarding_members) holds email/phone, so we backfill it — matching by
+// customer_id first, then by normalized name (the cancellation export numbers members
+// differently than the roster, so name is the higher-coverage match). Returns a
+// function row → { email, phone } (nulls when we have nothing on file).
+const normName = (s) => String(s || '').toLowerCase().replace(/\s*-\s*dup$/, '').replace(/\s+/g, ' ').trim()
+async function buildContactLookup(studioId) {
+  const { data } = await supabase().from('onboarding_members')
+    .select('customer_id, full_name, email, phone').eq('studio_id', studioId)
+  const byId = new Map(), byName = new Map()
+  for (const m of data || []) {
+    const email = m.email || null, phone = m.phone || null
+    if (!email && !phone) continue
+    if (m.customer_id) byId.set(String(m.customer_id), { email, phone })
+    const n = normName(m.full_name)
+    if (n && !byName.has(n)) byName.set(n, { email, phone })
+  }
+  return (row) => byId.get(String(row.member_id)) || byName.get(normName(row.member_name)) || { email: null, phone: null }
+}
+
 // Derive the follow-up date + terminal date from the outcome (PRD §3–4).
 // Cancelled → post-cancel learning call 7 days out; Pending → a follow-up date.
 function deriveDates({ outcome, date_requested, follow_up_date }) {
@@ -39,7 +59,11 @@ router.get('/', authenticate, requireStudio, async (req, res) => {
   const userMap = {}
   for (const u of users || []) userMap[u.id] = u.user_metadata?.full_name || u.email?.split('@')[0] || 'Team Member'
 
-  res.json((data || []).map(r => ({ ...r, handled_by_name: r.handled_by ? (userMap[r.handled_by] || 'Team Member') : null })))
+  const contactOf = await buildContactLookup(req.studio.id)
+  res.json((data || []).map(r => {
+    const c = contactOf(r)
+    return { ...r, handled_by_name: r.handled_by ? (userMap[r.handled_by] || 'Team Member') : null, email: c.email, phone: c.phone }
+  }))
 })
 
 // GET /api/cancellations/report  — analytics for the studio
@@ -121,11 +145,16 @@ router.get('/followups', authenticate, requireStudio, async (req, res) => {
   const userMap = {}
   for (const u of users || []) userMap[u.id] = u.user_metadata?.full_name || u.email?.split('@')[0] || 'Team Member'
 
-  res.json((data || []).map(r => ({
-    ...r,
-    handled_by_name: r.handled_by ? (userMap[r.handled_by] || 'Team Member') : null,
-    days_overdue: Math.round((new Date(today) - new Date(r.follow_up_date)) / 86400000),
-  })))
+  const contactOf = await buildContactLookup(req.studio.id)
+  res.json((data || []).map(r => {
+    const c = contactOf(r)
+    return {
+      ...r,
+      handled_by_name: r.handled_by ? (userMap[r.handled_by] || 'Team Member') : null,
+      email: c.email, phone: c.phone,
+      days_overdue: Math.round((new Date(today) - new Date(r.follow_up_date)) / 86400000),
+    }
+  }))
 })
 
 // POST /api/cancellations

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRole } from '@/hooks/useRole'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
-import { UserMinus, Plus, X, Trash2, Edit2, Target, Loader2, Filter, Upload } from 'lucide-react'
+import { UserMinus, Plus, X, Trash2, Edit2, Target, Loader2, Filter, Upload, Phone, MessageSquare, Mail } from 'lucide-react'
 import * as XLSX from 'xlsx'
 
 // Parse a cancelled CSV/Excel to raw header-keyed rows (backend maps the columns).
@@ -589,6 +589,13 @@ export default function CancellationsPage() {
                     {r.member_name}
                     {r.source === 'sail_import' && <span className="ml-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700 align-middle">SAIL</span>}
                     {r.likely_to_return && <span className="ml-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 align-middle">LIKELY TO RETURN</span>}
+                    {(r.phone || r.email) && (
+                      <div className="flex items-center gap-2 mt-1" onClick={e => e.stopPropagation()}>
+                        {r.phone && <a href={`tel:${r.phone}`} title={`Call ${r.phone}`} className="text-gray-400 hover:text-red-600"><Phone size={13} /></a>}
+                        {r.phone && <a href={`sms:${r.phone}`} title={`Text ${r.phone}`} className="text-gray-400 hover:text-red-600"><MessageSquare size={13} /></a>}
+                        {r.email && <a href={`mailto:${r.email}`} title={r.email} className="text-gray-400 hover:text-red-600"><Mail size={13} /></a>}
+                      </div>
+                    )}
                   </td>
                   <td className="px-3 py-2.5 text-gray-600">{fmtDate(r.date_requested)}</td>
                   <td className="px-3 py-2.5 text-gray-600">{labelOf(REASONS, r.cancel_reason)}{r.cancel_reason === 'competitor' && r.competitor_name ? ` · ${r.competitor_name}` : ''}</td>
