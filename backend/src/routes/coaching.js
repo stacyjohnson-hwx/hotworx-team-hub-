@@ -226,4 +226,90 @@ router.post('/actions/:id/push-to-todo', authenticate, requireStudio, requireRol
   res.json({ todo, action_id: req.params.id })
 })
 
+// ═══════════════════════════════════════════════════════════════════════════
+// MEETING AGENDAS
+// Persisted server-side (previously browser-only). Documents are uploaded to
+// the 'coaching-docs' Storage bucket by the client; only their metadata (name,
+// url, path) is stored here in the `documents` jsonb column.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const AGENDA_GUARD = [authenticate, requireStudio, requireRole('owner', 'manager')]
+
+function cleanAgendaBody(b = {}) {
+  return {
+    meeting_type: b.meeting_type || 'manager_meeting',
+    meeting_date: b.meeting_date || null,
+    meeting_time: b.meeting_time || null,
+    title:        (b.title || '').trim(),
+    attendees:    b.attendees || null,
+    items:        Array.isArray(b.items) ? b.items : [],
+    documents:    Array.isArray(b.documents) ? b.documents : [],
+  }
+}
+
+// GET /api/coaching/agendas
+router.get('/agendas', ...AGENDA_GUARD, async (req, res) => {
+  const { data, error } = await supabase()
+    .from('coaching_agendas')
+    .select('*')
+    .eq('studio_id', req.studio.id)
+    .order('meeting_date', { ascending: true, nullsFirst: false })
+    .order('created_at', { ascending: false })
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data || [])
+})
+
+// POST /api/coaching/agendas
+router.post('/agendas', ...AGENDA_GUARD, async (req, res) => {
+  const body = cleanAgendaBody(req.body)
+  if (!body.title) return res.status(400).json({ error: 'title is required' })
+  const { data, error } = await supabase()
+    .from('coaching_agendas')
+    .insert({ ...body, created_by: req.user.id, studio_id: req.studio.id })
+    .select()
+    .single()
+  if (error) return res.status(500).json({ error: error.message })
+  res.status(201).json(data)
+})
+
+// PUT /api/coaching/agendas/:id
+router.put('/agendas/:id', ...AGENDA_GUARD, async (req, res) => {
+  const body = cleanAgendaBody(req.body)
+  if (!body.title) return res.status(400).json({ error: 'title is required' })
+  const { data, error } = await supabase()
+    .from('coaching_agendas')
+    .update({ ...body, updated_at: new Date().toISOString() })
+    .eq('id', req.params.id)
+    .eq('studio_id', req.studio.id)
+    .select()
+    .single()
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data)
+})
+
+// DELETE /api/coaching/agendas/:id — also best-effort removes the agenda's
+// documents from Storage so nothing is orphaned.
+router.delete('/agendas/:id', ...AGENDA_GUARD, async (req, res) => {
+  const db = supabase()
+  const { data: existing } = await db
+    .from('coaching_agendas')
+    .select('documents')
+    .eq('id', req.params.id)
+    .eq('studio_id', req.studio.id)
+    .maybeSingle()
+
+  const paths = (existing?.documents || []).map(d => d.path).filter(Boolean)
+  if (paths.length) {
+    try { await db.storage.from('coaching-docs').remove(paths) } catch (e) { /* non-fatal */ }
+  }
+
+  const { error } = await db
+    .from('coaching_agendas')
+    .delete()
+    .eq('id', req.params.id)
+    .eq('studio_id', req.studio.id)
+  if (error) return res.status(500).json({ error: error.message })
+  res.status(204).end()
+})
+
 module.exports = router

@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
+import { supabase } from '@/lib/supabase'
+import { useStudio } from '@/contexts/StudioContext'
 import {
   MessageSquare, Plus, X, Edit2, Trash2, ChevronDown, ChevronUp,
   CheckSquare, User, Calendar, ArrowRight, Check, AlertCircle, Loader,
@@ -7,51 +9,56 @@ import {
   FileSpreadsheet, File as FileIcon, UploadCloud, Play,
 } from 'lucide-react'
 
-// ─── IndexedDB document store ────────────────────────────────────────────────
-const DB_NAME    = 'hotworx_agenda_docs'
-const DB_STORE   = 'blobs'
-const DB_VERSION = 1
-
-function openDocDB() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION)
-    req.onupgradeneeded = e => e.target.result.createObjectStore(DB_STORE)
-    req.onsuccess  = e => resolve(e.target.result)
-    req.onerror    = e => reject(e.target.error)
-  })
-}
-
-async function saveDocBlob(id, blob) {
-  const db = await openDocDB()
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(DB_STORE, 'readwrite')
-    tx.objectStore(DB_STORE).put(blob, id)
-    tx.oncomplete = resolve
-    tx.onerror    = e => reject(e.target.error)
-  })
-}
-
-async function getDocBlob(id) {
-  const db = await openDocDB()
-  return new Promise((resolve, reject) => {
-    const tx  = db.transaction(DB_STORE, 'readonly')
-    const req = tx.objectStore(DB_STORE).get(id)
-    req.onsuccess = e => resolve(e.target.result)
-    req.onerror   = e => reject(e.target.error)
-  })
-}
-
-async function deleteDocBlob(id) {
-  const db = await openDocDB()
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(DB_STORE, 'readwrite')
-    tx.objectStore(DB_STORE).delete(id)
-    tx.oncomplete = resolve
-    tx.onerror    = e => reject(e.target.error)
-  })
-}
+// ─── Agenda document storage (Supabase Storage: 'coaching-docs' bucket) ───────
+const DOC_BUCKET = 'coaching-docs'
 
 function docId() { return `doc-${Date.now()}-${Math.random().toString(36).slice(2,7)}` }
+
+// Upload a File to Storage and return its saved metadata (stored in the agenda's
+// `documents` jsonb). `path` is kept so the file can be removed later.
+async function uploadAgendaDoc(file, studioId) {
+  const id   = docId()
+  const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+  const path = `${studioId || 'unknown'}/${id}-${safe}`
+  const { error } = await supabase.storage.from(DOC_BUCKET).upload(path, file, {
+    upsert: false, contentType: file.type,
+  })
+  if (error) throw error
+  const { data: { publicUrl } } = supabase.storage.from(DOC_BUCKET).getPublicUrl(path)
+  return { id, name: file.name, size: file.size, type: file.type, url: publicUrl, path, uploaded_at: new Date().toISOString() }
+}
+
+async function removeAgendaDoc(path) {
+  if (!path) return
+  try { await supabase.storage.from(DOC_BUCKET).remove([path]) } catch { /* non-fatal */ }
+}
+
+// ─── Map between the API row (snake_case) and the shape the UI components use ──
+function agendaFromApi(a) {
+  return {
+    id:          a.id,
+    meetingType: a.meeting_type,
+    meetingDate: a.meeting_date,
+    meetingTime: a.meeting_time,
+    title:       a.title,
+    attendees:   a.attendees || '',
+    items:       Array.isArray(a.items) ? a.items : [],
+    documents:   Array.isArray(a.documents) ? a.documents : [],
+    createdAt:   a.created_at,
+    updatedAt:   a.updated_at,
+  }
+}
+function agendaToApi(a) {
+  return {
+    meeting_type: a.meetingType,
+    meeting_date: a.meetingDate || null,
+    meeting_time: a.meetingTime || null,
+    title:        a.title,
+    attendees:    a.attendees || null,
+    items:        a.items || [],
+    documents:    a.documents || [],
+  }
+}
 
 function fmtFileSize(bytes) {
   if (bytes < 1024)        return `${bytes} B`
@@ -107,14 +114,7 @@ function getMeetingType(value) {
   return MEETING_TYPES[0]
 }
 
-// ─── Agenda localStorage ──────────────────────────────────────────────────────
-const AGENDAS_KEY = 'coaching_agendas'
-function loadAgendas() {
-  try { return JSON.parse(localStorage.getItem(AGENDAS_KEY) || '[]') } catch { return [] }
-}
-function saveAgendas(list) {
-  try { localStorage.setItem(AGENDAS_KEY, JSON.stringify(list)) } catch {}
-}
+// ─── Agenda helpers ───────────────────────────────────────────────────────────
 function uid() { return `${Date.now()}-${Math.random().toString(36).slice(2,6)}` }
 function makeItem(text, isDefault = false) {
   return { id: uid(), text, checked: false, isDefault }
@@ -179,7 +179,9 @@ function relativeMeetingLabel(dateStr) {
 function AgendaModal({ agenda, onSave, onClose }) {
   const isNew     = !agenda
   const fileInput = useRef(null)
+  const { currentStudio } = useStudio()
   const [isDragging, setIsDragging] = useState(false)
+  const [uploadError, setUploadError] = useState('')
 
   const [meetingType,  setMeetingType]  = useState(agenda?.meetingType || 'manager_meeting')
   const [meetingDate,  setMeetingDate]  = useState(agenda?.meetingDate || todayStr())
@@ -239,7 +241,7 @@ function AgendaModal({ agenda, onSave, onClose }) {
 
   async function removeExisting(docMeta) {
     setExistingDocs(prev => prev.filter(d => d.id !== docMeta.id))
-    try { await deleteDocBlob(docMeta.id) } catch {}
+    await removeAgendaDoc(docMeta.path)
   }
 
   function handleDrop(e) {
@@ -250,18 +252,15 @@ function AgendaModal({ agenda, onSave, onClose }) {
   async function handleSave() {
     if (!title.trim()) return
     setSaving(true)
+    setUploadError('')
     try {
-      // Persist pending file blobs to IndexedDB
+      // Upload pending files to Storage, keeping their metadata for the agenda.
       const newDocMeta = await Promise.all(
-        pendingFiles.map(async (file) => {
-          const id = docId()
-          await saveDocBlob(id, file)
-          return { id, name: file.name, size: file.size, type: file.type, uploadedAt: new Date().toISOString() }
-        })
+        pendingFiles.map(file => uploadAgendaDoc(file, currentStudio?.id))
       )
       const allDocs = [...existingDocs, ...newDocMeta]
-      onSave({
-        id:          agenda?.id || uid(),
+      await onSave({
+        id:          agenda?.id || null,
         meetingType,
         meetingDate,
         meetingTime: meetingTime.trim() || null,
@@ -269,10 +268,10 @@ function AgendaModal({ agenda, onSave, onClose }) {
         attendees:   attendees.trim(),
         items:       items.filter(i => i.text.trim()),
         documents:   allDocs,
-        createdAt:   agenda?.createdAt || new Date().toISOString(),
-        updatedAt:   new Date().toISOString(),
       })
       onClose()
+    } catch (err) {
+      setUploadError(err?.message || 'Could not save. Please try again.')
     } finally {
       setSaving(false)
     }
@@ -478,7 +477,12 @@ function AgendaModal({ agenda, onSave, onClose }) {
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end gap-3 px-5 py-4 border-t border-gray-200 bg-gray-50 rounded-b-xl flex-shrink-0">
+        <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-gray-200 bg-gray-50 rounded-b-xl flex-shrink-0">
+          {uploadError && (
+            <span className="mr-auto text-xs text-red-600 flex items-center gap-1.5">
+              <AlertCircle size={13} /> {uploadError}
+            </span>
+          )}
           <button type="button" onClick={onClose}
             className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 font-medium">
             Cancel
@@ -498,7 +502,6 @@ function AgendaModal({ agenda, onSave, onClose }) {
 function AgendaCard({ agenda, onEdit, onDelete, onToggleItem, onRemoveDoc, onConvert }) {
   const [expanded,      setExpanded]      = useState(true)
   const [confirmDelete, setConfirmDelete] = useState(false)
-  const [downloading,   setDownloading]   = useState(null)
 
   const mt           = getMeetingType(agenda.meetingType)
   const checkedCount = agenda.items.filter(i => i.checked).length
@@ -506,18 +509,9 @@ function AgendaCard({ agenda, onEdit, onDelete, onToggleItem, onRemoveDoc, onCon
   const allDone      = total > 0 && checkedCount === total
   const docs         = agenda.documents || []
 
-  async function handleDownload(doc) {
-    setDownloading(doc.id)
-    try {
-      const blob = await getDocBlob(doc.id)
-      if (!blob) { alert('File not found — it may have been cleared.'); return }
-      const url = URL.createObjectURL(blob)
-      const a   = Object.assign(document.createElement('a'), { href: url, download: doc.name })
-      document.body.appendChild(a); a.click()
-      setTimeout(() => { URL.revokeObjectURL(url); a.remove() }, 500)
-    } finally {
-      setDownloading(null)
-    }
+  function handleDownload(doc) {
+    if (!doc.url) { alert('File not found.'); return }
+    window.open(doc.url, '_blank', 'noopener')
   }
 
   return (
@@ -619,12 +613,9 @@ function AgendaCard({ agenda, onEdit, onDelete, onToggleItem, onRemoveDoc, onCon
                     <div className="flex items-center gap-1 flex-shrink-0">
                       <button
                         onClick={() => handleDownload(doc)}
-                        disabled={downloading === doc.id}
                         className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                        title="Download">
-                        {downloading === doc.id
-                          ? <Loader size={13} className="animate-spin" />
-                          : <Download size={13} />}
+                        title="Open">
+                        <Download size={13} />
                       </button>
                       <button
                         onClick={() => onRemoveDoc(agenda.id, doc)}
@@ -866,7 +857,10 @@ function ConvertModal({ agenda, onSave, onClose }) {
 
 // ─── Agenda Tab ───────────────────────────────────────────────────────────────
 function AgendaTab({ onConvert }) {
-  const [agendas,      setAgendas]      = useState(() => loadAgendas())
+  const { currentStudio } = useStudio()
+  const [agendas,      setAgendas]      = useState([])
+  const [loading,      setLoading]      = useState(true)
+  const [error,        setError]        = useState('')
   const [modal,        setModal]        = useState(null)   // null | 'new' | agendaObj
   const [convertAgenda,setConvertAgenda]= useState(null)   // agendaObj to convert
   const [typeFilter,   setTypeFilter]   = useState('')
@@ -874,59 +868,90 @@ function AgendaTab({ onConvert }) {
   const [dateTo,       setDateTo]       = useState('')
   const [showFilter,   setShowFilter]   = useState(false)
 
-  useEffect(() => { saveAgendas(agendas) }, [agendas])
+  const load = useCallback(async () => {
+    setLoading(true); setError('')
+    try {
+      const rows = await apiGet('/api/coaching/agendas')
+      setAgendas((rows || []).map(agendaFromApi))
+    } catch (err) {
+      setError('Could not load agendas. ' + (err?.message || ''))
+    } finally {
+      setLoading(false)
+    }
+  }, [])
 
-  function handleSave(data) {
+  useEffect(() => { load() }, [load])
+
+  // Create or update — returns the promise so the modal can await/error.
+  async function handleSave(data) {
+    const payload = agendaToApi(data)
+    const saved = data.id
+      ? await apiPut(`/api/coaching/agendas/${data.id}`, payload)
+      : await apiPost('/api/coaching/agendas', payload)
+    const mapped = agendaFromApi(saved)
     setAgendas(prev => {
-      const idx = prev.findIndex(a => a.id === data.id)
-      if (idx >= 0) { const n = [...prev]; n[idx] = data; return n }
-      return [data, ...prev]
+      const idx = prev.findIndex(a => a.id === mapped.id)
+      if (idx >= 0) { const n = [...prev]; n[idx] = mapped; return n }
+      return [mapped, ...prev]
     })
     setModal(null)
   }
 
-  function handleDelete(id) {
-    const agenda = agendas.find(a => a.id === id)
-    if (agenda?.documents) {
-      agenda.documents.forEach(doc => deleteDocBlob(doc.id).catch(() => {}))
+  async function handleDelete(id) {
+    const prev = agendas
+    setAgendas(cur => cur.filter(a => a.id !== id))   // optimistic
+    try {
+      await apiDelete(`/api/coaching/agendas/${id}`)  // backend also removes its docs from Storage
+    } catch (err) {
+      setAgendas(prev)                                // revert on failure
+      setError('Could not delete the agenda. ' + (err?.message || ''))
     }
-    setAgendas(prev => prev.filter(a => a.id !== id))
+  }
+
+  // Persist a mutated agenda (toggle item / remove doc) via PUT, with optimistic UI.
+  async function persistAgenda(next) {
+    setAgendas(cur => cur.map(a => (a.id === next.id ? next : a)))
+    try {
+      const saved = await apiPut(`/api/coaching/agendas/${next.id}`, agendaToApi(next))
+      setAgendas(cur => cur.map(a => (a.id === next.id ? agendaFromApi(saved) : a)))
+    } catch {
+      load()   // resync from server on failure
+    }
   }
 
   function handleToggleItem(agendaId, itemId) {
-    setAgendas(prev => prev.map(a => {
-      if (a.id !== agendaId) return a
-      return { ...a, items: a.items.map(i => i.id === itemId ? { ...i, checked: !i.checked } : i) }
-    }))
+    const a = agendas.find(x => x.id === agendaId)
+    if (!a) return
+    persistAgenda({ ...a, items: a.items.map(i => i.id === itemId ? { ...i, checked: !i.checked } : i) })
   }
 
   function handleRemoveDoc(agendaId, doc) {
-    deleteDocBlob(doc.id).catch(() => {})
-    setAgendas(prev => prev.map(a =>
-      a.id !== agendaId ? a : { ...a, documents: (a.documents || []).filter(d => d.id !== doc.id) }
-    ))
+    const a = agendas.find(x => x.id === agendaId)
+    if (!a) return
+    removeAgendaDoc(doc.path)
+    persistAgenda({ ...a, documents: (a.documents || []).filter(d => d.id !== doc.id) })
   }
 
-  function handleConvertSave(savedSession) {
+  async function handleConvertSave(savedSession) {
     const converted = convertAgenda
-    // Remove the agenda (it's now session notes)
-    handleDelete(converted.id)
     setConvertAgenda(null)
-    // For recurring meeting types, auto-create next week's agenda at the same time,
-    // carrying the standing agenda items forward (unchecked, no documents).
+    // The agenda is now session notes — remove it.
+    if (converted) await handleDelete(converted.id)
+    // For recurring meeting types, auto-create next week's agenda at the same
+    // time, carrying the standing items forward (unchecked, no documents).
     if (converted && RECURRING_TYPES.includes(converted.meetingType)) {
-      const next = {
-        id:          uid(),
-        meetingType: converted.meetingType,
-        meetingDate: addDaysStr(converted.meetingDate, 7),
-        meetingTime: converted.meetingTime || null,
-        title:       converted.title,
-        attendees:   converted.attendees || '',
-        items:       (converted.items || []).map(i => ({ id: uid(), text: i.text, checked: false, isDefault: i.isDefault })),
-        documents:   [],
-        createdAt:   new Date().toISOString(),
-      }
-      setAgendas(prev => [next, ...prev])
+      try {
+        const saved = await apiPost('/api/coaching/agendas', agendaToApi({
+          meetingType: converted.meetingType,
+          meetingDate: addDaysStr(converted.meetingDate, 7),
+          meetingTime: converted.meetingTime || null,
+          title:       converted.title,
+          attendees:   converted.attendees || '',
+          items:       (converted.items || []).map(i => ({ id: uid(), text: i.text, checked: false, isDefault: i.isDefault })),
+          documents:   [],
+        }))
+        setAgendas(prev => [agendaFromApi(saved), ...prev])
+      } catch { /* non-fatal: the follow-up agenda just isn't auto-created */ }
     }
     // Bubble up so CoachingPage can switch to Session Notes tab
     onConvert(savedSession)
@@ -1039,8 +1064,18 @@ function AgendaTab({ onConvert }) {
         </div>
       )}
 
+      {error && (
+        <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3 flex items-center gap-2">
+          <AlertCircle size={15} /> {error}
+        </div>
+      )}
+
       {/* ── List ── */}
-      {visible.length === 0 ? (
+      {loading ? (
+        <div className="flex items-center justify-center py-20 text-gray-400">
+          <Loader size={22} className="animate-spin" />
+        </div>
+      ) : visible.length === 0 ? (
         <div className="text-center py-20 text-gray-400">
           <ClipboardList size={40} className="mx-auto mb-3 opacity-30" />
           {sorted.length === 0 ? (
