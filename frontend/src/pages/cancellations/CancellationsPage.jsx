@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRole } from '@/hooks/useRole'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
-import { UserMinus, Plus, X, Trash2, Edit2, Target, Loader2, Filter, Upload, Phone, MessageSquare, Mail } from 'lucide-react'
+import { UserMinus, Plus, X, Trash2, Edit2, Target, Loader2, Filter, Upload, Phone, MessageSquare, Mail, Dumbbell } from 'lucide-react'
 import * as XLSX from 'xlsx'
 
 // Parse a cancelled CSV/Excel to raw header-keyed rows (backend maps the columns).
@@ -594,6 +594,14 @@ export default function CancellationsPage() {
                         {r.phone && <a href={`tel:${r.phone}`} title={`Call ${r.phone}`} className="text-gray-400 hover:text-red-600"><Phone size={13} /></a>}
                         {r.phone && <a href={`sms:${r.phone}`} title={`Text ${r.phone}`} className="text-gray-400 hover:text-red-600"><MessageSquare size={13} /></a>}
                         {r.email && <a href={`mailto:${r.email}`} title={r.email} className="text-gray-400 hover:text-red-600"><Mail size={13} /></a>}
+                      </div>
+                    )}
+                    {r.total_sessions != null && (
+                      <div className="text-[11px] text-gray-400 font-normal mt-0.5">
+                        <Dumbbell size={11} className="inline align-[-1px] mr-1 text-gray-400" />
+                        {r.total_sessions} session{r.total_sessions === 1 ? '' : 's'}
+                        {r.workouts_tried != null ? ` · ${r.workouts_tried}/12 workouts` : ''}
+                        {r.last_booking_date ? ` · last ${fmtDate(r.last_booking_date)}` : ''}
                       </div>
                     )}
                   </td>

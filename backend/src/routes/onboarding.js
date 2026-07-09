@@ -726,11 +726,20 @@ router.get('/reconcile/suggestions', authenticate, requireStudio, requireRole('o
   res.json(out)
 })
 
-// Apply approved matches: create a cancelled member per email + link its bookings.
+// Apply approved matches: create a cancelled member per email + link its bookings +
+// ensure they appear in the Cancellations & Saves section (link to an existing record,
+// or create one so their save workflow lives alongside their workout history).
 router.post('/reconcile/apply', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const matches = Array.isArray(req.body.matches) ? req.body.matches : []
   const supabase = db(); const sid = req.studio.id
-  let reconciled = 0, linked = 0
+  const normName = (s) => String(s || '').toLowerCase().replace(/\s*-\s*dup$/, '').replace(/\s+/g, ' ').trim()
+
+  // Snapshot existing cancellation records so we only create what's genuinely missing.
+  const { data: existingCanc } = await supabase.from('cancellation_log').select('member_id, member_name').eq('studio_id', sid)
+  const cancIds = new Set((existingCanc || []).map(c => String(c.member_id)))
+  const cancNames = new Set((existingCanc || []).map(c => normName(c.member_name)))
+
+  let reconciled = 0, linked = 0, cancellationsCreated = 0
   for (const m of matches) {
     const email = String(m.email || '').trim().toLowerCase()
     if (!email) continue
@@ -746,8 +755,29 @@ router.post('/reconcile/apply', authenticate, requireStudio, requireRole('owner'
       .update({ member_id: mem.id })
       .eq('studio_id', sid).is('member_id', null).eq('member_email', email).select('booking_id')
     linked += (upd || []).length
+
+    // Ensure a Cancellations & Saves record exists (auto-link + create if missing).
+    const nm = normName(m.full_name || email)
+    const already = cancIds.has(`MANUAL_${email}`) || (nm && cancNames.has(nm))
+    if (!already) {
+      // Approximate the cancel date with their last workout so the follow-up cadence is sane.
+      const { data: lastBk } = await supabase.from('onboarding_bookings')
+        .select('booking_date').eq('studio_id', sid).eq('member_id', mem.id)
+        .order('booking_date', { ascending: false }).limit(1).maybeSingle()
+      const reqDate = lastBk?.booking_date || todayInChicago()
+      const followUp = (() => { const d = new Date(reqDate + 'T00:00:00'); d.setDate(d.getDate() + 7); return d.toISOString().split('T')[0] })()
+      const { error: cErr } = await supabase.from('cancellation_log').upsert({
+        studio_id: sid, member_name: m.full_name || email, member_id: `MANUAL_${email}`,
+        date_requested: reqDate, cancel_reason: 'other',
+        reason_notes: 'Reconciled from workout history — set the reason when you work the save',
+        outcome: 'cancelled', win_back_step: 'call_scheduled', follow_up_date: followUp,
+        offers_presented: [], offer_accepted: 'none', goal_recaptured: false,
+        source: 'reconcile', import_key: `reconcile|${email}`, created_by: req.user.id,
+      }, { onConflict: 'studio_id,import_key', ignoreDuplicates: true })
+      if (!cErr) { cancellationsCreated++; cancIds.add(`MANUAL_${email}`); if (nm) cancNames.add(nm) }
+    }
   }
-  res.json({ reconciled, bookings_linked: linked })
+  res.json({ reconciled, bookings_linked: linked, cancellations_created: cancellationsCreated })
 })
 
 // ─── Cancellation ledger ──────────────────────────────────────────────────────

@@ -12,24 +12,34 @@ const supabase = () =>
 const REASONS  = ['non_payment', 'cost', 'not_using', 'no_results', 'moving', 'medical', 'unhappy', 'competitor', 'other']
 const OUTCOMES = ['saved', 'pending', 'cancelled']
 
-// Cancelled people carry a SAIL customer_id + name but no contact info. The member
-// roster (onboarding_members) holds email/phone, so we backfill it — matching by
-// customer_id first, then by normalized name (the cancellation export numbers members
-// differently than the roster, so name is the higher-coverage match). Returns a
-// function row → { email, phone } (nulls when we have nothing on file).
+// A cancellation record and its member-roster record are the same person split across
+// two tables. This links them so the Cancellations & Saves page can be the single home:
+// it backfills contact info (email/phone) AND workout history (sessions, last visit,
+// workouts tried) onto each cancellation. Match by SAIL customer_id first, then by
+// normalized name (the cancellation export numbers members differently than the roster,
+// so name is the higher-coverage match). Returns row → { email, phone, roster_member_id,
+// total_sessions, visit_days, workouts_tried, last_booking_date } (nulls when unmatched).
 const normName = (s) => String(s || '').toLowerCase().replace(/\s*-\s*dup$/, '').replace(/\s+/g, ' ').trim()
-async function buildContactLookup(studioId) {
-  const { data } = await supabase().from('onboarding_members')
-    .select('customer_id, full_name, email, phone').eq('studio_id', studioId)
+const EMPTY_MEMBER = { email: null, phone: null, roster_member_id: null, total_sessions: null, visit_days: null, workouts_tried: null, last_booking_date: null }
+async function buildMemberLookup(studioId) {
+  const [{ data: members }, { data: activity }] = await Promise.all([
+    supabase().from('onboarding_members').select('id, customer_id, full_name, email, phone').eq('studio_id', studioId),
+    supabase().from('onboarding_member_activity').select('member_id, visit_days, total_sessions, workouts_tried, last_booking_date').eq('studio_id', studioId),
+  ])
+  const actBy = new Map((activity || []).map(a => [a.member_id, a]))
   const byId = new Map(), byName = new Map()
-  for (const m of data || []) {
-    const email = m.email || null, phone = m.phone || null
-    if (!email && !phone) continue
-    if (m.customer_id) byId.set(String(m.customer_id), { email, phone })
+  for (const m of members || []) {
+    const a = actBy.get(m.id) || {}
+    const info = {
+      email: m.email || null, phone: m.phone || null, roster_member_id: m.id,
+      total_sessions: a.total_sessions ?? null, visit_days: a.visit_days ?? null,
+      workouts_tried: a.workouts_tried ?? null, last_booking_date: a.last_booking_date ?? null,
+    }
+    if (m.customer_id) byId.set(String(m.customer_id), info)
     const n = normName(m.full_name)
-    if (n && !byName.has(n)) byName.set(n, { email, phone })
+    if (n && !byName.has(n)) byName.set(n, info)
   }
-  return (row) => byId.get(String(row.member_id)) || byName.get(normName(row.member_name)) || { email: null, phone: null }
+  return (row) => byId.get(String(row.member_id)) || byName.get(normName(row.member_name)) || EMPTY_MEMBER
 }
 
 // Derive the follow-up date + terminal date from the outcome (PRD §3–4).
@@ -59,10 +69,10 @@ router.get('/', authenticate, requireStudio, async (req, res) => {
   const userMap = {}
   for (const u of users || []) userMap[u.id] = u.user_metadata?.full_name || u.email?.split('@')[0] || 'Team Member'
 
-  const contactOf = await buildContactLookup(req.studio.id)
+  const memberOf = await buildMemberLookup(req.studio.id)
   res.json((data || []).map(r => {
-    const c = contactOf(r)
-    return { ...r, handled_by_name: r.handled_by ? (userMap[r.handled_by] || 'Team Member') : null, email: c.email, phone: c.phone }
+    const c = memberOf(r)
+    return { ...r, handled_by_name: r.handled_by ? (userMap[r.handled_by] || 'Team Member') : null, ...c }
   }))
 })
 
@@ -145,13 +155,13 @@ router.get('/followups', authenticate, requireStudio, async (req, res) => {
   const userMap = {}
   for (const u of users || []) userMap[u.id] = u.user_metadata?.full_name || u.email?.split('@')[0] || 'Team Member'
 
-  const contactOf = await buildContactLookup(req.studio.id)
+  const memberOf = await buildMemberLookup(req.studio.id)
   res.json((data || []).map(r => {
-    const c = contactOf(r)
+    const c = memberOf(r)
     return {
       ...r,
       handled_by_name: r.handled_by ? (userMap[r.handled_by] || 'Team Member') : null,
-      email: c.email, phone: c.phone,
+      ...c,
       days_overdue: Math.round((new Date(today) - new Date(r.follow_up_date)) / 86400000),
     }
   }))
