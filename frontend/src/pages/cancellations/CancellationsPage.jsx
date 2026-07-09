@@ -149,6 +149,25 @@ function CancellationForm({ entry, users, currentUserId, onSave, onClose }) {
         <div className="px-6 py-5 space-y-5">
           {error && <div className="bg-red-50 border border-red-300 text-red-700 text-sm rounded-lg px-3 py-2">{error}</div>}
 
+          {entry && entry.total_sessions != null && (
+            <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-600">
+                <span className="font-semibold text-gray-500 flex items-center gap-1"><Dumbbell size={13} /> Workout history</span>
+                <span><b className="text-gray-800">{entry.total_sessions}</b> session{entry.total_sessions === 1 ? '' : 's'}</span>
+                {entry.visit_days != null && <span><b className="text-gray-800">{entry.visit_days}</b> visit-days</span>}
+                {entry.workouts_tried != null && <span><b className="text-gray-800">{entry.workouts_tried}</b>/12 workouts tried</span>}
+                {entry.last_booking_date && <span>last workout <b className="text-gray-800">{fmtDate(entry.last_booking_date)}</b></span>}
+              </div>
+              {(entry.phone || entry.email) && (
+                <div className="flex items-center gap-3 mt-2 pt-2 border-t border-gray-200">
+                  {entry.phone && <a href={`tel:${entry.phone}`} className="flex items-center gap-1 text-xs text-gray-500 hover:text-red-600"><Phone size={12} /> {entry.phone}</a>}
+                  {entry.phone && <a href={`sms:${entry.phone}`} className="flex items-center gap-1 text-xs text-gray-500 hover:text-red-600"><MessageSquare size={12} /> Text</a>}
+                  {entry.email && <a href={`mailto:${entry.email}`} className="flex items-center gap-1 text-xs text-gray-500 hover:text-red-600"><Mail size={12} /> {entry.email}</a>}
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-3">
             <div><label className={lbl}>Member name *</label><input className={input} value={form.member_name} onChange={e => set('member_name', e.target.value)} placeholder="Jane Doe" /></div>
             <div><label className={lbl}>SAIL Member ID</label><input className={input} value={form.member_id} onChange={e => set('member_id', e.target.value)} placeholder="optional" /></div>
@@ -390,6 +409,7 @@ export default function CancellationsPage() {
   const [tab, setTab] = useState('log')   // 'log' | 'report'
   const [sort, setSort] = useState({ key: 'date_requested', dir: 'desc' })
   const [f, setF] = useState({ reason: '', outcome: '', win_back_step: '', handled_by: '' })
+  const [activeOnly, setActiveOnly] = useState(false)  // only cancelled members who were actually working out (10+ sessions)
 
   const load = useCallback(async () => {
     try {
@@ -441,7 +461,8 @@ export default function CancellationsPage() {
     (!f.reason || r.cancel_reason === f.reason) &&
     (!f.outcome || r.outcome === f.outcome) &&
     (!f.win_back_step || r.win_back_step === f.win_back_step) &&
-    (!f.handled_by || r.handled_by === f.handled_by))
+    (!f.handled_by || r.handled_by === f.handled_by) &&
+    (!activeOnly || (r.total_sessions || 0) >= 10))
 
   const SORT_GETTERS = {
     member_name:    r => (r.member_name || '').toLowerCase(),
@@ -560,6 +581,12 @@ export default function CancellationsPage() {
         <select className="text-sm border border-gray-300 rounded-lg px-2.5 py-1.5" value={f.handled_by} onChange={e => setF({ ...f, handled_by: e.target.value })}>
           <option value="">All team</option>{users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
         </select>
+        <button type="button" onClick={() => setActiveOnly(v => !v)}
+          title="Cancelled members who were actually working out — the best win-back calls"
+          className={`flex items-center gap-1.5 text-sm rounded-lg px-2.5 py-1.5 border font-medium ${activeOnly ? 'bg-red-600 text-white border-red-600' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}>
+          <Dumbbell size={14} /> Active before leaving (10+)
+        </button>
+        {activeOnly && <span className="text-xs text-gray-400">{filtered.length} of {rows.length}</span>}
       </div>
 
       {/* Table */}
