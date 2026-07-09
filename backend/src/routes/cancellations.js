@@ -21,10 +21,25 @@ const OUTCOMES = ['saved', 'pending', 'cancelled']
 // total_sessions, visit_days, workouts_tried, last_booking_date } (nulls when unmatched).
 const normName = (s) => String(s || '').toLowerCase().replace(/\s*-\s*dup$/, '').replace(/\s+/g, ' ').trim()
 const EMPTY_MEMBER = { email: null, phone: null, roster_member_id: null, total_sessions: null, visit_days: null, workouts_tried: null, last_booking_date: null }
+// Supabase caps a select at 1000 rows; page through so studios with >1000 members
+// (Pewaukee) don't silently drop people from the lookup.
+async function fetchAll(sb, table, columns, studioId) {
+  const PAGE = 1000
+  let out = [], from = 0
+  for (;;) {
+    const { data, error } = await sb.from(table).select(columns).eq('studio_id', studioId).range(from, from + PAGE - 1)
+    if (error || !data || !data.length) break
+    out = out.concat(data)
+    if (data.length < PAGE) break
+    from += PAGE
+  }
+  return out
+}
 async function buildMemberLookup(studioId) {
-  const [{ data: members }, { data: activity }] = await Promise.all([
-    supabase().from('onboarding_members').select('id, customer_id, full_name, email, phone').eq('studio_id', studioId),
-    supabase().from('onboarding_member_activity').select('member_id, visit_days, total_sessions, workouts_tried, last_booking_date').eq('studio_id', studioId),
+  const sb = supabase()
+  const [members, activity] = await Promise.all([
+    fetchAll(sb, 'onboarding_members', 'id, customer_id, full_name, email, phone', studioId),
+    fetchAll(sb, 'onboarding_member_activity', 'member_id, visit_days, total_sessions, workouts_tried, last_booking_date', studioId),
   ])
   const actBy = new Map((activity || []).map(a => [a.member_id, a]))
   const byId = new Map(), byName = new Map()

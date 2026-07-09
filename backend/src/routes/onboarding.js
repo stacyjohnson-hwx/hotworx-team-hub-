@@ -9,6 +9,25 @@ const { todayInChicago, monthKeyInChicago } = require('../utils/dates')
 
 const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 
+// Supabase caps a single select at 1000 rows. Studios can exceed that (Pewaukee has
+// >1000 members), so page through with .range() to read every row — otherwise
+// studio-wide joins silently drop members past the first 1000 (e.g. workout activity
+// not showing on a member's row).
+async function fetchAllStudio(sb, table, columns, studioId, order) {
+  const PAGE = 1000
+  let out = [], from = 0
+  for (;;) {
+    let q = sb.from(table).select(columns).eq('studio_id', studioId).range(from, from + PAGE - 1)
+    if (order) q = q.order(order.col, { ascending: order.asc })
+    const { data, error } = await q
+    if (error || !data || !data.length) break  // degrade gracefully rather than hang a handler
+    out = out.concat(data)
+    if (data.length < PAGE) break
+    from += PAGE
+  }
+  return out
+}
+
 // Members joining on/after this date are "new members" (journey scope gate, PRD §6.1).
 const LAUNCH_DATE = process.env.ONBOARDING_LAUNCH_DATE || '2026-06-01'
 // Consecutive missing-from-roster imports before a member is flagged for Lead review (PRD §5.2b).
@@ -372,11 +391,13 @@ async function recomputeStudioTrends(supabase, studioId, month, year, isCurrentM
 // ─── GET /api/onboarding/members ──────────────────────────────────────────────
 router.get('/members', authenticate, requireStudio, async (req, res) => {
   const supabase = db()
-  const [{ data: members, error }, { data: activity }] = await Promise.all([
-    supabase.from('onboarding_members').select('*').eq('studio_id', req.studio.id).order('join_date', { ascending: false }),
-    supabase.from('onboarding_member_activity').select('*').eq('studio_id', req.studio.id),
-  ])
-  if (error) return res.status(500).json({ error: error.message })
+  let members, activity
+  try {
+    [members, activity] = await Promise.all([
+      fetchAllStudio(supabase, 'onboarding_members', '*', req.studio.id, { col: 'join_date', asc: false }),
+      fetchAllStudio(supabase, 'onboarding_member_activity', '*', req.studio.id),
+    ])
+  } catch (e) { return res.status(500).json({ error: e.message }) }
   const actMap = new Map((activity || []).map(a => [a.member_id, a]))
   res.json((members || []).map(m => {
     const a = actMap.get(m.id) || {}
@@ -967,9 +988,11 @@ router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
   // Cooldown scales with how cold they are so the coldest are nudged monthly, not weekly.
   const REENGAGE_COOLDOWN = { reengage_14: 10, reengage_30: 14, reengage_60: 30 }  // days
   const logWindow = new Date(Date.now() - 90 * 86400000).toISOString()
-  const [{ data: allMembers }, { data: actAll }, { data: allJourneys }, { data: reengRows }, { data: upcoming }] = await Promise.all([
-    supabase.from('onboarding_members').select('id, full_name, phone, status, is_cancelled, join_date, member_type').eq('studio_id', studioId),
-    supabase.from('onboarding_member_activity').select('member_id, last_booking_date, workouts_tried').eq('studio_id', studioId),
+  const [allMembers, actAll] = await Promise.all([
+    fetchAllStudio(supabase, 'onboarding_members', 'id, full_name, phone, status, is_cancelled, join_date, member_type', studioId),
+    fetchAllStudio(supabase, 'onboarding_member_activity', 'member_id, last_booking_date, workouts_tried', studioId),
+  ])
+  const [{ data: allJourneys }, { data: reengRows }, { data: upcoming }] = await Promise.all([
     supabase.from('onboarding_journeys').select('member_id, status, start_date').eq('studio_id', studioId),
     supabase.from('onboarding_reengage_log').select('member_id, contacted_at, contacted_by').eq('studio_id', studioId).gte('contacted_at', logWindow).order('contacted_at', { ascending: false }),
     supabase.from('events').select('title, start_date').eq('studio_id', studioId).gte('start_date', today).order('start_date').limit(1),
