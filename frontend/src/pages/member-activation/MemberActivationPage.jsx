@@ -1110,6 +1110,8 @@ const MEMBER_TYPE_OPTS = [
   { v: 'pif',        label: 'Paid in full' },
   { v: 'reciprocal', label: 'Reciprocal' },
   { v: 'guest',      label: 'Guest / other' },
+  { v: 'no_show',    label: 'No Show' },
+  { v: 'missed_guest', label: 'Missed Guest' },
   { v: 'member',     label: 'Regular member' },
 ]
 
