@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRole } from '@/hooks/useRole'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
-import { UserMinus, Plus, X, Trash2, Edit2, Target, Loader2, Filter, Upload, Phone, MessageSquare, Mail, Dumbbell } from 'lucide-react'
+import { UserMinus, Plus, X, Trash2, Edit2, Target, Loader2, Filter, Upload, Phone, MessageSquare, Mail, Dumbbell, Search } from 'lucide-react'
 import * as XLSX from 'xlsx'
 
 // Parse a cancelled CSV/Excel to raw header-keyed rows (backend maps the columns).
@@ -462,6 +462,7 @@ export default function CancellationsPage() {
   const [activeOnly, setActiveOnly] = useState(false)  // only cancelled members who were actually working out (10+ sessions)
   const [tierFilter, setTierFilter] = useState('')     // '' | hot | warm | cool | cold
   const [scoreFor, setScoreFor] = useState(null)       // row whose score breakdown is open
+  const [search, setSearch] = useState('')             // free-text: name / email / phone
 
   const load = useCallback(async () => {
     try {
@@ -509,13 +510,15 @@ export default function CancellationsPage() {
     setRows(prev => prev.filter(r => r.id !== id))
   }
 
+  const q = search.trim().toLowerCase()
   const filtered = rows.filter(r =>
     (!f.reason || r.cancel_reason === f.reason) &&
     (!f.outcome || r.outcome === f.outcome) &&
     (!f.win_back_step || r.win_back_step === f.win_back_step) &&
     (!f.handled_by || r.handled_by === f.handled_by) &&
     (!activeOnly || (r.total_sessions || 0) >= 10) &&
-    (!tierFilter || r.winback_tier === tierFilter))
+    (!tierFilter || r.winback_tier === tierFilter) &&
+    (!q || [r.member_name, r.email, r.phone].some(v => String(v || '').toLowerCase().includes(q))))
 
   const SORT_GETTERS = {
     winback_score:  r => r.winback_score ?? -1,
@@ -655,8 +658,14 @@ export default function CancellationsPage() {
         </div>
       )}
 
-      {/* Filters */}
+      {/* Search + filters */}
       <div className="flex gap-2 mb-4 flex-wrap items-center">
+        <div className="relative">
+          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name, email, phone…"
+            className="text-sm border border-gray-300 rounded-lg pl-8 pr-7 py-1.5 w-56 focus:ring-2 focus:ring-red-200 focus:border-red-400 outline-none" />
+          {search && <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-600"><X size={13} /></button>}
+        </div>
         <Filter size={15} className="text-gray-400" />
         <select className="text-sm border border-gray-300 rounded-lg px-2.5 py-1.5" value={f.reason} onChange={e => setF({ ...f, reason: e.target.value })}>
           <option value="">All reasons</option>{REASONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
@@ -681,7 +690,7 @@ export default function CancellationsPage() {
             {TIER_STYLES[t].emoji} {TIER_STYLES[t].label}
           </button>
         ))}
-        {(activeOnly || tierFilter) && <span className="text-xs text-gray-400">{filtered.length} of {rows.length}</span>}
+        {(activeOnly || tierFilter || q) && <span className="text-xs text-gray-400">{filtered.length} of {rows.length}</span>}
       </div>
 
       {/* Table */}
