@@ -91,6 +91,56 @@ const WOULD_RETURN = [
 
 const labelOf = (arr, v) => arr.find(x => x.value === v)?.label || v || '—'
 const fmtDate = s => s ? new Date(s + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
+
+// ── Win-back score tiers (score computed by the backend: winback_score/tier/parts) ──
+const TIER_STYLES = {
+  hot:  { label: 'Hot',  emoji: '🔥', cls: 'bg-red-100 text-red-700 border-red-300' },
+  warm: { label: 'Warm', emoji: '🌤', cls: 'bg-amber-100 text-amber-700 border-amber-300' },
+  cool: { label: 'Cool', emoji: '❄️', cls: 'bg-sky-100 text-sky-700 border-sky-200' },
+  cold: { label: 'Cold', emoji: '', cls: 'bg-gray-100 text-gray-500 border-gray-200' },
+  won:  { label: 'Won',  emoji: '✓', cls: 'bg-green-100 text-green-700 border-green-300' },
+}
+
+function ScorePill({ r, onClick }) {
+  if (r.winback_tier === 'won') {
+    return <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold border ${TIER_STYLES.won.cls}`}>✓ Won</span>
+  }
+  if (r.winback_score == null) return <span className="text-gray-300">—</span>
+  const t = TIER_STYLES[r.winback_tier] || TIER_STYLES.cold
+  return (
+    <button onClick={onClick} title="Why this score? Click for the breakdown"
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold border ${t.cls} hover:ring-1 hover:ring-gray-300`}>
+      {t.emoji && <span className="text-[11px]">{t.emoji}</span>}{r.winback_score}
+    </button>
+  )
+}
+
+// Why-this-score breakdown — lists each component's points.
+function ScoreBreakdown({ row, onClose }) {
+  const t = TIER_STYLES[row.winback_tier] || TIER_STYLES.cold
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-5" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-1">
+          <h3 className="font-bold text-gray-900">{row.member_name}</h3>
+          <button onClick={onClose} className="text-gray-300 hover:text-gray-600"><X size={18} /></button>
+        </div>
+        <p className="text-xs text-gray-500 mb-3">
+          Win-back score <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold border ${t.cls}`}>{t.emoji} {row.winback_score} · {t.label}</span>
+        </p>
+        <div className="divide-y divide-gray-100 text-sm">
+          {(row.winback_parts || []).map((p, i) => (
+            <div key={i} className="flex items-center justify-between py-1.5">
+              <span className="text-gray-600">{p.label}</span>
+              <span className={`font-bold ${p.pts > 0 ? 'text-gray-900' : p.pts < 0 ? 'text-red-600' : 'text-gray-400'}`}>{p.pts > 0 ? `+${p.pts}` : p.pts}</span>
+            </div>
+          ))}
+        </div>
+        <p className="text-[11px] text-gray-400 mt-3">Higher = more likely to win back. Reason, engagement, recency, tenure, how they left, and anything they told us.</p>
+      </div>
+    </div>
+  )
+}
 const fmtMoney = n => `$${Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
 const todayStr = () => new Date().toISOString().split('T')[0]
 const input = 'w-full rounded-lg border border-gray-300 bg-white text-gray-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-500'
@@ -410,6 +460,8 @@ export default function CancellationsPage() {
   const [sort, setSort] = useState({ key: 'date_requested', dir: 'desc' })
   const [f, setF] = useState({ reason: '', outcome: '', win_back_step: '', handled_by: '' })
   const [activeOnly, setActiveOnly] = useState(false)  // only cancelled members who were actually working out (10+ sessions)
+  const [tierFilter, setTierFilter] = useState('')     // '' | hot | warm | cool | cold
+  const [scoreFor, setScoreFor] = useState(null)       // row whose score breakdown is open
 
   const load = useCallback(async () => {
     try {
@@ -462,9 +514,11 @@ export default function CancellationsPage() {
     (!f.outcome || r.outcome === f.outcome) &&
     (!f.win_back_step || r.win_back_step === f.win_back_step) &&
     (!f.handled_by || r.handled_by === f.handled_by) &&
-    (!activeOnly || (r.total_sessions || 0) >= 10))
+    (!activeOnly || (r.total_sessions || 0) >= 10) &&
+    (!tierFilter || r.winback_tier === tierFilter))
 
   const SORT_GETTERS = {
+    winback_score:  r => r.winback_score ?? -1,
     member_name:    r => (r.member_name || '').toLowerCase(),
     date_requested: r => r.date_requested || '',
     cancel_reason:  r => labelOf(REASONS, r.cancel_reason),
@@ -491,6 +545,13 @@ export default function CancellationsPage() {
   const followUps = rows
     .filter(r => ['pending', 'cancelled'].includes(r.outcome) && !r.date_resolved && r.follow_up_date && r.follow_up_date <= todayLocal)
     .sort((a, b) => (a.follow_up_date || '').localeCompare(b.follow_up_date || ''))
+
+  // 🔥 Hottest win-backs — best unresolved leads by score (only shown while genuinely warm+).
+  const hotList = rows
+    .filter(r => r.winback_score != null && r.winback_tier !== 'won' && !r.date_resolved)
+    .sort((a, b) => b.winback_score - a.winback_score)
+    .slice(0, 6)
+    .filter(r => r.winback_score >= 45)
 
   if (loading) return <div className="flex items-center justify-center h-64"><div className="w-8 h-8 border-2 border-red-600 border-t-transparent rounded-full animate-spin" /></div>
 
@@ -566,6 +627,34 @@ export default function CancellationsPage() {
         </div>
       )}
 
+      {/* 🔥 Hottest win-backs — the best calls to make right now */}
+      {hotList.length > 0 && (
+        <div className="mb-5 bg-gradient-to-br from-red-50 to-orange-50 border border-red-200 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-2.5">
+            <h3 className="text-sm font-bold text-red-900">🔥 Hottest win-backs</h3>
+            <span className="text-xs text-red-400">most likely to come back — call these first</span>
+          </div>
+          <div className="space-y-1.5">
+            {hotList.map(r => (
+              <button key={r.id} onClick={() => setModal(r)}
+                className="w-full flex items-center gap-3 text-left bg-white border border-red-100 hover:border-red-300 rounded-lg px-3 py-2 transition-colors">
+                <ScorePill r={r} onClick={(e) => { e.stopPropagation(); setScoreFor(r) }} />
+                <span className="font-semibold text-gray-900 text-sm flex-1 min-w-0 truncate">{r.member_name}</span>
+                <span className="text-xs text-gray-500 hidden sm:inline">{labelOf(REASONS, r.cancel_reason)}</span>
+                {r.monthly_payment != null && <span className="text-xs font-semibold text-gray-600 hidden md:inline">worth ${r.monthly_payment}/mo</span>}
+                {(r.phone || r.email) && (
+                  <span className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                    {r.phone && <a href={`tel:${r.phone}`} title={`Call ${r.phone}`} className="text-gray-400 hover:text-red-600"><Phone size={14} /></a>}
+                    {r.phone && <a href={`sms:${r.phone}`} title={`Text ${r.phone}`} className="text-gray-400 hover:text-red-600"><MessageSquare size={14} /></a>}
+                    {r.email && <a href={`mailto:${r.email}`} title={r.email} className="text-gray-400 hover:text-red-600"><Mail size={14} /></a>}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Filters */}
       <div className="flex gap-2 mb-4 flex-wrap items-center">
         <Filter size={15} className="text-gray-400" />
@@ -586,7 +675,13 @@ export default function CancellationsPage() {
           className={`flex items-center gap-1.5 text-sm rounded-lg px-2.5 py-1.5 border font-medium ${activeOnly ? 'bg-red-600 text-white border-red-600' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}>
           <Dumbbell size={14} /> Active before leaving (10+)
         </button>
-        {activeOnly && <span className="text-xs text-gray-400">{filtered.length} of {rows.length}</span>}
+        {['hot', 'warm', 'cool', 'cold'].map(t => (
+          <button key={t} type="button" onClick={() => setTierFilter(v => v === t ? '' : t)}
+            className={`text-xs font-semibold rounded-lg px-2.5 py-1.5 border ${tierFilter === t ? TIER_STYLES[t].cls + ' ring-1 ring-gray-300' : 'border-gray-300 text-gray-500 hover:bg-gray-50'}`}>
+            {TIER_STYLES[t].emoji} {TIER_STYLES[t].label}
+          </button>
+        ))}
+        {(activeOnly || tierFilter) && <span className="text-xs text-gray-400">{filtered.length} of {rows.length}</span>}
       </div>
 
       {/* Table */}
@@ -595,6 +690,7 @@ export default function CancellationsPage() {
           <thead className="bg-gray-50 border-b border-gray-200 text-gray-500 text-xs uppercase tracking-wide select-none">
             <tr>
               <th className="text-left px-4 py-2.5 font-semibold cursor-pointer hover:text-gray-700" onClick={() => sortBy('member_name')}>Member{arrow('member_name')}</th>
+              <th className="text-left px-3 py-2.5 font-semibold cursor-pointer hover:text-gray-700" onClick={() => sortBy('winback_score')} title="Win-back likelihood, 0–100">Score{arrow('winback_score')}</th>
               <th className="text-left px-3 py-2.5 font-semibold cursor-pointer hover:text-gray-700" onClick={() => sortBy('date_requested')}>Requested{arrow('date_requested')}</th>
               <th className="text-left px-3 py-2.5 font-semibold cursor-pointer hover:text-gray-700" onClick={() => sortBy('cancel_reason')}>Reason{arrow('cancel_reason')}</th>
               <th className="text-left px-3 py-2.5 font-semibold cursor-pointer hover:text-gray-700" onClick={() => sortBy('package_name')}>Package{arrow('package_name')}</th>
@@ -607,7 +703,7 @@ export default function CancellationsPage() {
           </thead>
           <tbody className="divide-y divide-gray-100">
             {sorted.length === 0 ? (
-              <tr><td colSpan={9} className="text-center text-gray-400 py-12">No cancellations logged yet.</td></tr>
+              <tr><td colSpan={10} className="text-center text-gray-400 py-12">No cancellations logged yet.</td></tr>
             ) : sorted.map(r => {
               const oc = OUTCOMES.find(o => o.value === r.outcome)
               return (
@@ -632,6 +728,9 @@ export default function CancellationsPage() {
                       </div>
                     )}
                   </td>
+                  <td className="px-3 py-2.5" onClick={e => e.stopPropagation()}>
+                    <ScorePill r={r} onClick={() => setScoreFor(r)} />
+                  </td>
                   <td className="px-3 py-2.5 text-gray-600">{fmtDate(r.date_requested)}</td>
                   <td className="px-3 py-2.5 text-gray-600">{labelOf(REASONS, r.cancel_reason)}{r.cancel_reason === 'competitor' && r.competitor_name ? ` · ${r.competitor_name}` : ''}</td>
                   <td className="px-3 py-2.5 text-gray-600 text-xs">{r.package_name || '—'}{r.monthly_payment != null ? ` · $${r.monthly_payment}/mo` : ''}</td>
@@ -654,6 +753,7 @@ export default function CancellationsPage() {
       {modal !== null && (
         <CancellationForm entry={modal || null} users={users} currentUserId={me} onSave={onSaved} onClose={() => setModal(null)} />
       )}
+      {scoreFor && <ScoreBreakdown row={scoreFor} onClose={() => setScoreFor(null)} />}
     </div>
   )
 }

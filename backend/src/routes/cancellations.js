@@ -5,6 +5,7 @@ const { requireRole } = require('../middleware/roleGuard')
 const { requireStudio } = require('../middleware/studioMiddleware')
 const authenticate = require('../middleware/authMiddleware')
 const { todayInChicago } = require('../utils/dates')
+const { scoreWinback } = require('../services/winbackScore')
 
 const supabase = () =>
   createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
@@ -85,9 +86,14 @@ router.get('/', authenticate, requireStudio, async (req, res) => {
   for (const u of users || []) userMap[u.id] = u.user_metadata?.full_name || u.email?.split('@')[0] || 'Team Member'
 
   const memberOf = await buildMemberLookup(req.studio.id)
+  const today = todayInChicago()
   res.json((data || []).map(r => {
-    const c = memberOf(r)
-    return { ...r, handled_by_name: r.handled_by ? (userMap[r.handled_by] || 'Team Member') : null, ...c }
+    const merged = { ...r, ...memberOf(r) }
+    return {
+      ...merged,
+      handled_by_name: r.handled_by ? (userMap[r.handled_by] || 'Team Member') : null,
+      ...scoreWinback(merged, today),   // winback_score / winback_tier / winback_parts
+    }
   }))
 })
 
@@ -172,11 +178,11 @@ router.get('/followups', authenticate, requireStudio, async (req, res) => {
 
   const memberOf = await buildMemberLookup(req.studio.id)
   res.json((data || []).map(r => {
-    const c = memberOf(r)
+    const merged = { ...r, ...memberOf(r) }
     return {
-      ...r,
+      ...merged,
       handled_by_name: r.handled_by ? (userMap[r.handled_by] || 'Team Member') : null,
-      ...c,
+      ...scoreWinback(merged, today),
       days_overdue: Math.round((new Date(today) - new Date(r.follow_up_date)) / 86400000),
     }
   }))
