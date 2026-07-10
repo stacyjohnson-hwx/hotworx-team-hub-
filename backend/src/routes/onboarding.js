@@ -1002,7 +1002,7 @@ router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
   const REENGAGE_COOLDOWN = { reengage_14: 10, reengage_30: 14, reengage_60: 30 }  // days
   const logWindow = new Date(Date.now() - 90 * 86400000).toISOString()
   const [allMembers, actAll] = await Promise.all([
-    fetchAllStudio(supabase, 'onboarding_members', 'id, full_name, phone, status, is_cancelled, join_date, member_type', studioId),
+    fetchAllStudio(supabase, 'onboarding_members', 'id, full_name, phone, status, is_cancelled, join_date, member_type, lead_status', studioId),
     fetchAllStudio(supabase, 'onboarding_member_activity', 'member_id, last_booking_date, workouts_tried', studioId),
   ])
   const [{ data: allJourneys }, { data: reengRows }, { data: upcoming }] = await Promise.all([
@@ -1080,6 +1080,28 @@ router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
     })
   }
 
+  // Missed guests (SAIL "Be Back" leads): a be-back call/text, excluding Do Not Call,
+  // on the same contact cooldown as re-engagement so the team isn't nagging weekly.
+  const MISSED_COOLDOWN = 21  // days
+  const mgTpl = tplMap.get('missed_guest') || {}
+  for (const mm of (allMembers || [])) {
+    if (mm.member_type !== 'missed_guest') continue
+    if (/do\s*not\s*call/i.test(mm.lead_status || '')) continue
+    if (dismissedSet.has(mm.id)) continue
+    const lastContact = lastContactMap.get(mm.id)
+    if (lastContact && Math.floor((Date.now() - new Date(lastContact).getTime()) / 86400000) < MISSED_COOLDOWN) continue
+    const ctx = { first_name: firstName(mm.full_name), event_name: eventName }
+    items.push({
+      id: `missed:${mm.id}`, kind: 'missed_guest', member_id: mm.id,
+      member_name: mm.full_name || ctx.first_name, phone: mm.phone || null,
+      channel: mgTpl.channel || 'text', label: mgTpl.label || 'Missed guest — invite back',
+      trigger_kind: 'lead', trigger_ref: 'missed_guest', priority: 9, reward_key: null,
+      script: renderTemplate(mgTpl.body || "Hi {first_name}! We'd love to see you back at HOTWORX — come in for a free workout this week! 🔥", ctx),
+      due_date: today, last_booking_date: lastBookMap.get(mm.id) || null, days_lapsed: null,
+      last_contacted_at: lastContact || null, attempts: attemptsMap.get(mm.id) || 0,
+    })
+  }
+
   // The scheduled day-based touches (Day 0/2/5/21/30/60/90) now live in the New
   // Members roster + journey checklist, so keep them off the task feed here.
   items = items.filter(it => it.trigger_kind !== 'day_based')
@@ -1088,6 +1110,7 @@ router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
   // and within each by priority (re-engagement 14→30→60) then due date.
   const catRank = (it) => {
     const r = it.trigger_ref || ''
+    if (r === 'missed_guest') return 3
     if (r.startsWith('reengage')) return 2
     if (r.startsWith('milestone') || r === 'passport_sticker') return 1
     return 0

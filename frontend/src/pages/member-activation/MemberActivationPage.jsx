@@ -1577,6 +1577,7 @@ const FILTERS = [
   { k: 'milestone', label: 'Milestones', match: r => r.trigger_ref?.startsWith('milestone') || r.trigger_ref === 'passport_sticker' },
   // Quiet / at-risk members (incl. first-90 "save fork" and rough first sessions) live here, not in Onboarding.
   { k: 'reengage', label: 'Re-engagement', match: r => r.trigger_ref?.startsWith('reengage') || r.trigger_ref?.startsWith('save') || r.trigger_ref === 'first_session_rough' },
+  { k: 'missed_guest', label: 'Missed Guests', match: r => r.trigger_ref === 'missed_guest' },
 ]
 
 // Sub-filters within each core area (shown when that area is selected).
@@ -1670,14 +1671,14 @@ function DailyListTab() {
     if (r.trigger_ref === 'day_2') { setDay2(r); return }   // capture gate first
     drop(r.id)
     try {
-      if (r.kind === 'reengage') await apiPost(`${BASE}/reengage/${r.member_id}/complete`, {})
+      if (r.kind === 'reengage' || r.kind === 'missed_guest') await apiPost(`${BASE}/reengage/${r.member_id}/complete`, {})
       else if (r.kind === 'passport') await apiPost(`${BASE}/passport/${r.member_id}/complete`, { fulfilled: !!fulfil[r.id] })
       else await apiPost(`${BASE}/daily-list/${r.id}/complete`, { fulfilled: !!fulfil[r.id] })
     } catch { /* ignore */ }
   }
   const skip = async (r) => {
     try {
-      if (r.kind === 'reengage') await apiPost(`${BASE}/reengage/${r.member_id}/snooze`, {})  // "not now" — snooze the tier cooldown
+      if (r.kind === 'reengage' || r.kind === 'missed_guest') await apiPost(`${BASE}/reengage/${r.member_id}/snooze`, {})  // "not now" — snooze the cooldown
       else if (r.kind === 'passport') await apiPost(`${BASE}/passport/${r.member_id}/complete`, { fulfilled: false })
       else await apiPost(`${BASE}/daily-list/${r.id}/skip`, {})
     } catch { /* ignore */ }
@@ -1688,7 +1689,7 @@ function DailyListTab() {
     if (!window.confirm("Delete this task? It won't come back.")) return
     setRows(rs => rs.filter(x => x.id !== r.id))
     try {
-      if (r.kind === 'reengage') await apiPost(`${BASE}/reengage/${r.member_id}/dismiss`, {})
+      if (r.kind === 'reengage' || r.kind === 'missed_guest') await apiPost(`${BASE}/reengage/${r.member_id}/dismiss`, {})
       else if (r.kind === 'passport') await apiPost(`${BASE}/passport/${r.member_id}/complete`, { fulfilled: false })
       else await apiPost(`${BASE}/daily-list/${r.id}/skip`, {})
     } catch { /* ignore */ }

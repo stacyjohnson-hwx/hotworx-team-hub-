@@ -54,6 +54,7 @@ const TEMPLATE_DEFAULTS = [
   { template_key: 'reengage_30', label: 'We miss you — 30 days', channel: 'text', body: "Hey {first_name}, it's been a month! We'd love to see you back. {event_name}" },
   { template_key: 'reengage_60', label: 'We miss you — 60+ days', channel: 'call', body: "Call {first_name}: 60+ days since their last visit — at risk. Warm, personal re-invite. {event_name}" },
   { template_key: 'first_session_rough', label: 'Rough first session — priority', channel: 'call', body: "Call {first_name} ASAP: first session flagged rough/no-show. Check in personally, address concerns, re-book. Highest priority." },
+  { template_key: 'missed_guest', label: 'Missed guest — invite back', channel: 'text', body: "Hi {first_name}! We loved having you at HOTWORX Pewaukee 🔥 We'd love to see you back — come in for a free workout this week, our treat! Want me to get you booked?" },
   // Recognition checklist (Cards & Birthdays)
   { template_key: 'thank_you_card', label: 'Thank-you card (new member)', channel: 'card', body: "Write & mail a thank-you card welcoming {first_name} to HOTWORX Pewaukee 🎉" },
   { template_key: 'birthday_text',           label: 'Birthday text — member',     channel: 'text', body: "Happy Birthday, {first_name}! 🎂 Everyone at HOTWORX Pewaukee is wishing you an amazing day — come celebrate with a birthday sweat! 🔥" },
