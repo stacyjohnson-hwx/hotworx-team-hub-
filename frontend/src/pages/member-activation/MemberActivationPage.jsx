@@ -2265,6 +2265,7 @@ function RecognitionTab({ canImport }) {
   const { currentStudio } = useStudio()
   const [sub, setSub] = useState('cards')  // cards | birthdays
   const [monthKey, setMonthKey] = useState(new Date().toISOString().slice(0, 7))
+  const [cardMonth, setCardMonth] = useState('')  // thank-you cards month filter; '' = all months
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [bdayMember, setBdayMember] = useState('Happy Birthday, {first_name}! 🎂')
@@ -2278,7 +2279,7 @@ function RecognitionTab({ canImport }) {
     setLoading(true)
     try {
       if (sub === 'cards') {
-        setRows(await apiGet(`${BASE}/recognition?type=thank_you_card`))
+        setRows(await apiGet(`${BASE}/recognition?type=thank_you_card${cardMonth ? `&month_key=${cardMonth}` : ''}`))
       } else {
         const [b, tpls] = await Promise.all([
           apiGet(`${BASE}/recognition?type=birthday&month_key=${monthKey}`),
@@ -2292,7 +2293,7 @@ function RecognitionTab({ canImport }) {
       }
     } catch { setRows([]) }
     finally { setLoading(false) }
-  }, [sub, monthKey, currentStudio?.id])
+  }, [sub, monthKey, cardMonth, currentStudio?.id])
   useEffect(() => { load() }, [load])
 
   const complete = async (r) => {
@@ -2324,6 +2325,12 @@ function RecognitionTab({ canImport }) {
   const pending = rows.filter(r => r.status === 'pending')
   const doneCount = rows.filter(r => r.status === 'completed').length
   const pct = rows.length ? Math.round(doneCount / rows.length * 100) : 0
+  // Completed cards sink to the bottom (so who's still due is up top), chronological within each group.
+  const sortedRows = [...rows].sort((a, b) => {
+    const ad = a.status === 'completed' ? 1 : 0, bd = b.status === 'completed' ? 1 : 0
+    if (ad !== bd) return ad - bd
+    return (a.ref_date || '').localeCompare(b.ref_date || '')
+  })
 
   return (
     <div>
@@ -2337,6 +2344,17 @@ function RecognitionTab({ canImport }) {
             </button>
           )
         })}
+        {sub === 'cards' && (
+          <>
+            <input type="month" value={cardMonth} onChange={e => setCardMonth(e.target.value)}
+              title="Filter thank-you cards by the month members joined"
+              className="ml-2 border border-gray-300 rounded-lg px-2 py-1.5 text-sm" />
+            {cardMonth && (
+              <button onClick={() => setCardMonth('')}
+                className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50">All months</button>
+            )}
+          </>
+        )}
         {sub === 'birthdays' && (
           <>
             <input type="month" value={monthKey} onChange={e => setMonthKey(e.target.value)}
@@ -2383,7 +2401,7 @@ function RecognitionTab({ canImport }) {
           : 'No birthdays for this month. Upload the birthday list to populate it.'} />
       ) : (
         <div className="space-y-2">
-          {rows.map(r => {
+          {sortedRows.map(r => {
             const done = r.status === 'completed'
             const isBday = sub === 'birthdays'
             const isMemberRow = /^(member|customer|reciprocal member|employee)$/i.test((r.lead_status || '').trim())
