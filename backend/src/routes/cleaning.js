@@ -58,34 +58,35 @@ router.get('/today', async (req, res) => {
   const date = req.query.date || todayInChicago()
   const db = supabase()
 
-  const [tasksRes, completionsRes, recentRes] = await Promise.all([
+  // Week window (Sun–Sat) containing the date — for weekly tasks, completing on any
+  // day that week closes it; it reopens next week.
+  const dObj = new Date(date + 'T00:00:00')
+  const weekStart = new Date(dObj); weekStart.setDate(dObj.getDate() - dObj.getDay())
+  const weekStartStr = weekStart.toISOString().slice(0, 10)
+
+  const [tasksRes, completionsRes, lastRes, weekRes] = await Promise.all([
     db.from('cleaning_tasks').select('*').eq('studio_id', req.studio.id).eq('active', true).order('sort_order').order('created_at'),
     db.from('cleaning_completions').select('*').eq('studio_id', req.studio.id).eq('completion_date', date),
-    // Last 90 days of completions to find "last completed" per task
+    // One row per task = its latest completion ever (view avoids Supabase's 1000-row
+    // cap that was making occasionally-done tasks read "Never completed").
+    db.from('cleaning_last_completion').select('task_id, completion_date, completed_by, completed_at').eq('studio_id', req.studio.id),
+    // This week's completions (small set) to resolve weekly-task status.
     db.from('cleaning_completions').select('task_id, completion_date, completed_by, completed_at')
-      .eq('studio_id', req.studio.id)
-      .order('completed_at', { ascending: false }).limit(2000),
+      .eq('studio_id', req.studio.id).gte('completion_date', weekStartStr).lte('completion_date', date)
+      .order('completed_at', { ascending: false }),
   ])
 
   if (tasksRes.error) return res.status(500).json({ error: tasksRes.error.message })
   if (completionsRes.error) return res.status(500).json({ error: completionsRes.error.message })
 
-  // Build last-completion map: task_id → most recent completion
+  // Last-completion map: task_id → its latest completion (view already returns one per task).
   const lastMap = {}
-  for (const c of (recentRes.data || [])) {
-    if (!lastMap[c.task_id]) lastMap[c.task_id] = c
-  }
+  for (const c of (lastRes.data || [])) lastMap[c.task_id] = c
 
-  // For weekly tasks, "completed" spans the whole week (Sun–Sat) containing the
-  // date — completing on any day that week closes it; it reopens next week.
-  const dObj = new Date(date + 'T00:00:00')
-  const weekStart = new Date(dObj); weekStart.setDate(dObj.getDate() - dObj.getDay())
-  const weekStartStr = weekStart.toISOString().slice(0, 10)
-  const weekCompletionByTask = {}   // task_id → latest completion this week (recentRes is completed_at desc)
-  for (const c of (recentRes.data || [])) {
-    if (c.completion_date >= weekStartStr && c.completion_date <= date && !weekCompletionByTask[c.task_id]) {
-      weekCompletionByTask[c.task_id] = c
-    }
+  // Latest completion this week per task (weekRes is completed_at desc).
+  const weekCompletionByTask = {}
+  for (const c of (weekRes.data || [])) {
+    if (!weekCompletionByTask[c.task_id]) weekCompletionByTask[c.task_id] = c
   }
 
   // Resolve user names for all unique completed_by IDs

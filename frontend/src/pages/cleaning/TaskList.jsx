@@ -28,14 +28,17 @@ const TYPE_COLORS = {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+// Relative label from a completion_date (YYYY-MM-DD, in studio/Chicago time).
+// Compares CALENDAR days against today in Chicago — NOT rolling 24h windows, which
+// made a task closed last night read "today" the next morning.
 function relativeDate(dateStr) {
   if (!dateStr) return null
-  const date = new Date(dateStr)
-  const now = new Date()
-  const diffMs = now - date
-  const diffDays = Math.floor(diffMs / 86400000)
+  const dayStr = String(dateStr).slice(0, 10)   // tolerate a full timestamp too
+  const d = new Date(dayStr + 'T00:00:00')
+  const t = new Date(getTodayCT() + 'T00:00:00')
+  const diffDays = Math.round((t - d) / 86400000)
 
-  if (diffDays === 0) return 'today'
+  if (diffDays <= 0) return 'today'
   if (diffDays === 1) return 'yesterday'
   if (diffDays < 7) return `${diffDays} days ago`
   if (diffDays < 14) return '1 week ago'
@@ -405,7 +408,7 @@ function TaskRow({ task, loading, onToggle, onHistory }) {
             {lc && (
               <span className="flex items-center gap-1 text-xs text-gray-400">
                 <Clock className="w-3 h-3 flex-shrink-0" />
-                {relativeDate(lc.completed_at)} by {lc.by_name}
+                {relativeDate(lc.date || lc.completed_at)} by {lc.by_name}
               </span>
             )}
             {!lc && (
