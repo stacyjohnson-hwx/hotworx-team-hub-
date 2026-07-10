@@ -28,51 +28,35 @@ export function StudioProvider({ children }) {
 
   async function loadStudios() {
     try {
-      console.log('[StudioContext] Starting to load studios...')
+      const userId = session?.user?.id
+      if (!userId) { setLoading(false); return }
 
-      // Check if we have a session
-      const { data: { session } } = await supabase.auth.getSession()
-      console.log('[StudioContext] Session check:', session ? 'Authenticated' : 'Not authenticated', session?.user?.email)
-
-      // First get THIS user's studio memberships. Filter by user_id explicitly —
-      // don't rely on RLS to scope it, or a platform admin (who can read other
-      // memberships) would see franchisee studios (e.g. Charlotte) in their switcher.
+      // THIS user's memberships only. Filter by user_id explicitly — a platform admin
+      // can read other users' memberships, which would otherwise leak franchisee studios
+      // into the switcher and could even auto-select one this user can't access, making
+      // every studio-scoped API call 403 (looks like all their data vanished).
       const { data: userStudios, error: userError } = await supabase
         .from('user_studios')
         .select('role, studio_id')
-        .eq('user_id', session?.user?.id)
-
-      console.log('[StudioContext] user_studios query:', { userStudios, userError })
-
-      if (userError) {
-        console.error('[StudioContext] Error loading user_studios:', userError)
-        console.error('[StudioContext] Error details:', JSON.stringify(userError, null, 2))
-        throw userError
-      }
+        .eq('user_id', userId)
+      if (userError) throw userError
 
       if (!userStudios || userStudios.length === 0) {
-        console.warn('[StudioContext] No studios found for user')
-        setLoading(false)
+        localStorage.removeItem('selectedStudioId')   // never keep an inaccessible studio selected
+        setStudios([]); setCurrentStudio(null); setLoading(false)
         return
       }
 
-      // Then get studio details
       const studioIds = userStudios.map(us => us.studio_id)
       const { data: studios, error: studiosError } = await supabase
         .from('studios')
         .select('*')
         .in('id', studioIds)
-
-      console.log('[StudioContext] studios query:', { studios, studiosError })
-
-      if (studiosError) {
-        console.error('[StudioContext] Error loading studios:', studiosError)
-        throw studiosError
-      }
+      if (studiosError) throw studiosError
 
       if (!studios || studios.length === 0) {
-        console.warn('[StudioContext] No studio details found')
-        setLoading(false)
+        localStorage.removeItem('selectedStudioId')
+        setStudios([]); setCurrentStudio(null); setLoading(false)
         return
       }
 
