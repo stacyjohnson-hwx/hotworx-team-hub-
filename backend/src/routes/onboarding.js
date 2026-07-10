@@ -300,8 +300,10 @@ router.post('/import', authenticate, requireStudio, requireRole('owner', 'manage
     }
 
     // 5) Resolve unmatched bookings → members by email (then phone if present on the row).
-    const { data: memForLink } = await supabase
-      .from('onboarding_members').select('id, email, phone').eq('studio_id', studioId)
+    // Page through ALL members (Supabase caps at 1000) — otherwise members past row
+    // 1000 aren't in the map and their bookings never link (they'd show "unreconciled"
+    // even though they're active members with an email on file).
+    const memForLink = await fetchAllStudio(supabase, 'onboarding_members', 'id, email, phone', studioId)
     const emailToId = new Map(), phoneToId = new Map()
     for (const m of memForLink || []) {
       if (m.email) emailToId.set(String(m.email).trim().toLowerCase(), m.id)
@@ -764,13 +766,24 @@ router.post('/reconcile/apply', authenticate, requireStudio, requireRole('owner'
   for (const m of matches) {
     const email = String(m.email || '').trim().toLowerCase()
     if (!email) continue
-    const { data: mem, error } = await supabase.from('onboarding_members').upsert({
-      studio_id: sid, customer_id: `MANUAL_${email}`, email,
-      full_name: m.full_name || null, member_type: 'member',
-      is_cancelled: true, status: 'Cancelled', is_new_member: false, seen_in_last_import: true,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'studio_id,customer_id' }).select().single()
-    if (error || !mem) continue
+    // Reuse an existing member with this email (even under a real SAIL customer_id)
+    // instead of creating a MANUAL_ duplicate — this is what caused two records for
+    // the same person. Only create a MANUAL_ record when no member has this email.
+    let mem
+    const { data: existing } = await supabase.from('onboarding_members')
+      .select('*').eq('studio_id', sid).ilike('email', email).limit(1).maybeSingle()
+    if (existing) {
+      mem = existing
+    } else {
+      const { data: created, error } = await supabase.from('onboarding_members').upsert({
+        studio_id: sid, customer_id: `MANUAL_${email}`, email,
+        full_name: m.full_name || null, member_type: 'member',
+        is_cancelled: true, status: 'Cancelled', is_new_member: false, seen_in_last_import: true,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'studio_id,customer_id' }).select().single()
+      if (error || !created) continue
+      mem = created
+    }
     reconciled++
     const { data: upd } = await supabase.from('onboarding_bookings')
       .update({ member_id: mem.id })
