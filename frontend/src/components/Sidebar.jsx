@@ -34,6 +34,7 @@ import {
   Award,
   HeartHandshake,
   Trophy,
+  ShieldCheck,
 } from 'lucide-react'
 
 // Sidebar organized into sections. Dashboard is pinned (no header); the footer
@@ -110,6 +111,12 @@ const NAV_SECTIONS = [
       { to: '/advisor',       label: 'AI Advisor',    icon: Sparkles,  roles: ['owner', 'manager'] },
     ],
   },
+  {
+    title: 'Platform',
+    items: [
+      { to: '/admin', label: 'Franchise Admin', icon: ShieldCheck, platformOnly: true },
+    ],
+  },
 ]
 
 function Avatar({ name, avatarUrl, size = 7 }) {
@@ -132,7 +139,7 @@ function Avatar({ name, avatarUrl, size = 7 }) {
 
 export function Sidebar({ onNavigate }) {
   const { user, signOut, profile } = useAuth()
-  const { role } = useRole()
+  const { role, isPlatformAdmin } = useRole()
   const navigate = useNavigate()
 
   const roleLabel = role === 'owner' ? 'Owner' : role === 'manager' ? 'Manager' : 'TSA'
@@ -161,7 +168,7 @@ export function Sidebar({ onNavigate }) {
       <div className="flex-1 overflow-y-auto relative min-h-0">
         <nav className="py-3 px-2">
           {NAV_SECTIONS.map((section, si) => {
-            const items = section.items.filter(item => item.roles.includes(role))
+            const items = section.items.filter(item => item.platformOnly ? isPlatformAdmin : item.roles.includes(role))
             if (!items.length) return null
             return (
               <div key={si} className={section.title ? 'mt-4 first:mt-0' : ''}>

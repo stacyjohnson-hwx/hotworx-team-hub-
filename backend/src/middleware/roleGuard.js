@@ -7,4 +7,12 @@ function requireRole(...roles) {
   }
 }
 
-module.exports = { requireRole }
+// Platform super-admin gate — for cross-studio SaaS provisioning (not studio-scoped).
+function requirePlatformAdmin(req, res, next) {
+  if (!req.isPlatformAdmin) {
+    return res.status(403).json({ error: 'Platform admin only' })
+  }
+  next()
+}
+
+module.exports = { requireRole, requirePlatformAdmin }

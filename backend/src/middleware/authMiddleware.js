@@ -20,6 +20,8 @@ async function authMiddleware(req, res, next) {
 
   req.user = user
   req.role = user.app_metadata?.role ?? null
+  // Platform (SaaS) super-admin — orthogonal to the per-studio owner/manager/tsa role.
+  req.isPlatformAdmin = user.app_metadata?.platform_admin === true
   next()
 }
 

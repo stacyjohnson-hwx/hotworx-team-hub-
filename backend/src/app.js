@@ -60,5 +60,6 @@ app.use('/api/retail/import',       require('./routes/retail-import'))
 app.use('/api/retail/analytics',    require('./routes/retail-analytics'))
 app.use('/api/retail/counts',       require('./routes/retail-counts'))
 app.use('/api/retail',              require('./routes/retail'))
+app.use('/api/admin',               require('./routes/admin'))   // platform super-admin (cross-studio provisioning)
 
 module.exports = app

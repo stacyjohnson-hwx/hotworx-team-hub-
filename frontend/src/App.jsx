@@ -4,6 +4,8 @@ import { MonthProvider } from '@/contexts/MonthContext'
 import { StudioProvider } from '@/contexts/StudioContext'
 import { Layout } from '@/components/Layout'
 import { RoleGuard } from '@/components/RoleGuard'
+import { PlatformAdminGuard } from '@/components/PlatformAdminGuard'
+import AdminPortalPage from '@/pages/admin/AdminPortalPage'
 import LoginPage from '@/pages/auth/LoginPage'
 import Dashboard from '@/pages/Dashboard'
 import CleaningPage from '@/pages/cleaning/CleaningPage'
@@ -174,6 +176,15 @@ function AppRoutes() {
             <RoleGuard allowedRoles={['owner', 'manager']}>
               <UsersPage />
             </RoleGuard>
+          }
+        />
+        {/* Platform super-admin — franchise provisioning */}
+        <Route
+          path="/admin"
+          element={
+            <PlatformAdminGuard>
+              <AdminPortalPage />
+            </PlatformAdminGuard>
           }
         />
         {/* All authenticated users */}

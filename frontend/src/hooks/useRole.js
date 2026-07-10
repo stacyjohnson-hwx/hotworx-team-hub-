@@ -11,6 +11,8 @@ export function useRole() {
     isManager: role === 'manager',
     isTSA: role === 'tsa',
     isOwnerOrManager: role === 'owner' || role === 'manager',
+    // Platform (SaaS) super-admin — provisions new franchisees. Orthogonal to studio role.
+    isPlatformAdmin: user?.app_metadata?.platform_admin === true,
     canEdit: (module) => canEditModule(role, module),
   }
 }
