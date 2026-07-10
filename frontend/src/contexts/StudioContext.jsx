@@ -34,10 +34,13 @@ export function StudioProvider({ children }) {
       const { data: { session } } = await supabase.auth.getSession()
       console.log('[StudioContext] Session check:', session ? 'Authenticated' : 'Not authenticated', session?.user?.email)
 
-      // First get user-studio relationships
+      // First get THIS user's studio memberships. Filter by user_id explicitly —
+      // don't rely on RLS to scope it, or a platform admin (who can read other
+      // memberships) would see franchisee studios (e.g. Charlotte) in their switcher.
       const { data: userStudios, error: userError } = await supabase
         .from('user_studios')
         .select('role, studio_id')
+        .eq('user_id', session?.user?.id)
 
       console.log('[StudioContext] user_studios query:', { userStudios, userError })
 
