@@ -1645,6 +1645,83 @@ function ScriptModal({ item, onClose }) {
   )
 }
 
+// ── Daily-list task helpers (consistent dating + the shared task-log key) ──────
+const dlToday = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' })
+const addDaysToStr = (s, n) => { const d = new Date(s + 'T00:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10) }
+const fmtDay = (s) => s ? new Date(s + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''
+// Stable per-task key for the shared onboarding_touchpoint_log (matches the backend).
+const taskKeyOf = (r) => r.kind === 'reengage' ? 'reengage' : r.kind === 'missed_guest' ? 'missed_guest' : r.trigger_ref === 'passport_sticker' ? 'passport_sticker' : r.trigger_ref
+const defaultFollowUp = (r) => r.kind === 'reengage' ? addDaysToStr(dlToday(), 14) : r.kind === 'missed_guest' ? addDaysToStr(dlToday(), 21) : ''
+
+function DueChip({ r }) {
+  const today = dlToday()
+  if (!r.due_date) return null
+  if (r.overdue) {
+    const d = Math.max(1, Math.floor((new Date(today) - new Date(r.due_date)) / 86400000))
+    return <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-700">Overdue {d}d</span>
+  }
+  if (r.due_date === today) return <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-green-100 text-green-700">Due today</span>
+  return <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">Due {fmtDay(r.due_date)}</span>
+}
+
+// One "Log outreach" modal for every task kind: note + follow-up date + done → /daily-list/log.
+function LogOutreachModal({ item, onNeedDay2, onClose, onSaved }) {
+  const [note, setNote] = useState(item.notes || '')
+  const [followUp, setFollowUp] = useState(item.follow_up_date || '')
+  const [done, setDone] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const save = async () => {
+    // Day-2 requires the goal/photo/consent gate — route there instead of completing here.
+    if (done && item.trigger_ref === 'day_2') { onNeedDay2(item); return }
+    setSaving(true)
+    try {
+      await apiPost(`${BASE}/daily-list/log`, {
+        member_id: item.member_id, task_key: taskKeyOf(item),
+        note, follow_up_date: followUp || null, done, kind: item.kind,
+      })
+      onSaved()
+    } catch (e) { alert('Save failed: ' + (e?.message || 'error')); setSaving(false) }
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-200">
+          <div><h3 className="font-bold text-gray-900">{item.member_name}</h3><p className="text-xs text-gray-500">{item.label}</p></div>
+          <button onClick={onClose} className="text-gray-300 hover:text-gray-600"><X size={18} /></button>
+        </div>
+        <div className="px-5 py-4 space-y-3">
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">Note</label>
+            <textarea value={note} onChange={e => setNote(e.target.value)} rows={3}
+              placeholder="How it went, what they said, next step…"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-red-500/30" />
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex-1">
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Follow-up date</label>
+              <input type="date" value={followUp} onChange={e => setFollowUp(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+            </div>
+            <button type="button" onClick={() => setFollowUp(defaultFollowUp(item) || addDaysToStr(dlToday(), 7))}
+              className="mt-5 text-[11px] font-semibold text-red-600 hover:underline whitespace-nowrap">+default</button>
+          </div>
+          <p className="text-[11px] text-gray-400">A future date snoozes this task until then.</p>
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <input type="checkbox" checked={done} onChange={e => setDone(e.target.checked)} />
+            Mark complete{item.kind === 'reengage' || item.kind === 'missed_guest' ? ' (contacted / resolved)' : ''}
+          </label>
+        </div>
+        <div className="px-5 py-3 border-t border-gray-100 flex justify-end gap-2">
+          <button onClick={onClose} className="px-3 py-1.5 text-sm text-gray-500 hover:text-gray-800">Cancel</button>
+          <button onClick={save} disabled={saving} className="px-4 py-1.5 bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white text-sm font-bold rounded-lg">
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function DailyListTab() {
   const { currentStudio } = useStudio()
   const [rows, setRows] = useState([])
@@ -1658,6 +1735,7 @@ function DailyListTab() {
   const [photosFor, setPhotosFor] = useState(null)  // milestone shout-out: view member's photos
   const [scriptFor, setScriptFor] = useState(null)  // item whose script modal is open
   const [detailFor, setDetailFor] = useState(null)  // member detail modal
+  const [logItem, setLogItem] = useState(null)      // item whose Log-outreach modal is open
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -1715,7 +1793,7 @@ function DailyListTab() {
             {x.label}
           </button>
         ))}
-        {filter !== 'onboarding' && <span className="ml-auto text-xs text-gray-400">{shown.length} to reach</span>}
+        <span className="ml-auto text-xs text-gray-400">{shown.length} to reach</span>
       </div>
       {subs && (
         <div className="flex flex-wrap items-center gap-1.5 mb-4 pl-1">
@@ -1751,11 +1829,16 @@ function DailyListTab() {
                       {r.reward_key && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 flex items-center gap-1"><Trophy size={9} />{r.reward_key.replace(/_/g, ' ')}</span>}
                     </div>
                     <p className="text-xs text-gray-500">{r.label}</p>
-                    {r.trigger_kind === 'day_based' && r.join_date && (
-                      <p className="text-[11px] text-gray-400 mt-0.5">Joined {r.join_date}</p>
-                    )}
+                    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                      <DueChip r={r} />
+                      {r.has_note && (
+                        <button onClick={() => setLogItem(r)} title={r.notes}
+                          className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 flex items-center gap-1"><FileText size={9} /> Note</button>
+                      )}
+                      {r.trigger_kind === 'day_based' && r.join_date && <span className="text-[10px] text-gray-400">joined {fmtDay(r.join_date)}</span>}
+                    </div>
                     {r.last_booking_date && (
-                      <p className="text-[11px] text-gray-400 mt-0.5">Last booking {r.last_booking_date}{r.days_lapsed != null ? ` · ${r.days_lapsed}d ago` : ''}</p>
+                      <p className="text-[11px] text-gray-400 mt-0.5">Last booking {fmtDay(r.last_booking_date)}{r.days_lapsed != null ? ` · ${r.days_lapsed}d ago` : ''}</p>
                     )}
                     {r.kind === 'reengage' && r.last_contacted_at && (
                       <p className="text-[11px] text-amber-600 mt-0.5">
@@ -1786,6 +1869,7 @@ function DailyListTab() {
                     )}
                     <div className="flex items-center gap-3 mt-2">
                       <button onClick={() => setScriptFor(r)} className="text-xs font-semibold text-red-600 hover:underline flex items-center gap-1"><FileText size={12} /> {isStudio ? 'View orientation' : isCall ? 'View call script' : 'View / send text'}</button>
+                      <button onClick={() => setLogItem(r)} className="text-xs font-semibold text-gray-600 hover:text-gray-900 flex items-center gap-1"><Pencil size={12} /> Log / follow-up</button>
                       <button onClick={() => skip(r)} className="text-xs text-gray-400 hover:text-gray-700 flex items-center gap-1 ml-auto"><SkipForward size={12} /> Skip</button>
                       <button onClick={() => del(r)} className="text-xs text-gray-400 hover:text-red-600 flex items-center gap-1"><Trash2 size={12} /> Delete</button>
                     </div>
@@ -1800,6 +1884,10 @@ function DailyListTab() {
       {/* Onboarding filter → the new-member roster (journeys) lives here now. */}
       {filter === 'onboarding' && <div className={shown.length ? 'mt-5 pt-5 border-t border-gray-100' : ''}><NewMembersTab /></div>}
 
+      {logItem && <LogOutreachModal item={logItem}
+        onNeedDay2={(it) => { setLogItem(null); setDay2(it) }}
+        onClose={() => setLogItem(null)}
+        onSaved={() => { setLogItem(null); load() }} />}
       {scriptFor && <ScriptModal item={scriptFor} onClose={() => setScriptFor(null)} />}
       {detailFor && <JourneyModal memberId={detailFor} onClose={() => setDetailFor(null)} />}
       {day2 && <Day2Modal item={day2} onClose={() => setDay2(null)}

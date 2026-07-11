@@ -944,14 +944,37 @@ router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
 
   await seedTemplates(supabase, studioId)
 
-  const [{ data: tasks, error }, { data: templates }] = await Promise.all([
+  const [{ data: tasks, error }, { data: templates }, { data: logRows }] = await Promise.all([
     supabase.from('onboarding_journey_tasks')
       .select('*, journey:onboarding_journeys!inner(id, status, current_track, member:onboarding_members!inner(id, full_name, phone, is_cancelled, status, join_date))')
       .eq('studio_id', studioId).eq('status', 'pending').lte('due_date', today),
     supabase.from('onboarding_touchpoint_templates').select('*').eq('studio_id', studioId),
+    supabase.from('onboarding_touchpoint_log').select('member_id, touchpoint_key, done, notes, follow_up_date').eq('studio_id', studioId),
   ])
   if (error) return res.status(500).json({ error: error.message })
   const tplMap = new Map((templates || []).map(t => [t.template_key, t]))
+
+  // Universal per-task log (notes + follow-up date + done) drives snooze/resolve for
+  // every task kind. Keyed by member_id|task_key (journey trigger_ref, or 'reengage' /
+  // 'missed_guest' for the recurring nudges).
+  const logMap = new Map((logRows || []).map(r => [`${r.member_id}|${r.touchpoint_key}`, r]))
+  const logFor = (memberId, key) => logMap.get(`${memberId}|${key}`) || null
+  // One-time tasks are gone once done; recurring nudges (reengage/missed_guest) are not.
+  const ONE_TIME = /^(day_|milestone_|passport|thank_you_card|save_|first_session)/
+  // Decorate an item with its log; return false to DROP it (snoozed to a future date, or
+  // a resolved one-time task). Sets notes/has_note/follow_up_date/overdue.
+  const applyLog = (item, key) => {
+    const lg = logFor(item.member_id, key)
+    if (lg) {
+      item.notes = lg.notes || null
+      item.has_note = !!lg.notes
+      item.follow_up_date = lg.follow_up_date || null
+      if (lg.follow_up_date && lg.follow_up_date > today) return false   // snoozed until the follow-up date
+      if (lg.done && ONE_TIME.test(key)) return false                    // resolved one-time task
+    }
+    item.overdue = !!(item.due_date && item.due_date < today)
+    return true
+  }
 
   // Filter out cancelled/paused/graduated-day-based, then enrich context for rendering.
   const live = (tasks || []).filter(t => {
@@ -1012,6 +1035,19 @@ router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
     return true
   })
 
+  // Attach the shared log (notes / follow-up) and drop snoozed or resolved journey tasks.
+  items = items.filter(it => applyLog(it, it.trigger_ref))
+
+  // New members: keep only the NEXT (earliest-due) journey step per member — the roster
+  // (GET /new-members) still shows the whole ladder. Nothing shows until a step comes due.
+  const nextDay = new Map()
+  for (const it of items) {
+    if (it.trigger_kind !== 'day_based') continue
+    const cur = nextDay.get(it.member_id)
+    if (!cur || String(it.due_date) < String(cur.due_date)) nextDay.set(it.member_id, it)
+  }
+  items = items.filter(it => it.trigger_kind !== 'day_based' || nextDay.get(it.member_id) === it)
+
   // Re-engagement (roster-wide, live-computed): any active member lapsed 14+ days,
   // excluding first-90 save-fork members and anyone still within their tier cooldown.
   // Cooldown scales with how cold they are so the coldest are nudged monthly, not weekly.
@@ -1058,17 +1094,21 @@ router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
     }
     const tpl = tplMap.get(key) || {}
     const ctx = { first_name: firstName(mm.full_name), days_lapsed: lapse, event_name: eventName }
-    items.push({
+    const tierDays = lapse >= 60 ? 60 : lapse >= 30 ? 30 : 14
+    const item = {
       id: `reengage:${mm.id}`, kind: 'reengage', member_id: mm.id,
       member_name: mm.full_name || ctx.first_name, phone: mm.phone || null,
       channel: tpl.channel || (lapse >= 60 ? 'call' : 'text'),
       label: tpl.label || key, trigger_kind: 'reengage', trigger_ref: key,
       // De-prioritized vs onboarding/milestones; the coldest (60+) rank last.
       priority: lapse >= 60 ? 8 : lapse >= 30 ? 7 : 6, reward_key: null,
-      script: renderTemplate(tpl.body || '', ctx), due_date: today,
+      script: renderTemplate(tpl.body || '', ctx),
+      due_date: addDaysStr(ref, tierDays),   // when they crossed the tier threshold
       last_booking_date: lastBookMap.get(mm.id) || null, days_lapsed: lapse,
       last_contacted_at: lastContact || null, attempts: attemptsMap.get(mm.id) || 0,
-    })
+    }
+    // 'reengage' (constant) so a note/snooze survives a 14→30→60 tier change.
+    if (applyLog(item, 'reengage')) items.push(item)
   }
 
   // Workout passport (roster-wide, live): any active member who has tried all 12
@@ -1086,14 +1126,15 @@ router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
     if (mm.member_type && mm.member_type !== 'member') continue
     if (celebrated.has(mm.id) || (workoutsMap.get(mm.id) || 0) < 12) continue
     const ctx = { first_name: firstName(mm.full_name) }
-    items.push({
+    const item = {
       id: `passport:${mm.id}`, kind: 'passport', member_id: mm.id,
       member_name: mm.full_name || ctx.first_name, phone: mm.phone || null,
       channel: passTpl.channel || 'text', label: passTpl.label || 'Workout passport complete 🎉',
       trigger_kind: 'event_based', trigger_ref: 'passport_sticker', priority: 4,
       reward_key: 'sticker', script: renderTemplate(passTpl.body || '', ctx), due_date: today,
       last_booking_date: lastBookMap.get(mm.id) || null, days_lapsed: null,
-    })
+    }
+    if (applyLog(item, 'passport_sticker')) items.push(item)
   }
 
   // Missed guests (SAIL "Be Back" leads): a be-back call/text, excluding Do Not Call,
@@ -1107,20 +1148,20 @@ router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
     const lastContact = lastContactMap.get(mm.id)
     if (lastContact && Math.floor((Date.now() - new Date(lastContact).getTime()) / 86400000) < MISSED_COOLDOWN) continue
     const ctx = { first_name: firstName(mm.full_name), event_name: eventName }
-    items.push({
+    const item = {
       id: `missed:${mm.id}`, kind: 'missed_guest', member_id: mm.id,
       member_name: mm.full_name || ctx.first_name, phone: mm.phone || null,
       channel: mgTpl.channel || 'text', label: mgTpl.label || 'Missed guest — invite back',
       trigger_kind: 'lead', trigger_ref: 'missed_guest', priority: 9, reward_key: null,
       script: renderTemplate(mgTpl.body || "Hi {first_name}! We'd love to see you back at HOTWORX — come in for a free workout this week! 🔥", ctx),
-      due_date: today, last_booking_date: lastBookMap.get(mm.id) || null, days_lapsed: null,
+      due_date: mm.join_date || today,   // dated from when they first came in (lead-created)
+      last_booking_date: lastBookMap.get(mm.id) || null, days_lapsed: null,
       last_contacted_at: lastContact || null, attempts: attemptsMap.get(mm.id) || 0,
-    })
+    }
+    if (applyLog(item, 'missed_guest')) items.push(item)
   }
 
-  // The scheduled day-based touches (Day 0/2/5/21/30/60/90) now live in the New
-  // Members roster + journey checklist, so keep them off the task feed here.
-  items = items.filter(it => it.trigger_kind !== 'day_based')
+  // (Day-based next-step collapse already ran above; no blanket day_based exclusion here.)
 
   // Order by category — Onboarding first, then Milestones, then Re-engagement —
   // and within each by priority (re-engagement 14→30→60) then due date.
@@ -1132,6 +1173,7 @@ router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
     return 0
   }
   items.sort((x, y) =>
+    (x.overdue ? 0 : 1) - (y.overdue ? 0 : 1) ||   // overdue work floats to the top
     catRank(x) - catRank(y) ||
     x.priority - y.priority ||
     String(x.due_date).localeCompare(String(y.due_date))
@@ -1299,6 +1341,63 @@ router.post('/new-members/:memberId/touchpoint', authenticate, requireStudio, as
         .in('journey_id', jIds).eq('trigger_ref', key).eq('status', 'pending')
     }
   }
+  res.json({ ok: true })
+})
+
+// ─── Universal Daily-List task log ────────────────────────────────────────────
+// One endpoint for EVERY task kind: save a note + a follow-up date + done, into the
+// shared onboarding_touchpoint_log (keyed by member_id + task_key). A future
+// follow_up_date snoozes the task; done resolves it. Mirrors the side-effects of the
+// per-kind endpoints so native records (journey tasks, rewards, recognition, reengage
+// history) stay consistent.
+router.post('/daily-list/log', authenticate, requireStudio, async (req, res) => {
+  const supabase = db(); const sid = req.studio.id
+  const { member_id, task_key, note, follow_up_date, done, kind } = req.body
+  if (!member_id || !task_key) return res.status(400).json({ error: 'member_id and task_key required' })
+  const who = req.user.email || req.user.id
+  const fu = follow_up_date && /^\d{4}-\d{2}-\d{2}$/.test(follow_up_date) ? follow_up_date : null
+
+  // Day-2 hard gate: don't let the generic modal complete Day 2 without goal/photo/consent.
+  if (task_key === 'day_2' && done) {
+    const { data: tr } = await supabase.from('onboarding_transformation_records')
+      .select('goal_text, before_photo_url, consent').eq('studio_id', sid).eq('member_id', member_id).maybeSingle()
+    if (!tr || !tr.goal_text || !tr.before_photo_url || !tr.consent) {
+      return res.status(422).json({ error: 'day2_gate', message: 'Capture goal, before photo, and consent before completing Day 2.' })
+    }
+  }
+
+  const { error } = await supabase.from('onboarding_touchpoint_log').upsert({
+    studio_id: sid, member_id, touchpoint_key: task_key,
+    done: !!done, notes: note || null, follow_up_date: fu,
+    completed_by: done ? who : null, completed_at: done ? new Date().toISOString() : null,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'studio_id,member_id,touchpoint_key' })
+  if (error) return res.status(500).json({ error: error.message })
+
+  if (done) {
+    if (task_key === 'passport' || task_key === 'passport_sticker') {
+      await supabase.from('onboarding_rewards_awarded').upsert({
+        studio_id: sid, member_id, reward_key: 'sticker', awarded_at: new Date().toISOString(), fulfilled: true,
+      }, { onConflict: 'studio_id,member_id,reward_key' })
+    } else if (task_key === 'thank_you_card') {
+      await supabase.from('onboarding_recognition_tasks')
+        .update({ status: 'completed', completed_by: who, completed_at: new Date().toISOString() })
+        .eq('studio_id', sid).eq('member_id', member_id).eq('type', 'thank_you_card').eq('status', 'pending')
+    }
+    // Complete the matching journey task (day_*, milestone_*, save_*, passport_sticker…) so all surfaces agree.
+    const { data: js } = await supabase.from('onboarding_journeys').select('id').eq('studio_id', sid).eq('member_id', member_id)
+    const jIds = (js || []).map(j => j.id)
+    if (jIds.length) await supabase.from('onboarding_journey_tasks')
+      .update({ status: 'completed', completed_by: who, completed_at: new Date().toISOString() })
+      .in('journey_id', jIds).eq('trigger_ref', task_key).eq('status', 'pending')
+  }
+
+  // Recurring nudges keep their attempt/cooldown history in the reengage log.
+  if (kind === 'reengage' || kind === 'missed_guest') {
+    if (done) await supabase.from('onboarding_reengage_log').insert({ studio_id: sid, member_id, contacted_by: who })
+    else if (fu) await supabase.from('onboarding_reengage_log').insert({ studio_id: sid, member_id, contacted_by: `snoozed:${who}` })
+  }
+
   res.json({ ok: true })
 })
 
