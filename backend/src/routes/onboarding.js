@@ -982,6 +982,12 @@ router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
     if (!m || m.is_cancelled) return false
     if (j.status === 'paused') return false
     if (t.trigger_kind === 'day_based' && j.status !== 'active') return false
+    // A day step whose script was deactivated in Script Admin shouldn't surface (the
+    // roster + journey view are already template-driven; keep the feed consistent).
+    if (t.trigger_kind === 'day_based') {
+      const tpl = tplMap.get(t.template_key)
+      if (tpl && tpl.active === false) return false
+    }
     return true
   })
   const memberIds = [...new Set(live.map(t => t.journey.member.id))]
