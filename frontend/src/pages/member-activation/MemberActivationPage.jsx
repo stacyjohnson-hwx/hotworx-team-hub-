@@ -1812,6 +1812,9 @@ function DailyListTab() {
             const isDone = done[r.id]
             const isCall = r.channel === 'call'
             const isStudio = r.channel === 'in_studio'
+            // Milestones + passport are activity-triggered celebrations: just did-it-or-not,
+            // no follow-up date / notes. Outreach tasks (new-member, reengage, missed guest) get the log.
+            const isCelebration = r.trigger_ref?.startsWith('milestone') || r.trigger_ref === 'passport_sticker'
             return (
               <div key={r.id} className={`border rounded-xl p-3.5 transition-colors ${isDone ? 'bg-blue-50 border-blue-300' : 'bg-white border-gray-200'}`}>
                 <div className="flex items-start gap-3">
@@ -1829,14 +1832,16 @@ function DailyListTab() {
                       {r.reward_key && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 flex items-center gap-1"><Trophy size={9} />{r.reward_key.replace(/_/g, ' ')}</span>}
                     </div>
                     <p className="text-xs text-gray-500">{r.label}</p>
-                    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                      <DueChip r={r} />
-                      {r.has_note && (
-                        <button onClick={() => setLogItem(r)} title={r.notes}
-                          className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 flex items-center gap-1"><FileText size={9} /> Note</button>
-                      )}
-                      {r.trigger_kind === 'day_based' && r.join_date && <span className="text-[10px] text-gray-400">joined {fmtDay(r.join_date)}</span>}
-                    </div>
+                    {!isCelebration && (
+                      <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                        <DueChip r={r} />
+                        {r.has_note && (
+                          <button onClick={() => setLogItem(r)} title={r.notes}
+                            className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 flex items-center gap-1"><FileText size={9} /> Note</button>
+                        )}
+                        {r.trigger_kind === 'day_based' && r.join_date && <span className="text-[10px] text-gray-400">joined {fmtDay(r.join_date)}</span>}
+                      </div>
+                    )}
                     {r.last_booking_date && (
                       <p className="text-[11px] text-gray-400 mt-0.5">Last booking {fmtDay(r.last_booking_date)}{r.days_lapsed != null ? ` · ${r.days_lapsed}d ago` : ''}</p>
                     )}
@@ -1869,7 +1874,7 @@ function DailyListTab() {
                     )}
                     <div className="flex items-center gap-3 mt-2">
                       <button onClick={() => setScriptFor(r)} className="text-xs font-semibold text-red-600 hover:underline flex items-center gap-1"><FileText size={12} /> {isStudio ? 'View orientation' : isCall ? 'View call script' : 'View / send text'}</button>
-                      <button onClick={() => setLogItem(r)} className="text-xs font-semibold text-gray-600 hover:text-gray-900 flex items-center gap-1"><Pencil size={12} /> Log / follow-up</button>
+                      {!isCelebration && <button onClick={() => setLogItem(r)} className="text-xs font-semibold text-gray-600 hover:text-gray-900 flex items-center gap-1"><Pencil size={12} /> Log / follow-up</button>}
                       <button onClick={() => skip(r)} className="text-xs text-gray-400 hover:text-gray-700 flex items-center gap-1 ml-auto"><SkipForward size={12} /> Skip</button>
                       <button onClick={() => del(r)} className="text-xs text-gray-400 hover:text-red-600 flex items-center gap-1"><Trash2 size={12} /> Delete</button>
                     </div>
