@@ -766,23 +766,39 @@ router.post('/reconcile/apply', authenticate, requireStudio, requireRole('owner'
   for (const m of matches) {
     const email = String(m.email || '').trim().toLowerCase()
     if (!email) continue
-    // Reuse an existing member with this email (even under a real SAIL customer_id)
-    // instead of creating a MANUAL_ duplicate — this is what caused two records for
-    // the same person. Only create a MANUAL_ record when no member has this email.
+    // Find the person's existing member record so we NEVER create a duplicate:
+    //   1) exact email match (best); else
+    //   2) an UNAMBIGUOUS name match (exactly one member with that name) — this is the
+    //      usual case, because the reason the booking was unreconciled is that the SAIL
+    //      record has a missing/different email. Reuse it and backfill the email.
+    //   3) only when there's no email match AND no single clear name match do we create
+    //      a MANUAL_ record (genuinely new person, or ambiguous common name → safer to add).
     let mem
-    const { data: existing } = await supabase.from('onboarding_members')
-      .select('*').eq('studio_id', sid).ilike('email', email).limit(1).maybeSingle()
-    if (existing) {
-      mem = existing
+    const { data: byEmail } = await supabase.from('onboarding_members')
+      .select('*').eq('studio_id', sid).ilike('email', email).limit(2)
+    if (byEmail && byEmail.length) {
+      mem = byEmail[0]
     } else {
-      const { data: created, error } = await supabase.from('onboarding_members').upsert({
-        studio_id: sid, customer_id: `MANUAL_${email}`, email,
-        full_name: m.full_name || null, member_type: 'member',
-        is_cancelled: true, status: 'Cancelled', is_new_member: false, seen_in_last_import: true,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'studio_id,customer_id' }).select().single()
-      if (error || !created) continue
-      mem = created
+      const fullName = (m.full_name || '').trim()
+      let byName = null
+      if (fullName) {
+        const { data: nm } = await supabase.from('onboarding_members')
+          .select('*').eq('studio_id', sid).ilike('full_name', fullName).limit(2)
+        if (nm && nm.length === 1) byName = nm[0]   // exactly one → safe to reuse
+      }
+      if (byName) {
+        mem = byName
+        if (!byName.email) await supabase.from('onboarding_members').update({ email }).eq('id', byName.id)
+      } else {
+        const { data: created, error } = await supabase.from('onboarding_members').upsert({
+          studio_id: sid, customer_id: `MANUAL_${email}`, email,
+          full_name: m.full_name || null, member_type: 'member',
+          is_cancelled: true, status: 'Cancelled', is_new_member: false, seen_in_last_import: true,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'studio_id,customer_id' }).select().single()
+        if (error || !created) continue
+        mem = created
+      }
     }
     reconciled++
     const { data: upd } = await supabase.from('onboarding_bookings')
