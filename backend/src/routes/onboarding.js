@@ -504,6 +504,33 @@ router.get('/members/:id/detail', authenticate, requireStudio, async (req, res) 
   })
 })
 
+// ─── Missed-guest detail: a lead view, NOT the new-member journey ─────────────
+// Contact + the sessions they tried + notes + next follow-up + interaction history.
+router.get('/missed-guest/:memberId', authenticate, requireStudio, async (req, res) => {
+  const supabase = db(); const sid = req.studio.id, mid = req.params.memberId
+  const [{ data: member }, { data: sessions }, { data: log }, { data: reeng }] = await Promise.all([
+    supabase.from('onboarding_members').select('id, full_name, email, phone, join_date, lead_status, sub_status').eq('studio_id', sid).eq('id', mid).maybeSingle(),
+    supabase.from('onboarding_bookings').select('booking_date, time_slot, session_type, home_studio').eq('studio_id', sid).eq('member_id', mid).order('booking_date', { ascending: false }).limit(200),
+    supabase.from('onboarding_touchpoint_log').select('notes, follow_up_date, done, completed_by, completed_at, updated_at').eq('studio_id', sid).eq('member_id', mid).eq('touchpoint_key', 'missed_guest').maybeSingle(),
+    supabase.from('onboarding_reengage_log').select('contacted_at, contacted_by').eq('studio_id', sid).eq('member_id', mid).order('contacted_at', { ascending: false }),
+  ])
+  if (!member) return res.status(404).json({ error: 'not found' })
+  // Interaction history from the contact log (real outreach / snoozed / dismissed).
+  const interactions = (reeng || []).map(r => {
+    const cb = String(r.contacted_by || '')
+    const kind = cb.startsWith('snoozed:') ? 'snoozed' : cb.startsWith('dismissed:') ? 'dismissed' : 'contacted'
+    return { when: r.contacted_at, kind, by: cb.replace(/^(snoozed:|dismissed:)/, '') }
+  })
+  res.json({
+    member,
+    sessions: sessions || [],
+    notes: log?.notes || null,
+    follow_up_date: log?.follow_up_date || null,
+    note_updated_at: log?.updated_at || null,
+    interactions,
+  })
+})
+
 // ─── Rich member journey: timeline, touchpoints, photos, bookings, milestones ──
 router.get('/members/:id/journey', authenticate, requireStudio, async (req, res) => {
   const supabase = db(); const sid = req.studio.id, mid = req.params.id

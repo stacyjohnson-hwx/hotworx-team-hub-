@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Upload, Users, HeartHandshake, AlertTriangle, Check, Loader2, RefreshCw, Gauge, ListChecks, Phone, MessageSquare, SkipForward, FileText, Trophy, Gift, Cake, Pencil, Building2, Bold, List, Play, Camera, X, Trash2, CreditCard, ChevronsUpDown, ChevronUp, ChevronDown, UserPlus } from 'lucide-react'
+import { Upload, Users, HeartHandshake, AlertTriangle, Check, Loader2, RefreshCw, Gauge, ListChecks, Phone, MessageSquare, SkipForward, FileText, Trophy, Gift, Cake, Pencil, Building2, Bold, List, Play, Camera, X, Trash2, CreditCard, ChevronsUpDown, ChevronUp, ChevronDown, UserPlus, Mail } from 'lucide-react'
 import { apiGet, apiPost, apiPatch, apiPut, apiDelete } from '@/hooks/useApi'
 import { useRole } from '@/hooks/useRole'
 import { useStudio } from '@/contexts/StudioContext'
@@ -1722,6 +1722,77 @@ function LogOutreachModal({ item, onNeedDay2, onClose, onSaved }) {
   )
 }
 
+// Missed guests are LEADS, not members — a simple lead view (contact + sessions tried +
+// notes + next follow-up + interaction history), NOT the new-member onboarding journey.
+function MissedGuestModal({ item, onClose, onLog }) {
+  const [d, setD] = useState(null)
+  useEffect(() => { apiGet(`${BASE}/missed-guest/${item.member_id}`).then(setD).catch(() => setD({ error: true })) }, [item.member_id])
+  const m = d?.member
+  const day = (s) => fmtDay(String(s || '').slice(0, 10))
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-lg max-h-[88vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 sticky top-0 bg-white z-10">
+          <div className="flex items-center gap-2">
+            <h2 className="font-bold text-lg text-gray-900">{item.member_name}</h2>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">MISSED GUEST</span>
+          </div>
+          <button onClick={onClose} className="text-gray-300 hover:text-gray-600"><X size={20} /></button>
+        </div>
+        {!d ? <div className="p-10 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-gray-300" /></div> : d.error ? <div className="p-8 text-center text-sm text-gray-400">Couldn't load this guest.</div> : (
+          <div className="px-5 py-4 space-y-5">
+            <div className="flex flex-wrap items-center gap-4">
+              {m?.phone && <a href={`tel:${m.phone}`} className="flex items-center gap-1.5 text-sm text-gray-700 hover:text-red-600"><Phone size={14} /> {m.phone}</a>}
+              {m?.phone && <a href={`sms:${m.phone}`} className="flex items-center gap-1 text-sm text-gray-500 hover:text-red-600"><MessageSquare size={14} /> Text</a>}
+              {m?.email && <a href={`mailto:${m.email}`} className="flex items-center gap-1.5 text-sm text-gray-700 hover:text-red-600 break-all"><Mail size={14} /> {m.email}</a>}
+              {!m?.phone && !m?.email && <span className="text-sm text-gray-400">No contact info on file.</span>}
+            </div>
+
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-3.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-xs"><span className="text-gray-400">Next follow-up:</span> <b className="text-gray-800">{d.follow_up_date ? day(d.follow_up_date) : '—'}</b></div>
+                <button onClick={() => onLog(item)} className="text-xs font-bold text-red-600 hover:underline flex items-center gap-1"><Pencil size={12} /> Log outreach</button>
+              </div>
+              {d.notes ? <p className="text-sm text-gray-700 mt-2 whitespace-pre-wrap">{d.notes}</p>
+                : <p className="text-xs text-gray-400 mt-2">No notes yet — log your outreach to add one.</p>}
+            </div>
+
+            <div>
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Sessions they tried ({d.sessions.length})</p>
+              {d.sessions.length === 0 ? <p className="text-sm text-gray-400">No sessions on record.</p> : (
+                <div className="border border-gray-200 rounded-xl divide-y divide-gray-100 max-h-56 overflow-y-auto">
+                  {d.sessions.map((s, i) => (
+                    <div key={i} className="flex items-center justify-between px-3 py-2 text-sm">
+                      <span className="text-gray-700">{day(s.booking_date)}{s.time_slot ? ` · ${s.time_slot}` : ''}</span>
+                      <span className="text-gray-500">{s.session_type || ''}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Interaction history</p>
+              {d.interactions.length === 0 ? <p className="text-sm text-gray-400">No outreach logged yet.</p> : (
+                <div className="space-y-1.5">
+                  {d.interactions.map((it, i) => (
+                    <div key={i} className="flex items-center gap-2 text-xs">
+                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${it.kind === 'contacted' ? 'bg-green-400' : it.kind === 'snoozed' ? 'bg-amber-400' : 'bg-gray-300'}`} />
+                      <span className="text-gray-600 font-medium">{it.kind === 'contacted' ? 'Reached out' : it.kind === 'snoozed' ? 'Snoozed' : 'Dismissed'}</span>
+                      <span className="text-gray-400">{day(it.when)}</span>
+                      {it.by && <span className="text-gray-300 truncate">· {String(it.by).split('@')[0]}</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function DailyListTab() {
   const { currentStudio } = useStudio()
   const [rows, setRows] = useState([])
@@ -1736,6 +1807,7 @@ function DailyListTab() {
   const [scriptFor, setScriptFor] = useState(null)  // item whose script modal is open
   const [detailFor, setDetailFor] = useState(null)  // member detail modal
   const [logItem, setLogItem] = useState(null)      // item whose Log-outreach modal is open
+  const [missedFor, setMissedFor] = useState(null)  // missed-guest lead detail (not the journey)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -1824,7 +1896,7 @@ function DailyListTab() {
                   </button>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <button onClick={() => setDetailFor(r.member_id)} className="font-bold text-gray-900 hover:text-red-600 hover:underline">{r.member_name}</button>
+                      <button onClick={() => r.kind === 'missed_guest' ? setMissedFor(r) : setDetailFor(r.member_id)} className="font-bold text-gray-900 hover:text-red-600 hover:underline">{r.member_name}</button>
                       <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full flex items-center gap-1 ${isStudio ? 'bg-green-100 text-green-700' : isCall ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
                         {isStudio ? <Building2 size={9} /> : isCall ? <Phone size={9} /> : <MessageSquare size={9} />}{isStudio ? 'In studio' : isCall ? 'Call' : 'Text'}
                       </span>
@@ -1893,6 +1965,8 @@ function DailyListTab() {
         onNeedDay2={(it) => { setLogItem(null); setDay2(it) }}
         onClose={() => setLogItem(null)}
         onSaved={() => { setLogItem(null); load() }} />}
+      {missedFor && <MissedGuestModal item={missedFor} onClose={() => setMissedFor(null)}
+        onLog={(it) => { setMissedFor(null); setLogItem(it) }} />}
       {scriptFor && <ScriptModal item={scriptFor} onClose={() => setScriptFor(null)} />}
       {detailFor && <JourneyModal memberId={detailFor} onClose={() => setDetailFor(null)} />}
       {day2 && <Day2Modal item={day2} onClose={() => setDay2(null)}
