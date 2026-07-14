@@ -338,6 +338,25 @@ router.post('/import', authenticate, requireStudio, requireRole('owner', 'manage
       .eq('studio_id', studioId).is('member_id', null)
     summary.unreconciled = stillNull || 0
 
+    // 5b) Re-activate anyone who booked AFTER their cancel date. A cancelled member who
+    // keeps coming in (rejoined, or the cancel was rescinded) is active — bookings are the
+    // ground truth. Without this they'd stay flagged CANCELLED and be wrongly excluded from
+    // re-engagement + the active count (e.g. Gabriela Castellanos, cancelled 7/10 but booked 7/13).
+    {
+      const cxlMembers = await fetchAllStudio(supabase, 'onboarding_members', 'id, cancelled_date, is_cancelled', studioId)
+      const actRows = await fetchAllStudio(supabase, 'onboarding_member_activity', 'member_id, last_booking_date', studioId)
+      const lastBkMap = new Map((actRows || []).map(a => [a.member_id, a.last_booking_date]))
+      const reactivateIds = (cxlMembers || []).filter(m =>
+        m.is_cancelled && m.cancelled_date && lastBkMap.get(m.id) && lastBkMap.get(m.id) > m.cancelled_date
+      ).map(m => m.id)
+      for (const c of chunk(reactivateIds, 200)) {
+        await supabase.from('onboarding_members')
+          .update({ is_cancelled: false, cancelled_date: null, status: 'Active' })
+          .eq('studio_id', studioId).in('id', c)
+      }
+      summary.reactivated = reactivateIds.length
+    }
+
     // 6) Recompute Studio Trends (cancellations per touched month + current active count).
     const now = new Date()
     const curKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
