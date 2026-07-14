@@ -500,6 +500,18 @@ export default function CancellationsPage() {
     } finally { setUploading(false) }
   }
 
+  const [scheduling, setScheduling] = useState(false)
+  const runSchedule = async () => {
+    if (!confirm('Assign follow-up dates to all unresolved cancellations — hottest win-backs first, 15 per day, skipping Sundays?\n\nThis overwrites existing follow-up dates on unresolved entries.')) return
+    setScheduling(true); setUploadMsg(''); setError('')
+    try {
+      const r = await apiPost('/api/cancellations/schedule-followups', { per_day: 15, skip_sundays: true })
+      setUploadMsg(`Scheduled ${r.scheduled} win-back follow-ups across ${r.days} days (15/day, no Sundays) — ${r.first_day} → ${r.last_day}.`)
+      load()
+    } catch (e) { setError(e?.message ? `Scheduling failed: ${e.message}` : 'Scheduling failed.') }
+    finally { setScheduling(false) }
+  }
+
   const onSaved = (saved) => {
     setRows(prev => { const i = prev.findIndex(r => r.id === saved.id); return i >= 0 ? prev.map(r => r.id === saved.id ? { ...r, ...saved } : r) : [saved, ...prev] })
     setModal(null)
@@ -578,6 +590,12 @@ export default function CancellationsPage() {
                 title="Upload the SAIL cancelled export to auto-populate this list">
                 {uploading ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
                 {uploading ? 'Uploading…' : 'Upload SAIL Cancellations'}
+              </button>
+              <button onClick={runSchedule} disabled={scheduling}
+                className="flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-300 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-50 disabled:opacity-50"
+                title="Assign follow-up dates by win-back score — 15/day, skipping Sundays">
+                {scheduling ? <Loader2 size={15} className="animate-spin" /> : <Target size={15} />}
+                {scheduling ? 'Scheduling…' : 'Schedule win-backs'}
               </button>
             </>
           )}

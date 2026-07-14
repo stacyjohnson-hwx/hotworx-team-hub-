@@ -6,6 +6,7 @@ const { requireStudio } = require('../middleware/studioMiddleware')
 const authenticate = require('../middleware/authMiddleware')
 const { todayInChicago } = require('../utils/dates')
 const { scoreWinback } = require('../services/winbackScore')
+const { scheduleWinbacks } = require('../services/winbackSchedule')
 
 const supabase = () =>
   createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
@@ -266,6 +267,17 @@ router.delete('/:id', authenticate, requireStudio, requireRole('owner', 'manager
     .eq('id', req.params.id).eq('studio_id', req.studio.id)
   if (error) return res.status(500).json({ error: error.message })
   res.status(204).end()
+})
+
+// POST /api/cancellations/schedule-followups — assign follow-up dates to unresolved
+// cancellations, hottest-by-win-back-score first, N per day, skipping Sundays.
+router.post('/schedule-followups', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
+  try {
+    const perDay = Math.max(1, Math.min(100, Number(req.body?.per_day) || 15))
+    const skipSundays = req.body?.skip_sundays !== false
+    const result = await scheduleWinbacks(req.studio.id, { perDay, skipSundays })
+    res.json(result)
+  } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
 module.exports = router
