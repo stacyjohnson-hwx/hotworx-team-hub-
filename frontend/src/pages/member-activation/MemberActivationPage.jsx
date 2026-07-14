@@ -2468,6 +2468,11 @@ function RecognitionTab({ canImport }) {
     setRows(rs => rs.map(x => x.id === r.id ? { ...x, status: 'completed' } : x))
     try { await apiPost(`${BASE}/recognition/${r.id}/complete`, {}) } catch { /* ignore */ }
   }
+  const remove = async (r) => {
+    if (!window.confirm(`Delete this ${sub === 'birthdays' ? 'birthday' : 'thank-you card'} task for ${r.member_name || 'this person'}?`)) return
+    setRows(rs => rs.filter(x => x.id !== r.id))
+    try { await apiDelete(`${BASE}/recognition/${r.id}`) } catch { /* ignore */ }
+  }
   const onUpload = async (e) => {
     const file = e.target.files?.[0]
     if (fileRef.current) fileRef.current.value = ''
@@ -2603,6 +2608,12 @@ function RecognitionTab({ canImport }) {
                       title="See & copy script"
                       className="mt-0.5 flex-shrink-0 p-2 rounded-lg border border-gray-200 text-gray-500 hover:text-blue-600 hover:border-blue-300">
                       <MessageSquare size={16} />
+                    </button>
+                  )}
+                  {canImport && (
+                    <button onClick={() => remove(r)} title="Delete this task"
+                      className="mt-0.5 flex-shrink-0 p-2 rounded-lg border border-gray-200 text-gray-400 hover:text-red-600 hover:border-red-300">
+                      <Trash2 size={16} />
                     </button>
                   )}
                 </div>

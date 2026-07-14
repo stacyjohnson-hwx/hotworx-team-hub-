@@ -1661,6 +1661,14 @@ router.post('/recognition/:id/skip', authenticate, requireStudio, async (req, re
   res.json(data)
 })
 
+// Delete a recognition task (birthday / thank-you card) — e.g. a bad birthday-list row.
+router.delete('/recognition/:id', authenticate, requireStudio, async (req, res) => {
+  const { error } = await db().from('onboarding_recognition_tasks')
+    .delete().eq('id', req.params.id).eq('studio_id', req.studio.id)
+  if (error) return res.status(500).json({ error: error.message })
+  res.status(204).end()
+})
+
 // Monthly birthday upload → create birthday checklist tasks (deduped, idempotent).
 router.post('/recognition/birthdays/import', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const rows = Array.isArray(req.body.rows) ? req.body.rows : []
