@@ -280,4 +280,74 @@ router.post('/schedule-followups', authenticate, requireStudio, requireRole('own
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
+// ─── Follow-up TASKS on a cancellation ────────────────────────────────────────
+// A cancellation can hold a running list of dated follow-up tasks (schedule the
+// next touch, log the note, check it off) instead of a single date. The parent
+// cancellation_log.follow_up_date is kept in sync with the earliest OPEN task so
+// the win-back queue, scheduler, and Follow-Up column keep working unchanged.
+async function syncParentFollowup(sb, studioId, cancellationId) {
+  const { data } = await sb.from('cancellation_followups')
+    .select('due_date').eq('studio_id', studioId).eq('cancellation_id', cancellationId)
+    .eq('done', false).not('due_date', 'is', null)
+    .order('due_date', { ascending: true }).limit(1)
+  const next = data && data.length ? data[0].due_date : null
+  await sb.from('cancellation_log').update({ follow_up_date: next })
+    .eq('id', cancellationId).eq('studio_id', studioId)
+}
+
+// GET /api/cancellations/:id/tasks — the follow-up task history (newest date last)
+router.get('/:id/tasks', authenticate, requireStudio, async (req, res) => {
+  const sb = supabase()
+  const { data, error } = await sb.from('cancellation_followups')
+    .select('*').eq('studio_id', req.studio.id).eq('cancellation_id', req.params.id)
+    .order('done', { ascending: true }).order('due_date', { ascending: true })
+  if (error) return res.status(500).json({ error: error.message })
+
+  const { data: { users } } = await sb.auth.admin.listUsers({ perPage: 200 })
+  const userMap = {}
+  for (const u of users || []) userMap[u.id] = u.user_metadata?.full_name || u.email?.split('@')[0] || 'Team Member'
+  res.json((data || []).map(t => ({ ...t, created_by_name: t.created_by ? (userMap[t.created_by] || 'Team Member') : null })))
+})
+
+// POST /api/cancellations/:id/tasks — add a follow-up task { due_date, note }
+router.post('/:id/tasks', authenticate, requireStudio, async (req, res) => {
+  const sb = supabase()
+  const due = req.body?.due_date && /^\d{4}-\d{2}-\d{2}$/.test(req.body.due_date) ? req.body.due_date : null
+  const { data, error } = await sb.from('cancellation_followups').insert({
+    studio_id: req.studio.id, cancellation_id: req.params.id,
+    due_date: due, note: req.body?.note || null, created_by: req.user.id,
+  }).select().single()
+  if (error) return res.status(500).json({ error: error.message })
+  await syncParentFollowup(sb, req.studio.id, req.params.id)
+  res.status(201).json(data)
+})
+
+// PUT /api/cancellations/tasks/:taskId — edit a task or mark it done/undone
+router.put('/tasks/:taskId', authenticate, requireStudio, async (req, res) => {
+  const sb = supabase()
+  const b = req.body
+  const updates = {
+    ...(b.note !== undefined ? { note: b.note || null } : {}),
+    ...(b.due_date !== undefined ? { due_date: b.due_date && /^\d{4}-\d{2}-\d{2}$/.test(b.due_date) ? b.due_date : null } : {}),
+    ...(b.done !== undefined ? { done: !!b.done, done_at: b.done ? new Date().toISOString() : null } : {}),
+  }
+  const { data, error } = await sb.from('cancellation_followups')
+    .update(updates).eq('id', req.params.taskId).eq('studio_id', req.studio.id).select().single()
+  if (error) return res.status(500).json({ error: error.message })
+  await syncParentFollowup(sb, req.studio.id, data.cancellation_id)
+  res.json(data)
+})
+
+// DELETE /api/cancellations/tasks/:taskId
+router.delete('/tasks/:taskId', authenticate, requireStudio, async (req, res) => {
+  const sb = supabase()
+  const { data: existing } = await sb.from('cancellation_followups')
+    .select('cancellation_id').eq('id', req.params.taskId).eq('studio_id', req.studio.id).maybeSingle()
+  const { error } = await sb.from('cancellation_followups')
+    .delete().eq('id', req.params.taskId).eq('studio_id', req.studio.id)
+  if (error) return res.status(500).json({ error: error.message })
+  if (existing) await syncParentFollowup(sb, req.studio.id, existing.cancellation_id)
+  res.status(204).end()
+})
+
 module.exports = router

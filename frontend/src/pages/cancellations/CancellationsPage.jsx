@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRole } from '@/hooks/useRole'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
-import { UserMinus, Plus, X, Trash2, Edit2, Target, Loader2, Filter, Upload, Phone, MessageSquare, Mail, Dumbbell, Search } from 'lucide-react'
+import { UserMinus, Plus, X, Trash2, Edit2, Target, Loader2, Filter, Upload, Phone, MessageSquare, Mail, Dumbbell, Search, Check } from 'lucide-react'
 import * as XLSX from 'xlsx'
 
 // Parse a cancelled CSV/Excel to raw header-keyed rows (backend maps the columns).
@@ -146,6 +146,63 @@ const todayStr = () => new Date().toISOString().split('T')[0]
 const input = 'w-full rounded-lg border border-gray-300 bg-white text-gray-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-500'
 const lbl = 'block text-xs font-semibold text-gray-600 mb-1'
 
+// ─── Follow-up tasks on a cancellation (schedule multiple dated touches) ───────
+function FollowupTasks({ cancellationId }) {
+  const [tasks, setTasks] = useState(null)
+  const [due, setDue]   = useState('')
+  const [note, setNote] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const load = useCallback(async () => {
+    try { setTasks(await apiGet(`/api/cancellations/${cancellationId}/tasks`)) } catch { setTasks([]) }
+  }, [cancellationId])
+  useEffect(() => { load() }, [load])
+
+  const add = async () => {
+    if (!due && !note.trim()) return
+    setBusy(true)
+    try { await apiPost(`/api/cancellations/${cancellationId}/tasks`, { due_date: due || null, note: note.trim() || null }); setDue(''); setNote(''); await load() }
+    catch { /* ignore */ } finally { setBusy(false) }
+  }
+  const toggle = async (t) => { setTasks(ts => ts.map(x => x.id === t.id ? { ...x, done: !x.done } : x)); try { await apiPut(`/api/cancellations/tasks/${t.id}`, { done: !t.done }) } catch { /* ignore */ } load() }
+  const del = async (t) => { setTasks(ts => ts.filter(x => x.id !== t.id)); try { await apiDelete(`/api/cancellations/tasks/${t.id}`) } catch { /* ignore */ } }
+
+  const today = todayStr()
+  return (
+    <div className="border-t border-gray-100 pt-4">
+      <label className={lbl}>Follow-up tasks <span className="text-gray-400 font-normal">— schedule each touch; check them off as you go</span></label>
+      <div className="space-y-1.5 mb-2">
+        {tasks === null ? <p className="text-xs text-gray-400">Loading…</p>
+          : tasks.length === 0 ? <p className="text-xs text-gray-400">No follow-up tasks yet — add the next touch below.</p>
+          : tasks.map(t => {
+            const overdue = !t.done && t.due_date && t.due_date < today
+            return (
+              <div key={t.id} className={`flex items-start gap-2 rounded-lg border px-2.5 py-2 ${t.done ? 'bg-gray-50 border-gray-200' : overdue ? 'bg-red-50 border-red-200' : 'bg-white border-gray-200'}`}>
+                <button type="button" onClick={() => toggle(t)} title={t.done ? 'Mark not done' : 'Mark done'}
+                  className={`mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${t.done ? 'bg-green-500 border-green-500' : 'border-gray-300 hover:border-green-400'}`}>
+                  {t.done && <Check size={12} className="text-white" />}
+                </button>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    {t.due_date && <span className={`text-xs font-semibold ${t.done ? 'text-gray-400' : overdue ? 'text-red-600' : 'text-gray-700'}`}>{fmtDate(t.due_date)}{overdue ? ' · overdue' : ''}</span>}
+                    {t.created_by_name && <span className="text-[11px] text-gray-400">· {t.created_by_name}</span>}
+                  </div>
+                  {t.note && <p className={`text-xs mt-0.5 ${t.done ? 'text-gray-400 line-through' : 'text-gray-600'}`}>{t.note}</p>}
+                </div>
+                <button type="button" onClick={() => del(t)} className="p-1 text-gray-300 hover:text-red-500 flex-shrink-0"><Trash2 size={13} /></button>
+              </div>
+            )
+          })}
+      </div>
+      <div className="flex items-end gap-2">
+        <div><span className="text-[11px] text-gray-500">Due</span><input type="date" className={input} value={due} onChange={e => setDue(e.target.value)} /></div>
+        <div className="flex-1"><span className="text-[11px] text-gray-500">What to do</span><input className={input} value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. Text about the summer challenge" onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add() } }} /></div>
+        <button type="button" onClick={add} disabled={busy || (!due && !note.trim())} className="px-3 py-2 bg-gray-800 hover:bg-black text-white text-sm font-semibold rounded-lg disabled:opacity-40 flex items-center gap-1"><Plus size={14} /> Add</button>
+      </div>
+    </div>
+  )
+}
+
 // ─── Form (guided save flow) ──────────────────────────────────────────────────
 function CancellationForm({ entry, users, currentUserId, onSave, onClose }) {
   const [form, setForm] = useState({
@@ -163,7 +220,6 @@ function CancellationForm({ entry, users, currentUserId, onSave, onClose }) {
     goal_recaptured: entry?.goal_recaptured || false,
     outcome: entry?.outcome || 'pending',
     win_back_step: entry?.win_back_step || 'at_pos',
-    follow_up_date: entry?.follow_up_date || '',
     postcancel_feedback: entry?.postcancel_feedback || '',
     would_return: entry?.would_return || '',
   })
@@ -302,15 +358,16 @@ function CancellationForm({ entry, users, currentUserId, onSave, onClose }) {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className={lbl}>Win-back step</label>
-              <select className={input} value={form.win_back_step} onChange={e => set('win_back_step', e.target.value)}>
-                {WIN_BACK_STEPS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-              </select>
-            </div>
-            <div><label className={lbl}>Follow-up date</label><input type="date" className={input} value={form.follow_up_date || ''} onChange={e => set('follow_up_date', e.target.value)} /></div>
+          <div>
+            <label className={lbl}>Win-back step</label>
+            <select className={input} value={form.win_back_step} onChange={e => set('win_back_step', e.target.value)}>
+              {WIN_BACK_STEPS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+            </select>
           </div>
+
+          {/* Follow-up tasks — a running list of dated touches, not just one date */}
+          {entry ? <FollowupTasks cancellationId={entry.id} />
+            : <p className="text-xs text-gray-400 border-t border-gray-100 pt-4">Save this cancellation first, then reopen it to schedule follow-up tasks.</p>}
 
           {form.outcome === 'cancelled' && (
             <div className="border-t border-gray-100 pt-4 space-y-3">
@@ -778,7 +835,7 @@ export default function CancellationsPage() {
       </>)}
 
       {modal !== null && (
-        <CancellationForm entry={modal || null} users={users} currentUserId={me} onSave={onSaved} onClose={() => setModal(null)} />
+        <CancellationForm entry={modal || null} users={users} currentUserId={me} onSave={onSaved} onClose={() => { setModal(null); load() }} />
       )}
       {scoreFor && <ScoreBreakdown row={scoreFor} onClose={() => setScoreFor(null)} />}
     </div>
