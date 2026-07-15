@@ -1575,8 +1575,8 @@ const FILTERS = [
   { k: 'all', label: 'All' },
   { k: 'onboarding', label: 'Onboarding', match: r => r.trigger_kind === 'day_based' },
   { k: 'milestone', label: 'Milestones', match: r => r.trigger_ref?.startsWith('milestone') || r.trigger_ref === 'passport_sticker' },
-  // Quiet / at-risk members (incl. first-90 "save fork" and rough first sessions) live here, not in Onboarding.
-  { k: 'reengage', label: 'Re-engagement', match: r => r.trigger_ref?.startsWith('reengage') || r.trigger_ref?.startsWith('save') || r.trigger_ref === 'first_session_rough' },
+  // Quiet / at-risk members (incl. first-90 "save fork") live here, not in Onboarding.
+  { k: 'reengage', label: 'Re-engagement', match: r => r.trigger_ref?.startsWith('reengage') || r.trigger_ref?.startsWith('save') },
   { k: 'missed_guest', label: 'Missed Guests', match: r => r.trigger_ref === 'missed_guest' },
 ]
 
@@ -1588,7 +1588,6 @@ const SUBFILTERS = {
     { k: 're30', label: '30–59 days', match: r => r.trigger_ref === 'reengage_30' },
     { k: 're60', label: '60+ days', match: r => r.trigger_ref === 'reengage_60' },
     { k: 'save', label: 'Save fork', match: r => r.trigger_ref?.startsWith('save') },
-    { k: 'first', label: 'Rough first session', match: r => r.trigger_ref === 'first_session_rough' },
   ],
   milestone: [
     { k: 'all', label: 'All' },
@@ -1849,10 +1848,15 @@ function DailyListTab() {
     load()
   }
 
+  // 30-59 & 60+ day lapses are informational ("don't poke the bear") — they only
+  // appear when you explicitly open their tab, never in an "All" list.
+  const isInformational = (r) => r.trigger_ref === 'reengage_30' || r.trigger_ref === 'reengage_60'
+
   const f = FILTERS.find(x => x.k === filter)
   const subs = SUBFILTERS[filter]
-  let shown = filter === 'all' ? rows : rows.filter(f.match)
+  let shown = filter === 'all' ? rows.filter(r => !isInformational(r)) : rows.filter(f.match)
   if (subs && sub !== 'all') { const sf = subs.find(s => s.k === sub); if (sf?.match) shown = shown.filter(sf.match) }
+  else if (filter === 'reengage' && sub === 'all') shown = shown.filter(r => !isInformational(r))
   const pickCore = (k) => { setFilter(k); setSub('all') }
 
   if (loading) return <Spinner />
@@ -1875,6 +1879,17 @@ function DailyListTab() {
               {s.label}
             </button>
           ))}
+        </div>
+      )}
+
+      {filter === 'reengage' && sub === 're14' && (
+        <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+          Reach out to these members to get them re-engaged and back in the studio. <b>Do NOT</b> mention it&apos;s been awhile since we&apos;ve seen you. <b>DO</b> invite them to an upcoming event, tell them about something exciting happening at the studio, or offer to help them book another session.
+        </div>
+      )}
+      {filter === 'reengage' && (sub === 're30' || sub === 're60') && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <b>For informational purposes — don&apos;t poke the bear.</b> These members have been quiet a while; leave them be unless they reach out.
         </div>
       )}
 

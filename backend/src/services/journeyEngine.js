@@ -234,10 +234,6 @@ async function evaluateEventTriggers(supabase, studioId) {
         await supabase.from('onboarding_journeys').update({ current_track: 'onboarding' }).eq('id', j.id)  // rebooked → exit save fork
       }
     }
-    // First-session escalation — rough / no-show ranks to the very top.
-    if (['rough', 'no_show'].includes(j.first_session_flag)) {
-      await addTask(j, { type: 'call', template_key: 'first_session_rough', trigger_kind: 'event_based', trigger_ref: 'first_session_rough', priority: 1, context: { first_name: first } })
-    }
   }
 }
 
