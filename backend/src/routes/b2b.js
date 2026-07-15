@@ -210,7 +210,7 @@ router.get('/contacts/:id/interactions', authenticate, requireStudio, async (req
 
 // ─── POST /api/b2b/contacts/:id/interactions ─────────────────────────────────
 router.post('/contacts/:id/interactions', authenticate, requireStudio, async (req, res) => {
-  const { type, notes, logged_at } = req.body
+  const { type, notes, logged_at, follow_up_date } = req.body
 
   if (!type) return res.status(400).json({ error: 'type is required' })
 
@@ -222,6 +222,7 @@ router.post('/contacts/:id/interactions', authenticate, requireStudio, async (re
       notes: notes || null,
       logged_by: req.user.id,
       studio_id: req.studio.id,
+      follow_up_date: follow_up_date || null,
       ...(logged_at ? { logged_at } : {}),
     })
     .select()
@@ -236,7 +237,7 @@ router.post('/contacts/:id/interactions', authenticate, requireStudio, async (re
 
 // ─── PUT /api/b2b/interactions/:id ───────────────────────────────────────────
 router.put('/interactions/:id', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
-  const { type, notes, logged_at } = req.body
+  const { type, notes, logged_at, follow_up_date, follow_up_done } = req.body
   if (!type) return res.status(400).json({ error: 'type is required' })
 
   const { data, error } = await supabase()
@@ -245,6 +246,8 @@ router.put('/interactions/:id', authenticate, requireStudio, requireRole('owner'
       type,
       notes: notes || null,
       ...(logged_at ? { logged_at } : {}),
+      ...(follow_up_date !== undefined ? { follow_up_date: follow_up_date || null } : {}),
+      ...(follow_up_done !== undefined ? { follow_up_done: !!follow_up_done } : {}),
     })
     .eq('id', req.params.id)
     .eq('studio_id', req.studio.id)
@@ -253,6 +256,48 @@ router.put('/interactions/:id', authenticate, requireStudio, requireRole('owner'
 
   if (error) return res.status(500).json({ error: error.message })
   res.json(data)
+})
+
+// ─── POST /api/b2b/interactions/:id/followup-done ────────────────────────────
+// Mark a scheduled follow-up complete (from the Follow-ups Due strip).
+router.post('/interactions/:id/followup-done', authenticate, requireStudio, async (req, res) => {
+  const { data, error } = await supabase()
+    .from('b2b_interactions')
+    .update({ follow_up_done: req.body.done === false ? false : true })
+    .eq('id', req.params.id)
+    .eq('studio_id', req.studio.id)
+    .select()
+    .single()
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data)
+})
+
+// ─── GET /api/b2b/followups ──────────────────────────────────────────────────
+// All scheduled, not-yet-done follow-ups (each an interaction with a future or
+// past follow_up_date), joined to its vendor. The B2B page splits these into a
+// "due today / overdue" queue and uses the future ones to know who's scheduled.
+router.get('/followups', authenticate, requireStudio, async (req, res) => {
+  const db = supabase()
+  const today = todayInChicago()
+  const { data, error } = await db
+    .from('b2b_interactions')
+    .select('id, contact_id, type, notes, follow_up_date, logged_by')
+    .eq('studio_id', req.studio.id)
+    .eq('follow_up_done', false)
+    .not('follow_up_date', 'is', null)
+    .order('follow_up_date', { ascending: true })
+  if (error) return res.status(500).json({ error: error.message })
+
+  const ids = [...new Set((data || []).map(r => r.contact_id))]
+  const { data: contacts } = ids.length
+    ? await db.from('b2b_contacts').select('id, business_name, contact_name, phone, email').in('id', ids)
+    : { data: [] }
+  const cMap = Object.fromEntries((contacts || []).map(c => [c.id, c]))
+  res.json((data || []).map(r => ({
+    ...r,
+    overdue: r.follow_up_date < today,
+    contact: cMap[r.contact_id] || null,
+  })).filter(r => r.contact))
 })
 
 // ─── DELETE /api/b2b/interactions/:id ────────────────────────────────────────

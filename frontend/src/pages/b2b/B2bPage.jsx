@@ -9,7 +9,7 @@ import {
   Plus, X, Phone, Mail, MapPin, Building2, Tag,
   MessageSquare, ChevronDown, ChevronUp, Edit2, Trash2, Clock,
   PhoneCall, AtSign, Users, Handshake, AlertCircle,
-  Gift, Globe, ImagePlus, Loader2, Calendar, Package, Send,
+  Gift, Globe, ImagePlus, Loader2, Calendar, Package, Send, Check,
 } from 'lucide-react'
 
 // ─── Brand-safe status config (no green) ─────────────────────────────────────
@@ -148,6 +148,7 @@ function ContactModal({ contact, users, onSave, onClose }) {
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
   const [history, setHistory] = useState(null)   // interaction history (edit mode)
+  const [events, setEvents] = useState(null)     // events linked to this business
   const logoInputRef = useRef(null)
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -156,6 +157,9 @@ function ContactModal({ contact, users, onSave, onClose }) {
     apiGet(`/api/b2b/contacts/${contact.id}/interactions`)
       .then(d => setHistory([...(d || [])].sort(byNewest)))
       .catch(() => setHistory([]))
+    apiGet(`/api/b2b/contacts/${contact.id}/events`)
+      .then(d => setEvents(Array.isArray(d) ? d : []))
+      .catch(() => setEvents([]))
   }, [contact?.id])
 
   const handleLogoChange = async (e) => {
@@ -313,12 +317,6 @@ function ContactModal({ contact, users, onSave, onClose }) {
             </label>
           </div>
 
-          {/* Next action */}
-          <div className="grid grid-cols-2 gap-3">
-            <div><label className={labelCls}>Next Action</label><input className={inputCls} value={form.next_action} onChange={e => set('next_action', e.target.value)} placeholder="Follow up by phone" /></div>
-            <div><label className={labelCls}>Due Date</label><input type="date" className={inputCls} value={form.next_action_date} onChange={e => set('next_action_date', e.target.value)} /></div>
-          </div>
-
           {/* Partnership value — what this relationship is worth */}
           <div>
             <label className={labelCls}>Partnership Value <span className="text-gray-400 font-normal normal-case">— track the ROI of this relationship</span></label>
@@ -340,7 +338,23 @@ function ContactModal({ contact, users, onSave, onClose }) {
 
           <div><label className={labelCls}>Notes</label><textarea rows={3} className={`${inputCls} resize-none`} value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Additional context…" /></div>
 
-          {/* Interaction history (read-only) — edit mode only */}
+          {/* Events at this business — edit mode only */}
+          {contact && Array.isArray(events) && events.length > 0 && (
+            <div className="pt-4 border-t border-gray-100">
+              <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">Events ({events.length})</p>
+              <div className="space-y-1.5">
+                {events.map(ev => (
+                  <div key={ev.id} className="flex items-center gap-2 text-xs bg-purple-50 border border-purple-100 rounded-lg px-3 py-2">
+                    <Calendar size={13} className="text-purple-500 flex-shrink-0" />
+                    <span className="font-semibold text-gray-800 truncate">{ev.title || ev.name}</span>
+                    {(ev.start_date || ev.event_date) && <span className="text-gray-400 ml-auto flex-shrink-0">{fmtDate(ev.start_date || ev.event_date)}</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Interaction history (deletable) — edit mode only */}
           {contact && (
             <div className="pt-4 border-t border-gray-100">
               <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">
@@ -352,25 +366,13 @@ function ContactModal({ contact, users, onSave, onClose }) {
                 <p className="text-xs text-gray-400 py-2">No interactions logged yet.</p>
               ) : (
                 <div className="rounded-lg border border-gray-100 px-3 max-h-64 overflow-y-auto">
-                  {history.map(i => {
-                    const meta = INTERACTION_TYPES.find(t => t.value === i.type) || INTERACTION_TYPES[INTERACTION_TYPES.length - 1]
-                    const Icon = meta.icon
-                    return (
-                      <div key={i.id} className="flex items-start gap-2.5 py-2.5 border-b border-gray-100 last:border-0">
-                        <div className="w-6 h-6 rounded-full bg-orange-100 border border-orange-200 flex items-center justify-center flex-shrink-0 mt-0.5">
-                          <Icon size={11} className="text-orange-500" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-xs font-semibold text-gray-800">
-                            <span className="capitalize">{meta.label}</span>
-                            <span className="text-gray-500 font-normal ml-1">by {i.logged_by_name}</span>
-                            <span className="text-gray-400 ml-1.5">{fmtDateTime(i.logged_at)}</span>
-                          </p>
-                          {i.notes && <p className="text-xs text-gray-600 mt-0.5">{i.notes}</p>}
-                        </div>
-                      </div>
-                    )
-                  })}
+                  {history.map(i => (
+                    <InteractionRow key={i.id} interaction={i} contact={contact} isOwnerOrManager
+                      compact
+                      onUpdated={saved => setHistory(h => (h || []).map(x => x.id === saved.id ? { ...x, ...saved } : x))}
+                      onDeleted={id => setHistory(h => (h || []).filter(x => x.id !== id))}
+                    />
+                  ))}
                 </div>
               )}
             </div>
@@ -398,6 +400,7 @@ function LogInteractionModal({ contact, existingInteraction, onSave, onClose }) 
       ? new Date(existingInteraction.logged_at).toLocaleDateString('en-CA')
       : new Date().toLocaleDateString('en-CA')
   )
+  const [followUp, setFollowUp] = useState(existingInteraction?.follow_up_date || '')
   const [saving, setSaving] = useState(false)
   const [saveErr, setSaveErr] = useState('')
 
@@ -405,9 +408,10 @@ function LogInteractionModal({ contact, existingInteraction, onSave, onClose }) 
     e.preventDefault(); setSaving(true); setSaveErr('')
     try {
       const logged_at = new Date(date + 'T12:00:00').toISOString()
+      const body = { type, notes, logged_at, follow_up_date: followUp || null }
       const saved = isEdit
-        ? await apiPut(`/api/b2b/interactions/${existingInteraction.id}`, { type, notes, logged_at })
-        : await apiPost(`/api/b2b/contacts/${contact.id}/interactions`, { type, notes, logged_at })
+        ? await apiPut(`/api/b2b/interactions/${existingInteraction.id}`, body)
+        : await apiPost(`/api/b2b/contacts/${contact.id}/interactions`, body)
       onSave(saved, isEdit)
     } catch (err) {
       setSaveErr(err.message || 'Save failed — please try again')
@@ -446,6 +450,13 @@ function LogInteractionModal({ contact, existingInteraction, onSave, onClose }) 
           <div>
             <label className="block text-xs font-semibold text-gray-700 mb-1">Notes</label>
             <textarea rows={3} className={`${inputCls} resize-none`} value={notes} onChange={e => setNotes(e.target.value)} placeholder="What happened? Any next steps?" />
+          </div>
+          <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
+            <label className="block text-xs font-semibold text-orange-700 mb-1">📌 Follow up on <span className="font-normal text-orange-500">— optional; surfaces on the B2B page when due</span></label>
+            <div className="flex items-center gap-2">
+              <input type="date" className={inputCls} value={followUp} onChange={e => setFollowUp(e.target.value)} />
+              {followUp && <button type="button" onClick={() => setFollowUp('')} className="text-xs text-gray-400 hover:text-gray-600">Clear</button>}
+            </div>
           </div>
         </div>
         {saveErr && (
@@ -498,6 +509,11 @@ function InteractionRow({ interaction, contact, isOwnerOrManager, onUpdated, onD
             <span className="text-gray-400 ml-1.5">{fmtDateTime(interaction.logged_at)}</span>
           </p>
           {interaction.notes && <p className={`text-xs text-gray-600 mt-0.5 ${compact ? '' : ''}`}>{interaction.notes}</p>}
+          {interaction.follow_up_date && !interaction.follow_up_done && (
+            <span className={`inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+              interaction.follow_up_date < new Date().toLocaleDateString('en-CA') ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'
+            }`}>📌 Follow up {fmtDate(interaction.follow_up_date)}</span>
+          )}
         </div>
         {isOwnerOrManager && (
           <div className="flex items-center gap-0.5 flex-shrink-0 ml-1">
@@ -692,15 +708,6 @@ function ContactCard({ contact, users, isOwnerOrManager, onEdit, onDelete, onLog
           )}
         </div>
 
-        {/* Next action */}
-        {contact.next_action && (
-          <div className={`mt-3 flex items-start gap-1.5 text-xs rounded-lg px-2.5 py-2 border ${
-            isDue ? 'bg-red-50 border-red-200 text-red-700' : 'bg-orange-50 border-orange-200 text-gray-700'
-          }`}>
-            {isDue ? <AlertCircle size={12} className="mt-0.5 flex-shrink-0 text-red-500" /> : <Clock size={12} className="mt-0.5 flex-shrink-0 text-orange-500" />}
-            <span><span className="font-semibold">{contact.next_action}</span>{contact.next_action_date && <span className="ml-1.5 text-gray-500">— {fmtDate(contact.next_action_date)}</span>}</span>
-          </div>
-        )}
 
         {/* Discount */}
         {contact.discount_desc && (
@@ -845,17 +852,6 @@ function PipelineRow({ contact, users, isOwnerOrManager, onEdit, onDelete, onLog
             {contact.contact_name && <span className="text-xs text-gray-500">{contact.contact_name}</span>}
             {contact.industry && <span className="text-xs text-gray-400">· {contact.industry}</span>}
           </div>
-          {contact.next_action && (
-            <p className={`text-xs mt-1 flex items-center gap-1 ${overdue ? 'text-red-600 font-semibold' : 'text-gray-500'}`}>
-              {overdue
-                ? <AlertCircle size={11} className="flex-shrink-0 text-red-500" />
-                : <Clock size={11} className="flex-shrink-0 text-orange-400" />}
-              {contact.next_action}
-              {contact.next_action_date && (
-                <span className={`ml-1 ${overdue ? 'text-red-400' : 'text-gray-400'}`}>· {fmtDate(contact.next_action_date)}</span>
-              )}
-            </p>
-          )}
           {fmtLastContact(contact.last_interacted_at) && (
             <p className="text-xs mt-0.5 text-gray-400 flex items-center gap-1">
               <MessageSquare size={10} className="flex-shrink-0" />
@@ -1065,11 +1061,6 @@ function KanbanBoard({ contacts, users, onEdit, onStatusChange, onLogged }) {
                       </span>
                       {c.assigned_to && <span className="text-gray-400 truncate ml-2">{userName(c.assigned_to)}</span>}
                     </div>
-                    {c.next_action_date && (
-                      <div className="mt-1 text-[11px]">
-                        <span className={overdue ? 'text-red-600 font-semibold' : 'text-gray-500'}>Next: {fmtDate(c.next_action_date)}</span>
-                      </div>
-                    )}
                   </div>
                 )
               })}
@@ -1690,17 +1681,28 @@ export default function B2bPage() {
   const [leadBoxOnly, setLeadBoxOnly] = useState(false)
   const [pipelineView, setPipelineView] = useState('board')  // 'board' | 'list'
   const [queueAssignee, setQueueAssignee] = useState('')
+  const [followups, setFollowups] = useState([])
+
+  const loadFollowups = useCallback(async () => {
+    try { setFollowups(await apiGet('/api/b2b/followups')) } catch { /* non-fatal */ }
+  }, [])
 
   const load = useCallback(async () => {
     try {
       const [cd, ud] = await Promise.all([apiGet('/api/b2b/contacts'), apiGet('/api/users')])
       setContacts(cd)
       setUsers(ud.filter(u => u.is_active !== false).map(u => ({ id: u.id, name: u.full_name || u.email })))
+      loadFollowups()
     } catch (err) { setError(err.message) }
     finally { setLoading(false) }
-  }, [])
+  }, [loadFollowups])
 
   useEffect(() => { load() }, [load])
+
+  const markFollowupDone = async (id) => {
+    setFollowups(prev => prev.filter(f => f.id !== id))
+    try { await apiPost(`/api/b2b/interactions/${id}/followup-done`, {}) } catch { loadFollowups() }
+  }
 
   const contactIds = contacts.map(c => String(c.id))
   const b2bSignals = useFeedbackSignals('b2b', contactIds)
@@ -1727,6 +1729,7 @@ export default function B2bPage() {
           }
         : c
     ))
+    loadFollowups()   // a new interaction may schedule (or clear) a follow-up
   }
 
   const handleDelete = async (id) => {
@@ -1762,27 +1765,29 @@ export default function B2bPage() {
     return c.is_partner && matchSearch && matchIndustry && matchType && matchLeadBox
   })
 
-  // ── "B2B Today" action queue — follow-ups due or overdue ──
+  // ── "B2B Today" action queue — scheduled follow-ups (from the interaction log)
+  //    that are due today or overdue ──
   const todayStr = new Date().toISOString().split('T')[0]
-  const dueItems = contacts
-    .filter(c => c.next_action_date && c.next_action_date <= todayStr
-      && c.status !== 'not_interested')
-    .filter(c => !queueAssignee || c.assigned_to === queueAssignee)
-    .sort((a, b) => a.next_action_date.localeCompare(b.next_action_date))
+  const contactById = Object.fromEntries(contacts.map(c => [c.id, c]))
+  const dueItems = followups
+    .filter(f => f.follow_up_date <= todayStr)
+    .map(f => ({ ...f, c: contactById[f.contact_id] }))
+    .filter(f => f.c && f.c.status !== 'not_interested')
+    .filter(f => !queueAssignee || f.c.assigned_to === queueAssignee)
+    .sort((a, b) => a.follow_up_date.localeCompare(b.follow_up_date))
   const userName = (id) => users.find(u => u.id === id)?.name
 
   // ── "Going Cold" — active partners with no scheduled follow-up that haven't
   // been touched in COLD_DAYS+. Catches partnerships the follow-up queue misses. ──
   const COLD_DAYS = 30
-  const dueIds = new Set(dueItems.map(c => c.id))
+  const scheduledIds = new Set(followups.map(f => f.contact_id)) // any pending follow-up
   const staleDays = (c) => {
     const ref = c.last_interacted_at || c.created_at
     return ref ? Math.floor((Date.now() - new Date(ref).getTime()) / 86400000) : 9999
   }
   const coldItems = contacts
     .filter(c => c.is_partner)
-    .filter(c => !dueIds.has(c.id))
-    .filter(c => !(c.next_action_date && c.next_action_date > todayStr)) // not already scheduled ahead
+    .filter(c => !scheduledIds.has(c.id)) // not already scheduled (due or ahead)
     .filter(c => staleDays(c) >= COLD_DAYS)
     .filter(c => !queueAssignee || c.assigned_to === queueAssignee)
     .sort((a, b) => staleDays(b) - staleDays(a))
@@ -1851,29 +1856,33 @@ export default function B2bPage() {
           </select>
         </div>
         {dueItems.length === 0 ? (
-          <p className="px-4 py-4 text-sm text-gray-400">No follow-ups due. Add a due date + next action on a business to schedule one.</p>
+          <p className="px-4 py-4 text-sm text-gray-400">No follow-ups due. Log an interaction with a follow-up date to schedule one.</p>
         ) : (
           <div className="divide-y divide-gray-100 max-h-72 overflow-y-auto">
-            {dueItems.map(c => {
-              const overdue = c.next_action_date < todayStr
+            {dueItems.map(f => {
+              const c = f.c
+              const overdue = f.follow_up_date < todayStr
               const who = userName(c.assigned_to)
-              const daysOver = Math.round((new Date(todayStr) - new Date(c.next_action_date + 'T00:00:00')) / 86400000)
+              const daysOver = Math.round((new Date(todayStr) - new Date(f.follow_up_date + 'T00:00:00')) / 86400000)
               return (
-                <button key={c.id} onClick={() => setModalContact(c)}
-                  className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-3 transition-colors">
+                <div key={f.id} className="px-4 py-2.5 hover:bg-gray-50 flex items-center gap-3 transition-colors">
                   <span className={`w-2 h-2 rounded-full flex-shrink-0 ${overdue ? 'bg-red-500' : 'bg-orange-400'}`} />
-                  <div className="min-w-0 flex-1">
+                  <button onClick={() => setModalContact(c)} className="min-w-0 flex-1 text-left">
                     <p className="text-sm font-semibold text-gray-900 truncate">
                       {c.business_name}
                       {c.partner_type === 'corporate' && <span className="ml-1.5 text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full font-medium">Corporate</span>}
                     </p>
-                    <p className="text-xs text-gray-500 truncate">{c.next_action || 'Follow up'}</p>
-                  </div>
+                    <p className="text-xs text-gray-500 truncate">{f.notes || 'Follow up'}</p>
+                  </button>
                   {who && <span className="text-xs text-gray-400 flex-shrink-0">{who}</span>}
                   <span className={`text-xs font-semibold flex-shrink-0 ${overdue ? 'text-red-600' : 'text-orange-600'}`}>
                     {overdue ? `${daysOver}d overdue` : 'Today'}
                   </span>
-                </button>
+                  <button onClick={() => markFollowupDone(f.id)} title="Mark follow-up done"
+                    className="p-1 text-gray-300 hover:text-green-600 rounded transition-colors flex-shrink-0">
+                    <Check size={15} />
+                  </button>
+                </div>
               )
             })}
           </div>
