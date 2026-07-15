@@ -452,27 +452,67 @@ router.post('/members', authenticate, requireStudio, requireRole('owner', 'manag
   if (!email) return res.status(400).json({ error: 'email required' })
   const type = MEMBER_TYPES.includes(member_type) ? member_type : 'guest'
   const supabase = db()
+  const sid = req.studio.id
   const lower = String(email).trim().toLowerCase()
   const cancelled = !!is_cancelled
+  const nameTrim = String(full_name || '').trim()
 
-  const { data: member, error } = await supabase.from('onboarding_members').upsert({
-    studio_id: req.studio.id,
-    customer_id: `MANUAL_${lower}`,
-    email: lower,
-    full_name: full_name || null,
-    phone: phone || null,
-    member_type: type,
-    origin_studio: origin_studio || null,
-    expiration_date: expiration_date || null,
-    // A cancelled person still gets their workouts attributed, but is excluded
-    // from the active count and never seeded a journey / onboarding texts.
-    status: cancelled ? 'Cancelled' : 'Active',
-    is_cancelled: cancelled,
-    cancelled_date: cancelled ? (cancelled_date || null) : null,
-    is_new_member: false,
-    seen_in_last_import: true,
-    updated_at: new Date().toISOString(),
-  }, { onConflict: 'studio_id,customer_id' }).select().single()
+  // ── De-dupe by name so reconciling someone never spawns a parallel record ──
+  // The usual cause of split identities: SAIL imports the person under a numeric
+  // customer_id (often an empty shell with no email), then someone "adds" them
+  // here to attach their workouts — creating a second MANUAL_ row. Before making
+  // a new record, look for an existing same-name member to reuse and enrich.
+  let existing = null
+  if (nameTrim) {
+    const { data: sameName } = await supabase.from('onboarding_members')
+      .select('*').eq('studio_id', sid).ilike('full_name', nameTrim)
+    const cand = (sameName || []).filter(x =>
+      String(x.customer_id || '').toLowerCase() !== `manual_${lower}`)
+    // Prefer a SAIL record (numeric customer_id) with no email, or this same email.
+    const sail = cand.filter(x => !String(x.customer_id || '').startsWith('MANUAL_')
+      && (!x.email || x.email.toLowerCase() === lower))
+    if (sail.length === 1) existing = sail[0]
+    else {
+      const byEmail = cand.filter(x => (x.email || '').toLowerCase() === lower)
+      if (byEmail.length === 1) existing = byEmail[0]
+    }
+  }
+
+  let member, error
+  if (existing) {
+    // Reuse the existing roster identity — only enrich, never clobber its type.
+    const patch = {
+      email: existing.email || lower,
+      phone: phone || existing.phone || null,
+      origin_studio: origin_studio || existing.origin_studio || null,
+      expiration_date: expiration_date || existing.expiration_date || null,
+      seen_in_last_import: true,
+      updated_at: new Date().toISOString(),
+    }
+    if (cancelled) { patch.status = 'Cancelled'; patch.is_cancelled = true; patch.cancelled_date = cancelled_date || existing.cancelled_date || null }
+    const r = await supabase.from('onboarding_members').update(patch).eq('id', existing.id).select().single()
+    member = r.data; error = r.error
+  } else {
+    const r = await supabase.from('onboarding_members').upsert({
+      studio_id: sid,
+      customer_id: `MANUAL_${lower}`,
+      email: lower,
+      full_name: full_name || null,
+      phone: phone || null,
+      member_type: type,
+      origin_studio: origin_studio || null,
+      expiration_date: expiration_date || null,
+      // A cancelled person still gets their workouts attributed, but is excluded
+      // from the active count and never seeded a journey / onboarding texts.
+      status: cancelled ? 'Cancelled' : 'Active',
+      is_cancelled: cancelled,
+      cancelled_date: cancelled ? (cancelled_date || null) : null,
+      is_new_member: false,
+      seen_in_last_import: true,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'studio_id,customer_id' }).select().single()
+    member = r.data; error = r.error
+  }
   if (error) return res.status(500).json({ error: error.message })
 
   // Link any of their unreconciled bookings by email.
@@ -829,8 +869,17 @@ router.post('/reconcile/apply', authenticate, requireStudio, requireRole('owner'
       let byName = null
       if (fullName) {
         const { data: nm } = await supabase.from('onboarding_members')
-          .select('*').eq('studio_id', sid).ilike('full_name', fullName).limit(2)
-        if (nm && nm.length === 1) byName = nm[0]   // exactly one → safe to reuse
+          .select('*').eq('studio_id', sid).ilike('full_name', fullName)
+        // Prefer a SAIL record (numeric id) with no email or this email — that's the
+        // shell the import made. Falling back to the single overall match keeps the
+        // old behavior. Ignore any pre-existing MANUAL_ dup so ambiguity from a prior
+        // bad run doesn't block the reuse.
+        const cand = (nm || []).filter(x => (x.email || '').toLowerCase() === email || !x.email
+          || !String(x.customer_id || '').startsWith('MANUAL_'))
+        const sail = cand.filter(x => !String(x.customer_id || '').startsWith('MANUAL_')
+          && (!x.email || x.email.toLowerCase() === email))
+        if (sail.length === 1) byName = sail[0]
+        else if ((nm || []).length === 1) byName = nm[0]
       }
       if (byName) {
         mem = byName
