@@ -1671,7 +1671,6 @@ function LogOutreachModal({ item, onNeedDay2, onClose, onSaved }) {
   const [saving, setSaving] = useState(false)
   const save = async () => {
     // Day-2 requires the goal/photo/consent gate — route there instead of completing here.
-    if (done && item.trigger_ref === 'day_2') { onNeedDay2(item); return }
     setSaving(true)
     try {
       await apiPost(`${BASE}/daily-list/log`, {
@@ -1817,7 +1816,6 @@ function DailyListTab() {
 
   const drop = (id) => { setDone(d => ({ ...d, [id]: true })); setTimeout(() => setRows(rs => rs.filter(x => x.id !== id)), 600) }
   const complete = async (r) => {
-    if (r.trigger_ref === 'day_2') { setDay2(r); return }   // capture gate first
     drop(r.id)
     try {
       if (r.kind === 'reengage' || r.kind === 'missed_guest') await apiPost(`${BASE}/reengage/${r.member_id}/complete`, {})
@@ -2595,10 +2593,10 @@ function RecognitionTab({ canImport }) {
             const isMemberRow = /^(member|customer|reciprocal member|employee)$/i.test((r.lead_status || '').trim())
             const script = htmlToText(renderBday(isMemberRow ? bdayMember : bdayNonMember, r.member_name))
             return (
-              <div key={r.id} className={`border rounded-xl p-3 transition-colors ${done ? 'bg-blue-50 border-blue-200 opacity-70' : 'bg-white border-gray-200'}`}>
+              <div key={r.id} className={`border rounded-xl p-3 transition-colors ${done ? (isBday ? 'bg-green-50 border-green-200 opacity-80' : 'bg-blue-50 border-blue-200 opacity-70') : 'bg-white border-gray-200'}`}>
                 <div className="flex items-start gap-3">
                   <button onClick={() => !done && complete(r)} disabled={done}
-                    className={`mt-0.5 flex-shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center ${done ? 'bg-blue-500 border-blue-500' : 'border-gray-300 hover:border-blue-400'}`}>
+                    className={`mt-0.5 flex-shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center ${done ? (isBday ? 'bg-green-500 border-green-500' : 'bg-blue-500 border-blue-500') : `border-gray-300 ${isBday ? 'hover:border-green-400' : 'hover:border-blue-400'}`}`}>
                     {done && <Check size={13} className="text-white" />}
                   </button>
                   <div className="flex-1 min-w-0">

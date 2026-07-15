@@ -656,15 +656,15 @@ router.get('/members/:id/journey', authenticate, requireStudio, async (req, res)
 
   const touchpoints = [
     tp('day_0_orientation', 'Orientation', dayStatus(taskBy['day_0_orientation'], 'day_0_orientation')),
-    tp('photo', '1st-day photo', { status: xform?.before_photo_url ? 'done' : (taskBy['day_2']?.due_date && taskBy['day_2'].due_date <= today ? 'due' : 'upcoming') }),
-    tp('day_2', 'Day 2 goal', dayStatus(taskBy['day_2'], 'day_2')),
+    tp('photo', '1st day photo', { status: xform?.before_photo_url ? 'done' : (taskBy['day_2']?.due_date && taskBy['day_2'].due_date <= today ? 'due' : 'upcoming') }),
+    tp('day_2', 'Day 2 call', dayStatus(taskBy['day_2'], 'day_2')),
     tp('day_5', 'Day 5 check-in', dayStatus(taskBy['day_5'], 'day_5')),
     tp('day_21', 'Day 21 friend', dayStatus(taskBy['day_21'], 'day_21')),
     tp('day_30', 'Day 30 review', dayStatus(taskBy['day_30'], 'day_30')),
     tp('day_60', 'Day 60 review', dayStatus(taskBy['day_60'], 'day_60')),
-    tp('day_90', 'Day 90 close', dayStatus(taskBy['day_90'], 'day_90')),
+    tp('day_90', 'Day 90 photo', dayStatus(taskBy['day_90'], 'day_90')),
     tp('thank_you_card', 'Thank-you card', { status: (logBy['thank_you_card']?.done || cardTask?.status === 'completed') ? 'done' : cardTask ? 'due' : 'na' }),
-    tp('passport', 'Passport', { status: (rewardKeys.has('sticker') || logBy['passport']?.done) ? 'done' : (workouts >= 12 ? 'due' : 'upcoming') }),
+    tp('passport', 'Complete 12 Sticker', { status: (rewardKeys.has('sticker') || logBy['passport']?.done) ? 'done' : (workouts >= 12 ? 'due' : 'upcoming') }),
   ].filter(t => isActiveKey(t.key))
 
   // Custom journey steps added in Script Admin appear automatically.
@@ -675,7 +675,8 @@ router.get('/members/:id/journey', authenticate, requireStudio, async (req, res)
 
   // Order the journey path to match the Script Admin order (by template sort_order).
   const orderMap = new Map((templates || []).map(t => [t.template_key, t.sort_order ?? 900]))
-  const tpOrder = (key) => key === 'photo' ? (orderMap.get('day2_goal_call') ?? 20) + 1 : (orderMap.get(TP_TEMPLATE[key] || key) ?? 900)
+  // "1st day photo" sits right after Orientation and before the Day 2 call.
+  const tpOrder = (key) => key === 'photo' ? (orderMap.get('day0_orientation') ?? 10) + 1 : (orderMap.get(TP_TEMPLATE[key] || key) ?? 900)
   touchpoints.sort((a, b) => tpOrder(a.key) - tpOrder(b.key))
 
   const MILES = [[10, '10 visit-days'], [25, '25 · keychain'], [50, '50 visit-days'], [100, '100 · T-shirt'], [500, '500 · premium'], [1000, '1,000 · legacy']]
