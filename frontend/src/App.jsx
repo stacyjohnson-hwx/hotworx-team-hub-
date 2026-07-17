@@ -17,6 +17,7 @@ import TimeOffPage from '@/pages/timeoff/TimeOffPage'
 import StudioTrendsPage from '@/pages/studio-trends/StudioTrendsPage'
 import ScorecardPage from '@/pages/scorecard/ScorecardPage'
 import B2bPage from '@/pages/b2b/B2bPage'
+import SocialAnalyticsPage from '@/pages/social/SocialAnalyticsPage'
 import OrdersPage from '@/pages/orders/OrdersPage'
 import EventsPage from '@/pages/events/EventsPage'
 import SopsPage from '@/pages/sops/SopsPage'
@@ -112,6 +113,7 @@ function AppRoutes() {
         <Route path="/events"    element={<EventsPage />} />
         <Route path="/contest"   element={<ContestPage />} />
         <Route path="/b2b"       element={<B2bPage />} />
+        <Route path="/social"    element={<SocialAnalyticsPage />} />
         <Route path="/orders"    element={<OrdersPage />} />
         <Route path="/eod"       element={<EodPage />} />
         <Route path="/cleaning"  element={<CleaningPage />} />
