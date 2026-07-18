@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { apiGet } from '@/hooks/useApi'
 import { useStudio } from '@/contexts/StudioContext'
 import {
-  Instagram, Facebook, Star, TrendingUp, TrendingDown, Minus, Play, Heart,
+  Camera, ThumbsUp, Star, TrendingUp, TrendingDown, Minus, Play, Heart,
   MessageCircle, Bookmark, Share2, ArrowUpRight, RefreshCw, Sparkles,
   BarChart3, Info, Loader2, AlertCircle,
 } from 'lucide-react'
@@ -10,8 +10,8 @@ import {
 const fmt = (n) => n == null ? '—' : n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k' : String(n)
 
 const PLATFORM_META = {
-  instagram: { Icon: Instagram, color: '#E1306C', label: 'Instagram' },
-  facebook:  { Icon: Facebook,  color: '#1877F2', label: 'Facebook' },
+  instagram: { Icon: Camera,   color: '#E1306C', label: 'Instagram' },
+  facebook:  { Icon: ThumbsUp, color: '#1877F2', label: 'Facebook' },
   tiktok:    { Icon: Play,      color: '#111111', label: 'TikTok' },
   google:    { Icon: Star,      color: '#EA4335', label: 'Google' },
 }
