@@ -1,13 +1,15 @@
 import { useState, useEffect, useCallback } from 'react'
-import { apiGet } from '@/hooks/useApi'
+import { apiGet, apiPost } from '@/hooks/useApi'
 import { useStudio } from '@/contexts/StudioContext'
+import { useRole } from '@/hooks/useRole'
 import {
   Camera, ThumbsUp, Star, TrendingUp, TrendingDown, Minus, Play, Heart,
   MessageCircle, Bookmark, Share2, ArrowUpRight, RefreshCw, Sparkles,
-  BarChart3, Info, Loader2, AlertCircle,
+  BarChart3, Info, Loader2, AlertCircle, Pencil, X,
 } from 'lucide-react'
 
 const fmt = (n) => n == null ? '—' : n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k' : String(n)
+const INP = 'w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/30 mt-0.5'
 
 const PLATFORM_META = {
   instagram: { Icon: Camera,   color: '#E1306C', label: 'Instagram' },
@@ -142,11 +144,96 @@ function ContentRow({ item }) {
   )
 }
 
+// Manual-entry: type today's numbers by hand — the free, zero-setup data path.
+function ManualEntryModal({ channels, onClose, onSaved }) {
+  const byP = Object.fromEntries((channels || []).map(c => [c.platform, c]))
+  const [form, setForm] = useState(() => ORDER.reduce((a, p) => {
+    const c = byP[p] || {}
+    a[p] = {
+      handle: c.handle || '',
+      followers: c.followers != null ? String(c.followers) : '',
+      rating: c.rating != null ? String(c.rating) : '',
+      review_count: c.reviews != null ? String(c.reviews) : '',
+    }
+    return a
+  }, {}))
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+  const set = (p, k, v) => setForm(f => ({ ...f, [p]: { ...f[p], [k]: v } }))
+
+  const save = async () => {
+    setSaving(true); setErr('')
+    try {
+      for (const p of ORDER) {
+        const row = form[p]
+        if (!(row.handle || row.followers || row.rating || row.review_count)) continue
+        await apiPost('/api/social/manual-entry', {
+          platform: p, handle: row.handle || null,
+          followers: row.followers, rating: row.rating, review_count: row.review_count,
+        })
+      }
+      onSaved()
+    } catch (e) { setErr(e?.message || 'Save failed'); setSaving(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-start justify-between px-6 py-4 border-b border-gray-200 sticky top-0 bg-white">
+          <div>
+            <h2 className="text-lg font-bold text-gray-900">Update your numbers</h2>
+            <p className="text-xs text-gray-500 mt-0.5 max-w-sm">Type today&apos;s counts from each app. The dashboard fills in and builds trend history over time — no account connection needed.</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700 mt-1"><X size={20} /></button>
+        </div>
+        <div className="px-6 py-5 space-y-4">
+          {err && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">{err}</div>}
+          {ORDER.map(p => {
+            const meta = PLATFORM_META[p]; const { Icon, color } = meta; const isG = p === 'google'
+            return (
+              <div key={p} className="border border-gray-200 rounded-xl p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="w-6 h-6 rounded-lg grid place-items-center" style={{ background: color + '18' }}>
+                    <Icon size={14} color={color} fill={isG || p === 'tiktok' ? color : 'none'} />
+                  </span>
+                  <span className="text-sm font-semibold text-gray-700">{meta.label}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="col-span-2">
+                    <label className="text-[11px] text-gray-500">Handle (optional)</label>
+                    <input className={INP} value={form[p].handle} onChange={e => set(p, 'handle', e.target.value)} placeholder={isG ? 'Studio name on Google' : '@yourhandle'} />
+                  </div>
+                  {isG ? (
+                    <>
+                      <div><label className="text-[11px] text-gray-500">Star rating</label><input type="number" step="0.1" min="0" max="5" className={INP} value={form[p].rating} onChange={e => set(p, 'rating', e.target.value)} placeholder="4.9" /></div>
+                      <div><label className="text-[11px] text-gray-500"># of reviews</label><input type="number" min="0" className={INP} value={form[p].review_count} onChange={e => set(p, 'review_count', e.target.value)} placeholder="214" /></div>
+                    </>
+                  ) : (
+                    <div className="col-span-2"><label className="text-[11px] text-gray-500">Followers</label><input type="number" min="0" className={INP} value={form[p].followers} onChange={e => set(p, 'followers', e.target.value)} placeholder="3184" /></div>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+        <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-200 sticky bottom-0 bg-white">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 font-medium">Cancel</button>
+          <button onClick={save} disabled={saving} className="px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-bold rounded-lg disabled:opacity-50 flex items-center gap-2">
+            {saving && <Loader2 size={14} className="animate-spin" />} Save numbers
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function SocialAnalyticsPage() {
   const { currentStudio } = useStudio()
+  const { isOwnerOrManager } = useRole()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [editing, setEditing] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true); setError('')
@@ -176,11 +263,22 @@ export default function SocialAnalyticsPage() {
             {currentStudio?.name || 'Studio'} · {updated ? `Updated ${updated}` : 'Not synced yet'}
           </p>
         </div>
-        <button onClick={load} disabled={loading}
-          className="flex items-center gap-2 text-[13px] font-semibold text-gray-600 bg-white border border-gray-200 px-3.5 py-2 rounded-lg hover:bg-gray-50 disabled:opacity-50">
-          <RefreshCw size={13} className={loading ? 'animate-spin' : ''} /> Sync
-        </button>
+        <div className="flex items-center gap-2">
+          {isOwnerOrManager && (
+            <button onClick={() => setEditing(true)}
+              className="flex items-center gap-2 text-[13px] font-semibold text-white bg-orange-500 hover:bg-orange-600 px-3.5 py-2 rounded-lg">
+              <Pencil size={13} /> Update numbers
+            </button>
+          )}
+          <button onClick={load} disabled={loading}
+            className="flex items-center gap-2 text-[13px] font-semibold text-gray-600 bg-white border border-gray-200 px-3.5 py-2 rounded-lg hover:bg-gray-50 disabled:opacity-50">
+            <RefreshCw size={13} className={loading ? 'animate-spin' : ''} /> Sync
+          </button>
+        </div>
       </div>
+
+      {editing && <ManualEntryModal channels={cards} onClose={() => setEditing(false)}
+        onSaved={() => { setEditing(false); load() }} />}
 
       {error && (
         <div className="mb-5 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700 flex items-start gap-2">
@@ -220,8 +318,8 @@ export default function SocialAnalyticsPage() {
                 </p>
                 <p className="text-xs text-gray-400 mt-1 max-w-sm mx-auto">
                   {anyChannels
-                    ? 'The nightly sync will populate follower trends and top posts once the platform connectors are provisioned.'
-                    : 'Connect Instagram, Facebook, TikTok, and Google to start tracking follower growth, reviews, and your best content.'}
+                    ? 'Follower trends and top posts fill in here. Use “Update numbers” to log today’s counts, or connect a platform for automatic syncing.'
+                    : 'Tap “Update numbers” (top right) to enter your follower counts and Google rating by hand — the dashboard starts working and tracking trends immediately, no account connection needed.'}
                 </p>
               </div>
             )}

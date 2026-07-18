@@ -4,6 +4,7 @@ const { createClient } = require('@supabase/supabase-js')
 const { requireRole } = require('../middleware/roleGuard')
 const { requireStudio } = require('../middleware/studioMiddleware')
 const authenticate = require('../middleware/authMiddleware')
+const { todayInChicago } = require('../utils/dates')
 
 const supabase = () =>
   createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
@@ -138,6 +139,36 @@ router.delete('/channels/:id', authenticate, requireStudio, requireRole('owner',
     .delete().eq('id', req.params.id).eq('studio_id', req.studio.id)
   if (error) return res.status(500).json({ error: error.message })
   res.status(204).end()
+})
+
+// ─── POST /api/social/manual-entry ───────────────────────────────────────────
+// No-API path: register a channel + record today's numbers by hand. Lets the
+// dashboard work (and start building trend history) with zero platform setup.
+// Upserts the channel and today's snapshot; deltas compute automatically as more
+// days are entered.
+router.post('/manual-entry', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
+  const db = supabase()
+  const { platform, handle, followers, rating, review_count } = req.body
+  if (!PLATFORMS.includes(platform)) return res.status(400).json({ error: 'valid platform is required' })
+
+  const { data: ch, error: chErr } = await db.from('social_channels').upsert({
+    studio_id: req.studio.id, platform, handle: handle || null,
+  }, { onConflict: 'studio_id,platform' }).select().single()
+  if (chErr) return res.status(500).json({ error: chErr.message })
+
+  const num = (v) => (v === undefined || v === null || v === '') ? null : Number(v)
+  const snap = { channel_id: ch.id, snapshot_date: todayInChicago(), captured_at: new Date().toISOString() }
+  if (platform === 'google') { snap.rating = num(rating); snap.review_count = num(review_count) }
+  else { snap.followers = num(followers) }
+
+  // Only write a snapshot if an actual number was provided (don't stamp an empty day).
+  const hasValue = snap.followers != null || snap.rating != null || snap.review_count != null
+  if (hasValue) {
+    const { error: snapErr } = await db.from('channel_snapshots')
+      .upsert(snap, { onConflict: 'channel_id,snapshot_date' })
+    if (snapErr) return res.status(500).json({ error: snapErr.message })
+  }
+  res.json({ channel: ch, snapshot_written: hasValue })
 })
 
 module.exports = router
