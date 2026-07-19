@@ -182,8 +182,7 @@ router.post('/sync-now', authenticate, requireStudio, requireRole('owner', 'mana
   const { data: channels } = await db.from('social_channels')
     .select('*').eq('studio_id', req.studio.id).eq('active', true)
 
-  const results = []
-  for (const ch of channels || []) {
+  const results = await Promise.all((channels || []).map(async (ch) => {
     const r = await scrapeChannel(ch)
     let wrote = false
     if (r.data) {
@@ -191,7 +190,7 @@ router.post('/sync-now', authenticate, requireStudio, requireRole('owner', 'mana
       const { error } = await db.from('channel_snapshots').upsert(snap, { onConflict: 'channel_id,snapshot_date' })
       wrote = !error
     }
-    results.push({
+    return {
       platform: ch.platform,
       status: r.error ? 'error' : r.data ? 'ok' : 'no_number',
       value: r.data || null,
@@ -199,8 +198,8 @@ router.post('/sync-now', authenticate, requireStudio, requireRole('owner', 'mana
       field_names: r.data ? undefined : r.rawKeys,   // only surface keys when we couldn't read a number
       error: r.error || null,
       wrote,
-    })
-  }
+    }
+  }))
   res.json({ ran_at: new Date().toISOString(), results })
 })
 
