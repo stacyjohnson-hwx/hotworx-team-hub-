@@ -5,6 +5,7 @@ const { requireRole } = require('../middleware/roleGuard')
 const { requireStudio } = require('../middleware/studioMiddleware')
 const authenticate = require('../middleware/authMiddleware')
 const { todayInChicago } = require('../utils/dates')
+const { scrapeChannel } = require('../services/socialConnectors')
 
 const supabase = () =>
   createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
@@ -169,6 +170,38 @@ router.post('/manual-entry', authenticate, requireStudio, requireRole('owner', '
     if (snapErr) return res.status(500).json({ error: snapErr.message })
   }
   res.json({ channel: ch, snapshot_written: hasValue })
+})
+
+// ─── POST /api/social/sync-now ───────────────────────────────────────────────
+// Scrape every active channel via Apify right now, write today's snapshots, and
+// report per-channel results (incl. field names when a number can't be read) so
+// we can verify the connection without waiting for the nightly job.
+router.post('/sync-now', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
+  const db = supabase()
+  const today = todayInChicago()
+  const { data: channels } = await db.from('social_channels')
+    .select('*').eq('studio_id', req.studio.id).eq('active', true)
+
+  const results = []
+  for (const ch of channels || []) {
+    const r = await scrapeChannel(ch)
+    let wrote = false
+    if (r.data) {
+      const snap = { channel_id: ch.id, snapshot_date: today, captured_at: new Date().toISOString(), ...r.data }
+      const { error } = await db.from('channel_snapshots').upsert(snap, { onConflict: 'channel_id,snapshot_date' })
+      wrote = !error
+    }
+    results.push({
+      platform: ch.platform,
+      status: r.error ? 'error' : r.data ? 'ok' : 'no_number',
+      value: r.data || null,
+      scraped_items: r.count ?? 0,
+      field_names: r.data ? undefined : r.rawKeys,   // only surface keys when we couldn't read a number
+      error: r.error || null,
+      wrote,
+    })
+  }
+  res.json({ ran_at: new Date().toISOString(), results })
 })
 
 module.exports = router

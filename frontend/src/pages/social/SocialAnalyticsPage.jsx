@@ -234,6 +234,15 @@ export default function SocialAnalyticsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [editing, setEditing] = useState(false)
+  const [scraping, setScraping] = useState(false)
+  const [scrapeResult, setScrapeResult] = useState(null)
+
+  const scrapeNow = async () => {
+    setScraping(true); setScrapeResult(null)
+    try { const r = await apiPost('/api/social/sync-now', {}); setScrapeResult(r.results || []); await load() }
+    catch (e) { setScrapeResult([{ platform: 'all', status: 'error', error: e?.message || 'failed' }]) }
+    finally { setScraping(false) }
+  }
 
   const load = useCallback(async () => {
     setLoading(true); setError('')
@@ -265,8 +274,14 @@ export default function SocialAnalyticsPage() {
         </div>
         <div className="flex items-center gap-2">
           {isOwnerOrManager && (
+            <button onClick={scrapeNow} disabled={scraping}
+              className="flex items-center gap-2 text-[13px] font-semibold text-white bg-orange-500 hover:bg-orange-600 px-3.5 py-2 rounded-lg disabled:opacity-50">
+              {scraping ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} {scraping ? 'Scraping…' : 'Scrape now'}
+            </button>
+          )}
+          {isOwnerOrManager && (
             <button onClick={() => setEditing(true)}
-              className="flex items-center gap-2 text-[13px] font-semibold text-white bg-orange-500 hover:bg-orange-600 px-3.5 py-2 rounded-lg">
+              className="flex items-center gap-2 text-[13px] font-semibold text-gray-600 bg-white border border-gray-200 px-3.5 py-2 rounded-lg hover:bg-gray-50">
               <Pencil size={13} /> Update numbers
             </button>
           )}
@@ -284,6 +299,24 @@ export default function SocialAnalyticsPage() {
         <div className="mb-5 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700 flex items-start gap-2">
           <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
           <span>Couldn&apos;t load the dashboard: {error}. Your last-synced data is unaffected — try Sync again.</span>
+        </div>
+      )}
+
+      {scrapeResult && (
+        <div className="mb-5 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3">
+          <p className="text-sm font-semibold text-gray-700 mb-1.5">Scrape results</p>
+          <div className="space-y-1">
+            {scrapeResult.map((r, i) => (
+              <div key={i} className="flex items-start gap-2 text-xs">
+                <span className="capitalize font-medium w-20 flex-shrink-0 text-gray-600">{r.platform}</span>
+                {r.status === 'ok'
+                  ? <span className="text-green-700">✓ {r.value?.followers != null ? `${r.value.followers.toLocaleString()} followers` : r.value?.rating != null ? `${r.value.rating}★ · ${r.value.review_count ?? '?'} reviews` : 'saved'}</span>
+                  : r.status === 'no_number'
+                    ? <span className="text-amber-700">⚠ scraped {r.scraped_items} item(s) but couldn’t read the number{r.field_names ? ` — fields: ${(r.field_names || []).join(', ')}` : ''}</span>
+                    : <span className="text-red-700">✗ {r.error}</span>}
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
