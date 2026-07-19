@@ -155,7 +155,7 @@ async function generateCoachReport(supabase, studioId, { studio = {}, userId = n
   const ctx = await gatherContext(supabase, studioId, studio)
   let row
   try {
-    const report = await generateJson(COACH_SYSTEM, buildCoachPrompt(ctx), { model: TEARDOWN_MODEL, maxTokens: 3000 })
+    const report = await generateJson(COACH_SYSTEM, buildCoachPrompt(ctx), { model: TEARDOWN_MODEL, maxTokens: 8000 })
     row = {
       studio_id: studioId, report, inputs: ctx,
       status: 'ok', model: TEARDOWN_MODEL, generated_by: userId, generated_at: new Date().toISOString(),
@@ -163,7 +163,8 @@ async function generateCoachReport(supabase, studioId, { studio = {}, userId = n
   } catch (e) {
     console.error('[Coach Report] failed for studio', studioId, e.message)
     row = {
-      studio_id: studioId, report: { message: 'The AI coach could not generate a report this time. Please try again.' },
+      studio_id: studioId,
+      report: { message: 'The AI coach could not generate a report this time. Please try again.', debug: e.message },
       inputs: ctx, status: 'unavailable', model: TEARDOWN_MODEL, generated_by: userId, generated_at: new Date().toISOString(),
     }
   }
