@@ -1,6 +1,7 @@
 const cron = require('node-cron')
 const { createClient } = require('@supabase/supabase-js')
 const { FETCHERS } = require('../services/socialConnectors')
+const { pushSocialToTrends } = require('../services/socialToTrends')
 
 const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 const todayInChicago = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' })
@@ -16,6 +17,8 @@ async function snapshotChannels() {
     .from('social_channels').select('*').eq('active', true)
   if (error) { console.error('[Social Cron] load channels:', error.message); return { ok: 0, skipped: 0 } }
 
+  const TREND_FIELD = { instagram: 'instagram_followers', facebook: 'facebook_followers', tiktok: 'tiktok_followers' }
+  const trendsByStudio = {}   // studio_id -> { instagram_followers, ... }
   let ok = 0, skipped = 0
   for (const ch of channels || []) {
     try {
@@ -30,10 +33,18 @@ async function snapshotChannels() {
         captured_at: new Date().toISOString(),
       }, { onConflict: 'channel_id,snapshot_date' })
       ok++
+      const sv = trendsByStudio[ch.studio_id] = trendsByStudio[ch.studio_id] || {}
+      if (TREND_FIELD[ch.platform] && current.followers != null) sv[TREND_FIELD[ch.platform]] = current.followers
+      else if (ch.platform === 'google' && current.review_count != null) sv.five_star_reviews = current.review_count
     } catch (e) {
       console.error(`[Social Cron] ${ch.platform} snapshot failed:`, e.message)
       skipped++
     }
+  }
+  // Mirror the latest counts into each studio's current-month Studio Trends row.
+  for (const [studioId, vals] of Object.entries(trendsByStudio)) {
+    try { await pushSocialToTrends(supabase, studioId, vals) }
+    catch (e) { console.error('[Social Cron] studio_trends push failed:', e.message) }
   }
   console.log(`[Social Cron] snapshot ${date}: ${ok} recorded, ${skipped} skipped (unconfigured/none)`)
   return { ok, skipped }

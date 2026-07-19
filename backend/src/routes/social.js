@@ -6,6 +6,7 @@ const { requireStudio } = require('../middleware/studioMiddleware')
 const authenticate = require('../middleware/authMiddleware')
 const { todayInChicago } = require('../utils/dates')
 const { scrapeChannel } = require('../services/socialConnectors')
+const { pushSocialToTrends } = require('../services/socialToTrends')
 
 const supabase = () =>
   createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
@@ -200,7 +201,18 @@ router.post('/sync-now', authenticate, requireStudio, requireRole('owner', 'mana
       wrote,
     }
   }))
-  res.json({ ran_at: new Date().toISOString(), results })
+
+  // Push the scraped counts onto this month's Studio Trends row too.
+  const TREND_FIELD = { instagram: 'instagram_followers', facebook: 'facebook_followers', tiktok: 'tiktok_followers' }
+  const trendVals = {}
+  for (const r of results) {
+    if (r.status !== 'ok') continue
+    if (TREND_FIELD[r.platform] && r.value?.followers != null) trendVals[TREND_FIELD[r.platform]] = r.value.followers
+    else if (r.platform === 'google' && r.value?.review_count != null) trendVals.five_star_reviews = r.value.review_count
+  }
+  const studio_trends = await pushSocialToTrends(db, req.studio.id, trendVals)
+
+  res.json({ ran_at: new Date().toISOString(), results, studio_trends })
 })
 
 module.exports = router
