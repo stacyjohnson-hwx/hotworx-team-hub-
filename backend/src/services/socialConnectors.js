@@ -85,6 +85,9 @@ const TREND_ACTORS = {
     keyword: (q, n) => ['clockworks~tiktok-scraper', { searchQueries: [q], resultsPerPage: n, shouldDownloadVideos: false, shouldDownloadCovers: false }],
     account: (q, n) => ['clockworks~tiktok-scraper', { profiles: [strip(q)], resultsPerPage: n, shouldDownloadVideos: false, shouldDownloadCovers: false }],
   },
+  facebook: {
+    account: (q, n) => ['apify~facebook-posts-scraper', { startUrls: [{ url: /^https?:/.test(q) ? q : `https://www.facebook.com/${strip(q)}` }], resultsLimit: n }],
+  },
 }
 
 // Normalize wildly-varying actor output into a common post shape (defensive —
@@ -135,6 +138,35 @@ async function scrapeOwnPosts(channel, { limit = 20 } = {}) {
     const items = (raw || []).map(normalizeTrendItem).filter(x => x.external_id)
     return { items, rawKeys: Object.keys(raw?.[0] || {}).slice(0, 50), count: (raw || []).length }
   } catch (e) { return { items: [], error: e.message } }
+}
+
+// Scrape the actual Google reviews (public) via the Maps places actor with
+// maxReviews. Returns the reviews + rating + count + star distribution.
+async function scrapeGoogleReviews(channel, { maxReviews = 60 } = {}) {
+  if (!process.env.APIFY_TOKEN) return { reviews: [], error: 'no_token' }
+  try {
+    const items = await runActor(ACTORS.google, {
+      searchStringsArray: [channel.external_id || channel.handle],
+      maxCrawledPlacesPerSearch: 1, maxReviews, reviewsSort: 'newest', language: 'en',
+    })
+    const place = items[0] || {}
+    const reviews = (place.reviews || []).map(r => ({
+      external_id: String(r.reviewId || r.reviewerId || `${r.name || 'anon'}-${r.publishedAtDate || r.publishAt || ''}`),
+      author_name: r.name || r.reviewerName || null,
+      rating: pick(r, ['stars', 'rating', 'starRating']),
+      text: pickStr(r, ['text', 'reviewText', 'textTranslated']),
+      review_date: pickStr(r, ['publishedAtDate', 'publishAtDate', 'publishedAt']),
+      owner_response: pickStr(r, ['responseFromOwnerText']) || pickStr(r.responseFromOwner || {}, ['text']),
+    })).filter(r => r.external_id && r.external_id !== 'anon-')
+    return {
+      reviews,
+      rating: pick(place, ['totalScore', 'rating', 'stars']),
+      review_count: pick(place, ['reviewsCount', 'reviewCount']),
+      distribution: place.reviewsDistribution || null,
+      count: items.length,
+      rawKeys: Object.keys(place).slice(0, 50),
+    }
+  } catch (e) { return { reviews: [], error: e.message } }
 }
 
 function connectorStatus() {

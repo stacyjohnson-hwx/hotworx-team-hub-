@@ -3,6 +3,7 @@ const { createClient } = require('@supabase/supabase-js')
 const { FETCHERS } = require('../services/socialConnectors')
 const { pushSocialToTrends } = require('../services/socialToTrends')
 const { syncOwnPosts } = require('../services/ownPosts')
+const { syncGoogleReviews } = require('../services/googleReviews')
 
 const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 const todayInChicago = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' })
@@ -49,6 +50,13 @@ async function snapshotChannels() {
     catch (e) { console.error('[Social Cron] studio_trends push failed:', e.message) }
     try { await syncOwnPosts(supabase, studioId) }
     catch (e) { console.error('[Social Cron] own-posts sync failed:', e.message) }
+  }
+  // Pull actual Google reviews + refresh AI theme summary for each studio that
+  // has a google channel (independent of whether the count snapshot succeeded).
+  const googleStudios = [...new Set((channels || []).filter(c => c.platform === 'google').map(c => c.studio_id))]
+  for (const studioId of googleStudios) {
+    try { await syncGoogleReviews(supabase, studioId) }
+    catch (e) { console.error('[Social Cron] google reviews sync failed:', e.message) }
   }
   console.log(`[Social Cron] snapshot ${date}: ${ok} recorded, ${skipped} skipped (unconfigured/none)`)
   return { ok, skipped }

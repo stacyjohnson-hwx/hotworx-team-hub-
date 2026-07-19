@@ -47,7 +47,7 @@ async function generateOwnTeardowns(supabase, studioId, { limit = 8, recencyDays
 // then tear down the top ones. Feeds the dashboard "Best-performing content".
 async function syncOwnPosts(supabase, studioId, { limit = 20, withTeardowns = true } = {}) {
   const { data: channels } = await supabase.from('social_channels')
-    .select('*').eq('studio_id', studioId).eq('active', true).in('platform', ['instagram', 'tiktok'])
+    .select('*').eq('studio_id', studioId).eq('active', true).in('platform', ['instagram', 'tiktok', 'facebook'])
 
   const results = []
   for (const ch of channels || []) {
