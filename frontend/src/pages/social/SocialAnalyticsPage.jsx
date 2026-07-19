@@ -298,8 +298,8 @@ function DashboardTab() {
 
   const scrapeNow = async () => {
     setScraping(true); setScrapeResult(null)
-    try { const r = await apiPost('/api/social/sync-now', {}); setScrapeResult(r.results || []); await load() }
-    catch (e) { setScrapeResult([{ platform: 'all', status: 'error', error: e?.message || 'failed' }]) }
+    try { const r = await apiPost('/api/social/sync-now', {}); setScrapeResult(r); await load() }
+    catch (e) { setScrapeResult({ results: [{ platform: 'all', status: 'error', error: e?.message || 'failed' }] }) }
     finally { setScraping(false) }
   }
 
@@ -347,9 +347,9 @@ function DashboardTab() {
 
       {scrapeResult && (
         <div className="mb-5 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3">
-          <p className="text-sm font-semibold text-gray-700 mb-1.5">Scrape results</p>
+          <p className="text-sm font-semibold text-gray-700 mb-1.5">Follower & review sync</p>
           <div className="space-y-1">
-            {scrapeResult.map((r, i) => (
+            {(scrapeResult.results || []).map((r, i) => (
               <div key={i} className="flex items-start gap-2 text-xs">
                 <span className="capitalize font-medium w-20 flex-shrink-0 text-gray-600">{r.platform}</span>
                 {r.status === 'ok'
@@ -360,6 +360,22 @@ function DashboardTab() {
               </div>
             ))}
           </div>
+          {scrapeResult.posts?.results && (
+            <div className="mt-2 pt-2 border-t border-gray-200 space-y-1">
+              <p className="text-xs font-semibold text-gray-600 mb-0.5">Your posts</p>
+              {scrapeResult.posts.results.map((r, i) => (
+                <div key={i} className="flex items-start gap-2 text-xs">
+                  <span className="capitalize font-medium w-20 flex-shrink-0 text-gray-600">{r.platform}</span>
+                  {r.status === 'ok'
+                    ? <span className="text-green-700">✓ {r.kept} posts</span>
+                    : r.status === 'no_posts'
+                      ? <span className="text-amber-700">⚠ none found{r.field_names ? ` — fields: ${(r.field_names || []).join(', ')}` : ''}</span>
+                      : <span className="text-red-700">✗ {r.error}</span>}
+                </div>
+              ))}
+              {scrapeResult.posts.teardowns?.generated != null && <p className="text-[11px] text-gray-500">{scrapeResult.posts.teardowns.generated} AI teardown(s) generated.</p>}
+            </div>
+          )}
         </div>
       )}
 

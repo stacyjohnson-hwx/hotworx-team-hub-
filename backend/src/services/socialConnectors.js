@@ -78,7 +78,7 @@ const TREND_ACTORS = {
   instagram: {
     hashtag: (q, n) => ['apify~instagram-hashtag-scraper', { hashtags: [strip(q)], resultsLimit: n }],
     keyword: (q, n) => ['apify~instagram-hashtag-scraper', { hashtags: [strip(q)], resultsLimit: n }],
-    account: (q, n) => ['apify~instagram-scraper', { username: [strip(q)], resultsType: 'posts', resultsLimit: n }],
+    account: (q, n) => ['apify~instagram-scraper', { directUrls: [`https://www.instagram.com/${strip(q)}/`], resultsType: 'posts', resultsLimit: n }],
   },
   tiktok: {
     hashtag: (q, n) => ['clockworks~tiktok-scraper', { hashtags: [strip(q)], resultsPerPage: n, shouldDownloadVideos: false, shouldDownloadCovers: false }],
