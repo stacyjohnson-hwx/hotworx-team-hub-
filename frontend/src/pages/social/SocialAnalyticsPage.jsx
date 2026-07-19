@@ -374,7 +374,7 @@ function DashboardTab() {
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
             <div className="flex items-center justify-between mb-1.5">
               <h2 className="text-[15px] font-bold text-gray-900">Best-performing content</h2>
-              <span className="text-xs text-gray-400">Last 14 days</span>
+              <span className="text-xs text-gray-400">Last 30 days</span>
             </div>
             {top.length > 0 && (
               <div className="flex gap-6 mb-1.5 pb-3 border-b border-gray-100">

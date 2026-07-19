@@ -122,6 +122,21 @@ async function discoverPosts(source, { limit = 30 } = {}) {
   } catch (e) { return { items: [], error: e.message } }
 }
 
+// Scrape a studio's OWN recent posts (for the best-performing feed). Reuses the
+// account actors + normalizer. IG + TikTok only (the "videos"); FB has no account
+// actor wired.
+async function scrapeOwnPosts(channel, { limit = 20 } = {}) {
+  if (!process.env.APIFY_TOKEN) return { items: [], error: 'no_token' }
+  const build = TREND_ACTORS[channel.platform]?.account
+  if (!build) return { items: [], error: 'unsupported_platform' }
+  const [actor, input] = build(usernameFrom(channel.external_id || channel.handle), limit)
+  try {
+    const raw = await runActor(actor, input)
+    const items = (raw || []).map(normalizeTrendItem).filter(x => x.external_id)
+    return { items, rawKeys: Object.keys(raw?.[0] || {}).slice(0, 50), count: (raw || []).length }
+  } catch (e) { return { items: [], error: e.message } }
+}
+
 function connectorStatus() {
   const on = !!process.env.APIFY_TOKEN
   return { instagram: on, facebook: on, tiktok: on, google: on }
@@ -131,4 +146,4 @@ function connectorStatus() {
 const FETCHERS = Object.fromEntries(['instagram', 'facebook', 'tiktok', 'google'].map(p =>
   [p, async (ch) => (await scrapeChannel(ch)).data]))
 
-module.exports = { FETCHERS, connectorStatus, scrapeChannel, discoverPosts, runActor, ACTORS }
+module.exports = { FETCHERS, connectorStatus, scrapeChannel, discoverPosts, scrapeOwnPosts, runActor, ACTORS }

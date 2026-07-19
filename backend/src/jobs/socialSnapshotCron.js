@@ -2,6 +2,7 @@ const cron = require('node-cron')
 const { createClient } = require('@supabase/supabase-js')
 const { FETCHERS } = require('../services/socialConnectors')
 const { pushSocialToTrends } = require('../services/socialToTrends')
+const { syncOwnPosts } = require('../services/ownPosts')
 
 const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 const todayInChicago = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' })
@@ -41,10 +42,13 @@ async function snapshotChannels() {
       skipped++
     }
   }
-  // Mirror the latest counts into each studio's current-month Studio Trends row.
-  for (const [studioId, vals] of Object.entries(trendsByStudio)) {
-    try { await pushSocialToTrends(supabase, studioId, vals) }
+  // Mirror the latest counts into each studio's current-month Studio Trends row,
+  // and refresh each studio's own top posts (best-performing feed) + teardowns.
+  for (const studioId of Object.keys(trendsByStudio)) {
+    try { await pushSocialToTrends(supabase, studioId, trendsByStudio[studioId]) }
     catch (e) { console.error('[Social Cron] studio_trends push failed:', e.message) }
+    try { await syncOwnPosts(supabase, studioId) }
+    catch (e) { console.error('[Social Cron] own-posts sync failed:', e.message) }
   }
   console.log(`[Social Cron] snapshot ${date}: ${ok} recorded, ${skipped} skipped (unconfigured/none)`)
   return { ok, skipped }

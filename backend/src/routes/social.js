@@ -7,6 +7,7 @@ const authenticate = require('../middleware/authMiddleware')
 const { todayInChicago } = require('../utils/dates')
 const { scrapeChannel } = require('../services/socialConnectors')
 const { pushSocialToTrends } = require('../services/socialToTrends')
+const { syncOwnPosts } = require('../services/ownPosts')
 
 const supabase = () =>
   createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
@@ -82,7 +83,7 @@ router.get('/dashboard', authenticate, requireStudio, async (req, res) => {
       ])
       const mBy = Object.fromEntries((metrics || []).map(m => [m.post_id, m]))
       const tBy = Object.fromEntries((teardowns || []).map(t => [t.post_id, t]))
-      const cutoff = Date.now() - 14 * 86400000
+      const cutoff = Date.now() - 30 * 86400000
       topContent = (posts || [])
         .filter(p => !p.posted_at || new Date(p.posted_at).getTime() >= cutoff)
         .map(p => {
@@ -212,7 +213,11 @@ router.post('/sync-now', authenticate, requireStudio, requireRole('owner', 'mana
   }
   const studio_trends = await pushSocialToTrends(db, req.studio.id, trendVals)
 
-  res.json({ ran_at: new Date().toISOString(), results, studio_trends })
+  // Also refresh the studio's own top posts (best-performing feed) + teardowns.
+  let posts = null
+  try { posts = await syncOwnPosts(db, req.studio.id) } catch (e) { posts = { error: e.message } }
+
+  res.json({ ran_at: new Date().toISOString(), results, studio_trends, posts })
 })
 
 module.exports = router
