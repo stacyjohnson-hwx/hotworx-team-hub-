@@ -14,6 +14,12 @@ import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianG
 const fmt = (n) => n == null ? '—' : n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k' : String(n)
 const INP = 'w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/30 mt-0.5'
 
+// Instagram/Facebook CDN images 403 in the browser (cross-site Sec-Fetch/referrer
+// checks) — route them through our server-side proxy, which re-fetches cleanly.
+const API_BASE = import.meta.env.VITE_API_URL || ''
+const PROXY_HOSTS = /(cdninstagram\.com|fbcdn\.net)/i
+const thumbSrc = (url) => url && PROXY_HOSTS.test(url) ? `${API_BASE}/api/social/img?u=${encodeURIComponent(url)}` : url
+
 const PLATFORM_META = {
   instagram: { Icon: Camera,   color: '#E1306C', label: 'Instagram' },
   facebook:  { Icon: ThumbsUp, color: '#1877F2', label: 'Facebook' },
@@ -111,6 +117,21 @@ function StealThis({ st }) {
   )
 }
 
+// Thumbnail with proxy routing + graceful fallback to the platform gradient when
+// the image errors (expired/blocked CDN URL) — never shows a broken-image icon.
+function Thumb({ item, color, Icon }) {
+  const [err, setErr] = useState(false)
+  const src = thumbSrc(item.thumb_url)
+  if (src && !err) {
+    return <img src={src} alt="" referrerPolicy="no-referrer" loading="lazy" onError={() => setErr(true)} className="w-full h-full object-cover" />
+  }
+  return (
+    <span className="w-full h-full grid place-items-center" style={{ background: `linear-gradient(135deg, ${color}, ${color}bb)` }}>
+      <Icon size={18} color="#fff" fill={item.platform === 'tiktok' ? '#fff' : 'none'} />
+    </span>
+  )
+}
+
 function ContentRow({ item }) {
   const [open, setOpen] = useState(false)
   const meta = PLATFORM_META[item.platform] || PLATFORM_META.instagram
@@ -123,16 +144,14 @@ function ContentRow({ item }) {
         {item.permalink
           ? <a href={item.permalink} target="_blank" rel="noopener noreferrer" title="Open the original post"
               className="relative rounded-xl overflow-hidden flex-shrink-0 block group" style={{ width: 52, height: 52 }}>
-              {item.thumb_url
-                ? <img src={item.thumb_url} alt="" className="w-full h-full object-cover" />
-                : <span className="w-full h-full grid place-items-center" style={{ background: `linear-gradient(135deg, ${color}, ${color}bb)` }}><Icon size={18} color="#fff" fill={item.platform === 'tiktok' ? '#fff' : 'none'} /></span>}
+              <Thumb item={item} color={color} Icon={Icon} />
               <span className="absolute inset-0 grid place-items-center bg-black/0 group-hover:bg-black/40 transition-colors">
                 <Play size={16} fill="#fff" className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
               </span>
             </a>
-          : (item.thumb_url
-              ? <img src={item.thumb_url} alt="" className="rounded-xl object-cover flex-shrink-0" style={{ width: 52, height: 52 }} />
-              : <span className="rounded-xl grid place-items-center flex-shrink-0" style={{ width: 52, height: 52, background: `linear-gradient(135deg, ${color}, ${color}bb)` }}><Icon size={18} color="#fff" fill={item.platform === 'tiktok' ? '#fff' : 'none'} /></span>)}
+          : <span className="rounded-xl overflow-hidden flex-shrink-0 block" style={{ width: 52, height: 52 }}>
+              <Thumb item={item} color={color} Icon={Icon} />
+            </span>}
         <button onClick={() => setOpen(o => !o)} aria-expanded={open} className="flex-1 min-w-0 text-left focus:outline-none">
           <div className="flex justify-between gap-3 items-start">
             <p className="text-sm font-semibold text-gray-900 leading-snug line-clamp-2">

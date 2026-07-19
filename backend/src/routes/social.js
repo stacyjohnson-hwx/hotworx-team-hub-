@@ -39,6 +39,27 @@ function deltaFor(snaps, field, days) {
   return latest[field] - prior[field]
 }
 
+// ─── GET /api/social/img?u=… — thumbnail proxy ───────────────────────────────
+// Instagram/Facebook CDN images 403 when an <img> loads them cross-site from the
+// browser (Sec-Fetch/referrer checks) even though the signed URL is valid. We
+// re-fetch server-side (works) and stream the bytes back so thumbnails render.
+// Unauthenticated on purpose (an <img> can't send our auth header); locked to
+// the Meta CDN hosts so it can't be used as an open proxy.
+const IMG_HOSTS = /(^|\.)(cdninstagram\.com|fbcdn\.net)$/i
+router.get('/img', async (req, res) => {
+  try {
+    const u = req.query.u
+    let parsed
+    try { parsed = new URL(u) } catch { return res.status(400).end() }
+    if (parsed.protocol !== 'https:' || !IMG_HOSTS.test(parsed.hostname)) return res.status(400).end()
+    const upstream = await fetch(parsed.href, { headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'image/*' } })
+    if (!upstream.ok) return res.status(502).end()
+    res.set('Content-Type', upstream.headers.get('content-type') || 'image/jpeg')
+    res.set('Cache-Control', 'public, max-age=86400')
+    res.send(Buffer.from(await upstream.arrayBuffer()))
+  } catch { res.status(502).end() }
+})
+
 // ─── GET /api/social/dashboard ───────────────────────────────────────────────
 // Reads ONLY from our DB — never hits a platform API at view time (PRD §3).
 router.get('/dashboard', authenticate, requireStudio, async (req, res) => {
