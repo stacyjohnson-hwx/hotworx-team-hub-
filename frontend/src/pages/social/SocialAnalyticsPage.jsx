@@ -6,7 +6,7 @@ import {
   Camera, ThumbsUp, Star, TrendingUp, TrendingDown, Minus, Play, Heart,
   MessageCircle, Bookmark, Share2, ArrowUpRight, RefreshCw, Sparkles,
   BarChart3, Info, Loader2, AlertCircle, Pencil, X,
-  Music, Flame, Plus, Trash2, Copy, Check, Sliders,
+  Music, Flame, Plus, Trash2, Copy, Check, Sliders, ExternalLink,
 } from 'lucide-react'
 
 const fmt = (n) => n == null ? '—' : n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k' : String(n)
@@ -113,14 +113,21 @@ function ContentRow({ item }) {
   const td = item.teardown
   return (
     <div className="border-b border-gray-100 last:border-0">
-      <button onClick={() => setOpen(o => !o)} aria-expanded={open}
-        className="w-full flex gap-3.5 py-4 text-left items-start hover:bg-gray-50/60 rounded-lg px-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40">
-        {item.thumb_url
-          ? <img src={item.thumb_url} alt="" className="rounded-xl object-cover flex-shrink-0" style={{ width: 52, height: 52 }} />
-          : <span className="rounded-xl grid place-items-center flex-shrink-0" style={{ width: 52, height: 52, background: `linear-gradient(135deg, ${color}, ${color}bb)` }}>
-              <Icon size={18} color="#fff" fill={item.platform === 'tiktok' ? '#fff' : 'none'} />
-            </span>}
-        <div className="flex-1 min-w-0">
+      <div className="flex gap-3.5 py-4 items-start px-1">
+        {item.permalink
+          ? <a href={item.permalink} target="_blank" rel="noopener noreferrer" title="Open the original post"
+              className="relative rounded-xl overflow-hidden flex-shrink-0 block group" style={{ width: 52, height: 52 }}>
+              {item.thumb_url
+                ? <img src={item.thumb_url} alt="" className="w-full h-full object-cover" />
+                : <span className="w-full h-full grid place-items-center" style={{ background: `linear-gradient(135deg, ${color}, ${color}bb)` }}><Icon size={18} color="#fff" fill={item.platform === 'tiktok' ? '#fff' : 'none'} /></span>}
+              <span className="absolute inset-0 grid place-items-center bg-black/0 group-hover:bg-black/40 transition-colors">
+                <Play size={16} fill="#fff" className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+              </span>
+            </a>
+          : (item.thumb_url
+              ? <img src={item.thumb_url} alt="" className="rounded-xl object-cover flex-shrink-0" style={{ width: 52, height: 52 }} />
+              : <span className="rounded-xl grid place-items-center flex-shrink-0" style={{ width: 52, height: 52, background: `linear-gradient(135deg, ${color}, ${color}bb)` }}><Icon size={18} color="#fff" fill={item.platform === 'tiktok' ? '#fff' : 'none'} /></span>)}
+        <button onClick={() => setOpen(o => !o)} aria-expanded={open} className="flex-1 min-w-0 text-left focus:outline-none">
           <div className="flex justify-between gap-3 items-start">
             <p className="text-sm font-semibold text-gray-900 leading-snug line-clamp-2">
               {item.author_handle && <span className="text-gray-400 font-normal">@{item.author_handle} · </span>}
@@ -140,8 +147,12 @@ function ContentRow({ item }) {
             <Metric Icon={Share2} value={item.shares} />
             {daysAgo != null && <span className="text-xs text-gray-400 ml-auto">{daysAgo}d ago</span>}
           </div>
-        </div>
-      </button>
+        </button>
+        {item.permalink && (
+          <a href={item.permalink} target="_blank" rel="noopener noreferrer" title="Open the original post"
+            className="flex-shrink-0 text-gray-300 hover:text-orange-600 mt-0.5 p-0.5"><ExternalLink size={14} /></a>
+        )}
+      </div>
       {open && (
         <div className="ml-[70px] mr-1 mb-4 p-3.5 bg-gray-50 rounded-xl border border-gray-100">
           <div className="flex items-center gap-1.5 mb-2.5">
