@@ -61,6 +61,7 @@ app.use('/api/retail/analytics',    require('./routes/retail-analytics'))
 app.use('/api/retail/counts',       require('./routes/retail-counts'))
 app.use('/api/retail',              require('./routes/retail'))
 app.use('/api/admin',               require('./routes/admin'))   // platform super-admin (cross-studio provisioning)
+app.use('/api/social/trends',       require('./routes/trends'))
 app.use('/api/social',              require('./routes/social'))
 
 module.exports = app

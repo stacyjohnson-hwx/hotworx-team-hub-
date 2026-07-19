@@ -66,6 +66,62 @@ async function scrapeChannel(channel) {
   }
 }
 
+// ─── Trend discovery (external niche content) ────────────────────────────────
+const pickStr = (obj, keys) => {
+  for (const k of keys) { const v = obj?.[k]; if (typeof v === 'string' && v.trim()) return v.trim() }
+  return null
+}
+const strip = (q = '') => String(q).replace(/^[#@]/, '').trim()
+
+// (platform, kind) -> [actorSlug, input]. resultsLimit/resultsPerPage cap cost.
+const TREND_ACTORS = {
+  instagram: {
+    hashtag: (q, n) => ['apify~instagram-hashtag-scraper', { hashtags: [strip(q)], resultsLimit: n }],
+    keyword: (q, n) => ['apify~instagram-hashtag-scraper', { hashtags: [strip(q)], resultsLimit: n }],
+    account: (q, n) => ['apify~instagram-scraper', { username: [strip(q)], resultsType: 'posts', resultsLimit: n }],
+  },
+  tiktok: {
+    hashtag: (q, n) => ['clockworks~tiktok-scraper', { hashtags: [strip(q)], resultsPerPage: n, shouldDownloadVideos: false, shouldDownloadCovers: false }],
+    keyword: (q, n) => ['clockworks~tiktok-scraper', { searchQueries: [q], resultsPerPage: n, shouldDownloadVideos: false, shouldDownloadCovers: false }],
+    account: (q, n) => ['clockworks~tiktok-scraper', { profiles: [strip(q)], resultsPerPage: n, shouldDownloadVideos: false, shouldDownloadCovers: false }],
+  },
+}
+
+// Normalize wildly-varying actor output into a common post shape (defensive —
+// tune the key lists from the /discover diagnostics on a live run).
+function normalizeTrendItem(it) {
+  const author = it.authorMeta || it.author || it.owner || {}
+  const music = it.musicMeta || it.music || {}
+  return {
+    external_id: pickStr(it, ['id', 'shortCode', 'shortcode', 'postId', 'videoId']),
+    url: pickStr(it, ['webVideoUrl', 'url', 'postUrl', 'link', 'displayUrl']),
+    thumb_url: pickStr(it, ['coverUrl', 'displayUrl', 'thumbnailUrl', 'videoCover', 'thumbnail']),
+    caption: pickStr(it, ['text', 'caption', 'title', 'description']),
+    author_handle: pickStr(it, ['ownerUsername', 'authorName']) || pickStr(author, ['name', 'nickName', 'uniqueId', 'userName', 'username']),
+    author_followers: pick(it, ['ownerFollowersCount', 'authorFollowers']) ?? pick(author, ['fans', 'followers', 'followerCount', 'followersCount']),
+    posted_at: pickStr(it, ['createTimeISO', 'timestamp', 'takenAtISO', 'uploadedAtFormatted']),
+    views: pick(it, ['playCount', 'videoViewCount', 'views', 'viewCount', 'videoPlayCount']),
+    likes: pick(it, ['diggCount', 'likesCount', 'likeCount', 'likes']),
+    comments: pick(it, ['commentCount', 'commentsCount', 'comments']),
+    shares: pick(it, ['shareCount', 'shares', 'sharesCount']),
+    saves: pick(it, ['collectCount', 'saveCount', 'saves']),
+    trending_sound: pickStr(music, ['musicName', 'title', 'name']) || pickStr(it, ['musicName']),
+  }
+}
+
+// Run the right actor for a trend_source and return normalized posts (+ diagnostics).
+async function discoverPosts(source, { limit = 30 } = {}) {
+  if (!process.env.APIFY_TOKEN) return { items: [], error: 'no_token' }
+  const build = TREND_ACTORS[source.platform]?.[source.kind]
+  if (!build) return { items: [], error: 'unsupported_source' }
+  const [actor, input] = build(source.query, limit)
+  try {
+    const raw = await runActor(actor, input)
+    const items = (raw || []).map(normalizeTrendItem).filter(x => x.external_id)
+    return { items, rawKeys: Object.keys(raw?.[0] || {}).slice(0, 50), count: (raw || []).length }
+  } catch (e) { return { items: [], error: e.message } }
+}
+
 function connectorStatus() {
   const on = !!process.env.APIFY_TOKEN
   return { instagram: on, facebook: on, tiktok: on, google: on }
@@ -75,4 +131,4 @@ function connectorStatus() {
 const FETCHERS = Object.fromEntries(['instagram', 'facebook', 'tiktok', 'google'].map(p =>
   [p, async (ch) => (await scrapeChannel(ch)).data]))
 
-module.exports = { FETCHERS, connectorStatus, scrapeChannel, runActor, ACTORS }
+module.exports = { FETCHERS, connectorStatus, scrapeChannel, discoverPosts, runActor, ACTORS }
