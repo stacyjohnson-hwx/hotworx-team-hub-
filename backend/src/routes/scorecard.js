@@ -8,6 +8,7 @@ const { ensureScorecardSchema } = require('../services/scorecardSchema')
 const {
   STATUS_THRESHOLDS, GROUPS, GROUP_ORDER, CATALOG, HERO_KEYS,
 } = require('../services/scorecardCatalog')
+const { todayInChicago } = require('../utils/dates')
 
 const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 
@@ -101,7 +102,7 @@ async function computeAutoValues(sb, studioId, year, month) {
     sb.from('territory_visits').select('territory_id, visit_date').eq('studio_id', studioId).gte('visit_date', monthStart).lte('visit_date', monthEnd),
     // Roster + manual touchpoint check-offs — so retention metrics count only real,
     // active members and credit the work logged in the Member Activation page.
-    sb.from('onboarding_members').select('id, is_cancelled, join_date, member_type').eq('studio_id', studioId),
+    sb.from('onboarding_members').select('id, is_cancelled, join_date, member_type, status').eq('studio_id', studioId),
     sb.from('onboarding_touchpoint_log').select('member_id, touchpoint_key, done').eq('studio_id', studioId).eq('done', true),
     // Team & Culture: a contest running this month satisfies the Monthly Challenge.
     sb.from('contests').select('id, title, starts_on, ends_on, period_month, period_year').eq('studio_id', studioId),
@@ -211,6 +212,21 @@ async function computeAutoValues(sb, studioId, year, month) {
     ? (shiftsToDate > 0 ? round((num(t.calls_made) + num(t.texts_made)) / shiftsToDate) : null)
     : null
 
+  // At-Risk Win-Back coverage (Member Activation re-engagement list): of active members
+  // lapsed 14+ days, what % have been reached within their contact cooldown. Mirrors the
+  // /daily-list reengage scan so the scorecard matches what the team works off. Live/point-
+  // in-time (no month history for member activity), so it reflects the current backlog.
+  // Paginated: the member/activity tables exceed the 1000-row PostgREST cap.
+  const [winMembers, winActivity, winJourneys] = await Promise.all([
+    fetchAllStudio(sb, 'onboarding_members', 'id, is_cancelled, join_date, member_type, status', studioId),
+    fetchAllStudio(sb, 'onboarding_member_activity', 'member_id, last_booking_date', studioId),
+    fetchAllStudio(sb, 'onboarding_journeys', 'member_id, status, start_date', studioId),
+  ])
+  const { data: winReeng } = await sb.from('onboarding_reengage_log')
+    .select('member_id, contacted_at, contacted_by').eq('studio_id', studioId)
+    .gte('contacted_at', new Date(Date.now() - 90 * 86400000).toISOString())
+  const winbackPct = computeWinbackCoverage(winMembers, winActivity, winJourneys, winReeng || [], todayInChicago())
+
   const values = {
     net_eft_increase:       t ? num(t.eft_increase) - num(t.eft_decrease) : null,
     new_members:            t ? num(t.new_members) : null,
@@ -246,6 +262,7 @@ async function computeAutoValues(sb, studioId, year, month) {
     week1_checkins_total:   newMemberIds.size || null,
     milestone_checkins_done:  countDone(milestoneTasks),
     milestone_checkins_total: milestoneTasks.length || null,
+    atrisk_winback:           winbackPct,
     // Outreach & Lead Gen — pulled from B2B outreach + canvassing.
     neighborhoods_flyered:  nbhdFlyered,
     apartments_contacted:   aptContacted.size,
@@ -315,6 +332,59 @@ function cleaningTaskActiveOnDate(task, dateStr) {
     case 'one_off':       return task.one_off_date === dateStr
     default:              return false
   }
+}
+
+// Page past the 1000-row PostgREST cap for the large onboarding tables (same pattern
+// as onboarding.js). Degrades gracefully (returns what it has) rather than hanging.
+async function fetchAllStudio(sb, table, columns, studioId) {
+  const PAGE = 1000
+  let out = [], from = 0
+  for (;;) {
+    const { data, error } = await sb.from(table).select(columns).eq('studio_id', studioId).range(from, from + PAGE - 1)
+    if (error || !data || !data.length) break
+    out = out.concat(data)
+    if (data.length < PAGE) break
+    from += PAGE
+  }
+  return out
+}
+
+// At-Risk Win-Back coverage — mirrors the Member Activation re-engagement scan
+// (onboarding.js /daily-list). Of active, member-type, non-dismissed members whose last
+// booking (or join date) is 14+ days ago, the % reached out to within their tier cooldown
+// (i.e. suppressed from the live list). Returns 0-100, or null when no one is at risk.
+const REENGAGE_COOLDOWN = { 14: 10, 30: 14, 60: 30 }  // tier(days) → cooldown(days), matches onboarding.js
+function computeWinbackCoverage(members, activity, journeys, reengRows, today) {
+  const lastBook = new Map(activity.map(a => [a.member_id, a.last_booking_date]))
+  const jrny = new Map(journeys.map(j => [j.member_id, j]))
+  // Per-member most-recent REAL contact (excludes snoozed/dismissed), plus dismissed set.
+  const lastReal = new Map(), dismissed = new Set()
+  for (const r of reengRows) {
+    const by = String(r.contacted_by || '')
+    if (by.startsWith('dismissed:')) { dismissed.add(r.member_id); continue }
+    if (by.startsWith('snoozed:')) continue
+    const prev = lastReal.get(r.member_id)
+    if (!prev || r.contacted_at > prev) lastReal.set(r.member_id, r.contacted_at)
+  }
+  const todayMs = new Date(today + 'T00:00:00Z').getTime()
+  const addDays = (d, n) => { const x = new Date(String(d).slice(0, 10) + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10) }
+  let atRisk = 0, reached = 0
+  for (const m of members) {
+    if (m.is_cancelled || !/active/i.test(m.status || '')) continue
+    if (m.member_type && m.member_type !== 'member') continue      // skip employees/comp/reciprocal
+    if (dismissed.has(m.id)) continue
+    const j = jrny.get(m.id)
+    if (j && j.status === 'active' && j.start_date && addDays(j.start_date, 90) >= today) continue  // first-90 save fork owns these
+    const ref = lastBook.get(m.id) || m.join_date
+    if (!ref) continue
+    const lapse = Math.floor((todayMs - new Date(String(ref).slice(0, 10) + 'T00:00:00Z').getTime()) / 86400000)
+    if (lapse < 14) continue
+    atRisk++
+    const tier = lapse >= 60 ? 60 : lapse >= 30 ? 30 : 14
+    const lc = lastReal.get(m.id)
+    if (lc && Math.floor((Date.now() - new Date(lc).getTime()) / 86400000) < REENGAGE_COOLDOWN[tier]) reached++
+  }
+  return atRisk === 0 ? null : Math.round((reached / atRisk) * 100)
 }
 
 // Month-to-date compliance: of every task occurrence that should have happened on a

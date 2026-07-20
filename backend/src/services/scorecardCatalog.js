@@ -70,8 +70,7 @@ const CATALOG = [
   { key: 'thankyou_cards',       group: 'retention', label: 'Thank-You Cards w/ $5 Cert',  type: 'number', goal: 0, auto: 'thankyou_cards_done',   autoGoal: 'thankyou_cards_total',   source: 'Member Activation', note: 'Cards done ÷ new members this month' },
   { key: 'birthdays_reached',    group: 'retention', label: 'Birthdays Reached Out To',    type: 'number', goal: 0, auto: 'birthdays_done',       autoGoal: 'birthdays_total',        source: 'Member Activation', note: 'Reached ÷ birthdays this month' },
   { key: 'milestone_checkins',   group: 'retention', label: 'Milestone Check-ins',         type: 'number', goal: 0, auto: 'milestone_checkins_done', autoGoal: 'milestone_checkins_total', source: 'Member Activation', note: 'Celebrated ÷ milestones hit this month' },
-  { key: 'atrisk_winback',       group: 'retention', label: 'At-Risk Win-Back (14-day)',   type: 'percent', goal: 100, source: 'manual', note: '100% of lapsing members' },
-  { key: 'newsletter_sent',      group: 'retention', label: 'Monthly Newsletter Sent',     type: 'boolean', goal: 1,   source: 'manual', note: 'Yes / No' },
+  { key: 'atrisk_winback',       group: 'retention', label: 'At-Risk Win-Back (14-day)',   type: 'percent', goal: 100, auto: 'atrisk_winback', source: 'Member Activation', note: 'Lapsed 14+ day members reached ÷ all at-risk (re-engagement list)' },
 
   // ── Facility & Ops (Marisa) ────────────────────────────────────────────
   { key: 'cleaning_compliance',  group: 'facility', label: 'Cleaning Checklist Compliance', type: 'percent', goal: 100, source: 'Cleaning', auto: 'cleaning_compliance', note: 'Tasks completed ÷ due (month to date)' },
