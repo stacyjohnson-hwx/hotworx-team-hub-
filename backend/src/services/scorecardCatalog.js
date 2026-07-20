@@ -62,7 +62,6 @@ const CATALOG = [
   // ── Reputation & Reach (Marisa) ────────────────────────────────────────
   { key: 'reviews_responded_24h',group: 'reputation', label: 'Reviews Responded < 24h', type: 'percent', goal: 100, source: 'manual', note: 'Standard from JD' },
   { key: 'social_posts',         group: 'reputation', label: 'Social Posts',         type: 'number', goal: 20, auto: 'social_posts_auto', source: 'Social Analytics', note: 'Your IG/TikTok posts this month' },
-  { key: 'video_assets',         group: 'reputation', label: 'Video Assets Created', type: 'number', goal: 8,  source: 'manual', note: '≈2 per week' },
   { key: 'overall_star_rating',  group: 'reputation', label: 'Overall Star Rating',  type: 'rating', goal: 4.8, auto: 'overall_star_rating', source: 'Social Analytics', note: 'Live Google rating' },
 
   // ── Retention & Experience (Marisa) ────────────────────────────────────
