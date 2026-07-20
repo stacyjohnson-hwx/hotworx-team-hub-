@@ -42,6 +42,32 @@ function taskIsActiveOnDate(task, date) {
   }
 }
 
+// Sun–Sat week start (UTC) for a 'YYYY-MM-DD' date — for weekly-task completion,
+// which counts if the task was done any day that week.
+function weekStartStr(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00Z')
+  d.setUTCDate(d.getUTCDate() - d.getUTCDay())
+  return d.toISOString().slice(0, 10)
+}
+
+// Analytics OCCURRENCE rule — distinct from taskIsActiveOnDate's "carries through the
+// week" DISPLAY rule. Counts how many times a task is genuinely DUE on a date, so a
+// once-a-week task isn't inflated into several slots. Weekly = exactly its weekday.
+// TZ-safe (parses as UTC so the weekday is deterministic across server timezones).
+function taskDueOnDate(task, dateStr) {
+  const d = new Date(dateStr + 'T00:00:00Z')
+  const dow = d.getUTCDay()
+  switch (task.frequency) {
+    case 'daily':         return true
+    case 'weekly':        return task.day_of_week === dow
+    case 'specific_days': return Array.isArray(task.days_of_week) && task.days_of_week.includes(dow)
+    case 'monthly':       return task.day_of_month === d.getUTCDate()
+    case 'quarterly':     return Array.isArray(task.quarterly_dates) && task.quarterly_dates.includes(dateStr)
+    case 'one_off':       return task.one_off_date === dateStr
+    default:              return false
+  }
+}
+
 // ─── Shared helper: build userId→name map from Supabase Auth ─────────────────
 async function buildUserMap(db) {
   const { data: { users } } = await db.auth.admin.listUsers({ perPage: 200 })
@@ -220,28 +246,35 @@ router.get('/analytics', async (req, res) => {
   const days = Math.min(Math.max(parseInt(req.query.days) || 30, 7), 90)
   const db   = supabase()
 
-  // Build date range
-  const toDate   = new Date()
-  const fromDate = new Date(toDate)
-  fromDate.setDate(fromDate.getDate() - (days - 1))
+  // Window anchored on the studio's local (Chicago) today. The occurrence window is
+  // [from, yesterday] — the in-progress current day is EXCLUDED so today's not-yet-done
+  // tasks don't read as missed.
+  const todayStr = todayInChicago()
+  const toDate   = new Date(todayStr + 'T00:00:00Z')
+  const fromDate = new Date(toDate); fromDate.setUTCDate(fromDate.getUTCDate() - (days - 1))
   const fromStr  = fromDate.toISOString().slice(0, 10)
-  const toStr    = toDate.toISOString().slice(0, 10)
+  const toStr    = todayStr
 
-  // Build array of every date in range
   const dateRange = []
-  for (let d = new Date(fromDate); d <= toDate; d.setDate(d.getDate() + 1)) {
+  for (let d = new Date(fromDate); d.toISOString().slice(0, 10) < todayStr; d.setUTCDate(d.getUTCDate() + 1)) {
     dateRange.push(d.toISOString().slice(0, 10))
   }
 
-  const [tasksRes, completionsRes, userMapRes, inactiveRes] = await Promise.all([
+  // Pull completions from a few days before the window too, so a weekly task's
+  // completion in the leading partial week is still credited.
+  const compFromDate = new Date(fromDate); compFromDate.setUTCDate(compFromDate.getUTCDate() - 6)
+  const compFromStr  = compFromDate.toISOString().slice(0, 10)
+
+  const [tasksRes, completionsRes, userMapRes, inactiveRes, shiftsRes] = await Promise.all([
     db.from('cleaning_tasks').select('*').eq('studio_id', req.studio.id).eq('active', true),
     db.from('cleaning_completions')
       .select('task_id, completed_by, completion_date')
       .eq('studio_id', req.studio.id)
-      .gte('completion_date', fromStr)
+      .gte('completion_date', compFromStr)
       .lte('completion_date', toStr),
     buildUserMap(db),
     db.from('user_profiles').select('id').eq('is_active', false),
+    db.from('shifts').select('shift_date').eq('studio_id', req.studio.id).gte('shift_date', fromStr).lte('shift_date', toStr),
   ])
   const inactiveIds = new Set((inactiveRes?.data || []).map(r => r.id))
 
@@ -252,21 +285,51 @@ router.get('/analytics', async (req, res) => {
   const completions = completionsRes.data || []
   const userMap     = userMapRes
 
+  // Staffed (studio-open) days — daily/specific_days aren't "due" when no one was
+  // scheduled. If a studio doesn't track shifts, count every day (rough beats blank).
+  const staffedSet  = new Set((shiftsRes?.data || []).map(s => s.shift_date))
+  const gateByStaff = staffedSet.size > 0
+
+  // task_id → Set(completion_date) across the widened window (for weekly week-credit).
+  const completedByTask = {}
+  for (const c of completions) {
+    (completedByTask[c.task_id] || (completedByTask[c.task_id] = new Set())).add(c.completion_date)
+  }
+  // Completions inside the visible window only, for last-completed + the leaderboard.
+  const windowCompletions = completions.filter(c => c.completion_date >= fromStr && c.completion_date <= toStr)
+
   // ── Per-task stats ──────────────────────────────────────────────────────────
   const taskStats = tasks.map(task => {
-    const scheduledDates = dateRange.filter(d => taskIsActiveOnDate(task, d))
-    const scheduledCount = scheduledDates.length
-    const taskCompletions = completions.filter(c => c.task_id === task.id)
-    const completedDates  = new Set(taskCompletions.map(c => c.completion_date))
-    const completedCount  = scheduledDates.filter(d => completedDates.has(d)).length
+    const completedDates = completedByTask[task.id] || new Set()
+    const dueDays = dateRange.filter(d => taskDueOnDate(task, d))
 
-    // Last completed date
+    let scheduledCount = 0, completedCount = 0
+    if (task.frequency === 'weekly') {
+      // One occurrence per Sun–Sat week (not one per carried-through day); completed if
+      // the task was done ANY day that week.
+      const weekDone = new Map()
+      for (const d of dueDays) {
+        const ws = weekStartStr(d)
+        if (weekDone.has(ws)) continue
+        let done = false
+        for (const cd of completedDates) { if (weekStartStr(cd) === ws) { done = true; break } }
+        weekDone.set(ws, done)
+      }
+      scheduledCount = weekDone.size
+      completedCount = [...weekDone.values()].filter(Boolean).length
+    } else {
+      // Per-day. Daily/specific_days only count on staffed (open) days.
+      const staffGated = gateByStaff && (task.frequency === 'daily' || task.frequency === 'specific_days')
+      const dueOpenDays = staffGated ? dueDays.filter(d => staffedSet.has(d)) : dueDays
+      scheduledCount = dueOpenDays.length
+      completedCount = dueOpenDays.filter(d => completedDates.has(d)).length
+    }
+
+    const taskCompletions = windowCompletions.filter(c => c.task_id === task.id)
     const sorted = taskCompletions.slice().sort((a, b) => b.completion_date.localeCompare(a.completion_date))
     const last   = sorted[0] || null
-
-    // Days since last completed
     const daysSinceLast = last
-      ? Math.floor((toDate - new Date(last.completion_date)) / 86400000)
+      ? Math.floor((toDate - new Date(last.completion_date + 'T00:00:00Z')) / 86400000)
       : null
 
     return {
@@ -281,14 +344,14 @@ router.get('/analytics', async (req, res) => {
       lastCompletedDate:   last?.completion_date || null,
       lastCompletedBy:     last ? (userMap[last.completed_by] || 'Team Member') : null,
       daysSinceLast,
-      // Missed = scheduled but no completion that day
+      // Missed = scheduled occurrence with no completion
       missedCount: scheduledCount - completedCount,
     }
-  }).filter(t => t.scheduledCount > 0) // only tasks that appeared during this period
+  }).filter(t => t.scheduledCount > 0) // only tasks that were due during this period
 
-  // ── Per-user stats ──────────────────────────────────────────────────────────
+  // ── Per-user stats (visible window only) ─────────────────────────────────────
   const userTotals = {}
-  for (const c of completions) {
+  for (const c of windowCompletions) {
     const uid = c.completed_by
     if (!userTotals[uid]) userTotals[uid] = { userId: uid, name: userMap[uid] || 'Team Member', count: 0, taskSet: new Set() }
     userTotals[uid].count++
