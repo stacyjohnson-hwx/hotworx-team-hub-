@@ -88,7 +88,7 @@ async function computeAutoValues(sb, studioId, year, month) {
     sb.from('maintenance_logs').select('id, status').eq('studio_id', studioId).in('status', ['open', 'in_progress']),
     sb.from('cleaning_tasks').select('*').eq('studio_id', studioId).eq('active', true),
     sb.from('cleaning_completions').select('task_id, completion_date').eq('studio_id', studioId).gte('completion_date', monthStart).lte('completion_date', monthEnd),
-    sb.from('shifts').select('id').eq('studio_id', studioId).gte('shift_date', monthStart).lte('shift_date', shiftEnd),
+    sb.from('shifts').select('id, shift_date').eq('studio_id', studioId).gte('shift_date', monthStart).lte('shift_date', shiftEnd),
     sb.from('studio_goals').select('memberships_target').eq('studio_id', studioId).eq('year', year).eq('month', month).maybeSingle(),
     // Member Activation feeds for Retention & Experience (done vs total this month).
     sb.from('onboarding_recognition_tasks').select('member_id, type, status').eq('studio_id', studioId).eq('month_key', monthKey),
@@ -134,7 +134,11 @@ async function computeAutoValues(sb, studioId, year, month) {
   )
 
   // Cleaning compliance, month-to-date: expected task occurrences vs completed.
-  const cleaningPct = computeCleaningCompliance(taskRes.data || [], compRes.data || [], year, month, lastDay)
+  // Only days the studio was staffed (had a scheduled shift) count — daily tasks
+  // aren't "due" on closed/unstaffed days (weekends, holidays), and the current
+  // in-progress day isn't penalized. Falls back to all days if shifts aren't tracked.
+  const staffedDays = new Set((shiftRes.data || []).map(s => s.shift_date))
+  const cleaningPct = computeCleaningCompliance(taskRes.data || [], compRes.data || [], year, month, lastDay, staffedDays)
 
   // ── Retention & Experience (Member Activation) ─────────────────────────
   // Only count work tied to a real, active member. Birthday uploads that never
@@ -296,35 +300,47 @@ async function computeAutoValues(sb, studioId, year, month) {
 }
 
 // Replicates the cleaning module's "task active on date" rule so compliance
-// matches what the Cleaning screen shows.
+// matches what the Cleaning screen shows. dow: 0 (Sun) … 6 (Sat), per getDay().
 function cleaningTaskActiveOnDate(task, dateStr) {
-  const d = new Date(dateStr)
+  // Parse as UTC so the weekday is deterministic regardless of server timezone.
+  const d = new Date(dateStr + 'T00:00:00Z')
+  const dow = d.getUTCDay()
   switch (task.frequency) {
-    case 'daily':     return true
-    case 'weekly':    return task.day_of_week === d.getDay()
-    case 'monthly':   return task.day_of_month === d.getDate()
-    case 'quarterly': return Array.isArray(task.quarterly_dates) && task.quarterly_dates.includes(dateStr)
-    case 'one_off':   return task.one_off_date === dateStr
-    default:          return false
+    case 'daily':         return true
+    case 'weekly':        return task.day_of_week === dow
+    // specific_days stores its weekdays in the days_of_week array (e.g. {1,3,5}).
+    case 'specific_days': return Array.isArray(task.days_of_week) && task.days_of_week.includes(dow)
+    case 'monthly':       return task.day_of_month === d.getUTCDate()
+    case 'quarterly':     return Array.isArray(task.quarterly_dates) && task.quarterly_dates.includes(dateStr)
+    case 'one_off':       return task.one_off_date === dateStr
+    default:              return false
   }
 }
 
-// Month-to-date compliance: of every task occurrence that should have happened
-// from the 1st through today (or the full month, if past), what % were completed.
-function computeCleaningCompliance(tasks, completions, year, month, lastDay) {
+// Month-to-date compliance: of every task occurrence that should have happened on a
+// day the studio was OPEN (staffed), from the 1st through yesterday, what % were done.
+// Closed/unstaffed days and the in-progress current day are excluded so the number
+// reflects real performance rather than penalizing days no one was scheduled.
+function computeCleaningCompliance(tasks, completions, year, month, lastDay, staffedDays) {
   const pad = (n) => String(n).padStart(2, '0')
   const now = new Date()
   const curY = now.getFullYear(), curM = now.getMonth() + 1, curD = now.getDate()
   let endDay
-  if (year > curY || (year === curY && month > curM)) endDay = 0           // future month
+  if (year > curY || (year === curY && month > curM)) endDay = 0            // future month
   else if (year < curY || (year === curY && month < curM)) endDay = lastDay // past month
-  else endDay = Math.min(curD, lastDay)                                     // current month
-  if (endDay === 0 || !tasks.length) return null
+  else endDay = curD - 1                                                    // current month → through yesterday
+  endDay = Math.min(endDay, lastDay)
+  if (endDay <= 0 || !tasks.length) return null
+
+  // Gate on staffed days only when this studio actually tracks shifts for the month;
+  // otherwise count every day (a rough number beats a blank).
+  const gateByStaff = staffedDays && staffedDays.size > 0
 
   const done = new Set(completions.map(c => `${c.task_id}|${c.completion_date}`))
   let expected = 0, completed = 0
   for (let day = 1; day <= endDay; day++) {
     const dateStr = `${year}-${pad(month)}-${pad(day)}`
+    if (gateByStaff && !staffedDays.has(dateStr)) continue   // studio closed/unstaffed → checklist not due
     for (const task of tasks) {
       if (cleaningTaskActiveOnDate(task, dateStr)) {
         expected++
