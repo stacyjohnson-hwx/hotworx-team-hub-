@@ -101,7 +101,7 @@ export default function CleaningAnalytics() {
   )
   if (!data) return null
 
-  const { taskStats, userStats, totalScheduled, totalCompleted, overallRate, period } = data
+  const { taskStats, userStats, totalScheduled, totalCompleted, overallRate, period, staleTasks = [] } = data
 
   // ── Derived stats ─────────────────────────────────────────────────────────
   const neverDone   = taskStats.filter(t => t.completedCount === 0)
@@ -180,6 +180,35 @@ export default function CleaningAnalytics() {
           icon={Users}
         />
       </div>
+
+      {/* ── Stale task alert ──────────────────────────────────────────────── */}
+      {staleTasks.length > 0 && (
+        <div className="rounded-2xl bg-red-50 border border-red-200 px-5 py-4">
+          <div className="flex items-center gap-2 mb-2.5">
+            <AlertTriangle size={16} className="text-red-500 flex-shrink-0" />
+            <h2 className="text-sm font-bold text-red-800">Overdue tasks — falling behind schedule</h2>
+            <span className="text-[11px] font-semibold text-red-500 ml-auto">{staleTasks.length} flagged</span>
+          </div>
+          <p className="text-[11px] text-red-500/80 mb-3">
+            Not completed within their expected cadence (weekly, daily, etc.) — worth a look with the team.
+          </p>
+          <div className="space-y-1.5">
+            {staleTasks.map(t => (
+              <div key={t.id} className="flex items-center justify-between gap-3 bg-white/70 rounded-lg px-3 py-2">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-gray-800 truncate">{t.title}</p>
+                  <p className="text-[10px] text-gray-400">{freqLabel(t.frequency)} · {t.task_type}</p>
+                </div>
+                <span className="text-[11px] font-bold text-red-600 flex-shrink-0 whitespace-nowrap">
+                  {t.daysSinceEver == null
+                    ? 'Never done'
+                    : `${t.daysSinceEver}d since last`}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Star performer callout ────────────────────────────────────────── */}
       {topPerformer && (

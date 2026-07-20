@@ -24,9 +24,10 @@ function taskIsActiveOnDate(task, date) {
     case 'daily':
       return true
     case 'weekly':
-      // Stays open from its scheduled weekday through the end of that week (Sat),
-      // so an unfinished weekly task carries through the week. Resets next week.
-      return dow >= task.day_of_week
+      // Shows all week (Sun–Sat) so it can't be missed early in the week; completing
+      // it any day closes it, and it resets the next week. (day_of_week is retained
+      // for reporting/occurrence-counting only, not for display gating.)
+      return true
     case 'specific_days':
       // Appears only on the chosen weekdays (e.g. Mon/Wed/Fri). Resets each day.
       return Array.isArray(task.days_of_week) && task.days_of_week.includes(dow)
@@ -41,6 +42,11 @@ function taskIsActiveOnDate(task, date) {
       return false
   }
 }
+
+// A task is "stale" once it's gone this many days past its expected cadence without
+// being completed (or was never completed at all). Frequency-aware so a weekly task
+// isn't flagged for missing a single day. Tuned to tolerate one closed weekend.
+const STALE_AFTER_DAYS = { daily: 3, specific_days: 10, weekly: 14, monthly: 45, quarterly: 120, one_off: 99999 }
 
 // Sun–Sat week start (UTC) for a 'YYYY-MM-DD' date — for weekly-task completion,
 // which counts if the task was done any day that week.
@@ -265,7 +271,7 @@ router.get('/analytics', async (req, res) => {
   const compFromDate = new Date(fromDate); compFromDate.setUTCDate(compFromDate.getUTCDate() - 6)
   const compFromStr  = compFromDate.toISOString().slice(0, 10)
 
-  const [tasksRes, completionsRes, userMapRes, inactiveRes, shiftsRes] = await Promise.all([
+  const [tasksRes, completionsRes, userMapRes, inactiveRes, shiftsRes, lastEverRes] = await Promise.all([
     db.from('cleaning_tasks').select('*').eq('studio_id', req.studio.id).eq('active', true),
     db.from('cleaning_completions')
       .select('task_id, completed_by, completion_date')
@@ -275,6 +281,9 @@ router.get('/analytics', async (req, res) => {
     buildUserMap(db),
     db.from('user_profiles').select('id').eq('is_active', false),
     db.from('shifts').select('shift_date').eq('studio_id', req.studio.id).gte('shift_date', fromStr).lte('shift_date', toStr),
+    // Latest completion EVER per task (view = one row per task, dodges the 1000-row
+    // cap) — for stale detection, which must look beyond the analytics window.
+    db.from('cleaning_last_completion').select('task_id, completion_date').eq('studio_id', req.studio.id),
   ])
   const inactiveIds = new Set((inactiveRes?.data || []).map(r => r.id))
 
@@ -297,6 +306,10 @@ router.get('/analytics', async (req, res) => {
   }
   // Completions inside the visible window only, for last-completed + the leaderboard.
   const windowCompletions = completions.filter(c => c.completion_date >= fromStr && c.completion_date <= toStr)
+
+  // task_id → last completion date EVER (for stale detection beyond the window).
+  const lastEverMap = {}
+  for (const r of (lastEverRes?.data || [])) lastEverMap[r.task_id] = r.completion_date
 
   // ── Per-task stats ──────────────────────────────────────────────────────────
   const taskStats = tasks.map(task => {
@@ -332,6 +345,11 @@ router.get('/analytics', async (req, res) => {
       ? Math.floor((toDate - new Date(last.completion_date + 'T00:00:00Z')) / 86400000)
       : null
 
+    // Stale = never completed, or last completion is well past its cadence.
+    const lastEver = lastEverMap[task.id] || null
+    const daysSinceEver = lastEver ? Math.floor((toDate - new Date(lastEver + 'T00:00:00Z')) / 86400000) : null
+    const stale = lastEver === null || daysSinceEver > (STALE_AFTER_DAYS[task.frequency] ?? 30)
+
     return {
       id:             task.id,
       title:          task.title,
@@ -344,10 +362,20 @@ router.get('/analytics', async (req, res) => {
       lastCompletedDate:   last?.completion_date || null,
       lastCompletedBy:     last ? (userMap[last.completed_by] || 'Team Member') : null,
       daysSinceLast,
+      lastCompletedEver:   lastEver,
+      daysSinceEver,
+      stale,
       // Missed = scheduled occurrence with no completion
       missedCount: scheduledCount - completedCount,
     }
   }).filter(t => t.scheduledCount > 0) // only tasks that were due during this period
+
+  // Stale tasks — never done first, then longest since a completion. A focused alert
+  // separate from window completion rates (catches things overdue beyond the window).
+  const staleTasks = taskStats.filter(t => t.stale)
+    .map(t => ({ id: t.id, title: t.title, task_type: t.task_type, frequency: t.frequency,
+                 lastCompletedEver: t.lastCompletedEver, daysSinceEver: t.daysSinceEver }))
+    .sort((a, b) => (b.daysSinceEver ?? Infinity) - (a.daysSinceEver ?? Infinity))
 
   // ── Per-user stats (visible window only) ─────────────────────────────────────
   const userTotals = {}
@@ -369,6 +397,7 @@ router.get('/analytics', async (req, res) => {
   res.json({
     period: { from: fromStr, to: toStr, days },
     taskStats,
+    staleTasks,
     userStats,
     totalScheduled,
     totalCompleted,
