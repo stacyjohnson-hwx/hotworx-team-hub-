@@ -18,6 +18,7 @@ const STATUSES = [
   { value: 'contacted',         label: 'Contacted',         bg: 'bg-yellow-100',        text: 'text-yellow-800',        border: 'border-yellow-300' },
   { value: 'meeting_scheduled', label: 'Meeting Scheduled', bg: 'bg-purple-100',        text: 'text-purple-800',        border: 'border-purple-300' },
   { value: 'follow_up',         label: 'Follow Up',         bg: 'bg-red-100',           text: 'text-red-800',           border: 'border-red-300' },
+  { value: 'closed',            label: 'Closed',            bg: 'bg-teal-100',          text: 'text-teal-800',          border: 'border-teal-300' },
   { value: 'not_interested',    label: 'Not Interested',    bg: 'bg-gray-100',          text: 'text-gray-600',          border: 'border-gray-300' },
 ]
 
@@ -794,13 +795,13 @@ function ContactCard({ contact, users, isOwnerOrManager, onEdit, onDelete, onLog
 }
 
 // ─── Pipeline constants ───────────────────────────────────────────────────────
-const PIPELINE_STATUSES = ['new_lead', 'contacted', 'meeting_scheduled', 'follow_up', 'not_interested']
+const PIPELINE_STATUSES = ['new_lead', 'contacted', 'meeting_scheduled', 'follow_up', 'closed', 'not_interested']
 
 const NEXT_STAGE = {
   new_lead:          { value: 'contacted',         label: 'Mark Contacted' },
   contacted:         { value: 'meeting_scheduled', label: 'Book Meeting' },
   meeting_scheduled: { value: 'follow_up',         label: 'Mark Follow-Up' },
-  follow_up:         { value: 'contacted',         label: 'Re-Contacted' },
+  follow_up:         { value: 'closed',            label: 'Mark Closed' },
 }
 
 // ─── Pipeline row (compact, action-focused) ────────────────────────────────────

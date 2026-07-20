@@ -290,14 +290,14 @@ router.get('/followups', authenticate, requireStudio, async (req, res) => {
 
   const ids = [...new Set((data || []).map(r => r.contact_id))]
   const { data: contacts } = ids.length
-    ? await db.from('b2b_contacts').select('id, business_name, contact_name, phone, email').in('id', ids)
+    ? await db.from('b2b_contacts').select('id, business_name, contact_name, phone, email, status').in('id', ids)
     : { data: [] }
   const cMap = Object.fromEntries((contacts || []).map(c => [c.id, c]))
   res.json((data || []).map(r => ({
     ...r,
     overdue: r.follow_up_date < today,
     contact: cMap[r.contact_id] || null,
-  })).filter(r => r.contact))
+  })).filter(r => r.contact && r.contact.status !== 'closed'))   // closed vendors drop out of the follow-up queue
 })
 
 // ─── DELETE /api/b2b/interactions/:id ────────────────────────────────────────
