@@ -178,4 +178,4 @@ function connectorStatus() {
 const FETCHERS = Object.fromEntries(['instagram', 'facebook', 'tiktok', 'google'].map(p =>
   [p, async (ch) => (await scrapeChannel(ch)).data]))
 
-module.exports = { FETCHERS, connectorStatus, scrapeChannel, discoverPosts, scrapeOwnPosts, runActor, ACTORS }
+module.exports = { FETCHERS, connectorStatus, scrapeChannel, discoverPosts, scrapeOwnPosts, scrapeGoogleReviews, runActor, ACTORS }

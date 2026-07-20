@@ -227,6 +227,30 @@ async function computeAutoValues(sb, studioId, year, month) {
     .gte('contacted_at', new Date(Date.now() - 90 * 86400000).toISOString())
   const winbackPct = computeWinbackCoverage(winMembers, winActivity, winJourneys, winReeng || [], todayInChicago())
 
+  // Reputation & Reach: auto-source what the scraped social data (Social Analytics) supports.
+  // Overall Star Rating = latest Google rating snapshot; Social Posts = own IG/TikTok/FB posts
+  // posted this month. (Reviews-Responded and Video-Assets stay manual — we don't capture
+  // owner-response timestamps, and own-post media_type isn't distinguished.)
+  const { data: repChannels } = await sb.from('social_channels')
+    .select('id, platform').eq('studio_id', studioId).eq('active', true)
+  const googleChId = (repChannels || []).find(c => c.platform === 'google')?.id
+  const ownChIds = (repChannels || []).filter(c => ['instagram', 'tiktok', 'facebook'].includes(c.platform)).map(c => c.id)
+  let starRatingAuto = null
+  if (googleChId) {
+    const { data: snap } = await sb.from('channel_snapshots')
+      .select('rating').eq('channel_id', googleChId).not('rating', 'is', null)
+      .order('snapshot_date', { ascending: false }).limit(1)
+    starRatingAuto = snap?.[0]?.rating != null ? Number(snap[0].rating) : null
+  }
+  let socialPostsAuto = null
+  if (ownChIds.length) {
+    const { count } = await sb.from('content_posts')
+      .select('id', { count: 'exact', head: true })
+      .in('channel_id', ownChIds)
+      .gte('posted_at', monthStart).lte('posted_at', `${monthEnd}T23:59:59.999Z`)
+    socialPostsAuto = count ?? 0
+  }
+
   const values = {
     net_eft_increase:       t ? num(t.eft_increase) - num(t.eft_decrease) : null,
     new_members:            t ? num(t.new_members) : null,
@@ -245,6 +269,8 @@ async function computeAutoValues(sb, studioId, year, month) {
     influencer_visits:      influencerEvents.length,
     open_maintenance_issues: openMaint,
     cleaning_compliance:    cleaningPct,
+    overall_star_rating:    starRatingAuto,
+    social_posts_auto:      socialPostsAuto,
     outreach_per_shift:     outreachPerShift,
     team_meeting_date:      teamMeeting?.start_date || null,
     team_outing_date:       teamOuting?.start_date || null,
