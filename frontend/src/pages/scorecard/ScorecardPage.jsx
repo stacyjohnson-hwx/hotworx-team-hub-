@@ -304,7 +304,9 @@ function BusinessOfMonthCard({ bom }) {
 }
 
 // ── Marketing funnel ──────────────────────────────────────────────────────────
-// HOTWORX "Golden Ratio": 145 leads × 35% lead→member ≈ 50 members/month.
+// HOTWORX "Golden Ratio": leads × 35% lead→member ≈ members/month. The members
+// target comes from the Goals page; leads scale off it at the 35% conversion
+// (franchise defaults 145/35/50 used only when no member goal is set).
 const GOLDEN = { leads: 145, leadToMember: 35, members: 50 }
 const rate = (num, den) => (den > 0 ? Math.round((num / den) * 100) : null)
 
@@ -352,11 +354,16 @@ function MarketingFunnel({ funnel }) {
   ]
   const leadToMember = rate(f.closed, f.leads)
 
+  // Member goal from the Goals page (falls back to the franchise default), and a
+  // leads target scaled off it at the 35% conversion so the ratio stays coherent.
+  const membersGoal = f.members_goal != null ? f.members_goal : GOLDEN.members
+  const leadsGoal = Math.round(membersGoal / (GOLDEN.leadToMember / 100))
+
   return (
     <div className="scorecard-card bg-white rounded-xl border border-gray-200 p-4 mb-6">
       <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
         <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Marketing Funnel</h2>
-        <span className="text-[11px] text-gray-400">Golden Ratio: <strong className="text-gray-600">145 leads → 35% → 50 members</strong></span>
+        <span className="text-[11px] text-gray-400">Golden Ratio: <strong className="text-gray-600">{leadsGoal} leads → {GOLDEN.leadToMember}% → {membersGoal} members</strong></span>
       </div>
 
       <div className="space-y-1">
@@ -388,9 +395,9 @@ function MarketingFunnel({ funnel }) {
 
       {/* Golden-ratio scorecard */}
       <div className="flex gap-2 mt-3">
-        <GoldenChip label="Leads" actual={f.leads} goal={GOLDEN.leads} />
+        <GoldenChip label="Leads" actual={f.leads} goal={leadsGoal} />
         <GoldenChip label="Lead → Member" actual={leadToMember} goal={GOLDEN.leadToMember} suffix="%" />
-        <GoldenChip label="Members" actual={f.closed} goal={GOLDEN.members} />
+        <GoldenChip label="Members" actual={f.closed} goal={membersGoal} />
       </div>
     </div>
   )

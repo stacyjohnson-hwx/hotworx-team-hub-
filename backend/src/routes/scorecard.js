@@ -282,11 +282,14 @@ async function computeAutoValues(sb, studioId, year, month) {
       // Increase vs decrease breakdown for the Net EFT Increase hero card.
       eftBreakdown: t ? { increase: num(t.eft_increase), decrease: num(t.eft_decrease), net: num(t.eft_increase) - num(t.eft_decrease) } : null,
       // Marketing funnel (this month) — Leads → Booked → Showed → Closed.
+      // members_goal comes from the Goals page (studio_goals.memberships_target);
+      // null when unset so the frontend falls back to the franchise default.
       funnel: t ? {
         leads: num(t.leads),
         booked: num(t.red_appts_booked),
         showed: num(t.red_appts_held),
         closed: num(t.new_members),
+        members_goal: values.memberships_goal,
       } : null,
     },
   }
