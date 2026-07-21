@@ -313,6 +313,38 @@ function buildOpsSection(ops) {
   </div>`
 }
 
+// "Logged Today" — orders / maintenance / escalations the team logged on the
+// report date, attributed to staff. Hidden entirely when nothing was logged.
+function buildLoggedTodaySection(logged) {
+  const { orders = [], maintenance = [], escalations = [] } = logged || {}
+  if (!orders.length && !maintenance.length && !escalations.length) return ''
+  const done = (s) => s === 'received' || s === 'resolved' || s === 'ordered'
+  const stat = (s) => s ? (done(s) ? `✅ ${s}` : s) : null
+  const orderRows = orders.length
+    ? orders.map(o => opsItem(`📦 ${o.item_name}${o.quantity ? ` ×${o.quantity}` : ''}`, [o.vendor, stat(o.status), o.staff].filter(Boolean).join(' · '))).join('')
+    : opsEmpty('None logged today')
+  const maintRows = maintenance.length
+    ? maintenance.map(m => opsItem(`🔧 ${m.title}`, [m.area, m.priority, stat(m.status), m.staff].filter(Boolean).join(' · '))).join('')
+    : opsEmpty('None logged today')
+  const escRows = escalations.length
+    ? escalations.map(e => opsItem(`⚠️ ${e.title}`, [e.type, e.priority, e.member_name, stat(e.status), e.staff].filter(Boolean).join(' · '))).join('')
+    : opsEmpty('None logged today')
+  return `
+  <div style="margin-bottom:24px;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
+    <div style="background:#1A1A1A;padding:12px 16px;font-size:14px;font-weight:700;color:#fff;">Logged Today</div>
+    <div style="padding:12px 16px;">
+      <table style="width:100%;border-collapse:collapse;">
+        ${sectionHeader(`Orders Requested (${orders.length})`)}
+        ${orderRows}
+        ${sectionHeader(`Maintenance Reported (${maintenance.length})`)}
+        ${maintRows}
+        ${sectionHeader(`Escalations Raised (${escalations.length})`)}
+        ${escRows}
+      </table>
+    </div>
+  </div>`
+}
+
 // Studio-level "Marketing Tasks Completed" — every Growth-section completion for
 // the day, attributed to staff. Rendered once per email (not per shift).
 function buildMarketingSection(marketing, topTasks = []) {
@@ -365,7 +397,7 @@ function buildB2bSection(b2b) {
   </div>`
 }
 
-function buildHtml(dateStr, submissions, outreachByUser, tasksByUser, ops, marketing, b2b, marketingTopTasks) {
+function buildHtml(dateStr, submissions, outreachByUser, tasksByUser, ops, marketing, b2b, marketingTopTasks, logged) {
   const dateLabel = new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
   })
@@ -387,6 +419,7 @@ function buildHtml(dateStr, submissions, outreachByUser, tasksByUser, ops, marke
             outreachByUser[s.submitted_by] || null,
             tasksByUser[s.submitted_by]    || { cleaning: [], operations: [] }
           )).join('')}
+      ${buildLoggedTodaySection(logged)}
       ${buildMarketingSection(marketing, marketingTopTasks)}
       ${buildB2bSection(b2b)}
       ${buildOpsSection(ops)}
@@ -568,6 +601,32 @@ async function fetchOpsSummary(db, studioId) {
   }
 }
 
+// What the team LOGGED on the report date (created today), regardless of current
+// status — so an order placed, a maintenance issue reported, or an escalation
+// raised during the shift shows up even if it was resolved/received same day.
+// Complements the forward-looking "Operations Watch" (which is open items only).
+async function fetchLoggedToday(db, studioId, dateStr) {
+  if (!studioId) return { orders: [], maintenance: [], escalations: [] }
+  const win = (d) => { const x = new Date(`${dateStr}T00:00:00Z`); x.setUTCDate(x.getUTCDate() + d); return x.toISOString() }
+  const central = (ts) => new Date(ts).toLocaleDateString('en-CA', { timeZone: 'America/Chicago' })
+  const [maint, esc, ord] = await Promise.all([
+    db.from('maintenance_logs').select('title, area, priority, status, reported_by, created_at').eq('studio_id', studioId).gte('created_at', win(-1)).lt('created_at', win(2)),
+    db.from('escalation_logs').select('title, type, member_name, priority, status, reported_by, created_at').eq('studio_id', studioId).gte('created_at', win(-1)).lt('created_at', win(2)),
+    db.from('orders').select('item_name, quantity, vendor, status, requested_by, created_at').eq('studio_id', studioId).gte('created_at', win(-1)).lt('created_at', win(2)),
+  ])
+  const m = (maint.data || []).filter(r => central(r.created_at) === dateStr)
+  const e = (esc.data || []).filter(r => central(r.created_at) === dateStr)
+  const o = (ord.data || []).filter(r => central(r.created_at) === dateStr)
+  const ids = [...new Set([...m.map(r => r.reported_by), ...e.map(r => r.reported_by), ...o.map(r => r.requested_by)].filter(Boolean))]
+  const names = {}
+  for (const uid of ids) { try { const { data } = await db.auth.admin.getUserById(uid); names[uid] = data?.user?.user_metadata?.full_name || data?.user?.email?.split('@')[0] || 'Team' } catch { /* ignore */ } }
+  return {
+    maintenance: m.map(r => ({ ...r, staff: names[r.reported_by] || null })),
+    escalations: e.map(r => ({ ...r, staff: names[r.reported_by] || null })),
+    orders: o.map(r => ({ ...r, staff: names[r.requested_by] || null })),
+  }
+}
+
 // Per-studio dedicated manager inbox for EOD reports. This REPLACES managers'
 // personal emails — reports go to active owner-role users + this shared inbox.
 const STUDIO_MANAGER_EMAIL = {
@@ -614,7 +673,8 @@ async function sendEodEmail(dateStr, studioId) {
 
   const { submissions, outreachByUser, tasksByUser, marketing, marketingTopTasks, b2b } = await fetchSubmissionsForDate(dateStr, studioId)
   const ops = await fetchOpsSummary(db, studioId)
-  const html = buildHtml(dateStr, submissions, outreachByUser, tasksByUser, ops, marketing, b2b, marketingTopTasks)
+  const logged = await fetchLoggedToday(db, studioId, dateStr)
+  const html = buildHtml(dateStr, submissions, outreachByUser, tasksByUser, ops, marketing, b2b, marketingTopTasks, logged)
   const studioLabel = studioName || process.env.STUDIO_NAME || 'HOTWORX Pewaukee'
 
   const dateLabel = new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', {
