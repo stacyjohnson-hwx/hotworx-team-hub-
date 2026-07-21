@@ -140,6 +140,7 @@ export default function LaborPage() {
   const anyRates = rows.some(r => r.has_rate)
   const basis = data?.scheduled_basis
   const throughLabel = basis?.through ? new Date(basis.through + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : null
+  const schedTotal = Math.round(rows.reduce((s, r) => s + (r.scheduled_hours || 0), 0) * 10) / 10
 
   return (
     <div className="max-w-6xl mx-auto">
@@ -236,7 +237,7 @@ export default function LaborPage() {
                 <tfoot>
                   <tr className="border-t-2 border-gray-100 bg-gray-50/60 font-semibold text-gray-900">
                     <td className="px-4 py-3">Studio total <span className="text-[11px] font-normal text-gray-400">({totals.headcount})</span></td>
-                    <td></td>
+                    <td className="px-3 py-3 text-right text-gray-400">{schedTotal}</td>
                     <td className="px-3 py-3 text-right">{totals.hours}</td>
                     <td></td><td></td><td></td>
                     <td className="px-3 py-3 text-right">{money(totals.total_cost)}</td>
