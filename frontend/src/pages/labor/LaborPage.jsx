@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { apiGet, apiPut } from '@/hooks/useApi'
 import { useStudio } from '@/contexts/StudioContext'
 import { useMonth } from '@/hooks/useMonth'
-import { Scale, Loader2, AlertCircle, Pencil, X, Info, DollarSign, Check } from 'lucide-react'
+import { Scale, Loader2, AlertCircle, X, Info, DollarSign } from 'lucide-react'
 
 // "Worth-keeping" thresholds on the revenue-to-cost ratio. Editable in one place.
 // Revenue here is only the POS + retail a person personally closed — not their
@@ -18,27 +18,24 @@ const money = (n) => n == null ? '—' : '$' + Number(n).toLocaleString(undefine
 const money2 = (n) => n == null ? '—' : '$' + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const MONTHS = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
-// Inline editable hours override cell — shows scheduled hours, click to override.
-function HoursCell({ row, onSave }) {
-  const [editing, setEditing] = useState(false)
-  const [val, setVal] = useState('')
-  const start = () => { setVal(row.hours_override != null ? String(row.hours_override) : ''); setEditing(true) }
-  const save = async () => { setEditing(false); await onSave(val) }
-  if (editing) {
-    return (
-      <span className="inline-flex items-center gap-1">
-        <input autoFocus type="number" step="0.5" value={val} onChange={e => setVal(e.target.value)}
-          onBlur={save} onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setEditing(false) }}
-          placeholder={String(row.scheduled_hours)} className="w-16 border border-gray-300 rounded px-1.5 py-0.5 text-sm text-right" />
-      </span>
-    )
+// Always-visible "actual hours worked" input — fill in at month end. Blank ⇒ the
+// formulas fall back to scheduled hours (shown as the placeholder). Saves on blur.
+function ActualHoursInput({ row, onSave }) {
+  const [val, setVal] = useState(row.hours_override != null ? String(row.hours_override) : '')
+  useEffect(() => { setVal(row.hours_override != null ? String(row.hours_override) : '') }, [row.hours_override])
+  const commit = () => {
+    const current = row.hours_override != null ? String(row.hours_override) : ''
+    if (val !== current) onSave(val)
   }
+  const overridden = row.hours_override != null
   return (
-    <button onClick={start} title="Click to override actual hours" className="group inline-flex items-center gap-1 hover:text-orange-600">
-      {row.hours}
-      {row.hours_override != null ? <span className="text-[9px] font-semibold text-orange-500">✎</span>
-        : <Pencil size={10} className="text-gray-300 group-hover:text-orange-500" />}
-    </button>
+    <input type="number" step="0.5" min="0" value={val}
+      onChange={e => setVal(e.target.value)}
+      onBlur={commit}
+      onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur() }}
+      placeholder={String(row.scheduled_hours)}
+      title="Actual hours worked this month — leave blank to use scheduled hours"
+      className={`w-16 border rounded px-1.5 py-1 text-sm text-right focus:outline-none focus:ring-2 focus:ring-orange-500/30 focus:border-orange-400 ${overridden ? 'border-orange-300 bg-orange-50 font-semibold text-gray-900' : 'border-gray-300 text-gray-700'}`} />
   )
 }
 
@@ -179,7 +176,8 @@ export default function LaborPage() {
               <thead>
                 <tr className="text-[11px] uppercase tracking-wide text-gray-400 border-b border-gray-100">
                   <th className="text-left font-semibold px-4 py-2.5">Employee</th>
-                  <th className="text-right font-semibold px-3 py-2.5">Hours</th>
+                  <th className="text-right font-semibold px-3 py-2.5">Sched.</th>
+                  <th className="text-right font-semibold px-3 py-2.5">Actual</th>
                   <th className="text-right font-semibold px-3 py-2.5">Rate</th>
                   <th className="text-right font-semibold px-3 py-2.5">Wage</th>
                   <th className="text-right font-semibold px-3 py-2.5">Comm.</th>
@@ -199,7 +197,8 @@ export default function LaborPage() {
                         <div className="font-semibold text-gray-900">{r.name}</div>
                         <div className="text-[11px] text-gray-400 capitalize">{r.role} · {r.memberships} memb · {r.outreach} outreach</div>
                       </td>
-                      <td className="px-3 py-3 text-right text-gray-700"><HoursCell row={r} onSave={(h) => saveHours(r.user_id, h)} /></td>
+                      <td className="px-3 py-3 text-right text-gray-400">{r.scheduled_hours}</td>
+                      <td className="px-3 py-3 text-right"><ActualHoursInput row={r} onSave={(h) => saveHours(r.user_id, h)} /></td>
                       <td className="px-3 py-3 text-right text-gray-500">
                         {r.has_rate ? (r.pay_type === 'salary' ? `${money(r.monthly_salary)}/mo` : `$${r.hourly_rate}/hr`) : <span className="text-gray-300">—</span>}
                       </td>
@@ -217,13 +216,14 @@ export default function LaborPage() {
                   )
                 })}
                 {rows.length === 0 && (
-                  <tr><td colSpan={10} className="px-4 py-10 text-center text-sm text-gray-400">No team members for this studio.</td></tr>
+                  <tr><td colSpan={11} className="px-4 py-10 text-center text-sm text-gray-400">No team members for this studio.</td></tr>
                 )}
               </tbody>
               {rows.length > 0 && (
                 <tfoot>
                   <tr className="border-t-2 border-gray-100 bg-gray-50/60 font-semibold text-gray-900">
                     <td className="px-4 py-3">Studio total <span className="text-[11px] font-normal text-gray-400">({totals.headcount})</span></td>
+                    <td></td>
                     <td className="px-3 py-3 text-right">{totals.hours}</td>
                     <td></td><td></td><td></td>
                     <td className="px-3 py-3 text-right">{money(totals.total_cost)}</td>
@@ -243,7 +243,7 @@ export default function LaborPage() {
         <Info size={12} className="flex-shrink-0 mt-0.5" />
         <span>
           <strong>Revenue</strong> is the POS + retail this person closed that month (from SAIL) — it doesn't capture front-desk coverage, retention, or coaching, so treat the ratio as one signal, not the whole story.
-          <strong> Total cost</strong> = hours × rate + commission earned. Hours come from the Schedule (click a number to enter actual hours). <strong>Ratio</strong> = revenue ÷ total cost.
+          <strong> Total cost</strong> = hours × rate + commission earned. <strong>Sched.</strong> is what the Schedule shows; type real hours in <strong>Actual</strong> at month end and the cost calculates off that (leave Actual blank to use Scheduled). <strong>Ratio</strong> = revenue ÷ total cost.
         </span>
       </div>
 
