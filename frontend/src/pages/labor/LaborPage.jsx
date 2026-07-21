@@ -138,6 +138,8 @@ export default function LaborPage() {
   const rows = data?.rows || []
   const totals = data?.totals || {}
   const anyRates = rows.some(r => r.has_rate)
+  const basis = data?.scheduled_basis
+  const throughLabel = basis?.through ? new Date(basis.through + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : null
 
   return (
     <div className="max-w-6xl mx-auto">
@@ -153,6 +155,17 @@ export default function LaborPage() {
           <DollarSign size={14} /> Pay rates
         </button>
       </div>
+
+      {basis && (
+        <div className="mb-4 bg-blue-50 border border-blue-100 rounded-xl px-4 py-2.5 text-[12.5px] text-blue-800 flex items-start gap-2">
+          <Info size={15} className="flex-shrink-0 mt-0.5 text-blue-500" />
+          <span>
+            {basis.mode === 'mtd'
+              ? <><strong>Scheduled hours are month-to-date</strong> — counted through today ({throughLabel}) so you can see how the month is trending. They grow to the full month as more shifts are worked; at month end you enter the real hours in <strong>Actual</strong>.</>
+              : <><strong>Scheduled hours show the full month.</strong> Enter real hours worked in <strong>Actual</strong> and the cost calculates off that.</>}
+          </span>
+        </div>
+      )}
 
       {error && (
         <div className="mb-5 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700 flex items-start gap-2">
@@ -243,7 +256,7 @@ export default function LaborPage() {
         <Info size={12} className="flex-shrink-0 mt-0.5" />
         <span>
           <strong>Revenue</strong> is the POS + retail this person closed that month (from SAIL) — it doesn't capture front-desk coverage, retention, or coaching, so treat the ratio as one signal, not the whole story.
-          <strong> Total cost</strong> = hours × rate + commission earned. <strong>Sched.</strong> is what the Schedule shows; type real hours in <strong>Actual</strong> at month end and the cost calculates off that (leave Actual blank to use Scheduled). <strong>Ratio</strong> = revenue ÷ total cost.
+          <strong> Total cost</strong> = hours × rate + commission earned. <strong>Sched.</strong> is from the Schedule (month-to-date for the current month, full month once it's closed); type real hours in <strong>Actual</strong> at month end and the cost calculates off that (leave Actual blank to use Scheduled). <strong>Ratio</strong> = revenue ÷ total cost.
         </span>
       </div>
 

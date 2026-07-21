@@ -19,22 +19,30 @@ router.use(authenticate, requireStudio, requireRole('owner'))
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100
 const round1 = (n) => Math.round((Number(n) || 0) * 10) / 10
 
-// Scheduled hours per user from the shifts table (mirrors goals.js getMonthlyHours).
+// Scheduled hours per user from the shifts table. The CURRENT month is counted
+// month-to-date (through today, America/Chicago) so an in-progress month shows how
+// it's trending; past and future months use the full month. Returns { map, through, mode }.
 async function scheduledHoursMap(sb, studioId, month, year) {
   const m = String(month).padStart(2, '0')
   const lastDay = new Date(year, month, 0).getDate()
+  const [cy, cm, cd] = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' }).split('-').map(Number)
+  let endDay, mode
+  if (year < cy || (year === cy && month < cm)) { endDay = lastDay; mode = 'full' }        // past → full month
+  else if (year === cy && month === cm) { endDay = Math.min(cd, lastDay); mode = 'mtd' }    // current → to-date
+  else { endDay = lastDay; mode = 'full' }                                                  // future → full plan
+  const through = `${year}-${m}-${String(endDay).padStart(2, '0')}`
   const { data } = await sb.from('shifts')
     .select('tsa_id, start_time, end_time')
     .eq('studio_id', studioId)
     .gte('shift_date', `${year}-${m}-01`)
-    .lte('shift_date', `${year}-${m}-${String(lastDay).padStart(2, '0')}`)
+    .lte('shift_date', through)
   const map = {}
   for (const s of data || []) {
     const [sh, sm] = (s.start_time || '0:0').split(':').map(Number)
     const [eh, em] = (s.end_time || '0:0').split(':').map(Number)
     map[s.tsa_id] = (map[s.tsa_id] || 0) + Math.max(0, (eh * 60 + em - sh * 60 - sm) / 60)
   }
-  return map
+  return { map, through, mode }
 }
 
 // Active, non-owner members of this studio → [{ id, name, email, role }].
@@ -159,7 +167,7 @@ router.get('/summary', async (req, res) => {
   try {
     const sb = db()
     const sid = req.studio.id
-    const [team, hoursMap, { data: comp }, { data: overrides }, { data: goalsData }, { data: studioData }] = await Promise.all([
+    const [team, sched, { data: comp }, { data: overrides }, { data: goalsData }, { data: studioData }] = await Promise.all([
       studioTeam(sb, sid),
       scheduledHoursMap(sb, sid, month, year),
       sb.from('employee_comp').select('*').eq('studio_id', sid),
@@ -167,6 +175,7 @@ router.get('/summary', async (req, res) => {
       sb.from('personal_goals').select('*').eq('studio_id', sid).eq('month', month).eq('year', year),
       sb.from('studio_trends').select('*').eq('studio_id', sid).eq('month', month).eq('year', year).maybeSingle(),
     ])
+    const hoursMap = sched.map
     const compBy = Object.fromEntries((comp || []).map(c => [c.user_id, c]))
     const overrideBy = Object.fromEntries((overrides || []).map(o => [o.user_id, o.hours]))
     const goalsBy = Object.fromEntries((goalsData || []).map(g => [g.tsa_id, g]))
@@ -192,6 +201,7 @@ router.get('/summary', async (req, res) => {
     const totalCost = sum('total_cost'), totalRev = sum('revenue')
     res.json({
       month, year,
+      scheduled_basis: { mode: sched.mode, through: sched.through },   // 'mtd' (through date) | 'full'
       rows,
       totals: {
         total_cost: round2(totalCost),
@@ -222,14 +232,14 @@ router.get('/trend/:userId', async (req, res) => {
     for (let i = months - 1; i >= 0; i--) {
       let m = endM - i, y = endY
       while (m <= 0) { m += 12; y -= 1 }
-      const [hoursMap, { data: g }, { data: st }, { data: ov }] = await Promise.all([
+      const [sched, { data: g }, { data: st }, { data: ov }] = await Promise.all([
         scheduledHoursMap(sb, sid, m, y),
         sb.from('personal_goals').select('*').eq('studio_id', sid).eq('tsa_id', uid).eq('month', m).eq('year', y).maybeSingle(),
         sb.from('studio_trends').select('in_the_bank, itb_goal').eq('studio_id', sid).eq('month', m).eq('year', y).maybeSingle(),
         sb.from('employee_hours_actual').select('hours').eq('studio_id', sid).eq('user_id', uid).eq('month', m).eq('year', y).maybeSingle(),
       ])
       const goals = g || { pos_collected: 0, retail_actual: 0 }
-      const hours = ov?.hours != null ? Number(ov.hours) : (hoursMap[uid] || 0)
+      const hours = ov?.hours != null ? Number(ov.hours) : (sched.map[uid] || 0)
       const baseWage = comp?.pay_type === 'salary' ? (Number(comp.monthly_salary) || 0) : hours * (Number(comp?.hourly_rate) || 0)
       const commission = calcCommission(goals, 'tsa', st || {}).total || 0
       const totalCost = baseWage + commission
