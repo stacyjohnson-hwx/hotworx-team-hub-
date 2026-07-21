@@ -25,6 +25,7 @@ import TrainingPage from '@/pages/training/TrainingPage'
 import CertificationPage from '@/pages/certification/CertificationPage'
 import TodoPage from '@/pages/todo/TodoPage'
 import CoachingPage from '@/pages/coaching/CoachingPage'
+import LaborPage from '@/pages/labor/LaborPage'
 import UsersPage from '@/pages/users/UsersPage'
 import ProfilePage from '@/pages/profile/ProfilePage'
 import OnboardingPage from '@/pages/onboarding/OnboardingPage'
@@ -167,6 +168,15 @@ function AppRoutes() {
           element={
             <RoleGuard allowedRoles={['owner', 'manager']}>
               <CoachingPage />
+            </RoleGuard>
+          }
+        />
+        {/* Owner only — pay data */}
+        <Route
+          path="/team-roi"
+          element={
+            <RoleGuard allowedRoles={['owner']}>
+              <LaborPage />
             </RoleGuard>
           }
         />

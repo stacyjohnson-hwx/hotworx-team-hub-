@@ -36,6 +36,7 @@ import {
   HeartHandshake,
   Trophy,
   ShieldCheck,
+  Scale,
 } from 'lucide-react'
 
 // Sidebar organized into sections. Dashboard is pinned (no header); the footer
@@ -110,6 +111,7 @@ const NAV_SECTIONS = [
     items: [
       { to: '/scorecard',     label: 'Scorecard',     icon: Gauge,     roles: ['owner', 'manager'] },
       { to: '/studio-trends', label: 'Studio Trends', icon: BarChart2, roles: ['owner', 'manager'] },
+      { to: '/team-roi',      label: 'Team ROI',      icon: Scale,     roles: ['owner'] },
       { to: '/advisor',       label: 'AI Advisor',    icon: Sparkles,  roles: ['owner', 'manager'] },
     ],
   },
