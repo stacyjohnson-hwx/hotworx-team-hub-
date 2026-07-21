@@ -573,6 +573,20 @@ export default function CancellationsPage() {
     setRows(prev => { const i = prev.findIndex(r => r.id === saved.id); return i >= 0 ? prev.map(r => r.id === saved.id ? { ...r, ...saved } : r) : [saved, ...prev] })
     setModal(null)
   }
+
+  // One-click win-back loop from the queue: log a touch (reschedules the next
+  // follow-up) or close it out as won/lost. Merges the updated row so it leaves
+  // the "due" list immediately.
+  const [touchBusyId, setTouchBusyId] = useState(null)
+  const logTouch = async (id, opts = {}) => {
+    setTouchBusyId(id); setError('')
+    try {
+      const updated = await apiPost(`/api/cancellations/${id}/log-touch`, opts)
+      setRows(prev => prev.map(r => r.id === id ? { ...r, ...updated } : r))
+    } catch (e) {
+      setError(e?.message ? `Could not log follow-up: ${e.message}` : 'Could not log follow-up.')
+    } finally { setTouchBusyId(null) }
+  }
   const onDelete = async (id) => {
     if (!confirm('Delete this cancellation entry?')) return
     await apiDelete(`/api/cancellations/${id}`)
@@ -677,28 +691,55 @@ export default function CancellationsPage() {
 
       {tab === 'report' ? <CancellationReport /> : (<>
 
-      {/* Win-back queue — follow-ups due today or overdue */}
+      {/* Win-back queue — follow-ups due today or overdue, worked inline */}
       {followUps.length > 0 && (
         <div className="mb-5 bg-amber-50 border border-amber-300 rounded-xl p-4">
-          <div className="flex items-center gap-2 mb-2.5">
+          <div className="flex items-center gap-2 mb-1">
             <Target size={16} className="text-amber-700" />
             <h3 className="text-sm font-bold text-amber-900">
               {followUps.length} win-back follow-up{followUps.length !== 1 ? 's' : ''} due
             </h3>
           </div>
-          <div className="space-y-1.5">
+          <p className="text-xs text-amber-700/80 mb-3">
+            Tap the name for details. <b>Reached out</b> logs the touch and schedules the next in 7 days; <b>Won</b>/<b>Lost</b> closes it out.
+          </p>
+          <div className="space-y-1.5 max-h-[26rem] overflow-y-auto">
             {followUps.map(r => {
               const overdue = r.follow_up_date < todayLocal
+              const busy = touchBusyId === r.id
               return (
-                <button key={r.id} onClick={() => setModal(r)}
-                  className="w-full flex items-center gap-3 text-left bg-white border border-amber-200 hover:border-amber-400 rounded-lg px-3 py-2 transition-colors">
-                  <span className="font-semibold text-gray-900 text-sm flex-1 min-w-0 truncate">{r.member_name}</span>
-                  <span className="text-xs text-gray-500 hidden sm:inline">{labelOf(REASONS, r.cancel_reason)}</span>
-                  <span className="text-xs text-gray-500 hidden md:inline">{labelOf(WIN_BACK_STEPS, r.win_back_step)}</span>
-                  <span className={`text-xs font-semibold whitespace-nowrap ${overdue ? 'text-red-600' : 'text-amber-700'}`}>
-                    {overdue ? `${Math.round((new Date(todayLocal) - new Date(r.follow_up_date)) / 86400000)}d overdue` : 'due today'}
-                  </span>
-                </button>
+                <div key={r.id}
+                  className="flex items-center gap-2 bg-white border border-amber-200 rounded-lg px-3 py-2">
+                  <button onClick={() => setModal(r)} className="flex-1 min-w-0 text-left group">
+                    <span className="font-semibold text-gray-900 text-sm truncate group-hover:text-red-600 block">{r.member_name}</span>
+                    <span className="text-[11px] text-gray-500">
+                      {labelOf(REASONS, r.cancel_reason)}
+                      <span className={`ml-1.5 font-semibold ${overdue ? 'text-red-600' : 'text-amber-700'}`}>
+                        · {overdue ? `${Math.round((new Date(todayLocal) - new Date(r.follow_up_date)) / 86400000)}d overdue` : 'due today'}
+                      </span>
+                    </span>
+                  </button>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    {busy ? (
+                      <Loader2 size={16} className="animate-spin text-amber-600 mx-6" />
+                    ) : (
+                      <>
+                        <button onClick={() => logTouch(r.id)} title="Logged a follow-up — reschedule next touch in 7 days"
+                          className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-lg transition-colors">
+                          <Phone size={12} /> Reached out
+                        </button>
+                        <button onClick={() => logTouch(r.id, { resolve: 'won' })} title="Won back — mark saved &amp; resolved"
+                          className="flex items-center gap-1 px-2 py-1.5 text-xs font-semibold text-green-700 bg-green-50 hover:bg-green-100 border border-green-200 rounded-lg transition-colors">
+                          <Check size={12} /> Won
+                        </button>
+                        <button onClick={() => logTouch(r.id, { resolve: 'lost' })} title="Lost — close out this win-back"
+                          className="px-2 py-1.5 text-xs font-semibold text-gray-500 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg transition-colors">
+                          Lost
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
               )
             })}
           </div>

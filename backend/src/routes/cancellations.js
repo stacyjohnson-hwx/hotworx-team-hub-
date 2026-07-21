@@ -350,4 +350,62 @@ router.delete('/tasks/:taskId', authenticate, requireStudio, async (req, res) =>
   res.status(204).end()
 })
 
+// POST /api/cancellations/:id/log-touch — the one-click win-back loop from the
+// queue. Completes the current due follow-up and either schedules the next touch
+// (continuous follow-up) or resolves the win-back. Body:
+//   { note?, next_in_days=7, resolve?: 'won'|'lost' }
+router.post('/:id/log-touch', authenticate, requireStudio, async (req, res) => {
+  const sb = supabase()
+  const id = req.params.id
+  const today = todayInChicago()
+
+  const { data: cx } = await sb.from('cancellation_log')
+    .select('id').eq('id', id).eq('studio_id', req.studio.id).maybeSingle()
+  if (!cx) return res.status(404).json({ error: 'Cancellation not found' })
+
+  const note = (req.body?.note || '').trim() || null
+
+  // Complete the earliest open follow-up task, or log a standalone "touch" so
+  // there's always an audit trail of the outreach.
+  const { data: openTasks } = await sb.from('cancellation_followups')
+    .select('id').eq('studio_id', req.studio.id).eq('cancellation_id', id).eq('done', false)
+    .order('due_date', { ascending: true }).limit(1)
+  if (openTasks && openTasks.length) {
+    await sb.from('cancellation_followups')
+      .update({ done: true, done_at: new Date().toISOString(), ...(note ? { note } : {}) })
+      .eq('id', openTasks[0].id).eq('studio_id', req.studio.id)
+  } else {
+    await sb.from('cancellation_followups').insert({
+      studio_id: req.studio.id, cancellation_id: id, due_date: today,
+      note: note || 'Followed up', done: true, done_at: new Date().toISOString(), created_by: req.user.id,
+    })
+  }
+
+  const resolve = req.body?.resolve
+  if (resolve === 'won' || resolve === 'lost') {
+    // Close out the win-back: mark any remaining open touches done and resolve.
+    await sb.from('cancellation_followups')
+      .update({ done: true, done_at: new Date().toISOString() })
+      .eq('studio_id', req.studio.id).eq('cancellation_id', id).eq('done', false)
+    await sb.from('cancellation_log').update({
+      win_back_step: resolve === 'won' ? 'reactivated' : 'lost_no_response',
+      ...(resolve === 'won' ? { outcome: 'saved' } : {}),
+      date_resolved: today,
+    }).eq('id', id).eq('studio_id', req.studio.id)
+  } else {
+    // Schedule the next touch to keep the loop going.
+    const days = Math.max(1, Math.min(90, Number(req.body?.next_in_days) || 7))
+    const d = new Date(today + 'T00:00:00'); d.setDate(d.getDate() + days)
+    const next = d.toISOString().split('T')[0]
+    await sb.from('cancellation_followups').insert({
+      studio_id: req.studio.id, cancellation_id: id, due_date: next, created_by: req.user.id,
+    })
+  }
+
+  await syncParentFollowup(sb, req.studio.id, id)
+  const { data: updated } = await sb.from('cancellation_log')
+    .select('*').eq('id', id).eq('studio_id', req.studio.id).single()
+  res.json(updated)
+})
+
 module.exports = router
