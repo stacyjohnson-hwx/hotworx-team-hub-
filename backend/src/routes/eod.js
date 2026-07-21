@@ -6,6 +6,7 @@ const { requireRole } = require('../middleware/roleGuard')
 const { requireStudio } = require('../middleware/studioMiddleware')
 const { sendEodEmail, diagnoseEmail } = require('../services/eodEmail')
 const { todayInChicago } = require('../jobs/eodEmailCron')
+const { computeOutreachCounts } = require('../services/outreachCounts')
 
 const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 
@@ -114,6 +115,20 @@ router.get('/mine', async (req, res) => {
   res.json(data)
 })
 
+// ─── GET /api/eod/outreach-summary?date= ─────────────────────────────────────
+// Auto-fill numbers for the checkout: how much member outreach was COMPLETED
+// today (birthday, thank-you, missed-guest, 14-day re-engage, milestones, new
+// member) + their total. Editable on the form — this is just the starting count.
+router.get('/outreach-summary', async (req, res) => {
+  const date = req.query.date || todayInChicago()
+  try {
+    res.json(await computeOutreachCounts(req.studio.id, date))
+  } catch (err) {
+    console.error('GET /eod/outreach-summary', err.message)
+    res.status(500).json({ error: err.message })
+  }
+})
+
 // ─── POST /api/eod ────────────────────────────────────────────────────────────
 router.post('/', async (req, res) => {
   const {
@@ -138,6 +153,9 @@ router.post('/', async (req, res) => {
     mission_titles,
     // Training completed today (pulled from Training module) — array of title strings
     completed_training,
+    // Member outreach completed today (auto-filled, editable)
+    outreach_birthday, outreach_thank_you, outreach_missed_guest,
+    outreach_reengage14, outreach_milestones, outreach_new_member,
   } = req.body
 
   if (!shift_type) return res.status(400).json({ error: 'shift_type is required' })
@@ -188,6 +206,12 @@ router.post('/', async (req, res) => {
       support_notes: support_notes || null,
       mission_titles: Array.isArray(mission_titles) && mission_titles.length > 0 ? mission_titles : [],
       completed_training: Array.isArray(completed_training) ? completed_training : [],
+      outreach_birthday: outreach_birthday ?? 0,
+      outreach_thank_you: outreach_thank_you ?? 0,
+      outreach_missed_guest: outreach_missed_guest ?? 0,
+      outreach_reengage14: outreach_reengage14 ?? 0,
+      outreach_milestones: outreach_milestones ?? 0,
+      outreach_new_member: outreach_new_member ?? 0,
     })
     .select()
     .single()

@@ -678,8 +678,21 @@ const INITIAL_FORM = {
   sweat_basic: '', sweat_elite: '', cancellations_count: '', cancellations_notes: '',
   retail_amount: '', sales_notes: '',
   phone_calls: '', sms_sent: '',
+  outreach_birthday: '', outreach_thank_you: '', outreach_missed_guest: '',
+  outreach_reengage14: '', outreach_milestones: '', outreach_new_member: '',
   general_notes: '', support_notes: '',
 }
+
+// The six member-outreach counts, auto-filled from today's Member Activation
+// activity and editable on the checkout.
+const OUTREACH_FIELDS = [
+  ['outreach_birthday',     'Birthday outreach'],
+  ['outreach_thank_you',    'Thank-you cards sent'],
+  ['outreach_missed_guest', 'Missed guests followed up'],
+  ['outreach_reengage14',   '14-day re-engagement'],
+  ['outreach_milestones',   'Milestones awarded'],
+  ['outreach_new_member',   'New-member outreach'],
+]
 
 export default function EodForm({ submittedShifts, onSubmitted }) {
   const { profile, user } = useAuth()
@@ -722,6 +735,24 @@ export default function EodForm({ submittedShifts, onSubmitted }) {
     if (!draftKey || !draftLoaded.current) return
     try { localStorage.setItem(draftKey, JSON.stringify({ form, missionTitles, completedTraining, savedAt: Date.now() })) } catch {}
   }, [draftKey, form, missionTitles, completedTraining])
+
+  // Auto-fill the six member-outreach counts from today's completed activity.
+  // Only fills fields the user hasn't already set (draft-restored or typed).
+  const [outreachAuto, setOutreachAuto] = useState(false)
+  useEffect(() => {
+    let alive = true
+    apiGet('/api/eod/outreach-summary').then(s => {
+      if (!alive || !s) return
+      setForm(f => {
+        const next = { ...f }
+        for (const [k] of OUTREACH_FIELDS) if (f[k] === '' || f[k] == null) next[k] = String(s[k] ?? 0)
+        return next
+      })
+      setOutreachAuto(true)
+    }).catch(() => {})
+    return () => { alive = false }
+  }, [])
+  const outreachTotal = OUTREACH_FIELDS.reduce((sum, [k]) => sum + (parseInt(form[k]) || 0), 0)
 
   const saveProgress = () => {
     if (!draftKey) return
@@ -808,6 +839,12 @@ export default function EodForm({ submittedShifts, onSubmitted }) {
         retail_amount: parseFloat(form.retail_amount) || 0,
         phone_calls: parseInt(form.phone_calls) || 0,
         sms_sent: parseInt(form.sms_sent) || 0,
+        outreach_birthday: parseInt(form.outreach_birthday) || 0,
+        outreach_thank_you: parseInt(form.outreach_thank_you) || 0,
+        outreach_missed_guest: parseInt(form.outreach_missed_guest) || 0,
+        outreach_reengage14: parseInt(form.outreach_reengage14) || 0,
+        outreach_milestones: parseInt(form.outreach_milestones) || 0,
+        outreach_new_member: parseInt(form.outreach_new_member) || 0,
         mission_titles: finalMissions,
         completed_training: completedTraining,
       }
@@ -926,6 +963,22 @@ export default function EodForm({ submittedShifts, onSubmitted }) {
             <div className="grid grid-cols-2 gap-3">
               <NumberInput label="Calls Made" value={form.phone_calls} onChange={v => set('phone_calls', v)} />
               <NumberInput label="Texts Sent" value={form.sms_sent} onChange={v => set('sms_sent', v)} />
+            </div>
+          </Section>
+
+          {/* Member Outreach Completed — auto-filled from Member Activation, editable */}
+          <Section title="Member Outreach Completed" badge={outreachTotal > 0 ? `${outreachTotal}` : null}>
+            <p className="text-xs text-gray-400 -mt-1">
+              {outreachAuto ? 'Auto-filled from today’s Member Activation activity — adjust any number if needed.' : 'Loading today’s activity…'}
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              {OUTREACH_FIELDS.map(([k, label]) => (
+                <NumberInput key={k} label={label} value={form[k]} onChange={v => set(k, v)} />
+              ))}
+            </div>
+            <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
+              <span className="text-sm font-semibold text-gray-700">Total outreach</span>
+              <span className="text-lg font-bold text-red-600">{outreachTotal}</span>
             </div>
           </Section>
 

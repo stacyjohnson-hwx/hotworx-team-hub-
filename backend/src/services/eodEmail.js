@@ -220,6 +220,22 @@ function buildShiftBlock(row_data, outreachSummary, tasksByUser) {
         ${sectionHeader('Outreach')}
         ${outreachRows}
 
+        ${(() => {
+          const items = [
+            ['Birthday outreach', row_data.outreach_birthday],
+            ['Thank-you cards sent', row_data.outreach_thank_you],
+            ['Missed guests followed up', row_data.outreach_missed_guest],
+            ['14-day re-engagement follow-ups', row_data.outreach_reengage14],
+            ['Milestones awarded', row_data.outreach_milestones],
+            ['New-member outreach', row_data.outreach_new_member],
+          ].map(([label, n]) => [label, Number(n) || 0])
+          const total = items.reduce((a, [, n]) => a + n, 0)
+          return `
+        ${sectionHeader('Member Outreach Completed')}
+        <tr><td style="padding:5px 0;font-size:15px;font-weight:800;color:#16a34a;">🤝 ${total} total outreach</td><td></td></tr>
+        ${items.map(([label, n]) => row(label, n)).join('')}`
+        })()}
+
         ${sectionHeader('Cleaning Completed')}
         ${cleaningRows}
 
