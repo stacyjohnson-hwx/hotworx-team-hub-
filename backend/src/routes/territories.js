@@ -53,7 +53,7 @@ router.get('/', async (req, res) => {
   const contactMap = {}
   if (contactIds.length) {
     const { data: contacts } = await database.from('b2b_contacts')
-      .select('id, business_name, phone, contact_name').in('id', contactIds)
+      .select('id, business_name, phone, contact_name, logo_url').in('id', contactIds)
     for (const c of (contacts || [])) contactMap[c.id] = c
   }
 

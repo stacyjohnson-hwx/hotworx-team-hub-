@@ -423,19 +423,27 @@ export default function MonthlyPlannerPage() {
       </Card>
 
       {/* 4. BUSINESSES BY WEEK */}
-      <WeeklyBusinesses year={year} month={month} businesses={b2b} content={content} patchContent={patchContent} />
+      <WeeklyPicker icon={Building2} title="Businesses to reach out to — by week"
+        subtitle="Pick who to visit each week and write that week's plan."
+        link="/b2b" linkLabel="Open B2B" contentKey="b2b_weeks" pickLabel="Pick businesses"
+        planPlaceholder="Plan for the week — who goes, what to bring, the ask…"
+        items={b2b} getName={b => b.business_name} getLogo={b => b.logo_url} getMeta={b => b.industry}
+        year={year} month={month} content={content} patchContent={patchContent} />
 
-      {/* 5. CORPORATE ACCOUNTS */}
+      {/* 5. APARTMENTS & NEIGHBORHOODS BY WEEK */}
+      <WeeklyPicker icon={MapPin} title="Apartments & neighborhoods — by week" accent="text-orange-600"
+        subtitle="Pick the canvassing zones to work each week and write that week's plan."
+        link="/b2b" linkLabel="Open Canvassing" contentKey="territory_weeks" pickLabel="Pick zones"
+        planPlaceholder="Canvassing plan for the week — doors, drop-offs, timing…"
+        items={territories} getName={z => z.name} getLogo={z => z.b2b_contact?.logo_url}
+        getMeta={z => (z.status === 'overdue' ? `${z.days_overdue}d overdue` : z.type)}
+        year={year} month={month} content={content} patchContent={patchContent} />
+
+      {/* 6. CORPORATE ACCOUNTS */}
       <PickerCard icon={Building2} title="Corporate accounts to target" subtitle="Check the corporate partners to pursue this month." accent="text-indigo-600"
         items={corporate} selected={content.corporate_targets || []} onToggle={id => toggleId('corporate_targets', id)}
-        render={c => ({ title: c.business_name, meta: [c.industry, c.status].filter(Boolean).join(' · ') })}
+        render={c => ({ title: c.business_name, logo: c.logo_url, meta: [c.industry, c.status].filter(Boolean).join(' · ') })}
         link="/b2b" emptyText="No corporate accounts yet — mark contacts as corporate in B2B." />
-
-      {/* 6. APARTMENTS & NEIGHBORHOODS */}
-      <PickerCard icon={MapPin} title="Apartments & neighborhoods to hit" subtitle="Check the canvassing zones to work this month." accent="text-orange-600"
-        items={territories} selected={content.territory_targets || []} onToggle={id => toggleId('territory_targets', id)}
-        render={z => ({ title: z.name, meta: [z.type, z.status === 'overdue' ? `${z.days_overdue}d overdue` : z.status].filter(Boolean).join(' · '), warn: z.status === 'overdue' })}
-        link="/b2b" emptyText="No canvassing zones yet — add them in Canvassing." />
 
       {/* 7-9. TEAM MEETING / FUN EVENT / CONTEST */}
       <div className="grid md:grid-cols-3 gap-4">
@@ -468,92 +476,119 @@ export default function MonthlyPlannerPage() {
   )
 }
 
-// ─── Businesses to reach out to, week by week ────────────────────────────────
-function WeeklyBusinesses({ year, month, businesses, content, patchContent }) {
+// Small logo (falls back to initials) used in chips and pick lists.
+function Logo({ url, name, size = 20 }) {
+  const s = { width: size, height: size }
+  if (url) return <img src={url} alt="" style={s} className="rounded object-contain bg-white border border-gray-200 flex-shrink-0" />
+  return (
+    <span style={s} className="rounded bg-gray-100 text-gray-500 text-[9px] font-bold flex items-center justify-center flex-shrink-0">
+      {(name || '?').slice(0, 2).toUpperCase()}
+    </span>
+  )
+}
+
+// ─── Week-by-week picker (businesses, apartments/neighborhoods…) ─────────────
+// Compact two-column layout: picks on the left, the week's plan on the right.
+function WeeklyPicker({
+  icon, title, subtitle, accent, link, linkLabel, contentKey, pickLabel, planPlaceholder,
+  items, getName, getLogo, getMeta, year, month, content, patchContent,
+}) {
   const weeks = weeksOfMonth(year, month)
-  const data = content.b2b_weeks || {}
+  const data = content[contentKey] || {}
   const [openWeek, setOpenWeek] = useState(null)
   const [q, setQ] = useState('')
 
   const setWeek = (n, partial) => {
     const cur = data[n] || { ids: [], plan: '' }
-    patchContent({ b2b_weeks: { ...data, [n]: { ...cur, ...partial } } })
+    patchContent({ [contentKey]: { ...data, [n]: { ...cur, ...partial } } })
   }
   const toggle = (n, id) => {
     const ids = (data[n]?.ids) || []
     setWeek(n, { ids: ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id] })
   }
-  const byId = useMemo(() => Object.fromEntries(businesses.map(b => [b.id, b])), [businesses])
+  const byId = useMemo(() => Object.fromEntries(items.map(i => [i.id, i])), [items])
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase()
-    return s ? businesses.filter(b => (b.business_name || '').toLowerCase().includes(s)) : businesses
-  }, [businesses, q])
+    return s ? items.filter(i => (getName(i) || '').toLowerCase().includes(s)) : items
+  }, [items, q, getName])
 
   return (
-    <Card icon={Building2} title="Businesses to reach out to — by week"
-      subtitle="Pick who to visit each week and write the canvassing plan."
-      right={<Link to="/b2b" className="text-sm text-red-600 hover:text-red-700 font-medium flex items-center gap-1">Open B2B <ExternalLink size={13} /></Link>}>
-      <div className="space-y-3">
-        {weeks.map(w => {
-          const wk = data[w.n] || { ids: [], plan: '' }
-          const open = openWeek === w.n
-          return (
-            <div key={w.n} className="border border-gray-200 rounded-lg p-3">
-              <div className="flex items-center justify-between gap-2 mb-2">
-                <div>
-                  <span className="text-sm font-bold text-gray-900">{w.label}</span>
-                  <span className="text-xs text-gray-400 ml-2">{w.range}</span>
+    <Card icon={icon} title={title} subtitle={subtitle} accent={accent}
+      right={<Link to={link} className="text-sm text-red-600 hover:text-red-700 font-medium flex items-center gap-1">{linkLabel} <ExternalLink size={13} /></Link>}>
+      {items.length === 0 ? <p className="text-sm text-gray-400">Nothing to pick from yet.</p> : (
+        <div className="space-y-2">
+          {weeks.map(w => {
+            const wk = data[w.n] || { ids: [], plan: '' }
+            const open = openWeek === w.n
+            return (
+              <div key={w.n} className="border border-gray-200 rounded-lg p-2.5">
+                <div className="grid md:grid-cols-[1fr_240px] gap-3">
+                  {/* left: week + picks */}
+                  <div className="min-w-0">
+                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-sm font-bold text-gray-900">{w.label}</span>
+                        <span className="text-[11px] text-gray-400">{w.range}</span>
+                      </div>
+                      <button onClick={() => { setOpenWeek(open ? null : w.n); setQ('') }}
+                        className="text-xs font-semibold text-red-600 hover:text-red-700 flex-shrink-0">
+                        {open ? 'Done' : `${pickLabel} (${wk.ids.length})`}
+                      </button>
+                    </div>
+
+                    {wk.ids.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {wk.ids.map(id => {
+                          const it = byId[id]
+                          return (
+                            <span key={id} className="inline-flex items-center gap-1.5 text-xs bg-red-50 text-red-800 border border-red-200 rounded-full pl-1 pr-2 py-0.5">
+                              <Logo url={it && getLogo(it)} name={it ? getName(it) : '?'} size={16} />
+                              <span className="truncate max-w-[160px]">{it ? getName(it) : 'Removed'}</span>
+                              <button onClick={() => toggle(w.n, id)} className="hover:text-red-900">✕</button>
+                            </span>
+                          )
+                        })}
+                      </div>
+                    )}
+
+                    {open && (
+                      <div className="mt-2">
+                        <div className="relative mb-1.5">
+                          <Search size={13} className="absolute left-2.5 top-2 text-gray-400" />
+                          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search…"
+                            className="w-full border border-gray-300 rounded-lg pl-8 pr-3 py-1 text-sm focus:outline-none focus:border-red-500" />
+                        </div>
+                        <div className="max-h-44 overflow-y-auto space-y-0.5 border border-gray-100 rounded-lg p-1.5">
+                          {filtered.slice(0, 60).map(it => {
+                            const on = wk.ids.includes(it.id)
+                            return (
+                              <button key={it.id} onClick={() => toggle(w.n, it.id)}
+                                className={`w-full flex items-center gap-2 text-left rounded px-2 py-1 text-sm ${on ? 'bg-red-50 text-red-800' : 'hover:bg-gray-50 text-gray-700'}`}>
+                                <span className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 ${on ? 'bg-red-600 border-red-600' : 'border-gray-300'}`}>
+                                  {on && <Check size={10} className="text-white" />}
+                                </span>
+                                <Logo url={getLogo(it)} name={getName(it)} size={18} />
+                                <span className="truncate flex-1">{getName(it)}</span>
+                                {getMeta && getMeta(it) && <span className="text-[11px] text-gray-400 flex-shrink-0">{getMeta(it)}</span>}
+                              </button>
+                            )
+                          })}
+                          {filtered.length === 0 && <p className="text-xs text-gray-400 px-2 py-1">No matches.</p>}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* right: the week's plan */}
+                  <textarea defaultValue={wk.plan || ''} onBlur={e => setWeek(w.n, { plan: e.target.value })}
+                    placeholder={planPlaceholder} rows={2}
+                    className="w-full h-full min-h-[56px] border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm resize-none focus:outline-none focus:border-red-500" />
                 </div>
-                <button onClick={() => { setOpenWeek(open ? null : w.n); setQ('') }}
-                  className="text-xs font-semibold text-red-600 hover:text-red-700">
-                  {open ? 'Done' : `Pick businesses (${wk.ids.length})`}
-                </button>
               </div>
-
-              {wk.ids.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mb-2">
-                  {wk.ids.map(id => (
-                    <span key={id} className="inline-flex items-center gap-1 text-xs bg-red-50 text-red-700 border border-red-200 rounded-full px-2 py-0.5">
-                      {byId[id]?.business_name || 'Business'}
-                      <button onClick={() => toggle(w.n, id)} className="hover:text-red-900">✕</button>
-                    </span>
-                  ))}
-                </div>
-              )}
-
-              {open && (
-                <div className="mb-2">
-                  <div className="relative mb-1.5">
-                    <Search size={13} className="absolute left-2.5 top-2.5 text-gray-400" />
-                    <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search businesses…"
-                      className="w-full border border-gray-300 rounded-lg pl-8 pr-3 py-1.5 text-sm focus:outline-none focus:border-red-500" />
-                  </div>
-                  <div className="max-h-48 overflow-y-auto space-y-1 border border-gray-100 rounded-lg p-1.5">
-                    {filtered.slice(0, 60).map(b => {
-                      const on = wk.ids.includes(b.id)
-                      return (
-                        <button key={b.id} onClick={() => toggle(w.n, b.id)}
-                          className={`w-full flex items-center gap-2 text-left rounded px-2 py-1.5 text-sm ${on ? 'bg-red-50 text-red-800' : 'hover:bg-gray-50 text-gray-700'}`}>
-                          <span className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 ${on ? 'bg-red-600 border-red-600' : 'border-gray-300'}`}>
-                            {on && <Check size={10} className="text-white" />}
-                          </span>
-                          <span className="truncate flex-1">{b.business_name}</span>
-                          {b.industry && <span className="text-[11px] text-gray-400">{b.industry}</span>}
-                        </button>
-                      )
-                    })}
-                    {filtered.length === 0 && <p className="text-xs text-gray-400 px-2 py-1">No matches.</p>}
-                  </div>
-                </div>
-              )}
-
-              <textarea defaultValue={wk.plan || ''} onBlur={e => setWeek(w.n, { plan: e.target.value })}
-                placeholder={`Canvassing plan for ${w.label} — who goes, what to bring, the ask…`} rows={2}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-500" />
-            </div>
-          )
-        })}
-      </div>
+            )
+          })}
+        </div>
+      )}
     </Card>
   )
 }
@@ -732,6 +767,7 @@ function PickerCard({ icon, title, subtitle, accent, items, selected, onToggle, 
                   <span className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 ${on ? 'bg-red-600 border-red-600' : 'border-gray-300'}`}>
                     {on && <Check size={12} className="text-white" />}
                   </span>
+                  <Logo url={r.logo} name={r.title} size={20} />
                   <span className="font-semibold text-gray-900 text-sm flex-1 min-w-0 truncate">{r.title}</span>
                   {r.meta && <span className={`text-xs ${r.warn ? 'text-red-600 font-semibold' : 'text-gray-500'}`}>{r.meta}</span>}
                 </button>
