@@ -39,6 +39,7 @@ const CATALOG = [
 
   // ── Sales Engine (Chrissy) ─────────────────────────────────────────────
   { key: 'checkin_show_rate',    group: 'sales', label: 'Check-in Show Rate',       type: 'percent', goal: 80,  source: 'Studio Trends', auto: 'checkin_show_rate', note: 'Appts held ÷ appts booked' },
+  { key: 'closing_ratio',        group: 'sales', label: 'Closing Ratio',            type: 'percent', goal: 50,  source: 'Studio Trends', auto: 'closing_ratio', note: 'New members ÷ red appointments (booked)' },
   { key: 'sweat_elite_mix',      group: 'sales', label: 'Sweat Elite Mix',          type: 'percent', goal: 80,  source: 'Studio Trends', auto: 'sweat_elite_mix', note: '% of new memberships that are Elite' },
   { key: 'attrition_rate',       group: 'sales', label: 'Attrition / Cancel Rate',  type: 'percent', goal: 4,   source: 'Studio Trends', auto: 'attrition_rate', lowerIsBetter: true, note: 'Cancellations ÷ last month members' },
   { key: 'referrals_received',   group: 'sales', label: 'Referrals Received',       type: 'number',  goal: 10,  source: 'SAIL',  note: 'Owner-set target' },

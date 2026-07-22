@@ -24,10 +24,10 @@ async function computeOutreachCounts(studioId, date) {
   const lapseAnchor = new Date(`${date}T12:00:00Z`).getTime()
 
   const [recogRes, tpRes, reRes, rewardRes, memberRes, actRes] = await Promise.all([
-    sb.from('onboarding_recognition_tasks').select('member_id, type, status, completed_at')
+    sb.from('onboarding_recognition_tasks').select('id, member_id, member_name, type, status, completed_at')
       .eq('studio_id', studioId).eq('status', 'completed').gte('completed_at', since),
-    sb.from('onboarding_touchpoint_log').select('member_id, touchpoint_key, done, completed_at')
-      .eq('studio_id', studioId).eq('done', true).gte('completed_at', since),
+    sb.from('onboarding_touchpoint_log').select('member_id, touchpoint_key, done, notes, completed_at, updated_at')
+      .eq('studio_id', studioId).gte('updated_at', since),
     sb.from('onboarding_reengage_log').select('member_id, contacted_at, contacted_by')
       .eq('studio_id', studioId).gte('contacted_at', since),
     sb.from('onboarding_rewards_awarded').select('member_id, reward_key, awarded_at')
@@ -37,7 +37,12 @@ async function computeOutreachCounts(studioId, date) {
   ])
 
   const recog = (recogRes.data || []).filter(r => chicagoDate(r.completed_at) === date)
-  const tp = (tpRes.data || []).filter(r => chicagoDate(r.completed_at) === date)
+  // Count a touchpoint as outreach done today if it was marked done OR logged with a
+  // note (a real contact — even when a follow-up was scheduled, which the app records
+  // as a "snooze"). A no-note snooze/skip is not outreach. Use the done time for
+  // completions, the edit time for note-only contacts.
+  const tp = (tpRes.data || []).filter(r =>
+    (r.done || (r.notes && r.notes.trim())) && chicagoDate(r.completed_at || r.updated_at) === date)
   const re = (reRes.data || []).filter(r => chicagoDate(r.contacted_at) === date && isReal(r.contacted_by))
   const rewards = (rewardRes.data || []).filter(r => chicagoDate(r.awarded_at) === date)
 
@@ -55,9 +60,12 @@ async function computeOutreachCounts(studioId, date) {
   const missedGuest = new Set()
   const reengage14 = new Set()
 
+  // Recognition tasks (birthday/thank-you) can have a null member_id (not linked to a
+  // member record), so key by member_id → name → row id to avoid collapsing to one.
+  const personKey = (r) => r.member_id || (r.member_name && `name:${r.member_name}`) || `rec:${r.id}`
   for (const r of recog) {
-    if (r.type === 'birthday') birthday.add(r.member_id)
-    else if (r.type === 'thank_you_card') thankYou.add(r.member_id)
+    if (r.type === 'birthday') birthday.add(personKey(r))
+    else if (r.type === 'thank_you_card') thankYou.add(personKey(r))
   }
   for (const r of tp) {
     const k = r.touchpoint_key

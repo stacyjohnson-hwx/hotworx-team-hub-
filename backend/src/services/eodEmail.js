@@ -2,6 +2,7 @@ const { Resend }    = require('resend')
 const nodemailer    = require('nodemailer')
 const { createClient } = require('@supabase/supabase-js')
 const { todayInChicago } = require('../utils/dates')
+const { computeOutreachCounts } = require('./outreachCounts')
 
 // ─── Transport: Gmail SMTP preferred, Resend fallback ─────────────────────────
 // Gmail SMTP sends to anyone. Resend sandbox only sends to the account owner.
@@ -220,22 +221,6 @@ function buildShiftBlock(row_data, outreachSummary, tasksByUser) {
         ${sectionHeader('Outreach')}
         ${outreachRows}
 
-        ${(() => {
-          const items = [
-            ['Birthday outreach', row_data.outreach_birthday],
-            ['Thank-you cards sent', row_data.outreach_thank_you],
-            ['Missed guests followed up', row_data.outreach_missed_guest],
-            ['14-day re-engagement follow-ups', row_data.outreach_reengage14],
-            ['Milestones awarded', row_data.outreach_milestones],
-            ['New-member outreach', row_data.outreach_new_member],
-          ].map(([label, n]) => [label, Number(n) || 0])
-          const total = items.reduce((a, [, n]) => a + n, 0)
-          return `
-        ${sectionHeader('Member Outreach Completed')}
-        <tr><td style="padding:5px 0;font-size:15px;font-weight:800;color:#16a34a;">🤝 ${total} total outreach</td><td></td></tr>
-        ${items.map(([label, n]) => row(label, n)).join('')}`
-        })()}
-
         ${sectionHeader('Cleaning Completed')}
         ${cleaningRows}
 
@@ -345,6 +330,32 @@ function buildLoggedTodaySection(logged) {
   </div>`
 }
 
+// "Member Outreach Completed" — the day's outreach totals (birthday, thank-you,
+// missed guests, 14-day re-engagement, milestones, new member). Recomputed live at
+// send time so late-day work is captured; a hand-edited checkout can override it.
+function buildOutreachSection(counts) {
+  if (!counts) return ''
+  const items = [
+    ['Birthday outreach', counts.outreach_birthday],
+    ['Thank-you cards sent', counts.outreach_thank_you],
+    ['Missed guests followed up', counts.outreach_missed_guest],
+    ['14-day re-engagement follow-ups', counts.outreach_reengage14],
+    ['Milestones awarded', counts.outreach_milestones],
+    ['New-member outreach', counts.outreach_new_member],
+  ].map(([l, n]) => [l, Number(n) || 0])
+  const total = items.reduce((a, [, n]) => a + n, 0)
+  return `
+  <div style="margin-bottom:24px;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
+    <div style="background:#1A1A1A;padding:12px 16px;font-size:14px;font-weight:700;color:#fff;">Member Outreach Completed</div>
+    <div style="padding:12px 16px;">
+      <table style="width:100%;border-collapse:collapse;">
+        <tr><td style="padding:5px 0;font-size:15px;font-weight:800;color:#16a34a;">🤝 ${total} total outreach today</td><td></td></tr>
+        ${items.map(([l, n]) => row(l, n)).join('')}
+      </table>
+    </div>
+  </div>`
+}
+
 // Studio-level "Marketing Tasks Completed" — every Growth-section completion for
 // the day, attributed to staff. Rendered once per email (not per shift).
 function buildMarketingSection(marketing, topTasks = []) {
@@ -397,7 +408,7 @@ function buildB2bSection(b2b) {
   </div>`
 }
 
-function buildHtml(dateStr, submissions, outreachByUser, tasksByUser, ops, marketing, b2b, marketingTopTasks, logged) {
+function buildHtml(dateStr, submissions, outreachByUser, tasksByUser, ops, marketing, b2b, marketingTopTasks, logged, memberOutreach) {
   const dateLabel = new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
   })
@@ -419,6 +430,7 @@ function buildHtml(dateStr, submissions, outreachByUser, tasksByUser, ops, marke
             outreachByUser[s.submitted_by] || null,
             tasksByUser[s.submitted_by]    || { cleaning: [], operations: [] }
           )).join('')}
+      ${buildOutreachSection(memberOutreach)}
       ${buildLoggedTodaySection(logged)}
       ${buildMarketingSection(marketing, marketingTopTasks)}
       ${buildB2bSection(b2b)}
@@ -674,7 +686,20 @@ async function sendEodEmail(dateStr, studioId) {
   const { submissions, outreachByUser, tasksByUser, marketing, marketingTopTasks, b2b } = await fetchSubmissionsForDate(dateStr, studioId)
   const ops = await fetchOpsSummary(db, studioId)
   const logged = await fetchLoggedToday(db, studioId, dateStr)
-  const html = buildHtml(dateStr, submissions, outreachByUser, tasksByUser, ops, marketing, b2b, marketingTopTasks, logged)
+  // Member outreach: recompute live for the day so late-day work is captured —
+  // unless someone hand-edited the numbers on a checkout, in which case those win.
+  let memberOutreach = null
+  const edited = (submissions || []).find(s => s.outreach_edited)
+  if (edited) {
+    memberOutreach = {
+      outreach_birthday: edited.outreach_birthday, outreach_thank_you: edited.outreach_thank_you,
+      outreach_missed_guest: edited.outreach_missed_guest, outreach_reengage14: edited.outreach_reengage14,
+      outreach_milestones: edited.outreach_milestones, outreach_new_member: edited.outreach_new_member,
+    }
+  } else if (studioId) {
+    try { memberOutreach = await computeOutreachCounts(studioId, dateStr) } catch (e) { console.error('[EOD Email] outreach counts:', e.message) }
+  }
+  const html = buildHtml(dateStr, submissions, outreachByUser, tasksByUser, ops, marketing, b2b, marketingTopTasks, logged, memberOutreach)
   const studioLabel = studioName || process.env.STUDIO_NAME || 'HOTWORX Pewaukee'
 
   const dateLabel = new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', {

@@ -25,6 +25,7 @@ import TrainingPage from '@/pages/training/TrainingPage'
 import CertificationPage from '@/pages/certification/CertificationPage'
 import TodoPage from '@/pages/todo/TodoPage'
 import CoachingPage from '@/pages/coaching/CoachingPage'
+import CoachingTrackerPage from '@/pages/coaching-tracker/CoachingTrackerPage'
 import LaborPage from '@/pages/labor/LaborPage'
 import UsersPage from '@/pages/users/UsersPage'
 import ProfilePage from '@/pages/profile/ProfilePage'
@@ -177,6 +178,14 @@ function AppRoutes() {
           element={
             <RoleGuard allowedRoles={['owner', 'manager']}>
               <CoachingPage />
+            </RoleGuard>
+          }
+        />
+        <Route
+          path="/coaching-tracker"
+          element={
+            <RoleGuard allowedRoles={['owner', 'manager']}>
+              <CoachingTrackerPage />
             </RoleGuard>
           }
         />

@@ -676,7 +676,7 @@ function Sparkline({ values }) {
   return <svg width={w} height={h}><polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" /></svg>
 }
 
-function CoachingTracker() {
+export function CoachingTracker() {
   const [rows, setRows] = useState(null)
   const [open, setOpen] = useState(null)  // employee_user_id
   const load = useCallback(() => { apiGet('/api/certification/coaching/overview').then(setRows).catch(() => setRows([])) }, [])
@@ -847,9 +847,9 @@ function EmployeeCoachingModal({ employeeId, onClose, onChange }) {
 function Spinner() { return <div className="flex items-center justify-center py-16"><Loader2 className="animate-spin text-gray-300" size={22} /></div> }
 
 // ─── Page shell ──────────────────────────────────────────────────────────────
+// Coaching moved to its own "Coaching" side-nav item (Team & Coaching).
 const LEAD_TABS = [
   { id: 'matrix',  label: 'Matrix',     Icon: Grid3x3 },
-  { id: 'coaching',label: 'Coaching',   Icon: MessageSquare },
   { id: 'tests',   label: 'Live Tests', Icon: ClipboardList },
   { id: 'library', label: 'Library',    Icon: BookOpen },
 ]
@@ -858,7 +858,7 @@ export default function CertificationPage() {
   const { isOwnerOrManager } = useRole()
   const [tab, setTab] = useState(() => {
     const t = new URLSearchParams(window.location.search).get('tab')
-    return ['matrix', 'coaching', 'tests', 'library'].includes(t) ? t : 'matrix'
+    return ['matrix', 'tests', 'library'].includes(t) ? t : 'matrix'
   })
 
   return (
@@ -882,7 +882,6 @@ export default function CertificationPage() {
             ))}
           </div>
           {tab === 'matrix' && <Matrix />}
-          {tab === 'coaching' && <CoachingTracker />}
           {tab === 'tests' && <PendingQueue />}
           {tab === 'library' && <Library />}
         </>

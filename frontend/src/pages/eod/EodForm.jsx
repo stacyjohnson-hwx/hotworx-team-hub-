@@ -739,6 +739,7 @@ export default function EodForm({ submittedShifts, onSubmitted }) {
   // Auto-fill the six member-outreach counts from today's completed activity.
   // Only fills fields the user hasn't already set (draft-restored or typed).
   const [outreachAuto, setOutreachAuto] = useState(false)
+  const [outreachEdited, setOutreachEdited] = useState(false)   // true once the owner types over a count
   useEffect(() => {
     let alive = true
     apiGet('/api/eod/outreach-summary').then(s => {
@@ -845,6 +846,7 @@ export default function EodForm({ submittedShifts, onSubmitted }) {
         outreach_reengage14: parseInt(form.outreach_reengage14) || 0,
         outreach_milestones: parseInt(form.outreach_milestones) || 0,
         outreach_new_member: parseInt(form.outreach_new_member) || 0,
+        outreach_edited: outreachEdited,
         mission_titles: finalMissions,
         completed_training: completedTraining,
       }
@@ -969,11 +971,11 @@ export default function EodForm({ submittedShifts, onSubmitted }) {
           {/* Member Outreach Completed — auto-filled from Member Activation, editable */}
           <Section title="Member Outreach Completed" badge={outreachTotal > 0 ? `${outreachTotal}` : null}>
             <p className="text-xs text-gray-400 -mt-1">
-              {outreachAuto ? 'Auto-filled from today’s Member Activation activity — adjust any number if needed.' : 'Loading today’s activity…'}
+              {outreachAuto ? 'Auto-filled from today’s Member Activation activity. The report recounts at day’s end — type over a number only to override it.' : 'Loading today’s activity…'}
             </p>
             <div className="grid grid-cols-2 gap-3">
               {OUTREACH_FIELDS.map(([k, label]) => (
-                <NumberInput key={k} label={label} value={form[k]} onChange={v => set(k, v)} />
+                <NumberInput key={k} label={label} value={form[k]} onChange={v => { setOutreachEdited(true); set(k, v) }} />
               ))}
             </div>
             <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">

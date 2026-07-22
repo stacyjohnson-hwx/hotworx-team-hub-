@@ -155,7 +155,7 @@ router.post('/', async (req, res) => {
     completed_training,
     // Member outreach completed today (auto-filled, editable)
     outreach_birthday, outreach_thank_you, outreach_missed_guest,
-    outreach_reengage14, outreach_milestones, outreach_new_member,
+    outreach_reengage14, outreach_milestones, outreach_new_member, outreach_edited,
   } = req.body
 
   if (!shift_type) return res.status(400).json({ error: 'shift_type is required' })
@@ -212,6 +212,7 @@ router.post('/', async (req, res) => {
       outreach_reengage14: outreach_reengage14 ?? 0,
       outreach_milestones: outreach_milestones ?? 0,
       outreach_new_member: outreach_new_member ?? 0,
+      outreach_edited: !!outreach_edited,
     })
     .select()
     .single()

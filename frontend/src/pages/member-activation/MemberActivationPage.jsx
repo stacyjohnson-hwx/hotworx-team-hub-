@@ -1818,7 +1818,15 @@ function DailyListTab() {
   const complete = async (r) => {
     drop(r.id)
     try {
-      if (r.kind === 'reengage' || r.kind === 'missed_guest') await apiPost(`${BASE}/reengage/${r.member_id}/complete`, {})
+      if (r.kind === 'missed_guest') {
+        // Checking off a missed guest: log "sent follow up" as done today and bring
+        // it back in 1 month (we don't follow up more than once a month).
+        const d = new Date(dlToday() + 'T00:00:00'); d.setMonth(d.getMonth() + 1)
+        await apiPost(`${BASE}/daily-list/log`, {
+          member_id: r.member_id, task_key: 'missed_guest', kind: 'missed_guest',
+          note: 'sent follow up', follow_up_date: d.toISOString().slice(0, 10), done: true,
+        })
+      } else if (r.kind === 'reengage') await apiPost(`${BASE}/reengage/${r.member_id}/complete`, {})
       else if (r.kind === 'passport') await apiPost(`${BASE}/passport/${r.member_id}/complete`, { fulfilled: !!fulfil[r.id] })
       else await apiPost(`${BASE}/daily-list/${r.id}/complete`, { fulfilled: !!fulfil[r.id] })
     } catch { /* ignore */ }

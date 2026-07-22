@@ -258,6 +258,7 @@ async function computeAutoValues(sb, studioId, year, month) {
     in_the_bank:            t ? num(t.in_the_bank) : null,
     itb_goal:               t ? num(t.itb_goal) : null,
     close_rate:             t && num(t.red_appts_held) > 0 ? round(num(t.new_members) / num(t.red_appts_held) * 100) : (t ? 0 : null),
+    closing_ratio:          t && num(t.red_appts_booked) > 0 ? round(num(t.new_members) / num(t.red_appts_booked) * 100) : (t ? 0 : null),
     checkin_show_rate:      t && num(t.red_appts_booked) > 0 ? round(num(t.red_appts_held) / num(t.red_appts_booked) * 100) : (t ? 0 : null),
     sweat_elite_mix:        t ? num(t.sweat_elite_pct) : null,
     attrition_rate:         t && prev && num(prev.total_member_count) > 0 ? round(num(t.cancellations) / num(prev.total_member_count) * 100, 1) : null,

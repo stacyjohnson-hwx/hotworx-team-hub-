@@ -393,8 +393,9 @@ router.post('/:id/log-touch', authenticate, requireStudio, async (req, res) => {
       date_resolved: today,
     }).eq('id', id).eq('studio_id', req.studio.id)
   } else {
-    // Schedule the next touch to keep the loop going.
-    const days = Math.max(1, Math.min(90, Number(req.body?.next_in_days) || 7))
+    // Schedule the next touch to keep the loop going — default 1 month out so we
+    // don't follow up with a cancelled member more than once a month.
+    const days = Math.max(1, Math.min(90, Number(req.body?.next_in_days) || 30))
     const d = new Date(today + 'T00:00:00'); d.setDate(d.getDate() + days)
     const next = d.toISOString().split('T')[0]
     await sb.from('cancellation_followups').insert({

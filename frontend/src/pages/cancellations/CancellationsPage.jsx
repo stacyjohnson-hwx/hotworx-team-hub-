@@ -701,7 +701,7 @@ export default function CancellationsPage() {
             </h3>
           </div>
           <p className="text-xs text-amber-700/80 mb-3">
-            Tap the name for details. <b>Reached out</b> logs the touch and schedules the next in 7 days; <b>Won</b>/<b>Lost</b> closes it out.
+            Tap the name for details. <b>Reached out</b> logs the touch and schedules the next in 1 month; <b>Won</b>/<b>Lost</b> closes it out.
           </p>
           <div className="space-y-1.5 max-h-[26rem] overflow-y-auto">
             {followUps.map(r => {
@@ -724,7 +724,7 @@ export default function CancellationsPage() {
                       <Loader2 size={16} className="animate-spin text-amber-600 mx-6" />
                     ) : (
                       <>
-                        <button onClick={() => logTouch(r.id)} title="Logged a follow-up — reschedule next touch in 7 days"
+                        <button onClick={() => logTouch(r.id)} title="Logged a follow-up — reschedule next touch in 1 month"
                           className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-lg transition-colors">
                           <Phone size={12} /> Reached out
                         </button>

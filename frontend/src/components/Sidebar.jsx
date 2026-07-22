@@ -18,6 +18,7 @@ import {
   CheckSquare,
   ListTodo,
   MessageSquare,
+  MessageCircle,
   CalendarOff,
   BookOpen,
   GraduationCap,
@@ -103,7 +104,8 @@ const NAV_SECTIONS = [
     title: 'Team & Coaching',
     items: [
       { to: '/team',     label: 'Team',     icon: Users,         roles: ['owner', 'manager'] },
-      { to: '/coaching', label: 'Coaching', icon: MessageSquare, roles: ['owner', 'manager'] },
+      { to: '/coaching', label: 'Meetings', icon: MessageSquare, roles: ['owner', 'manager'] },
+      { to: '/coaching-tracker', label: 'Coaching', icon: MessageCircle, roles: ['owner', 'manager'] },
       { to: '/todo',     label: 'To-Do',    icon: ListTodo,      roles: ['owner', 'manager'] },
     ],
   },

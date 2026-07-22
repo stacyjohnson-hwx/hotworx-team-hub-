@@ -354,10 +354,10 @@ function MarketingFunnel({ funnel }) {
   ]
   const leadToMember = rate(f.closed, f.leads)
 
-  // Member goal from the Goals page (falls back to the franchise default), and a
-  // leads target scaled off it at the 35% conversion so the ratio stays coherent.
+  // Member goal from the Goals page (falls back to the franchise default). Leads
+  // target is the studio's standard 145 (not derived from members).
   const membersGoal = f.members_goal != null ? f.members_goal : GOLDEN.members
-  const leadsGoal = Math.round(membersGoal / (GOLDEN.leadToMember / 100))
+  const leadsGoal = GOLDEN.leads
 
   return (
     <div className="scorecard-card bg-white rounded-xl border border-gray-200 p-4 mb-6">
