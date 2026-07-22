@@ -20,44 +20,24 @@ const supabase = () =>
 
 const GUARD = [authenticate, requireStudio, requireRole('owner', 'manager')]
 
-const pad = n => String(n).padStart(2, '0')
-const monthBounds = (year, month) => ({
-  start: `${year}-${pad(month)}-01`,
-  end:   `${year}-${pad(month)}-${pad(new Date(year, month, 0).getDate())}`,
-})
 const prevMonth = (year, month) => (month === 1 ? { year: year - 1, month: 12 } : { year, month: month - 1 })
 
-// Hours between two 'HH:MM[:SS]' clock strings (same day).
-function shiftHours(start, end) {
-  if (!start || !end) return 0
-  const [sh, sm] = start.split(':').map(Number)
-  const [eh, em] = end.split(':').map(Number)
-  const mins = (eh * 60 + (em || 0)) - (sh * 60 + (sm || 0))
-  return mins > 0 ? mins / 60 : 0
-}
-
-// Staffed hours for a month, bucketed by person and week-of-month (1–5).
-async function hoursByPersonWeek(db, studioId, year, month) {
-  const { start, end } = monthBounds(year, month)
-  const { data: shifts } = await db.from('shifts')
-    .select('tsa_id, shift_date, start_time, end_time')
-    .eq('studio_id', studioId).gte('shift_date', start).lte('shift_date', end)
-
-  const { data: { users } } = await db.auth.admin.listUsers({ perPage: 200 })
-  const nameMap = {}
-  for (const u of users || []) nameMap[u.id] = u.user_metadata?.full_name || u.email?.split('@')[0] || 'Team Member'
-
-  const byPerson = {}
-  for (const s of shifts || []) {
-    if (!s.tsa_id) continue
-    const day = Number((s.shift_date || '').slice(8, 10))
-    const wk = Math.min(5, Math.max(1, Math.ceil(day / 7)))
-    const h = shiftHours(s.start_time, s.end_time)
-    const p = byPerson[s.tsa_id] || (byPerson[s.tsa_id] = { id: s.tsa_id, name: nameMap[s.tsa_id] || 'Team Member', weeks: {}, total: 0 })
-    p.weeks[wk] = Math.round(((p.weeks[wk] || 0) + h) * 10) / 10
-    p.total = Math.round((p.total + h) * 10) / 10
+// Last year's ACTUALS, shaped like the planner's goal fields. Studios often have
+// no goal row for last year but always have trends, so this is what we surface.
+function actualsFromTrends(t) {
+  if (!t) return null
+  const n = v => (v == null ? 0 : Number(v))
+  const rate = (num, den) => (n(den) > 0 ? Math.round((n(num) / n(den)) * 100) : null)
+  return {
+    eft_target:               t.eft_increase ?? null,
+    memberships_target:       t.new_members ?? null,
+    retail_target:            t.retail ?? null,
+    in_the_bank_target:       t.in_the_bank ?? null,
+    total_leads_target:       t.leads ?? null,
+    conversion_rate_target:   rate(t.new_members, t.leads),
+    checkin_show_rate_target: rate(t.red_appts_held, t.red_appts_booked),
+    close_rate_target:        rate(t.new_members, t.red_appts_held),
   }
-  return Object.values(byPerson).sort((a, b) => b.total - a.total)
 }
 
 async function oneRow(db, table, studioId, year, month, columns = '*') {
@@ -65,6 +45,34 @@ async function oneRow(db, table, studioId, year, month, columns = '*') {
     .eq('studio_id', studioId).eq('year', year).eq('month', month).maybeSingle()
   return data || null
 }
+
+// ─── Custom holidays (recur every year for that month) ────────────────────────
+// Declared before /:year/:month so "holidays" isn't parsed as a year.
+
+// POST /api/monthly-planner/holidays  { month, label, day? }
+router.post('/holidays', ...GUARD, async (req, res) => {
+  const month = parseInt(req.body?.month)
+  const label = (req.body?.label || '').trim()
+  const day = req.body?.day ? parseInt(req.body.day) : null
+  if (!month || month < 1 || month > 12) return res.status(400).json({ error: 'Valid month required' })
+  if (!label) return res.status(400).json({ error: 'Label required' })
+
+  const { data, error } = await supabase().from('planner_holidays').insert({
+    studio_id: req.studio.id, month, label,
+    day: day && day >= 1 && day <= 31 ? day : null,
+    created_by: req.user.id,
+  }).select().single()
+  if (error) return res.status(500).json({ error: error.message })
+  res.status(201).json(data)
+})
+
+// DELETE /api/monthly-planner/holidays/:id
+router.delete('/holidays/:id', ...GUARD, async (req, res) => {
+  const { error } = await supabase().from('planner_holidays')
+    .delete().eq('id', req.params.id).eq('studio_id', req.studio.id)
+  if (error) return res.status(500).json({ error: error.message })
+  res.status(204).end()
+})
 
 // ─── GET /api/monthly-planner/:year/:month ────────────────────────────────────
 router.get('/:year/:month', ...GUARD, async (req, res) => {
@@ -76,26 +84,22 @@ router.get('/:year/:month', ...GUARD, async (req, res) => {
   const prev = prevMonth(year, month)
 
   try {
-    const [plan, lastYearGoals, lastYearTrends, priorMonthTrends, hours, holidaysRes] = await Promise.all([
+    const [plan, lastYearGoals, lastYearTrends, priorMonthTrends, customHolidays] = await Promise.all([
       db.from('monthly_plans').select('*').eq('studio_id', sid).eq('year', year).eq('month', month).maybeSingle().then(r => r.data),
       oneRow(db, 'studio_goals',  sid, year - 1, month),
       oneRow(db, 'studio_trends', sid, year - 1, month),
       oneRow(db, 'studio_trends', sid, prev.year, prev.month),
-      hoursByPersonWeek(db, sid, prev.year, prev.month),
-      db.from('blocked_days')
-        .select('block_date, label, block_type')
-        .gte('block_date', monthBounds(year, month).start)
-        .lte('block_date', monthBounds(year, month).end)
-        .order('block_date'),
+      db.from('planner_holidays').select('*').eq('studio_id', sid).eq('month', month).order('day', { nullsFirst: false }).then(r => r.data || []),
     ])
 
     res.json({
       plan: plan || { studio_id: sid, year, month, content: {}, reviewed_at: null, reviewed_by: null },
       reference: {
         prior: { year: prev.year, month: prev.month },
-        lastYearGoals, lastYearTrends, priorMonthTrends,
-        hoursByPersonWeek: hours,
-        holidays: holidaysRes.data || [],
+        lastYearGoals,                                   // targets set last year (often none)
+        lastYearActuals: actualsFromTrends(lastYearTrends), // what actually happened last year
+        lastYearTrends, priorMonthTrends,
+        customHolidays,
       },
     })
   } catch (err) {
