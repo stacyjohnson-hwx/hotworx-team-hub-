@@ -80,6 +80,21 @@ const SEASONAL = {
   12: 'New Year pre-sell + year-end retail clearance',
 }
 
+// Does an event/promo really belong to [start, end]?
+// The API already overlap-filters, but two quirks in the data need tightening:
+//  • many records use an EXCLUSIVE end (a June promo ends "Jul 1"), so a record
+//    that only touches the first day of the range isn't really in this month;
+//  • a few records have typo'd years (e.g. 0206-06-01) that span centuries.
+const MIN_SANE_DATE = '2000-01-01'
+function overlapsRange(item, start, end) {
+  if (!item.start_date) return !!item.ongoing          // ongoing, undated
+  if (item.start_date < MIN_SANE_DATE) return false    // guard typo'd dates
+  const itemEnd = item.end_date || item.start_date
+  if (itemEnd < start || item.start_date > end) return false
+  if (itemEnd === start && item.start_date < start) return false  // exclusive-end bleed
+  return true
+}
+
 // Weeks of the month as day ranges (Week 1 = 1–7, …).
 function weeksOfMonth(year, month) {
   const dim = daysInMonth(year, month)
@@ -268,12 +283,12 @@ export default function MonthlyPlannerPage() {
       setLastYear(pl.reference?.lastYearGoals || pl.reference?.lastYearActuals || null)
       setB2b(contacts || []); setTerritories(terr || [])
       const byStart = (a, b) => (a.start_date || '').localeCompare(b.start_date || '')
-      setEvents([...(evs || [])].sort(byStart))
-      setLastYearEvents([...(lyEvs || [])].sort(byStart))
+      setEvents((evs || []).filter(e => overlapsRange(e, mStart, mEnd)).sort(byStart))
+      setLastYearEvents((lyEvs || []).filter(e => overlapsRange(e, lyStart, lyEnd)).sort(byStart))
       // This month: hide archived promos. Last year: keep archived (that's the
       // history) but drop always-on "ongoing" ones — they're not a useful compare.
-      setPromos((prm || []).filter(p => p.active !== false).sort(byStart))
-      setLastYearPromos((lyPrm || []).filter(p => !p.ongoing).sort(byStart))
+      setPromos((prm || []).filter(p => p.active !== false && overlapsRange(p, mStart, mEnd)).sort(byStart))
+      setLastYearPromos((lyPrm || []).filter(p => !p.ongoing && overlapsRange(p, lyStart, lyEnd)).sort(byStart))
       setContests(cts || [])
     } catch (e) {
       setError(e?.message || 'Could not load the planner.')
