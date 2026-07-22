@@ -132,10 +132,17 @@ export default function MonthlyPlannerPage() {
     patchContent({ [key]: list.includes(id) ? list.filter(x => x !== id) : [...list, id] })
   }
 
-  const saveGoals = async (patch) => {
+  const saveGoals = async () => {
     setSavingGoals(true)
+    // Send only the editable target fields (the endpoint stores just these).
+    const targets = {
+      eft_target: goals.eft_target, memberships_target: goals.memberships_target,
+      retail_target: goals.retail_target, in_the_bank_target: goals.in_the_bank_target,
+      total_leads_target: goals.total_leads_target, conversion_rate_target: goals.conversion_rate_target,
+      checkin_show_rate_target: goals.checkin_show_rate_target, close_rate_target: goals.close_rate_target,
+    }
     try {
-      const saved = await apiPut('/api/goals/studio', { month, year, ...goals, ...patch })
+      const saved = await apiPut('/api/goals/studio', { month, year, ...targets })
       setGoals(g => ({ ...g, ...saved }))
     } catch (e) { setError(e?.message || 'Could not save goals.') }
     finally { setSavingGoals(false) }
@@ -191,7 +198,7 @@ export default function MonthlyPlannerPage() {
           <TargetField label="Close rate %" value={goals?.close_rate_target} lastYear={lastYearGoals?.close_rate_target} onChange={v => setGoals(g => ({ ...g, close_rate_target: v }))} />
         </div>
         <div className="flex items-center gap-3 mt-4">
-          <button onClick={() => saveGoals({})} disabled={savingGoals}
+          <button onClick={() => saveGoals()} disabled={savingGoals}
             className="flex items-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold rounded-lg disabled:opacity-50">
             {savingGoals ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} Save goals
           </button>
