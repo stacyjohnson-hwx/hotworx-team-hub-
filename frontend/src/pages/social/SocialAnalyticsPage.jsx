@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback } from 'react'
-import { apiGet, apiPost, apiDelete } from '@/hooks/useApi'
+import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
 import { useStudio } from '@/contexts/StudioContext'
 import { useRole } from '@/hooks/useRole'
+import SocialPostCalendar from '@/components/SocialPostCalendar'
 import {
   Camera, ThumbsUp, Star, TrendingUp, TrendingDown, Minus, Play, Heart,
   MessageCircle, Bookmark, Share2, ArrowUpRight, RefreshCw, Sparkles,
   BarChart3, Info, Loader2, AlertCircle, Pencil, X,
   Music, Flame, Plus, Trash2, Copy, Check, Sliders, ExternalLink,
-  ChevronRight, MessageSquare, Reply,
+  ChevronRight, MessageSquare, Reply, CalendarDays,
 } from 'lucide-react'
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts'
 
@@ -1040,13 +1041,84 @@ function CoachTab() {
   )
 }
 
+// ─── Calendar tab ─────────────────────────────────────────────────────────────
+// Same posts as the Monthly Planner's social calendar — both read and write
+// monthly_plans.content.social_posts, so the two stay in sync.
+function CalendarTab() {
+  const { currentStudio } = useStudio()
+  const studioId = currentStudio?.id
+  const now = new Date()
+  const [ym, setYm] = useState({ year: now.getFullYear(), month: now.getMonth() + 1 })
+  const [content, setContent] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  const load = useCallback(async () => {
+    setLoading(true); setError('')
+    try {
+      const pl = await apiGet(`/api/monthly-planner/${ym.year}/${ym.month}`)
+      setContent(pl.plan?.content || {})
+    } catch (e) {
+      setError(e?.message?.includes('403') || e?.status === 403
+        ? 'The content calendar is available to owners and managers.'
+        : (e?.message || 'Could not load the calendar.'))
+    } finally { setLoading(false) }
+  }, [studioId, ym.year, ym.month])
+  useEffect(() => { load() }, [load])
+
+  const savePosts = async (next) => {
+    const merged = { ...(content || {}), social_posts: next }
+    setContent(merged)
+    try { await apiPut(`/api/monthly-planner/${ym.year}/${ym.month}`, { content: merged }) }
+    catch (e) { setError(e?.message || 'Could not save.') }
+  }
+
+  const step = (d) => setYm(({ year, month }) => {
+    const m = month + d
+    if (m < 1) return { year: year - 1, month: 12 }
+    if (m > 12) return { year: year + 1, month: 1 }
+    return { year, month: m }
+  })
+  const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December']
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h2 className="text-sm font-bold text-gray-900">Content calendar</h2>
+          <p className="text-xs text-gray-500 mt-0.5">The same posts planned in the Monthly Planner.</p>
+        </div>
+        <div className="flex items-center gap-1">
+          <button onClick={() => step(-1)} className="px-2 py-1 text-gray-500 hover:text-gray-900 rounded hover:bg-gray-100">‹</button>
+          <span className="text-sm font-semibold text-gray-800 w-32 text-center">{MONTH_NAMES[ym.month - 1]} {ym.year}</span>
+          <button onClick={() => step(1)} className="px-2 py-1 text-gray-500 hover:text-gray-900 rounded hover:bg-gray-100">›</button>
+        </div>
+      </div>
+
+      {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3 mb-3 flex items-center gap-2"><AlertCircle size={15} /> {error}</div>}
+
+      {loading ? (
+        <div className="flex items-center justify-center h-40"><Loader2 size={22} className="animate-spin text-orange-500" /></div>
+      ) : content && (
+        <SocialPostCalendar
+          posts={content.social_posts || []}
+          onChange={savePosts}
+          year={ym.year} month={ym.month} studioId={studioId} />
+      )}
+    </div>
+  )
+}
+
 // ─── Page shell ───────────────────────────────────────────────────────────────
 export default function SocialAnalyticsPage() {
   const { currentStudio } = useStudio()
+  const { isOwnerOrManager } = useRole()
   const [tab, setTab] = useState('dashboard')
   const TABS = [
     { k: 'dashboard', label: 'Dashboard', Icon: BarChart3 },
     { k: 'trends', label: 'Trends', Icon: Flame },
+    // Content calendar lives on the Monthly Planner (owner/manager only).
+    ...(isOwnerOrManager ? [{ k: 'calendar', label: 'Calendar', Icon: CalendarDays }] : []),
     { k: 'coach', label: 'Coach', Icon: Sparkles },
   ]
   return (
@@ -1065,7 +1137,10 @@ export default function SocialAnalyticsPage() {
           </button>
         ))}
       </div>
-      {tab === 'dashboard' ? <DashboardTab /> : tab === 'trends' ? <TrendsTab /> : <CoachTab />}
+      {tab === 'dashboard' ? <DashboardTab />
+        : tab === 'trends' ? <TrendsTab />
+        : tab === 'calendar' ? <CalendarTab />
+        : <CoachTab />}
     </div>
   )
 }
