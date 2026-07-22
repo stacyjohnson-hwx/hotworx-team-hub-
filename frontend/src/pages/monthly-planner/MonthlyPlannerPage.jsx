@@ -461,7 +461,7 @@ export default function MonthlyPlannerPage() {
       </div>
 
       {/* 10. SOCIAL MUST-POSTS */}
-      <SocialPosts content={content} patchContent={patchContent} events={events} promos={promos} />
+      <SocialPosts content={content} patchContent={patchContent} events={events} promos={promos} year={year} month={month} />
 
       {/* 11. HOLIDAYS & SEASONAL */}
       <HolidaysCard year={year} month={month} custom={reference?.customHolidays || []} content={content} patchContent={patchContent} onChanged={load} />
@@ -786,41 +786,115 @@ function PickerCard({ icon, title, subtitle, accent, items, selected, onToggle, 
   )
 }
 
-// ─── Social media must-posts ──────────────────────────────────────────────────
-function SocialPosts({ content, patchContent, events, promos }) {
+// ─── Social media must-posts — month calendar with drag-to-schedule ──────────
+const WEEKDAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
+
+function PostChip({ p, onToggle, onRemove, onDragStart, compact }) {
+  return (
+    <div draggable onDragStart={e => onDragStart(e, p.id)}
+      title={p.text}
+      className={`group flex items-center gap-1 rounded border px-1.5 py-0.5 cursor-grab active:cursor-grabbing ${
+        p.checked ? 'bg-gray-100 border-gray-200' : 'bg-sky-50 border-sky-200'}`}>
+      <button onClick={() => onToggle(p.id)}
+        className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center flex-shrink-0 ${p.checked ? 'bg-green-500 border-green-500' : 'border-sky-400 bg-white'}`}>
+        {p.checked && <Check size={9} className="text-white" />}
+      </button>
+      <span className={`text-[11px] leading-tight truncate ${compact ? 'max-w-[92px]' : 'max-w-[220px]'} ${p.checked ? 'text-gray-400 line-through' : 'text-sky-900'}`}>{p.text}</span>
+      <button onClick={() => onRemove(p.id)} className="text-gray-300 hover:text-red-500 text-[10px] opacity-0 group-hover:opacity-100 flex-shrink-0">✕</button>
+    </div>
+  )
+}
+
+function SocialPosts({ content, patchContent, events, promos, year, month }) {
   const posts = content.social_posts || []
   const [text, setText] = useState('')
-  const add = (t) => { if (!t.trim()) return; patchContent({ social_posts: [...posts, { id: uid(), text: t.trim(), checked: false }] }); setText('') }
-  const toggle = (id) => patchContent({ social_posts: posts.map(p => p.id === id ? { ...p, checked: !p.checked } : p) })
-  const remove = (id) => patchContent({ social_posts: posts.filter(p => p.id !== id) })
+  const [dragOver, setDragOver] = useState(null)   // 'backlog' | 'YYYY-MM-DD'
+
+  const save = (next) => patchContent({ social_posts: next })
+  const add = (t) => { if (!t.trim()) return; save([...posts, { id: uid(), text: t.trim(), checked: false, date: null }]); setText('') }
+  const toggle = (id) => save(posts.map(p => p.id === id ? { ...p, checked: !p.checked } : p))
+  const remove = (id) => save(posts.filter(p => p.id !== id))
+  const setDate = (id, date) => save(posts.map(p => p.id === id ? { ...p, date } : p))
+
+  const onDragStart = (e, id) => { e.dataTransfer.setData('text/plain', id); e.dataTransfer.effectAllowed = 'move' }
+  const onDrop = (e, date) => {
+    e.preventDefault(); setDragOver(null)
+    const id = e.dataTransfer.getData('text/plain')
+    if (id) setDate(id, date)
+  }
+  const allowDrop = (e, key) => { e.preventDefault(); setDragOver(key) }
+
   const suggestions = [
     ...events.map(e => `Post about ${e.title}`),
     ...promos.map(p => `Promote ${p.title}`),
   ].filter(s => !posts.some(p => p.text === s)).slice(0, 5)
 
+  const backlog = posts.filter(p => !p.date)
+  const byDate = useMemo(() => {
+    const m = {}
+    for (const p of posts) if (p.date) (m[p.date] = m[p.date] || []).push(p)
+    return m
+  }, [posts])
+
+  // Calendar cells: leading blanks + each day of the month.
+  const dim = daysInMonth(year, month)
+  const lead = new Date(year, month - 1, 1).getDay()
+  const cells = [...Array(lead).fill(null), ...Array.from({ length: dim }, (_, i) => i + 1)]
+  while (cells.length % 7 !== 0) cells.push(null)
+
   return (
-    <Card icon={Megaphone} title="Social media must-posts" subtitle="What to post this month — events, promos, member wins." accent="text-sky-600">
-      <div className="space-y-1.5 mb-3">
-        {posts.length === 0 && <p className="text-sm text-gray-400">No posts planned yet.</p>}
-        {posts.map(p => (
-          <div key={p.id} className={`flex items-center gap-2.5 rounded-lg border px-3 py-2 ${p.checked ? 'bg-gray-50 border-gray-200' : 'bg-white border-gray-200'}`}>
-            <button onClick={() => toggle(p.id)} className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${p.checked ? 'bg-green-500 border-green-500' : 'border-gray-300'}`}>
-              {p.checked && <Check size={12} className="text-white" />}
-            </button>
-            <span className={`flex-1 text-sm ${p.checked ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{p.text}</span>
-            <button onClick={() => remove(p.id)} className="text-gray-300 hover:text-red-500 text-xs">✕</button>
-          </div>
-        ))}
+    <Card icon={Megaphone} title="Social media must-posts"
+      subtitle="Add what to post, then drag each one onto the day you'll post it." accent="text-sky-600">
+
+      {/* add + suggestions */}
+      <div className="flex gap-2 mb-2">
+        <input className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-red-500"
+          placeholder="Add a post to make…" value={text} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') add(text) }} />
+        <button onClick={() => add(text)} className="px-3 py-1.5 bg-gray-800 hover:bg-black text-white text-sm font-semibold rounded-lg flex items-center gap-1"><Plus size={14} /> Add</button>
       </div>
       {suggestions.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mb-3">
           {suggestions.map(s => <button key={s} onClick={() => add(s)} className="text-xs px-2.5 py-1 bg-sky-50 text-sky-700 border border-sky-200 rounded-full hover:bg-sky-100">+ {s}</button>)}
         </div>
       )}
-      <div className="flex gap-2">
-        <input className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-red-500"
-          placeholder="Add a post to make…" value={text} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') add(text) }} />
-        <button onClick={() => add(text)} className="px-3 py-1.5 bg-gray-800 hover:bg-black text-white text-sm font-semibold rounded-lg flex items-center gap-1"><Plus size={14} /> Add</button>
+
+      {/* unscheduled backlog — drop here to unschedule */}
+      <div onDragOver={e => allowDrop(e, 'backlog')} onDragLeave={() => setDragOver(null)} onDrop={e => onDrop(e, null)}
+        className={`rounded-lg border-2 border-dashed p-2 mb-3 transition-colors ${dragOver === 'backlog' ? 'border-sky-400 bg-sky-50' : 'border-gray-200'}`}>
+        <p className="text-[11px] font-semibold text-gray-500 uppercase mb-1.5">Unscheduled — drag onto a day</p>
+        {backlog.length === 0 ? <p className="text-xs text-gray-400">All posts are scheduled.</p> : (
+          <div className="flex flex-wrap gap-1.5">
+            {backlog.map(p => (
+              <div key={p.id} className="flex items-center gap-1">
+                <PostChip p={p} onToggle={toggle} onRemove={remove} onDragStart={onDragStart} />
+                {/* touch-friendly fallback */}
+                <input type="date" value="" onChange={e => e.target.value && setDate(p.id, e.target.value)}
+                  min={monthStartDate(year, month)} max={monthEndDate(year, month)}
+                  title="Pick a day" className="w-[26px] text-[10px] text-transparent bg-transparent border border-gray-200 rounded cursor-pointer" />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* month calendar */}
+      <div className="grid grid-cols-7 gap-1">
+        {WEEKDAYS.map(d => <div key={d} className="text-[10px] font-bold text-gray-400 uppercase text-center pb-1">{d}</div>)}
+        {cells.map((day, i) => {
+          if (!day) return <div key={`b${i}`} className="min-h-[64px] rounded-lg bg-gray-50/50" />
+          const date = ymd(year, month, day)
+          const dayPosts = byDate[date] || []
+          const on = dragOver === date
+          return (
+            <div key={date} onDragOver={e => allowDrop(e, date)} onDragLeave={() => setDragOver(null)} onDrop={e => onDrop(e, date)}
+              className={`min-h-[64px] rounded-lg border p-1 transition-colors ${on ? 'border-sky-400 bg-sky-50' : 'border-gray-200 bg-white'}`}>
+              <div className="text-[10px] font-bold text-gray-400 mb-0.5 px-0.5">{day}</div>
+              <div className="space-y-0.5">
+                {dayPosts.map(p => <PostChip key={p.id} p={p} onToggle={toggle} onRemove={remove} onDragStart={onDragStart} compact />)}
+              </div>
+            </div>
+          )
+        })}
       </div>
     </Card>
   )
