@@ -246,15 +246,20 @@ export default function MonthlyPlannerPage() {
   const load = useCallback(async () => {
     setLoading(true); setError('')
     try {
+      // Events/promos are filed by DATE, not by their month/year columns (those
+      // record when the record was entered and are frequently off), so query by
+      // the month's date range and let the API overlap-filter.
+      const mStart = monthStartDate(year, month), mEnd = monthEndDate(year, month)
+      const lyStart = monthStartDate(year - 1, month), lyEnd = monthEndDate(year - 1, month)
       const [pl, cur, contacts, terr, evs, lyEvs, prm, lyPrm, cts] = await Promise.all([
         apiGet(`/api/monthly-planner/${year}/${month}`),
         apiGet(`/api/goals/studio?month=${month}&year=${year}`),
         apiGet('/api/b2b/contacts').catch(() => []),
         apiGet('/api/territories').catch(() => []),
-        apiGet(`/api/events?month=${month}&year=${year}`).catch(() => []),
-        apiGet(`/api/events?month=${month}&year=${year - 1}`).catch(() => []),
-        apiGet(`/api/events/promotions?month=${month}&year=${year}`).catch(() => []),
-        apiGet(`/api/events/promotions?month=${month}&year=${year - 1}`).catch(() => []),
+        apiGet(`/api/events?startDate=${mStart}&endDate=${mEnd}`).catch(() => []),
+        apiGet(`/api/events?startDate=${lyStart}&endDate=${lyEnd}`).catch(() => []),
+        apiGet(`/api/events/promotions?startDate=${mStart}&endDate=${mEnd}`).catch(() => []),
+        apiGet(`/api/events/promotions?startDate=${lyStart}&endDate=${lyEnd}`).catch(() => []),
         apiGet('/api/contests').catch(() => []),
       ])
       setPlan(pl.plan); setContent(pl.plan?.content || {}); setReference(pl.reference)
@@ -262,8 +267,13 @@ export default function MonthlyPlannerPage() {
       // Last year: prefer the goal that was set, else what actually happened.
       setLastYear(pl.reference?.lastYearGoals || pl.reference?.lastYearActuals || null)
       setB2b(contacts || []); setTerritories(terr || [])
-      setEvents(evs || []); setLastYearEvents(lyEvs || [])
-      setPromos(prm || []); setLastYearPromos(lyPrm || [])
+      const byStart = (a, b) => (a.start_date || '').localeCompare(b.start_date || '')
+      setEvents([...(evs || [])].sort(byStart))
+      setLastYearEvents([...(lyEvs || [])].sort(byStart))
+      // This month: hide archived promos. Last year: keep archived (that's the
+      // history) but drop always-on "ongoing" ones — they're not a useful compare.
+      setPromos((prm || []).filter(p => p.active !== false).sort(byStart))
+      setLastYearPromos((lyPrm || []).filter(p => !p.ongoing).sort(byStart))
       setContests(cts || [])
     } catch (e) {
       setError(e?.message || 'Could not load the planner.')
