@@ -23,7 +23,7 @@ const BOTTOM_NAV = [
 ]
 
 // Only these pages read the global month/year selector; hide it everywhere else.
-const MONTH_AWARE_PATHS = ['/dashboard', '/goals', '/advisor', '/studio-trends', '/events', '/scorecard', '/team-roi']
+const MONTH_AWARE_PATHS = ['/dashboard', '/goals', '/advisor', '/studio-trends', '/events', '/scorecard', '/team-roi', '/monthly-planner']
 
 export function Layout() {
   const { isCurrentMonth, isFutureMonth } = useMonth()

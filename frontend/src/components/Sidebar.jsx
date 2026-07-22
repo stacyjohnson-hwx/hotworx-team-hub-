@@ -32,6 +32,7 @@ import {
   Swords,
   Package,
   Gauge,
+  CalendarRange,
   Award,
   HeartHandshake,
   Trophy,
@@ -109,6 +110,7 @@ const NAV_SECTIONS = [
   {
     title: 'Insights',
     items: [
+      { to: '/monthly-planner', label: 'Monthly Planner', icon: CalendarRange, roles: ['owner', 'manager'] },
       { to: '/scorecard',     label: 'Scorecard',     icon: Gauge,     roles: ['owner', 'manager'] },
       { to: '/studio-trends', label: 'Studio Trends', icon: BarChart2, roles: ['owner', 'manager'] },
       { to: '/team-roi',      label: 'Team ROI',      icon: Scale,     roles: ['owner'] },

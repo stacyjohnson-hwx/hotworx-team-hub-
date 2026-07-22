@@ -39,6 +39,7 @@ import MemberActivationPage from '@/pages/member-activation/MemberActivationPage
 import CompetitorsPage from '@/pages/competitors/CompetitorsPage'
 import RetailPage from '@/pages/retail/RetailPage'
 import InventoryCountPage from '@/pages/retail/InventoryCountPage'
+import MonthlyPlannerPage from '@/pages/monthly-planner/MonthlyPlannerPage'
 import ContestPage from '@/pages/contest/ContestPage'
 
 function ProtectedRoute({ children }) {
@@ -108,6 +109,14 @@ function AppRoutes() {
           element={
             <RoleGuard allowedRoles={['owner', 'manager']}>
               <ScorecardPage />
+            </RoleGuard>
+          }
+        />
+        <Route
+          path="/monthly-planner"
+          element={
+            <RoleGuard allowedRoles={['owner', 'manager']}>
+              <MonthlyPlannerPage />
             </RoleGuard>
           }
         />
