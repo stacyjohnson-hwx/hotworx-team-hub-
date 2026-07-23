@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Upload, Users, HeartHandshake, AlertTriangle, Check, Loader2, RefreshCw, Gauge, ListChecks, Phone, MessageSquare, SkipForward, FileText, Trophy, Gift, Cake, Pencil, Building2, Bold, List, Play, Camera, X, Trash2, CreditCard, ChevronsUpDown, ChevronUp, ChevronDown, UserPlus, Mail } from 'lucide-react'
+import { Upload, Users, HeartHandshake, AlertTriangle, Check, Loader2, RefreshCw, Gauge, ListChecks, Phone, MessageSquare, SkipForward, FileText, Trophy, Gift, Cake, Pencil, Building2, Bold, List, Play, Camera, X, Trash2, CreditCard, ChevronsUpDown, ChevronUp, ChevronDown, UserPlus, Mail, Map as MapIcon } from 'lucide-react'
+import HeatMapTab from './HeatMapTab'
 import { apiGet, apiPost, apiPatch, apiPut, apiDelete } from '@/hooks/useApi'
 import { useRole } from '@/hooks/useRole'
 import { useStudio } from '@/contexts/StudioContext'
@@ -99,6 +100,7 @@ function parseCSV(text) {
 const TABS = [
   { k: 'daily',    label: 'Daily List',          icon: ListChecks },
   { k: 'members',  label: 'Members',            icon: Users },
+  { k: 'heatmap',  label: 'Heat Map',            icon: MapIcon },
   { k: 'reciprocals', label: 'Reciprocals',     icon: Building2 },
   { k: 'pif',      label: 'PIF Members',         icon: CreditCard },
   { k: 'scripts',  label: 'Scripts',             icon: FileText },
@@ -136,6 +138,7 @@ export default function MemberActivationPage() {
       {tab === 'daily'   && <DailyListTab />}
       {tab === 'scripts' && <ScriptAdminTab canEdit={isOwnerOrManager} />}
       {tab === 'members' && <MembersTab />}
+      {tab === 'heatmap' && <HeatMapTab />}
       {tab === 'reciprocals' && <ReciprocalsTab />}
       {tab === 'pif' && <PifTab />}
       {tab === 'recognition' && <RecognitionTab canImport={isOwnerOrManager} />}

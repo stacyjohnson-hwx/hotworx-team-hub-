@@ -446,7 +446,7 @@ router.get('/members/lookup', authenticate, requireStudio, async (req, res) => {
 // Manually add a non-roster person (employee, comp, PIF, reciprocal, guest) so
 // their bookings reconcile — without counting toward the active-member number or
 // triggering onboarding/re-engagement (is_new_member=false, non-'member' type).
-const MEMBER_TYPES = ['member', 'employee', 'comp', 'pif', 'reciprocal', 'guest']
+const MEMBER_TYPES = ['member', 'employee', 'comp', 'pif', 'reciprocal', 'guest', 'lead', 'missed_guest']
 router.post('/members', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const { email, full_name, member_type, phone, origin_studio, expiration_date, is_cancelled, cancelled_date } = req.body
   if (!email) return res.status(400).json({ error: 'email required' })
@@ -1819,6 +1819,65 @@ router.get('/import/history', authenticate, requireStudio, async (req, res) => {
     .eq('studio_id', req.studio.id).order('run_at', { ascending: false }).limit(20)
   if (error) return res.status(500).json({ error: error.message })
   res.json(data || [])
+})
+
+// ─── GET /api/member-activation/geo ───────────────────────────────────────────
+// Where members live, aggregated by postal code (joined to cached ZIP centroids)
+// so the Heat Map can plot density. Also returns city rollups for the ranked list.
+router.get('/geo', authenticate, requireStudio, async (req, res) => {
+  const supabase = db()
+  const sid = req.studio.id
+  try {
+    const people = await fetchAllStudio(supabase, 'onboarding_members',
+      'id, member_type, is_cancelled, postal_code, city', sid)
+
+    const { data: cents } = await supabase.from('zip_centroids').select('zip, lat, lng, city')
+    const centroid = new Map((cents || []).filter(c => c.lat != null).map(c => [c.zip, c]))
+
+    const zipAgg = new Map()
+    const cityAgg = new Map()
+    let noZip = 0, unmapped = 0
+    for (const p of people) {
+      if (p.is_cancelled) continue
+      const type = p.member_type || 'member'
+      const zip = String(p.postal_code || '').trim().slice(0, 5)
+      const cityName = (p.city || '').trim()
+
+      if (cityName) {
+        const ck = cityName.toLowerCase()
+        const c = cityAgg.get(ck) || { city: cityName, total: 0, byType: {} }
+        c.total++; c.byType[type] = (c.byType[type] || 0) + 1
+        cityAgg.set(ck, c)
+      }
+      if (!/^\d{5}$/.test(zip)) { noZip++; continue }
+      const z = zipAgg.get(zip) || { zip, city: cityName || null, total: 0, byType: {} }
+      z.total++; z.byType[type] = (z.byType[type] || 0) + 1
+      if (!z.city && cityName) z.city = cityName
+      zipAgg.set(zip, z)
+    }
+
+    const zips = []
+    for (const z of zipAgg.values()) {
+      const c = centroid.get(z.zip)
+      if (!c) { unmapped += z.total; continue }
+      zips.push({ ...z, city: z.city || c.city || null, lat: c.lat, lng: c.lng })
+    }
+    zips.sort((a, b) => b.total - a.total)
+
+    res.json({
+      zips,
+      cities: [...cityAgg.values()].sort((a, b) => b.total - a.total).slice(0, 40),
+      totals: {
+        plotted: zips.reduce((s, z) => s + z.total, 0),
+        no_postal_code: noZip,
+        unmapped_zip: unmapped,
+        distinct_zips: zips.length,
+      },
+    })
+  } catch (err) {
+    console.error('GET /member-activation/geo', err)
+    res.status(500).json({ error: err.message })
+  }
 })
 
 module.exports = router
