@@ -99,12 +99,12 @@ function parseCSV(text) {
 
 const TABS = [
   { k: 'daily',    label: 'Daily List',          icon: ListChecks },
+  { k: 'recognition', label: 'Cards & Birthdays', icon: Gift },
   { k: 'members',  label: 'Members',            icon: Users },
   { k: 'heatmap',  label: 'Heat Map',            icon: MapIcon },
   { k: 'reciprocals', label: 'Reciprocals',     icon: Building2 },
   { k: 'pif',      label: 'PIF Members',         icon: CreditCard },
   { k: 'scripts',  label: 'Scripts',             icon: FileText },
-  { k: 'recognition', label: 'Cards & Birthdays', icon: Gift },
   { k: 'import',   label: 'Daily Import',        icon: Upload },
   { k: 'unrecon',  label: 'Unreconciled',        icon: AlertTriangle },
 ]

@@ -1821,6 +1821,89 @@ router.get('/import/history', authenticate, requireStudio, async (req, res) => {
   res.json(data || [])
 })
 
+// ─── GET /api/member-activation/geo/addresses ─────────────────────────────────
+// Street-level points for the Addresses map view. Kept lean (one short object per
+// person) since ~2k rows go to the browser.
+router.get('/geo/addresses', authenticate, requireStudio, async (req, res) => {
+  try {
+    const people = await fetchAllStudio(db(), 'onboarding_members',
+      'id, full_name, member_type, is_cancelled, latitude, longitude, address, city, postal_code', req.studio.id)
+
+    const points = []
+    let missing = 0
+    for (const p of people) {
+      if (p.is_cancelled) continue
+      if (p.latitude == null || p.longitude == null) { missing++; continue }
+      points.push({
+        id: p.id,
+        lat: Number(p.latitude), lng: Number(p.longitude),
+        t: p.member_type || 'member',
+        name: p.full_name || null,
+        addr: [p.address, p.city, p.postal_code].filter(Boolean).join(', ') || null,
+      })
+    }
+    res.json({ points, missing })
+  } catch (err) {
+    console.error('GET /member-activation/geo/addresses', err)
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ─── POST /api/member-activation/geo/geocode ──────────────────────────────────
+// Fill coordinates for anyone with an address but no lat/lng, via the US Census
+// batch geocoder (free, no key). Idempotent — safe to re-run; only touches rows
+// where latitude IS NULL.
+router.post('/geo/geocode', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
+  const supabase = db()
+  const CENSUS = 'https://geocoding.geo.census.gov/geocoder/locations/addressbatch'
+  const cell = v => `"${String(v || '').replace(/"/g, '""')}"`
+  try {
+    const all = await fetchAllStudio(supabase, 'onboarding_members',
+      'id, address, city, state, postal_code, latitude', req.studio.id)
+    const todo = all.filter(r => r.latitude == null && (r.address || '').trim()).slice(0, 3000)
+    if (!todo.length) return res.json({ attempted: 0, matched: 0, failed: 0 })
+
+    let matched = 0, failed = 0
+    for (let i = 0; i < todo.length; i += 1000) {
+      const chunk = todo.slice(i, i + 1000)
+      const csv = chunk.map(r => [cell(r.id), cell(r.address), cell(r.city || ''),
+        cell(r.state || 'WI'), cell((r.postal_code || '').trim().slice(0, 5))].join(',')).join('\n')
+
+      const form = new FormData()
+      form.append('addressFile', new Blob([csv], { type: 'text/csv' }), 'addresses.csv')
+      form.append('benchmark', 'Public_AR_Current')
+      const text = await (await fetch(CENSUS, { method: 'POST', body: form })).text()
+
+      let hits = 0
+      for (const line of text.split('\n')) {
+        if (!line.trim()) continue
+        const cells = []; let cur = '', q = false
+        for (let k = 0; k < line.length; k++) {
+          const c = line[k]
+          if (q) { if (c === '"' && line[k + 1] === '"') { cur += '"'; k++ } else if (c === '"') q = false; else cur += c }
+          else if (c === '"') q = true
+          else if (c === ',') { cells.push(cur); cur = '' }
+          else cur += c
+        }
+        cells.push(cur)
+        const [id, , status, , , coords] = cells
+        if (status !== 'Match' || !coords) continue
+        const [lng, lat] = coords.split(',').map(Number)
+        if (!isFinite(lat) || !isFinite(lng)) continue
+        const { error } = await supabase.from('onboarding_members').update({
+          latitude: lat, longitude: lng, geo_precision: 'rooftop', geocoded_at: new Date().toISOString(),
+        }).eq('id', id).eq('studio_id', req.studio.id)
+        if (error) failed++; else { matched++; hits++ }
+      }
+      failed += chunk.length - hits
+    }
+    res.json({ attempted: todo.length, matched, failed })
+  } catch (err) {
+    console.error('POST /member-activation/geo/geocode', err)
+    res.status(500).json({ error: err.message })
+  }
+})
+
 // ─── GET /api/member-activation/geo ───────────────────────────────────────────
 // Where members live, aggregated by postal code (joined to cached ZIP centroids)
 // so the Heat Map can plot density. Also returns city rollups for the ranked list.

@@ -1,9 +1,9 @@
 import 'leaflet/dist/leaflet.css'
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet'
+import { MapContainer, TileLayer, CircleMarker, Circle, Popup, Tooltip, useMap } from 'react-leaflet'
 import { apiGet } from '@/hooks/useApi'
 import { useStudio } from '@/contexts/StudioContext'
-import { Loader2, AlertCircle, MapPin, Users } from 'lucide-react'
+import { Loader2, AlertCircle, MapPin, Users, Home, Footprints } from 'lucide-react'
 
 // HOTWORX Pewaukee — sensible default view; recentres on the data once loaded.
 const DEFAULT_CENTER = [43.0868, -88.2415]
@@ -30,6 +30,19 @@ function bucket(count, max) {
 // Area ∝ count so circles read as density, with a floor so 1-person zips stay visible.
 const radiusFor = (count, max) => 6 + 26 * Math.sqrt(count / Math.max(1, max))
 
+// Dot colours for the street-level view.
+const DOT = { member: '#dc2626', lead: '#f59e0b', missed_guest: '#9ca3af', other: '#64748b' }
+const DOT_LABEL = { member: 'Members', lead: 'Leads', missed_guest: 'Missed guests' }
+const RADII = [{ mi: 0.25, label: '¼ mi' }, { mi: 0.5, label: '½ mi' }, { mi: 1, label: '1 mi' }]
+
+// Great-circle distance in miles.
+function milesBetween(aLat, aLng, bLat, bLng) {
+  const R = 3958.8, toRad = d => (d * Math.PI) / 180
+  const dLat = toRad(bLat - aLat), dLng = toRad(bLng - aLng)
+  const s = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLng / 2) ** 2
+  return 2 * R * Math.asin(Math.sqrt(s))
+}
+
 function FitToData({ points }) {
   const map = useMap()
   useEffect(() => {
@@ -46,6 +59,13 @@ export default function HeatMapTab() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [type, setType] = useState('all')
+  // 'zip' keeps the original clean density view and stays the default.
+  const [view, setView] = useState('zip')
+  const [addr, setAddr] = useState(null)        // { points, missing }
+  const [zones, setZones] = useState([])        // canvassing neighbourhoods/apartments
+  const [addrLoading, setAddrLoading] = useState(false)
+  const [showTypes, setShowTypes] = useState({ member: true, lead: true, missed_guest: true })
+  const [radiusMi, setRadiusMi] = useState(0.5)
 
   const load = useCallback(async () => {
     setLoading(true); setError('')
@@ -54,6 +74,22 @@ export default function HeatMapTab() {
     finally { setLoading(false) }
   }, [currentStudio?.id])
   useEffect(() => { load() }, [load])
+
+  // Street-level data is only fetched when the Addresses view is first opened.
+  useEffect(() => {
+    if (view !== 'address' || addr) return
+    let cancelled = false
+    setAddrLoading(true)
+    Promise.all([
+      apiGet('/api/member-activation/geo/addresses').catch(() => ({ points: [], missing: 0 })),
+      apiGet('/api/territories').catch(() => []),
+    ]).then(([a, z]) => {
+      if (cancelled) return
+      setAddr(a || { points: [], missing: 0 })
+      setZones((z || []).filter(t => t.latitude != null && t.longitude != null))
+    }).finally(() => { if (!cancelled) setAddrLoading(false) })
+    return () => { cancelled = true }
+  }, [view, addr])
 
   const countOf = useCallback((row) => (type === 'all' ? row.total : (row.byType?.[type] || 0)), [type])
 
@@ -69,13 +105,48 @@ export default function HeatMapTab() {
     return data.cities.map(c => ({ ...c, count: countOf(c) })).filter(c => c.count > 0).slice(0, 12)
   }, [data, countOf])
 
+  // ── Address view derivations ──────────────────────────────────────────────
+  const dots = useMemo(
+    () => (addr?.points || []).filter(p => showTypes[p.t] ?? true),
+    [addr, showTypes])
+
+  // Members/leads living within the chosen radius of each canvassing zone —
+  // this is the "is it worth flyering" signal.
+  const zoneStats = useMemo(() => {
+    if (!addr?.points?.length || !zones.length) return []
+    return zones.map(z => {
+      let members = 0, leads = 0, total = 0
+      for (const p of addr.points) {
+        if (milesBetween(z.latitude, z.longitude, p.lat, p.lng) > radiusMi) continue
+        total++
+        if (p.t === 'member') members++
+        else if (p.t === 'lead') leads++
+      }
+      return { id: z.id, name: z.name, type: z.type, lat: z.latitude, lng: z.longitude, members, leads, total }
+    }).sort((a, b) => b.members - a.members || b.total - a.total)
+  }, [addr, zones, radiusMi])
+
+  const zoneMax = useMemo(() => zoneStats.reduce((m, z) => Math.max(m, z.members), 0), [zoneStats])
+
   if (loading) return <div className="flex items-center justify-center h-64"><Loader2 size={26} className="animate-spin text-red-600" /></div>
 
   return (
     <div className="space-y-4">
       {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3 flex items-center gap-2"><AlertCircle size={15} /> {error}</div>}
 
-      {/* Controls + coverage */}
+      {/* View switch */}
+      <div className="flex gap-1 border-b border-gray-200">
+        {[{ k: 'zip', label: 'ZIP density', Icon: MapPin }, { k: 'address', label: 'Addresses & neighborhoods', Icon: Home }].map(v => (
+          <button key={v.k} onClick={() => setView(v.k)}
+            className={`flex items-center gap-1.5 px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+              view === v.k ? 'border-red-600 text-red-600' : 'border-transparent text-gray-500 hover:text-gray-800'}`}>
+            <v.Icon size={15} /> {v.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Controls + coverage (ZIP view) */}
+      {view === 'zip' && (
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex gap-1.5 flex-wrap">
           {TYPES.map(t => (
@@ -91,7 +162,10 @@ export default function HeatMapTab() {
           <span className="font-bold text-gray-900">{points.length}</span> ZIPs
         </p>
       </div>
+      )}
 
+      {/* ══ ZIP DENSITY VIEW (unchanged) ══ */}
+      {view === 'zip' && (<>
       {/* Map */}
       <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
         <div style={{ height: 460 }}>
@@ -176,6 +250,125 @@ export default function HeatMapTab() {
           Not shown: {data.totals.no_postal_code.toLocaleString()} people without a postal code
           {data.totals.unmapped_zip > 0 && <> · {data.totals.unmapped_zip.toLocaleString()} in ZIPs we couldn’t locate</>}.
         </p>
+      )}
+      </>)}
+
+      {/* ══ ADDRESS / NEIGHBORHOOD VIEW ══ */}
+      {view === 'address' && (
+        addrLoading ? (
+          <div className="flex items-center justify-center h-64"><Loader2 size={26} className="animate-spin text-red-600" /></div>
+        ) : (<>
+          {/* Controls */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex gap-1.5 flex-wrap">
+              {Object.keys(DOT_LABEL).map(k => (
+                <button key={k} onClick={() => setShowTypes(s => ({ ...s, [k]: !s[k] }))}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                    showTypes[k] ? 'bg-white text-gray-800 border-gray-400' : 'bg-gray-50 text-gray-400 border-gray-200'}`}>
+                  <span className="w-2.5 h-2.5 rounded-full" style={{ background: showTypes[k] ? DOT[k] : '#d1d5db' }} />
+                  {DOT_LABEL[k]}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500">Neighborhood radius</span>
+              {RADII.map(r => (
+                <button key={r.mi} onClick={() => setRadiusMi(r.mi)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors ${
+                    radiusMi === r.mi ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-600 border-gray-300'}`}>
+                  {r.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+            <div style={{ height: 520 }}>
+              {/* preferCanvas keeps ~2k dots smooth without a clustering library */}
+              <MapContainer center={DEFAULT_CENTER} zoom={12} style={{ height: '100%', width: '100%' }} scrollWheelZoom preferCanvas>
+                <TileLayer
+                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                />
+                <FitToData points={dots} />
+
+                {/* Canvassing zones underneath the dots */}
+                {zoneStats.map(z => (
+                  <Circle key={z.id} center={[z.lat, z.lng]} radius={radiusMi * 1609}
+                    pathOptions={{ color: z.type === 'apartment' ? '#7c3aed' : '#0ea5e9', weight: 1.5, fillOpacity: 0.06 }}>
+                    <Tooltip direction="top" opacity={0.95}>
+                      <span className="text-xs"><b>{z.name}</b> · {z.members} members, {z.leads} leads within {radiusMi} mi</span>
+                    </Tooltip>
+                  </Circle>
+                ))}
+
+                {dots.map(p => (
+                  <CircleMarker key={p.id} center={[p.lat, p.lng]} radius={4}
+                    pathOptions={{ color: DOT[p.t] || DOT.other, fillColor: DOT[p.t] || DOT.other, fillOpacity: 0.85, weight: 1 }}>
+                    <Popup>
+                      <div className="text-sm">
+                        <p className="font-bold text-gray-900">{p.name || 'Member'}</p>
+                        <p className="text-gray-600">{p.addr || '—'}</p>
+                        <p className="text-[11px] text-gray-400 mt-0.5 capitalize">{(p.t || '').replace(/_/g, ' ')}</p>
+                      </div>
+                    </Popup>
+                  </CircleMarker>
+                ))}
+              </MapContainer>
+            </div>
+            <div className="flex items-center gap-3 px-4 py-2.5 border-t border-gray-100 flex-wrap">
+              {Object.entries(DOT_LABEL).map(([k, label]) => (
+                <span key={k} className="flex items-center gap-1.5 text-[11px] text-gray-500">
+                  <span className="w-2.5 h-2.5 rounded-full" style={{ background: DOT[k] }} /> {label}
+                </span>
+              ))}
+              <span className="flex items-center gap-1.5 text-[11px] text-gray-500">
+                <span className="w-3 h-3 rounded-full border-2" style={{ borderColor: '#0ea5e9' }} /> Neighborhood
+              </span>
+              <span className="flex items-center gap-1.5 text-[11px] text-gray-500">
+                <span className="w-3 h-3 rounded-full border-2" style={{ borderColor: '#7c3aed' }} /> Apartments
+              </span>
+              <span className="text-[11px] text-gray-400 ml-auto">{dots.length.toLocaleString()} addresses shown</span>
+            </div>
+          </div>
+
+          {/* Flyer targets */}
+          <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5">
+            <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2 mb-1">
+              <Footprints size={16} className="text-red-600" /> Flyer targets
+            </h3>
+            <p className="text-xs text-gray-500 mb-3">
+              Your canvassing zones ranked by how many members already live within {radiusMi} mi — proven demand.
+              Lots of leads but few members can mean a conversion gap worth a drop.
+            </p>
+            {zoneStats.length === 0 ? (
+              <p className="text-sm text-gray-400">No canvassing zones with coordinates yet — add them in Canvassing.</p>
+            ) : (
+              <div className="space-y-1.5">
+                {zoneStats.slice(0, 15).map(z => (
+                  <div key={z.id} className="flex items-center gap-2">
+                    <span className="text-xs text-gray-700 flex-1 truncate">
+                      {z.name}
+                      {z.type === 'apartment' && <span className="ml-1.5 text-[10px] bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded">apts</span>}
+                    </span>
+                    <div className="w-28 h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <div className="h-full rounded-full bg-red-500" style={{ width: `${zoneMax ? (z.members / zoneMax) * 100 : 0}%` }} />
+                    </div>
+                    <span className="text-xs font-bold text-gray-900 w-8 text-right">{z.members}</span>
+                    <span className="text-[11px] text-amber-600 w-16 text-right">{z.leads} leads</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {addr?.missing > 0 && (
+            <p className="text-xs text-gray-400">
+              Not shown: {addr.missing.toLocaleString()} people without a mapped street address
+              (missing or unrecognised address).
+            </p>
+          )}
+        </>)
       )}
     </div>
   )
