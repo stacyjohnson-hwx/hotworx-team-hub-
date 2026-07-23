@@ -43,7 +43,7 @@ const TEMPLATE_DEFAULTS = [
   // Event-based (seeded now; wired in Phase 2B)
   { template_key: 'milestone_10',   label: '10 visit-days 🎉',            channel: 'text', body: "{first_name} just hit {milestone} visit-days! Shout-out: \"Way to show up — {milestone} visit-days already! 🔥\"" },
   { template_key: 'milestone_25',   label: '25 visit-days — keychain',   channel: 'text', body: "{first_name} hit {milestone} visit-days! Hand them their HOTWORX keychain and celebrate the consistency 🔑" },
-  { template_key: 'milestone_50',   label: '50 visit-days 🎉',            channel: 'text', body: "{first_name} hit {milestone} visit-days! Send a big shout-out for the sustained habit 🔥" },
+  { template_key: 'milestone_50',   label: '50 visit-days — keychain',   channel: 'text', body: "{first_name} hit {milestone} visit-days! Hand them their HOTWORX keychain and celebrate the sustained habit 🔑" },
   { template_key: 'milestone_100',  label: '100 visit-days — T-shirt',   channel: 'call', body: "{first_name} hit {milestone} visit-days! Call to celebrate and hand over their 100-club T-shirt 👕" },
   { template_key: 'milestone_500',  label: '500 visit-days — premium',   channel: 'call', body: "{first_name} hit {milestone} visit-days! Celebrate this loyalty milestone and award their premium item." },
   { template_key: 'milestone_1000', label: '1,000 visit-days — legacy',  channel: 'call', body: "{first_name} reached {milestone} visit-days — legacy member! Wall of fame + marquee recognition." },
@@ -165,7 +165,7 @@ async function runJourneyEngine(supabase, studioId) {
 const MILESTONES = [
   { n: 10,   reward: 'shoutout_10',   ref: 'milestone_10',   type: 'text' },
   { n: 25,   reward: 'keychain_25',   ref: 'milestone_25',   type: 'text' },
-  { n: 50,   reward: 'shoutout_50',   ref: 'milestone_50',   type: 'text' },
+  { n: 50,   reward: 'keychain_50',   ref: 'milestone_50',   type: 'text' },
   { n: 100,  reward: 'shirt_100',     ref: 'milestone_100',  type: 'call' },
   { n: 500,  reward: 'premium_500',   ref: 'milestone_500',  type: 'call' },
   { n: 1000, reward: 'marquee_1000',  ref: 'milestone_1000', type: 'call' },
@@ -183,6 +183,12 @@ async function evaluateEventTriggers(supabase, studioId) {
   ])
   const actMap = new Map((activity || []).map(a => [a.member_id, a]))
   const memMap = new Map((members || []).map(m => [m.id, m]))
+
+  // Milestones/celebrations switched off in Script Admin shouldn't be created
+  // (or rewarded) at all — otherwise deactivating a rung has no effect.
+  const { data: tpls } = await supabase.from('onboarding_touchpoint_templates')
+    .select('template_key, active').eq('studio_id', studioId)
+  const isOff = (key) => (tpls || []).some(t => t.template_key === key && t.active === false)
 
   const addTask = async (j, fields) => {
     await supabase.from('onboarding_journey_tasks').upsert({
@@ -209,6 +215,7 @@ async function evaluateEventTriggers(supabase, studioId) {
 
     // Milestones — reward is always recorded; the shout-out task is held while in the save fork.
     for (const ms of MILESTONES) {
+      if (isOff(ms.ref)) continue
       if ((a.visit_days || 0) >= ms.n) {
         await awardReward(j.member_id, ms.reward)
         if (!inSaveFork) await addTask(j, {
@@ -217,8 +224,8 @@ async function evaluateEventTriggers(supabase, studioId) {
         })
       }
     }
-    // Passport — all 12 workouts tried.
-    if ((a.workouts_tried || 0) >= 12) {
+    // Warrior Sticker — all 12 workouts tried.
+    if (!isOff('passport_sticker') && (a.workouts_tried || 0) >= 12) {
       await awardReward(j.member_id, 'sticker')
       if (!inSaveFork) await addTask(j, {
         type: 'text', template_key: 'passport_sticker', trigger_kind: 'event_based', trigger_ref: 'passport_sticker',

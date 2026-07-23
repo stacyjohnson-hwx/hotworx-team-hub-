@@ -679,7 +679,10 @@ router.get('/members/:id/journey', authenticate, requireStudio, async (req, res)
   const tpOrder = (key) => key === 'photo' ? (orderMap.get('day0_orientation') ?? 10) + 1 : (orderMap.get(TP_TEMPLATE[key] || key) ?? 900)
   touchpoints.sort((a, b) => tpOrder(a.key) - tpOrder(b.key))
 
-  const MILES = [[10, '10 visit-days'], [25, '25 · keychain'], [50, '50 visit-days'], [100, '100 · T-shirt'], [500, '500 · premium'], [1000, '1,000 · legacy']]
+  // Milestone ladder — a rung is hidden when its template is switched off in
+  // Script Admin, so the studio controls which milestones it runs.
+  const MILES = [[10, '10 visit-days'], [25, '25 · keychain'], [50, '50 · keychain'], [100, '100 · T-shirt'], [500, '500 · premium'], [1000, '1,000 · legacy']]
+    .filter(([n]) => tplActive.get(`milestone_${n}`) !== false)
   const milestones = [
     { key: 'passport', label: 'Warrior Sticker · all 12', earned: rewardKeys.has('sticker') || workouts >= 12 },
     ...MILES.map(([n, label]) => ({ key: `m${n}`, label, earned: visitDays >= n })),

@@ -1592,10 +1592,8 @@ const SUBFILTERS = {
   milestone: [
     { k: 'all', label: 'All' },
     { k: 'm10', label: '10', match: r => r.trigger_ref === 'milestone_10' },
-    { k: 'm25', label: '25', match: r => r.trigger_ref === 'milestone_25' },
     { k: 'm50', label: '50', match: r => r.trigger_ref === 'milestone_50' },
     { k: 'm100', label: '100', match: r => r.trigger_ref === 'milestone_100' },
-    { k: 'mbig', label: '500 / 1,000', match: r => ['milestone_500', 'milestone_1000'].includes(r.trigger_ref) },
     { k: 'passport', label: 'Warrior Sticker', match: r => r.trigger_ref === 'passport_sticker' },
   ],
   onboarding: [
