@@ -576,6 +576,22 @@ function NewMembersTab() {
   }, [currentStudio?.id])
   useEffect(() => { load() }, [load])
 
+  // One click checks a step off (green) / un-checks it. The 1st-day photo is the
+  // exception — it opens the modal so you can upload the picture.
+  const toggleTp = async (m, t) => {
+    if (t.key === 'photo') { setEditing({ member: m, tp: t }); return }
+    const next = t.status !== 'done'
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' })
+    setRows(rs => rs.map(r => r.member_id !== m.member_id ? r : {
+      ...r,
+      touchpoints: r.touchpoints.map(x => x.key !== t.key ? x
+        : { ...x, status: next ? 'done' : (x.due_date && x.due_date <= today ? 'due' : 'upcoming') }),
+    }))
+    try { await apiPost(`${BASE}/new-members/${m.member_id}/touchpoint`, { key: t.key, done: next, notes: t.notes || null }) }
+    catch { /* ignore */ }
+    load()
+  }
+
   if (loading) return <Spinner />
   if (rows.length === 0) return <Empty msg="No new members in the last 60 days." />
 
@@ -609,7 +625,8 @@ function NewMembersTab() {
             </div>
             <div className="flex flex-wrap gap-1.5 mt-2">
               {m.touchpoints.map(t => (
-                <button key={t.key} onClick={() => setEditing({ member: m, tp: t })} title="Check off / add notes"
+                <button key={t.key} onClick={() => toggleTp(m, t)}
+                  title={t.key === 'photo' ? 'Upload the 1st-day photo' : t.status === 'done' ? 'Click to un-check' : 'Click to check off'}
                   className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full hover:ring-1 hover:ring-gray-300 ${TP_STYLE[t.status] || TP_STYLE.na}`}>
                   {t.status === 'done' ? '✓ ' : ''}{t.label}{t.notes ? ' 📝' : ''}
                 </button>
@@ -732,6 +749,14 @@ function JourneyModal({ memberId, onClose }) {
   }, [memberId])
   useEffect(() => { load() }, [load])
 
+  // Tap a step to check it off / un-check it; the 1st-day photo opens the uploader.
+  const toggleTp = async (t) => {
+    if (t.key === 'photo') { setEditing(t); return }
+    try { await apiPost(`${BASE}/new-members/${memberId}/touchpoint`, { key: t.key, done: t.status !== 'done', notes: t.notes || null }) }
+    catch { /* ignore */ }
+    load()
+  }
+
   const pct = d && d.progress.total ? Math.round(d.progress.done / d.progress.total * 100) : 0
   const cheer = pct === 100 ? 'Journey complete! 🎉' : pct >= 60 ? 'Crushing it 💪' : pct >= 30 ? 'Great momentum 🔥' : 'Just getting started 🌱'
 
@@ -777,7 +802,9 @@ function JourneyModal({ memberId, onClose }) {
                   {d.touchpoints.map((t, i) => (
                     <div key={t.key} className="flex items-start">
                       {i > 0 && <div className="w-4 h-9 flex items-center"><div className="h-0.5 w-full bg-gray-200" /></div>}
-                      <button onClick={() => setEditing(t)} className="flex flex-col items-center gap-1 group flex-shrink-0 w-16">
+                      <button onClick={() => toggleTp(t)}
+                        title={t.key === 'photo' ? 'Upload the 1st-day photo' : t.status === 'done' ? 'Click to un-check' : 'Click to check off'}
+                        className="flex flex-col items-center gap-1 group flex-shrink-0 w-16">
                         <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold ${NODE_STYLE[t.status] || NODE_STYLE.na} group-hover:scale-110 transition`}>
                           {t.status === 'done' ? '✓' : (NODE_SHORT[t.key] || '').slice(0, 3)}
                         </div>

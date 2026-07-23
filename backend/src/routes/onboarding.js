@@ -628,16 +628,23 @@ router.get('/members/:id/journey', authenticate, requireStudio, async (req, res)
   const rewardKeys = new Set((rewards || []).map(r => r.reward_key))
   const visitDays = act?.visit_days || 0, workouts = act?.workouts_tried || 0
 
-  const dayStatus = (task, key) => {
+  // Day offset from the step's key or label, so a step with no generated task row
+  // (e.g. a custom Day 10) still computes a due date off the member's join date.
+  const dayOffsetOf = (key, label) => {
+    const mk = String(key || '').match(/day[_\s-]*(\d+)/i); if (mk) return Number(mk[1])
+    const ml = String(label || '').match(/day\s*(\d+)/i);   if (ml) return Number(ml[1])
+    return null
+  }
+  const addDaysStr = (s, n) => { const d = new Date(s + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10) }
+  const dayStatus = (task, key, label) => {
     const l = logBy[key]
     if (l?.done) return { status: 'done', notes: l.notes || null, when: l.completed_at }
-    let s = 'na'
-    if (task) {
-      if (task.status === 'completed') s = 'done'
-      else if (task.status === 'skipped') s = 'skipped'
-      else s = (task.due_date && task.due_date <= today) ? 'due' : 'upcoming'
-    }
-    return { status: s, notes: l?.notes || null, due_date: task?.due_date || null, when: task?.completed_at || null }
+    if (task?.status === 'completed') return { status: 'done', notes: l?.notes || null, due_date: task.due_date || null, when: task.completed_at }
+    if (task?.status === 'skipped') return { status: 'skipped', notes: l?.notes || null, due_date: task.due_date || null }
+    const off = dayOffsetOf(key, label)
+    const due = task?.due_date || (member.join_date && off != null ? addDaysStr(member.join_date, off) : null)
+    const s = due ? (due <= today ? 'due' : 'upcoming') : 'na'
+    return { status: s, notes: l?.notes || null, due_date: due, when: null }
   }
   const tp = (key, label, base) => ({ key, label, ...base, notes: logBy[key]?.notes ?? base.notes ?? null, ...(logBy[key]?.done ? { status: 'done' } : {}) })
 
@@ -656,7 +663,7 @@ router.get('/members/:id/journey', authenticate, requireStudio, async (req, res)
 
   const touchpoints = [
     tp('day_0_orientation', 'Orientation', dayStatus(taskBy['day_0_orientation'], 'day_0_orientation')),
-    tp('photo', '1st day photo', { status: xform?.before_photo_url ? 'done' : (taskBy['day_2']?.due_date && taskBy['day_2'].due_date <= today ? 'due' : 'upcoming') }),
+    tp('photo', '1st day photo', { status: xform?.before_photo_url ? 'done' : (member.join_date && addDaysStr(member.join_date, 1) <= today ? 'due' : 'upcoming') }),
     tp('day_2', 'Day 2 call', dayStatus(taskBy['day_2'], 'day_2')),
     tp('day_5', 'Day 5 check-in', dayStatus(taskBy['day_5'], 'day_5')),
     tp('day_21', 'Day 21 friend', dayStatus(taskBy['day_21'], 'day_21')),
@@ -670,7 +677,7 @@ router.get('/members/:id/journey', authenticate, requireStudio, async (req, res)
   // Custom journey steps added in Script Admin appear automatically.
   for (const t of (templates || [])) {
     if (t.active === false || !t.template_key.startsWith('custom_')) continue
-    touchpoints.push(tp(t.template_key, shortJourney(t.label), dayStatus(taskBy[t.template_key], t.template_key)))
+    touchpoints.push(tp(t.template_key, shortJourney(t.label), dayStatus(taskBy[t.template_key], t.template_key, t.label)))
   }
 
   // Order the journey path to match the Script Admin order (by template sort_order).
@@ -1145,13 +1152,10 @@ router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
 
   // New members: keep only the NEXT (earliest-due) journey step per member — the roster
   // (GET /new-members) still shows the whole ladder. Nothing shows until a step comes due.
-  const nextDay = new Map()
-  for (const it of items) {
-    if (it.trigger_kind !== 'day_based') continue
-    const cur = nextDay.get(it.member_id)
-    if (!cur || String(it.due_date) < String(cur.due_date)) nextDay.set(it.member_id, it)
-  }
-  items = items.filter(it => it.trigger_kind !== 'day_based' || nextDay.get(it.member_id) === it)
+  // The first-90 day-based steps (Orientation, Day 2/5/10/21/30/60/90…) are worked
+  // from the New Members checklist — the chips there go red when overdue and green
+  // when checked — so they no longer clutter the daily list as individual tasks.
+  items = items.filter(it => it.trigger_kind !== 'day_based')
 
   // Re-engagement (roster-wide, live-computed): any active member lapsed 14+ days,
   // excluding first-90 save-fork members and anyone still within their tier cooldown.
@@ -1328,11 +1332,24 @@ router.get('/new-members', authenticate, requireStudio, async (req, res) => {
   const photoSet = new Set((xforms || []).filter(x => x.before_photo_url).map(x => x.member_id))
   const actBy = new Map((activity || []).map(a => [a.member_id, a]))
 
-  const dayStatus = (task) => {
-    if (!task) return { status: 'na' }
-    if (task.status === 'completed') return { status: 'done', when: task.completed_at }
-    if (task.status === 'skipped') return { status: 'skipped' }
-    return { status: (task.due_date && task.due_date <= today) ? 'due' : 'upcoming', due_date: task.due_date }
+  // A step's day offset, parsed from its key or label ("day_21", "custom_day_10_checkin",
+  // "Day 10 — check-in"). Lets a step compute its own due date from the join date.
+  const dayOffsetOf = (key, label) => {
+    const mk = String(key || '').match(/day[_\s-]*(\d+)/i); if (mk) return Number(mk[1])
+    const ml = String(label || '').match(/day\s*(\d+)/i);   if (ml) return Number(ml[1])
+    return null
+  }
+  const addDaysStr = (s, n) => { const d = new Date(s + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10) }
+  // Due date comes from the generated task when there is one, else from join date +
+  // the step's day offset — so steps with no task row (e.g. a custom Day 10) still
+  // turn red once they're overdue instead of sitting grey forever.
+  const dayStatus = (task, key, label, joinDate) => {
+    if (task?.status === 'completed') return { status: 'done', when: task.completed_at }
+    if (task?.status === 'skipped') return { status: 'skipped' }
+    const off = dayOffsetOf(key, label)
+    const due = task?.due_date || (joinDate && off != null ? addDaysStr(joinDate, off) : null)
+    if (!due) return { status: 'na' }
+    return { status: due <= today ? 'due' : 'upcoming', due_date: due }
   }
 
   // The roster checklist is DRIVEN BY the Script Admin templates so it stays in sync:
@@ -1379,17 +1396,16 @@ router.get('/new-members', authenticate, requireStudio, async (req, res) => {
       } else if (known && known.key === 'passport') {
         tps.push({ key: 'passport', label: known.label, status: stickerSet.has(m.id) ? 'done' : (wt >= 12 ? 'due' : 'upcoming') })
       } else if (known) {
-        tps.push({ key: known.key, label: known.label, ...dayStatus(tks[known.key]) })
+        tps.push({ key: known.key, label: known.label, ...dayStatus(tks[known.key], known.key, tpl.label, m.join_date) })
       } else {
-        // Custom journey step added in Script Admin — status from its journey task (if any),
-        // else driven purely by the manual check-off overlay below.
-        tps.push({ key: k, label: shortChip(tpl.label), ...dayStatus(tks[k]) })
+        // Custom journey step added in Script Admin — due date derived from its day
+        // offset when no task row exists, so it still goes red when overdue.
+        tps.push({ key: k, label: shortChip(tpl.label), ...dayStatus(tks[k], k, tpl.label, m.join_date) })
       }
-      // Pin the synthetic 1st-day photo right after the Day-2 goal call.
+      // Pin the synthetic 1st-day photo right after the Day-2 goal call. Due on day 1.
       if (k === 'day2_goal_call') {
-        const day2 = tks['day_2']
         tps.push({ key: 'photo', label: '1st-day photo',
-          status: photoSet.has(m.id) ? 'done' : (day2 && day2.due_date && day2.due_date <= today ? 'due' : 'upcoming') })
+          status: photoSet.has(m.id) ? 'done' : (m.join_date && addDaysStr(m.join_date, 1) <= today ? 'due' : 'upcoming') })
       }
     }
 
