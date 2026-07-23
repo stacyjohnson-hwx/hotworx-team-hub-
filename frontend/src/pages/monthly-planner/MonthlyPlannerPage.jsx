@@ -112,6 +112,8 @@ const EVENT_TYPES = [
   'in-store','community','corporate','partnership','online',
   'business_of_the_month','influencer_visit','pop_up','team','other',
 ]
+const PROMO_TYPES = ['discount', 'free_session', 'referral', 'flash_sale', 'bundle', 'hotworx', 'other']
+
 const TYPE_COLOR = {
   'in-store':'bg-blue-100 text-blue-700', community:'bg-green-100 text-green-700',
   corporate:'bg-indigo-100 text-indigo-700', partnership:'bg-purple-100 text-purple-700',
@@ -236,6 +238,88 @@ function EventModal({ event, presetTitle, presetType, month, year, onClose, onSa
   )
 }
 
+// ─── Promotion add/edit modal ─────────────────────────────────────────────────
+function PromoModal({ promo, month, year, onClose, onSaved }) {
+  const isNew = !promo
+  const [f, setF] = useState({
+    title: promo?.title || '', promo_type: promo?.promo_type || 'discount',
+    start_date: promo?.start_date || monthStartDate(year, month),
+    end_date: promo?.end_date || monthEndDate(year, month),
+    discount_value: promo?.discount_value ?? '', discount_unit: promo?.discount_unit || '%',
+    ongoing: !!promo?.ongoing, active: promo?.active !== false,
+    description: promo?.description || '',
+  })
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+  const set = (k, v) => setF(p => ({ ...p, [k]: v }))
+  const inp = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-500'
+
+  const save = async () => {
+    if (!f.title.trim()) { setErr('Title is required'); return }
+    setSaving(true); setErr('')
+    try {
+      // Keep month/year in step with the actual start date so the record files
+      // under the month it really runs in.
+      const d = /^\d{4}-\d{2}-\d{2}$/.test(f.start_date || '') ? f.start_date.split('-').map(Number) : null
+      const body = {
+        ...f, title: f.title.trim(),
+        discount_value: f.discount_value === '' ? null : Number(f.discount_value),
+        start_date: f.start_date || null, end_date: f.end_date || null,
+        month: d ? d[1] : month, year: d ? d[0] : year,
+      }
+      const saved = isNew
+        ? await apiPost('/api/events/promotions', body)
+        : await apiPut(`/api/events/promotions/${promo.id}`, body)
+      onSaved(saved); onClose()
+    } catch (e) { setErr(e?.message || 'Could not save'); setSaving(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-md max-h-[92vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+          <h3 className="font-bold text-gray-900">{isNew ? 'Add promotion' : 'Edit promotion'}</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+        <div className="px-5 py-4 space-y-3">
+          {err && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">{err}</div>}
+          <input className={inp} placeholder="Promotion title" value={f.title} onChange={e => set('title', e.target.value)} />
+          <select className={inp} value={f.promo_type} onChange={e => set('promo_type', e.target.value)}>
+            {PROMO_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
+          </select>
+          <div className="grid grid-cols-2 gap-2">
+            <div><span className="text-[11px] text-gray-500">Starts</span><input type="date" className={inp} value={f.start_date || ''} onChange={e => set('start_date', e.target.value)} /></div>
+            <div><span className="text-[11px] text-gray-500">Ends</span><input type="date" className={inp} value={f.end_date || ''} onChange={e => set('end_date', e.target.value)} /></div>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div><span className="text-[11px] text-gray-500">Value</span>
+              <input type="number" className={inp} placeholder="e.g. 50" value={f.discount_value} onChange={e => set('discount_value', e.target.value)} /></div>
+            <div><span className="text-[11px] text-gray-500">Unit</span>
+              <select className={inp} value={f.discount_unit} onChange={e => set('discount_unit', e.target.value)}>
+                <option value="%">%</option><option value="$">$</option>
+              </select></div>
+          </div>
+          <textarea className={inp} rows={2} placeholder="Details (optional)" value={f.description} onChange={e => set('description', e.target.value)} />
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <input type="checkbox" checked={f.ongoing} onChange={e => set('ongoing', e.target.checked)} className="rounded" />
+            Ongoing — carries into every month
+          </label>
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <input type="checkbox" checked={f.active} onChange={e => set('active', e.target.checked)} className="rounded" />
+            Active
+          </label>
+        </div>
+        <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-200 bg-gray-50 rounded-b-2xl">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 font-medium">Cancel</button>
+          <button onClick={save} disabled={saving} className="px-5 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold rounded-lg disabled:opacity-50 flex items-center gap-2">
+            {saving && <Loader2 size={13} className="animate-spin" />}{isNew ? 'Add promotion' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function EventRow({ e, onEdit }) {
   const logos = (e.b2b_partners || []).filter(p => p.logo_url)
   return (
@@ -284,6 +368,7 @@ export default function MonthlyPlannerPage() {
   const [savingContent, setSavingContent] = useState(false)
   const [savingGoals, setSavingGoals] = useState(false)
   const [eventModal, setEventModal] = useState(null)   // null | {} (new) | event
+  const [promoModal, setPromoModal] = useState(null)   // null | {} (new) | promo
 
   const load = useCallback(async () => {
     setLoading(true); setError('')
@@ -386,6 +471,10 @@ export default function MonthlyPlannerPage() {
           month={month} year={year}
           onClose={() => setEventModal(null)} onSaved={onEventSaved} />
       )}
+      {promoModal && (
+        <PromoModal promo={promoModal.id ? promoModal : null} month={month} year={year}
+          onClose={() => setPromoModal(null)} onSaved={onEventSaved} />
+      )}
 
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -448,15 +537,22 @@ export default function MonthlyPlannerPage() {
 
       {/* 3. PROMOTIONS */}
       <Card icon={Tag} title="Promotions" subtitle="Offers running this month vs. last year." accent="text-purple-600"
-        right={<Link to="/events" className="text-sm text-red-600 hover:text-red-700 font-medium flex items-center gap-1">Manage <ExternalLink size={13} /></Link>}>
+        right={<button onClick={() => setPromoModal({})} className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold rounded-lg"><Plus size={13} /> Add promo</button>}>
         <div className="grid md:grid-cols-2 gap-5">
           <div>
             <p className="text-xs font-semibold text-gray-500 uppercase mb-2">This month</p>
             {promos.length === 0 ? <p className="text-sm text-gray-400">No promotions yet.</p> : (
               <div className="space-y-1.5">{promos.map(p => (
-                <div key={p.id} className="bg-purple-50 border border-purple-200 rounded-lg px-3 py-2">
-                  <p className="text-sm font-semibold text-gray-900">{p.title}{p.ongoing && <span className="ml-1.5 text-[10px] bg-purple-200 text-purple-800 px-1.5 py-0.5 rounded">ongoing</span>}</p>
-                  <p className="text-[11px] text-gray-500">{(p.promo_type || '').replace(/_/g,' ')}{p.start_date ? ` · ${fmtDay(p.start_date)}${p.end_date ? ` – ${fmtDay(p.end_date)}` : ''}` : ''}</p>
+                <div key={p.id} className="flex items-center gap-2 bg-purple-50 border border-purple-200 rounded-lg px-3 py-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-gray-900 truncate">
+                      {p.title}
+                      {p.ongoing && <span className="ml-1.5 text-[10px] bg-purple-200 text-purple-800 px-1.5 py-0.5 rounded">ongoing</span>}
+                      {p.discount_value ? <span className="ml-1.5 text-[10px] bg-white border border-purple-200 text-purple-700 px-1.5 py-0.5 rounded">{p.discount_unit === '$' ? '$' : ''}{p.discount_value}{p.discount_unit === '%' ? '%' : ''}</span> : null}
+                    </p>
+                    <p className="text-[11px] text-gray-500">{(p.promo_type || '').replace(/_/g,' ')}{p.start_date ? ` · ${fmtDay(p.start_date)}${p.end_date ? ` – ${fmtDay(p.end_date)}` : ''}` : ''}</p>
+                  </div>
+                  <button onClick={() => setPromoModal(p)} className="p-1.5 text-gray-400 hover:text-purple-700 flex-shrink-0" title="Edit"><Edit2 size={14} /></button>
                 </div>
               ))}</div>
             )}
