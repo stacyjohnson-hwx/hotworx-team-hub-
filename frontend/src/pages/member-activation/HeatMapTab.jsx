@@ -1,9 +1,11 @@
 import 'leaflet/dist/leaflet.css'
+import L from 'leaflet'
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { MapContainer, TileLayer, CircleMarker, Circle, Popup, Tooltip, useMap } from 'react-leaflet'
-import { apiGet } from '@/hooks/useApi'
+import { MapContainer, TileLayer, CircleMarker, Circle, Marker, Popup, Tooltip, useMap, useMapEvents } from 'react-leaflet'
+import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
 import { useStudio } from '@/contexts/StudioContext'
-import { Loader2, AlertCircle, MapPin, Users, Home, Footprints } from 'lucide-react'
+import { useRole } from '@/hooks/useRole'
+import { Loader2, AlertCircle, MapPin, Users, Home, Footprints, Pencil, Plus, Trash2, Check, X } from 'lucide-react'
 
 // HOTWORX Pewaukee — sensible default view; recentres on the data once loaded.
 const DEFAULT_CENTER = [43.0868, -88.2415]
@@ -34,6 +36,28 @@ const radiusFor = (count, max) => 6 + 26 * Math.sqrt(count / Math.max(1, max))
 const DOT = { member: '#dc2626', lead: '#f59e0b', missed_guest: '#9ca3af', other: '#64748b' }
 const DOT_LABEL = { member: 'Members', lead: 'Leads', missed_guest: 'Missed guests' }
 const RADII = [{ mi: 0.25, label: '¼ mi' }, { mi: 0.5, label: '½ mi' }, { mi: 1, label: '1 mi' }]
+
+const M_PER_MI = 1609.34
+// A zone's own drawn size, falling back to the map's radius control.
+const zoneRadiusMi = (z, fallbackMi) => (z.radius_m ? z.radius_m / M_PER_MI : fallbackMi)
+
+// Drag handle for a zone centre (divIcon — no image assets needed).
+const HANDLE_ICON = L.divIcon({
+  className: '',
+  html: '<div style="width:14px;height:14px;border-radius:9999px;background:#fff;border:3px solid #dc2626;box-shadow:0 1px 4px rgba(0,0,0,.4);cursor:move"></div>',
+  iconSize: [14, 14], iconAnchor: [7, 7],
+})
+
+// Click-to-place support while adding/moving a zone.
+function MapClickHandler({ active, onMapClick }) {
+  const map = useMapEvents({ click(e) { if (active) onMapClick(e.latlng) } })
+  useEffect(() => {
+    const el = map.getContainer()
+    el.style.cursor = active ? 'crosshair' : ''
+    return () => { el.style.cursor = '' }
+  }, [active, map])
+  return null
+}
 
 // Great-circle distance in miles.
 function milesBetween(aLat, aLng, bLat, bLng) {
@@ -104,6 +128,7 @@ function ZonePeopleModal({ detail, radiusMi, onClose }) {
 
 export default function HeatMapTab() {
   const { currentStudio } = useStudio()
+  const { isOwnerOrManager } = useRole()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -116,6 +141,54 @@ export default function HeatMapTab() {
   const [showTypes, setShowTypes] = useState({ member: true, lead: true, missed_guest: true })
   const [radiusMi, setRadiusMi] = useState(0.5)
   const [detail, setDetail] = useState(null)    // { zone, kind: 'member' | 'lead' }
+  // Zone editing
+  const [editMode, setEditMode] = useState(false)
+  const [draft, setDraft] = useState(null)      // zone being edited/created (unsaved)
+  const [placing, setPlacing] = useState(false) // next map click sets the centre
+  const [saving, setSaving] = useState(false)
+
+  const reloadZones = useCallback(async () => {
+    try {
+      const z = await apiGet('/api/territories')
+      setZones((z || []).filter(t => t.latitude != null && t.longitude != null))
+    } catch { /* keep what we have */ }
+  }, [])
+
+  const startNewZone = () => {
+    setDraft({ id: null, name: '', type: 'neighborhood', latitude: null, longitude: null, radius_m: Math.round(0.25 * M_PER_MI) })
+    setPlacing(true)
+    setEditMode(true)
+  }
+
+  const saveDraft = async () => {
+    if (!draft?.name?.trim()) { setError('Give the zone a name first.'); return }
+    if (draft.latitude == null || draft.longitude == null) { setError('Click the map to place the zone.'); return }
+    setSaving(true); setError('')
+    const body = {
+      name: draft.name.trim(), type: draft.type,
+      latitude: draft.latitude, longitude: draft.longitude,
+      radius_m: draft.radius_m ?? null,
+    }
+    try {
+      if (draft.id) await apiPut(`/api/territories/${draft.id}`, body)
+      else await apiPost('/api/territories', body)
+      await reloadZones()
+      setDraft(null); setPlacing(false)
+    } catch (e) { setError(e?.message || 'Could not save the zone.') }
+    finally { setSaving(false) }
+  }
+
+  const deleteDraft = async () => {
+    if (!draft?.id) { setDraft(null); setPlacing(false); return }
+    if (!window.confirm(`Delete "${draft.name}"? This removes the canvassing zone everywhere.`)) return
+    setSaving(true)
+    try {
+      await apiDelete(`/api/territories/${draft.id}`)
+      await reloadZones()
+      setDraft(null); setPlacing(false)
+    } catch (e) { setError(e?.message || 'Could not delete the zone.') }
+    finally { setSaving(false) }
+  }
 
   const load = useCallback(async () => {
     setLoading(true); setError('')
@@ -166,9 +239,10 @@ export default function HeatMapTab() {
     if (!addr?.points?.length || !zones.length) return []
     return zones.map(z => {
       const memberList = [], leadList = []
+      const rMi = zoneRadiusMi(z, radiusMi)
       let total = 0
       for (const p of addr.points) {
-        if (milesBetween(z.latitude, z.longitude, p.lat, p.lng) > radiusMi) continue
+        if (milesBetween(z.latitude, z.longitude, p.lat, p.lng) > rMi) continue
         total++
         if (p.t === 'member') memberList.push(p)
         else if (p.t === 'lead') leadList.push(p)
@@ -326,7 +400,7 @@ export default function HeatMapTab() {
                 </button>
               ))}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs text-gray-500">Neighborhood radius</span>
               {RADII.map(r => (
                 <button key={r.mi} onClick={() => setRadiusMi(r.mi)}
@@ -335,8 +409,99 @@ export default function HeatMapTab() {
                   {r.label}
                 </button>
               ))}
+              {isOwnerOrManager && (
+                <>
+                  <span className="w-px h-5 bg-gray-200 mx-1" />
+                  <button
+                    onClick={() => { setEditMode(m => !m); setDraft(null); setPlacing(false) }}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors ${
+                      editMode ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-300'}`}>
+                    <Pencil size={12} /> {editMode ? 'Done editing' : 'Edit zones'}
+                  </button>
+                  <button onClick={startNewZone}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border bg-white text-red-600 border-red-300 hover:bg-red-50">
+                    <Plus size={12} /> Add zone
+                  </button>
+                </>
+              )}
             </div>
           </div>
+
+          {editMode && !draft && (
+            <p className="text-xs text-gray-500 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              Editing on — click any circle on the map to rename it, move it, or resize it.
+            </p>
+          )}
+
+          {/* Zone editor */}
+          {draft && (
+            <div className="bg-white border-2 border-red-200 rounded-xl shadow-sm p-4 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-sm font-bold text-gray-900">
+                  {draft.id ? `Editing “${draft.name || 'zone'}”` : 'New neighborhood / apartment'}
+                </h3>
+                <button onClick={() => { setDraft(null); setPlacing(false) }} className="text-gray-400 hover:text-gray-700">
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="flex-1 min-w-[200px]">
+                  <label className="block text-[11px] font-semibold text-gray-500 mb-1">Name</label>
+                  <input value={draft.name || ''} onChange={e => setDraft(d => ({ ...d, name: e.target.value }))}
+                    placeholder="e.g. Redford Estates"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-200" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-gray-500 mb-1">Type</label>
+                  <div className="flex gap-1">
+                    {[{ k: 'neighborhood', label: 'Neighborhood' }, { k: 'apartment', label: 'Apartments' }].map(t => (
+                      <button key={t.k} onClick={() => setDraft(d => ({ ...d, type: t.k }))}
+                        className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                          draft.type === t.k ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-300'}`}>
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <button onClick={() => setPlacing(true)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border ${
+                    placing ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}>
+                  <MapPin size={12} /> {placing ? 'Click the map…' : 'Move on map'}
+                </button>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-gray-500 mb-1">
+                  Size — {(( draft.radius_m || 0) / M_PER_MI).toFixed(2)} mi across the radius
+                </label>
+                <input type="range" min={80} max={3200} step={20}
+                  value={draft.radius_m || Math.round(0.25 * M_PER_MI)}
+                  onChange={e => setDraft(d => ({ ...d, radius_m: parseInt(e.target.value) }))}
+                  className="w-full accent-red-600" />
+                <p className="text-[11px] text-gray-400">
+                  Drag the white handle to move the centre; the dashed circle is what you're saving.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button onClick={saveDraft} disabled={saving}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-red-600 text-white hover:bg-red-700 disabled:opacity-50">
+                  {saving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Save zone
+                </button>
+                <button onClick={() => { setDraft(null); setPlacing(false) }}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-300 text-gray-600 hover:bg-gray-50">
+                  Cancel
+                </button>
+                {draft.id && (
+                  <button onClick={deleteDraft} disabled={saving}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-red-600 hover:bg-red-50 ml-auto">
+                    <Trash2 size={13} /> Delete
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
 
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
             <div style={{ height: 520 }}>
@@ -348,15 +513,38 @@ export default function HeatMapTab() {
                 />
                 <FitToData points={dots} />
 
+                <MapClickHandler active={placing} onMapClick={(ll) => {
+                  setDraft(d => (d ? { ...d, latitude: ll.lat, longitude: ll.lng } : d))
+                  setPlacing(false)
+                }} />
+
                 {/* Canvassing zones underneath the dots */}
-                {zoneStats.map(z => (
-                  <Circle key={z.id} center={[z.lat, z.lng]} radius={radiusMi * 1609}
-                    pathOptions={{ color: z.type === 'apartment' ? '#7c3aed' : '#0ea5e9', weight: 1.5, fillOpacity: 0.06 }}>
+                {zoneStats.filter(z => z.id !== draft?.id).map(z => (
+                  <Circle key={z.id} center={[z.lat, z.lng]} radius={zoneRadiusMi(z, radiusMi) * M_PER_MI}
+                    pathOptions={{ color: z.type === 'apartment' ? '#7c3aed' : '#0ea5e9', weight: 1.5, fillOpacity: 0.06 }}
+                    eventHandlers={{ click: () => { if (editMode) setDraft({ ...z, latitude: z.lat, longitude: z.lng }) } }}>
                     <Tooltip direction="top" opacity={0.95}>
-                      <span className="text-xs"><b>{z.name}</b> · {z.members} members, {z.leads} leads within {radiusMi} mi</span>
+                      <span className="text-xs">
+                        <b>{z.name}</b> · {z.members} members, {z.leads} leads within {zoneRadiusMi(z, radiusMi).toFixed(2)} mi
+                        {editMode && <> — <i>click to edit</i></>}
+                      </span>
                     </Tooltip>
                   </Circle>
                 ))}
+
+                {/* The zone being edited: live circle + draggable centre handle */}
+                {draft && draft.latitude != null && (
+                  <>
+                    <Circle center={[draft.latitude, draft.longitude]}
+                      radius={(draft.radius_m || 0.25 * M_PER_MI)}
+                      pathOptions={{ color: '#dc2626', weight: 2, dashArray: '6 4', fillOpacity: 0.10 }} />
+                    <Marker position={[draft.latitude, draft.longitude]} icon={HANDLE_ICON} draggable
+                      eventHandlers={{ dragend: (e) => {
+                        const ll = e.target.getLatLng()
+                        setDraft(d => ({ ...d, latitude: ll.lat, longitude: ll.lng }))
+                      } }} />
+                  </>
+                )}
 
                 {dots.map(p => (
                   <CircleMarker key={p.id} center={[p.lat, p.lng]} radius={4}

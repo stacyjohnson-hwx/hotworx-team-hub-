@@ -84,7 +84,7 @@ router.get('/', async (req, res) => {
 
 // ─── POST /api/territories ────────────────────────────────────────────────────
 router.post('/', async (req, res) => {
-  const { name, type, address, latitude, longitude, cadence_days, assigned_to, notes, b2b_contact_id } = req.body
+  const { name, type, address, latitude, longitude, cadence_days, assigned_to, notes, b2b_contact_id, radius_m } = req.body
   if (!name) return res.status(400).json({ error: 'name is required' })
 
   const { data, error } = await db()
@@ -100,6 +100,7 @@ router.post('/', async (req, res) => {
       assigned_to: assigned_to || null,
       notes: notes || null,
       b2b_contact_id: b2b_contact_id || null,
+      radius_m: radius_m != null ? parseInt(radius_m) : null,
     })
     .select()
     .single()
@@ -110,7 +111,7 @@ router.post('/', async (req, res) => {
 
 // ─── PUT /api/territories/:id ─────────────────────────────────────────────────
 router.put('/:id', async (req, res) => {
-  const { name, type, address, latitude, longitude, cadence_days, assigned_to, notes, b2b_contact_id } = req.body
+  const { name, type, address, latitude, longitude, cadence_days, assigned_to, notes, b2b_contact_id, radius_m } = req.body
   const updates = { updated_at: new Date().toISOString() }
   if (name !== undefined) updates.name = name
   if (type !== undefined) updates.type = type === 'apartment' ? 'apartment' : 'neighborhood'
@@ -121,6 +122,7 @@ router.put('/:id', async (req, res) => {
   if (assigned_to !== undefined) updates.assigned_to = assigned_to || null
   if (notes !== undefined) updates.notes = notes || null
   if (b2b_contact_id !== undefined) updates.b2b_contact_id = b2b_contact_id || null
+  if (radius_m !== undefined) updates.radius_m = radius_m == null || radius_m === '' ? null : parseInt(radius_m)
 
   const { data, error } = await db()
     .from('territories').update(updates)
