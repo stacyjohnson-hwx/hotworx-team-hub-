@@ -47,7 +47,7 @@ const TEMPLATE_DEFAULTS = [
   { template_key: 'milestone_100',  label: '100 visit-days — T-shirt',   channel: 'call', body: "{first_name} hit {milestone} visit-days! Call to celebrate and hand over their 100-club T-shirt 👕" },
   { template_key: 'milestone_500',  label: '500 visit-days — premium',   channel: 'call', body: "{first_name} hit {milestone} visit-days! Celebrate this loyalty milestone and award their premium item." },
   { template_key: 'milestone_1000', label: '1,000 visit-days — legacy',  channel: 'call', body: "{first_name} reached {milestone} visit-days — legacy member! Wall of fame + marquee recognition." },
-  { template_key: 'passport_sticker', label: 'Passport complete — all 12', channel: 'text', body: "{first_name} tried all 12 workouts! Hand over the passport sticker and celebrate the variety 🌟" },
+  { template_key: 'passport_sticker', label: 'Warrior Sticker — all 12', channel: 'text', body: "{first_name} tried all 12 workouts! Hand over the Warrior Sticker and celebrate the variety 🌟" },
   { template_key: 'save_7d',  label: 'Quiet 7 days — nudge',   channel: 'text', body: "Hey {first_name}! Haven't seen you in a bit — everything okay? Your spot's waiting 🔥 Want help booking your next sweat?" },
   { template_key: 'save_14d', label: '14 days quiet — save call', channel: 'call', body: "Call {first_name}: no booking in 14 days during onboarding. Warm check-in, remove barriers, help them re-book. High priority." },
   { template_key: 'reengage_14', label: 'We miss you — 14 days', channel: 'text', body: "Hi {first_name}! We miss you at HOTWORX 🔥 {event_name}Come get a sweat in this week!" },

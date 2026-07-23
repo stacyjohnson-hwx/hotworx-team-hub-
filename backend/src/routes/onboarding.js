@@ -664,7 +664,7 @@ router.get('/members/:id/journey', authenticate, requireStudio, async (req, res)
     tp('day_60', 'Day 60 review', dayStatus(taskBy['day_60'], 'day_60')),
     tp('day_90', 'Day 90 photo', dayStatus(taskBy['day_90'], 'day_90')),
     tp('thank_you_card', 'Thank-you card', { status: (logBy['thank_you_card']?.done || cardTask?.status === 'completed') ? 'done' : cardTask ? 'due' : 'na' }),
-    tp('passport', 'Complete 12 Sticker', { status: (rewardKeys.has('sticker') || logBy['passport']?.done) ? 'done' : (workouts >= 12 ? 'due' : 'upcoming') }),
+    tp('passport', 'Warrior Sticker — all 12', { status: (rewardKeys.has('sticker') || logBy['passport']?.done) ? 'done' : (workouts >= 12 ? 'due' : 'upcoming') }),
   ].filter(t => isActiveKey(t.key))
 
   // Custom journey steps added in Script Admin appear automatically.
@@ -681,7 +681,7 @@ router.get('/members/:id/journey', authenticate, requireStudio, async (req, res)
 
   const MILES = [[10, '10 visit-days'], [25, '25 · keychain'], [50, '50 visit-days'], [100, '100 · T-shirt'], [500, '500 · premium'], [1000, '1,000 · legacy']]
   const milestones = [
-    { key: 'passport', label: 'Passport · all 12', earned: rewardKeys.has('sticker') || workouts >= 12 },
+    { key: 'passport', label: 'Warrior Sticker · all 12', earned: rewardKeys.has('sticker') || workouts >= 12 },
     ...MILES.map(([n, label]) => ({ key: `m${n}`, label, earned: visitDays >= n })),
   ]
 
@@ -1231,7 +1231,7 @@ router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
     const item = {
       id: `passport:${mm.id}`, kind: 'passport', member_id: mm.id,
       member_name: mm.full_name || ctx.first_name, phone: mm.phone || null,
-      channel: passTpl.channel || 'text', label: passTpl.label || 'Workout passport complete 🎉',
+      channel: passTpl.channel || 'text', label: passTpl.label || 'Warrior Sticker earned 🎉',
       trigger_kind: 'event_based', trigger_ref: 'passport_sticker', priority: 4,
       reward_key: 'sticker', script: renderTemplate(passTpl.body || '', ctx), due_date: today,
       last_booking_date: lastBookMap.get(mm.id) || null, days_lapsed: null,
@@ -1345,7 +1345,7 @@ router.get('/new-members', authenticate, requireStudio, async (req, res) => {
     day60_review:       { key: 'day_60',            label: 'Day 60 review' },
     day90_close:        { key: 'day_90',            label: 'Day 90 close' },
     thank_you_card:     { key: 'thank_you_card',    label: 'Thank-you card' },
-    passport_sticker:   { key: 'passport',          label: 'Passport' },
+    passport_sticker:   { key: 'passport',          label: 'Warrior Sticker' },
   }
   const shortChip = (lbl = '') => {
     const mo = lbl.match(/day\s*(\d+)/i)
