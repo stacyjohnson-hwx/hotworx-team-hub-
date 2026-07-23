@@ -84,10 +84,11 @@ router.get('/:year/:month', ...GUARD, async (req, res) => {
   const prev = prevMonth(year, month)
 
   try {
-    const [plan, lastYearGoals, lastYearTrends, priorMonthTrends, customHolidays] = await Promise.all([
+    const [plan, lastYearGoals, lastYearTrends, thisMonthTrends, priorMonthTrends, customHolidays] = await Promise.all([
       db.from('monthly_plans').select('*').eq('studio_id', sid).eq('year', year).eq('month', month).maybeSingle().then(r => r.data),
       oneRow(db, 'studio_goals',  sid, year - 1, month),
       oneRow(db, 'studio_trends', sid, year - 1, month),
+      oneRow(db, 'studio_trends', sid, year, month),
       oneRow(db, 'studio_trends', sid, prev.year, prev.month),
       db.from('planner_holidays').select('*').eq('studio_id', sid).eq('month', month).order('day', { nullsFirst: false }).then(r => r.data || []),
     ])
@@ -96,9 +97,10 @@ router.get('/:year/:month', ...GUARD, async (req, res) => {
       plan: plan || { studio_id: sid, year, month, content: {}, reviewed_at: null, reviewed_by: null },
       reference: {
         prior: { year: prev.year, month: prev.month },
-        lastYearGoals,                                   // targets set last year (often none)
+        lastYearGoals,                                     // targets set last year (often none)
         lastYearActuals: actualsFromTrends(lastYearTrends), // what actually happened last year
-        lastYearTrends, priorMonthTrends,
+        thisYearActuals: actualsFromTrends(thisMonthTrends),// what's happened so far this month (null until logged)
+        lastYearTrends, thisMonthTrends, priorMonthTrends,
         customHolidays,
       },
     })

@@ -138,7 +138,26 @@ function Card({ icon: Icon, title, subtitle, children, accent = 'text-red-600', 
   )
 }
 
-function TargetField({ label, prefix, value, lastYear, onChange }) {
+// This year vs last year, as a small up/down chip. Rates compare in points,
+// everything else as a percentage change.
+function Delta({ now, prev, isRate }) {
+  const a = Number(now), b = Number(prev)
+  if (now == null || now === '' || prev == null || prev === '' || !isFinite(a) || !isFinite(b)) return null
+  const diff = a - b
+  if (Math.abs(diff) < 0.005) return <span className="text-gray-400 font-semibold">even</span>
+  const up = diff > 0
+  const label = isRate
+    ? `${up ? '+' : ''}${Math.round(diff)} pts`
+    : (b > 0 ? `${up ? '+' : ''}${Math.round((diff / b) * 100)}%` : `${up ? '+' : ''}${Math.round(diff)}`)
+  return (
+    <span className={`font-semibold ${up ? 'text-green-600' : 'text-red-600'}`}>
+      {up ? '▲' : '▼'} {label}
+    </span>
+  )
+}
+
+function TargetField({ label, prefix, value, lastYear, thisYear, isRate, onChange }) {
+  const hasThisYear = thisYear != null && thisYear !== ''
   return (
     <div>
       <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">{label}</label>
@@ -147,7 +166,13 @@ function TargetField({ label, prefix, value, lastYear, onChange }) {
         <input type="number" value={value ?? ''} onChange={e => onChange(e.target.value === '' ? '' : Number(e.target.value))}
           className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:border-red-500" />
       </div>
-      <p className="text-[11px] text-gray-400 mt-1">Last yr actual: <span className="font-semibold text-gray-500">{fmtVal(lastYear, prefix)}</span></p>
+      <p className="text-[11px] text-gray-400 mt-1">
+        Last yr actual: <span className="font-semibold text-gray-500">{fmtVal(lastYear, prefix)}</span>
+      </p>
+      <p className="text-[11px] text-gray-400 mt-0.5 flex items-center gap-1.5">
+        <span>This yr actual: <span className="font-semibold text-gray-700">{hasThisYear ? fmtVal(thisYear, prefix) : '—'}</span></span>
+        {hasThisYear && <Delta now={thisYear} prev={lastYear} isRate={isRate} />}
+      </p>
     </div>
   )
 }
@@ -248,6 +273,7 @@ export default function MonthlyPlannerPage() {
   const [reference, setReference] = useState(null)
   const [goals, setGoals]     = useState(null)
   const [lastYear, setLastYear] = useState(null)
+  const [thisYear, setThisYear] = useState(null)
   const [b2b, setB2b]         = useState([])
   const [territories, setTerritories] = useState([])
   const [events, setEvents]   = useState([])
@@ -282,6 +308,7 @@ export default function MonthlyPlannerPage() {
       setGoals(cur)
       // Last year: prefer the goal that was set, else what actually happened.
       setLastYear(pl.reference?.lastYearGoals || pl.reference?.lastYearActuals || null)
+      setThisYear(pl.reference?.thisYearActuals || null)
       setB2b(contacts || []); setTerritories(terr || [])
       const byStart = (a, b) => (a.start_date || '').localeCompare(b.start_date || '')
       setEvents((evs || []).filter(e => overlapsRange(e, mStart, mEnd)).sort(byStart))
@@ -382,14 +409,14 @@ export default function MonthlyPlannerPage() {
       <Card icon={Target} title="Goals for the month"
         subtitle={`Set this month's targets — compared to ${MONTHS[month-1]} ${year - 1} actuals.`}>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <TargetField label="EFT increase" prefix="$" value={goals?.eft_target} lastYear={lastYear?.eft_target} onChange={v => setGoals(g => ({ ...g, eft_target: v }))} />
-          <TargetField label="New members" value={goals?.memberships_target} lastYear={lastYear?.memberships_target} onChange={v => setGoals(g => ({ ...g, memberships_target: v }))} />
-          <TargetField label="Retail" prefix="$" value={goals?.retail_target} lastYear={lastYear?.retail_target} onChange={v => setGoals(g => ({ ...g, retail_target: v }))} />
-          <TargetField label="In the Bank" prefix="$" value={goals?.in_the_bank_target} lastYear={lastYear?.in_the_bank_target} onChange={v => setGoals(g => ({ ...g, in_the_bank_target: v }))} />
-          <TargetField label="Leads (outreach)" value={goals?.total_leads_target} lastYear={lastYear?.total_leads_target} onChange={v => setGoals(g => ({ ...g, total_leads_target: v }))} />
-          <TargetField label="Conversion %" value={goals?.conversion_rate_target} lastYear={lastYear?.conversion_rate_target} onChange={v => setGoals(g => ({ ...g, conversion_rate_target: v }))} />
-          <TargetField label="Show rate %" value={goals?.checkin_show_rate_target} lastYear={lastYear?.checkin_show_rate_target} onChange={v => setGoals(g => ({ ...g, checkin_show_rate_target: v }))} />
-          <TargetField label="Close rate %" value={goals?.close_rate_target} lastYear={lastYear?.close_rate_target} onChange={v => setGoals(g => ({ ...g, close_rate_target: v }))} />
+          <TargetField label="EFT increase" prefix="$" value={goals?.eft_target} lastYear={lastYear?.eft_target} thisYear={thisYear?.eft_target} onChange={v => setGoals(g => ({ ...g, eft_target: v }))} />
+          <TargetField label="New members" value={goals?.memberships_target} lastYear={lastYear?.memberships_target} thisYear={thisYear?.memberships_target} onChange={v => setGoals(g => ({ ...g, memberships_target: v }))} />
+          <TargetField label="Retail" prefix="$" value={goals?.retail_target} lastYear={lastYear?.retail_target} thisYear={thisYear?.retail_target} onChange={v => setGoals(g => ({ ...g, retail_target: v }))} />
+          <TargetField label="In the Bank" prefix="$" value={goals?.in_the_bank_target} lastYear={lastYear?.in_the_bank_target} thisYear={thisYear?.in_the_bank_target} onChange={v => setGoals(g => ({ ...g, in_the_bank_target: v }))} />
+          <TargetField label="Leads (outreach)" value={goals?.total_leads_target} lastYear={lastYear?.total_leads_target} thisYear={thisYear?.total_leads_target} onChange={v => setGoals(g => ({ ...g, total_leads_target: v }))} />
+          <TargetField label="Conversion %" isRate value={goals?.conversion_rate_target} lastYear={lastYear?.conversion_rate_target} thisYear={thisYear?.conversion_rate_target} onChange={v => setGoals(g => ({ ...g, conversion_rate_target: v }))} />
+          <TargetField label="Show rate %" isRate value={goals?.checkin_show_rate_target} lastYear={lastYear?.checkin_show_rate_target} thisYear={thisYear?.checkin_show_rate_target} onChange={v => setGoals(g => ({ ...g, checkin_show_rate_target: v }))} />
+          <TargetField label="Close rate %" isRate value={goals?.close_rate_target} lastYear={lastYear?.close_rate_target} thisYear={thisYear?.close_rate_target} onChange={v => setGoals(g => ({ ...g, close_rate_target: v }))} />
         </div>
         <div className="flex items-center gap-3 mt-4">
           <button onClick={() => saveGoals()} disabled={savingGoals}
