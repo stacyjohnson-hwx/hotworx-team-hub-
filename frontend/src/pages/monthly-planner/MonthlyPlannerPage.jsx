@@ -96,14 +96,26 @@ function overlapsRange(item, start, end) {
   return true
 }
 
-// Weeks of the month as day ranges (Week 1 = 1–7, …).
+// Real calendar weeks (Monday–Sunday, matching the Schedule and EOD views) that
+// overlap the month — so "Week 3" is the week the team actually works, not days
+// 15–21. The first and last weeks can reach into the neighbouring month.
+const ymdLocal = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+const weekRangeLabel = (s, e) => s.getMonth() === e.getMonth()
+  ? `${MON_SHORT[s.getMonth()]} ${s.getDate()}–${e.getDate()}`
+  : `${MON_SHORT[s.getMonth()]} ${s.getDate()} – ${MON_SHORT[e.getMonth()]} ${e.getDate()}`
+
 function weeksOfMonth(year, month) {
-  const dim = daysInMonth(year, month)
+  const lastOfMonth = new Date(year, month - 1, daysInMonth(year, month))
+  // Back up to the Monday on/before the 1st (getDay: 0=Sun … 6=Sat).
+  const cur = new Date(year, month - 1, 1)
+  const dow = cur.getDay()
+  cur.setDate(cur.getDate() - (dow === 0 ? 6 : dow - 1))
   const out = []
-  for (let n = 1; (n - 1) * 7 + 1 <= dim; n++) {
-    const s = (n - 1) * 7 + 1
-    const e = Math.min(dim, n * 7)
-    out.push({ n, label: `Week ${n}`, range: `${MON_SHORT[month-1]} ${s}–${e}` })
+  for (let n = 1; cur <= lastOfMonth; n++) {
+    const start = new Date(cur)
+    const end = new Date(cur); end.setDate(end.getDate() + 6)
+    out.push({ n, label: `Week ${n}`, range: weekRangeLabel(start, end), start: ymdLocal(start), end: ymdLocal(end) })
+    cur.setDate(cur.getDate() + 7)
   }
   return out
 }
@@ -638,6 +650,7 @@ function Logo({ url, name, size = 20 }) {
 // (or when a plan already exists), so weeks stay compact.
 function WeeklyOutreach({ year, month, businesses, territories, content, patchContent }) {
   const weeks = weeksOfMonth(year, month)
+  const todayLocalStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' })
   const [openPicker, setOpenPicker] = useState(null)   // `${key}:${week}`
   const [openPlans, setOpenPlans] = useState({})       // `${key}:${week}` -> true
   const [q, setQ] = useState('')
@@ -753,17 +766,21 @@ function WeeklyOutreach({ year, month, businesses, territories, content, patchCo
       </div>
 
       <div className="space-y-2">
-        {weeks.map(w => (
-          <div key={w.n} className="border border-gray-200 rounded-lg p-2.5">
+        {weeks.map(w => {
+          const isThisWeek = todayLocalStr >= w.start && todayLocalStr <= w.end
+          return (
+          <div key={w.n} className={`border rounded-lg p-2.5 ${isThisWeek ? 'border-red-300 bg-red-50/40' : 'border-gray-200'}`}>
             <div className="grid md:grid-cols-[68px_1fr_1fr] gap-3">
               <div className="md:pt-0.5">
                 <div className="text-sm font-bold text-gray-900 leading-tight">{w.label}</div>
                 <div className="text-[11px] text-gray-400">{w.range}</div>
+                {isThisWeek && <div className="mt-0.5 inline-block text-[9px] font-bold uppercase tracking-wide text-red-600 bg-red-100 px-1.5 py-0.5 rounded-full">This week</div>}
               </div>
               {COLS.map(c => <Cell key={c.key} col={c} w={w} />)}
             </div>
           </div>
-        ))}
+          )
+        })}
       </div>
     </Card>
   )
