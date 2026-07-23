@@ -53,6 +53,55 @@ function FitToData({ points }) {
   return null
 }
 
+// Who makes up a zone's member/lead count — opened by clicking the number.
+function ZonePeopleModal({ detail, radiusMi, onClose }) {
+  const { zone, kind } = detail
+  const people = kind === 'member' ? zone.memberList : zone.leadList
+  const [copied, setCopied] = useState(false)
+
+  const copyList = async () => {
+    const text = people.map(p => `${p.name || 'Unknown'}\t${p.addr || ''}`).join('\n')
+    try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1800) } catch { /* ignore */ }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-lg max-h-[85vh] flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-start justify-between px-5 py-4 border-b border-gray-200">
+          <div>
+            <h3 className="font-bold text-gray-900">{zone.name}</h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {people.length} {kind === 'member' ? 'member' : 'lead'}{people.length === 1 ? '' : 's'} within {radiusMi} mi
+            </p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg leading-none">✕</button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 py-3">
+          {people.length === 0 ? <p className="text-sm text-gray-400">Nobody in range.</p> : (
+            <div className="divide-y divide-gray-100">
+              {people.map(p => (
+                <div key={p.id} className="py-2">
+                  <p className="text-sm font-semibold text-gray-900">{p.name || 'Unknown'}</p>
+                  <p className="text-xs text-gray-500">{p.addr || '—'}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between gap-2 px-5 py-3 border-t border-gray-200 bg-gray-50 rounded-b-2xl">
+          <button onClick={copyList} disabled={!people.length}
+            className="text-sm font-medium text-gray-600 hover:text-gray-900 disabled:opacity-40">
+            {copied ? '✓ Copied' : 'Copy list'}
+          </button>
+          <button onClick={onClose} className="px-4 py-2 bg-gray-800 hover:bg-black text-white text-sm font-semibold rounded-lg">Close</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function HeatMapTab() {
   const { currentStudio } = useStudio()
   const [data, setData] = useState(null)
@@ -66,6 +115,7 @@ export default function HeatMapTab() {
   const [addrLoading, setAddrLoading] = useState(false)
   const [showTypes, setShowTypes] = useState({ member: true, lead: true, missed_guest: true })
   const [radiusMi, setRadiusMi] = useState(0.5)
+  const [detail, setDetail] = useState(null)    // { zone, kind: 'member' | 'lead' }
 
   const load = useCallback(async () => {
     setLoading(true); setError('')
@@ -115,14 +165,20 @@ export default function HeatMapTab() {
   const zoneStats = useMemo(() => {
     if (!addr?.points?.length || !zones.length) return []
     return zones.map(z => {
-      let members = 0, leads = 0, total = 0
+      const memberList = [], leadList = []
+      let total = 0
       for (const p of addr.points) {
         if (milesBetween(z.latitude, z.longitude, p.lat, p.lng) > radiusMi) continue
         total++
-        if (p.t === 'member') members++
-        else if (p.t === 'lead') leads++
+        if (p.t === 'member') memberList.push(p)
+        else if (p.t === 'lead') leadList.push(p)
       }
-      return { id: z.id, name: z.name, type: z.type, lat: z.latitude, lng: z.longitude, members, leads, total }
+      const byName = (a, b) => (a.name || '').localeCompare(b.name || '')
+      memberList.sort(byName); leadList.sort(byName)
+      return {
+        id: z.id, name: z.name, type: z.type, lat: z.latitude, lng: z.longitude,
+        members: memberList.length, leads: leadList.length, total, memberList, leadList,
+      }
     }).sort((a, b) => b.members - a.members || b.total - a.total)
   }, [addr, zones, radiusMi])
 
@@ -354,13 +410,28 @@ export default function HeatMapTab() {
                     <div className="w-28 h-2 bg-gray-100 rounded-full overflow-hidden">
                       <div className="h-full rounded-full bg-red-500" style={{ width: `${zoneMax ? (z.members / zoneMax) * 100 : 0}%` }} />
                     </div>
-                    <span className="text-xs font-bold text-gray-900 w-8 text-right">{z.members}</span>
-                    <span className="text-[11px] text-amber-600 w-16 text-right">{z.leads} leads</span>
+                    <button
+                      onClick={() => z.members && setDetail({ zone: z, kind: 'member' })}
+                      disabled={!z.members}
+                      title={z.members ? 'See who' : 'No members in range'}
+                      className={`text-xs font-bold w-8 text-right ${z.members ? 'text-gray-900 hover:text-red-600 hover:underline' : 'text-gray-300 cursor-default'}`}>
+                      {z.members}
+                    </button>
+                    <button
+                      onClick={() => z.leads && setDetail({ zone: z, kind: 'lead' })}
+                      disabled={!z.leads}
+                      title={z.leads ? 'See who' : 'No leads in range'}
+                      className={`text-[11px] w-16 text-right ${z.leads ? 'text-amber-600 font-semibold hover:text-amber-700 hover:underline' : 'text-gray-300 cursor-default'}`}>
+                      {z.leads} leads
+                    </button>
                   </div>
                 ))}
               </div>
             )}
           </div>
+
+          {/* Who's in this zone — opened from the flyer-target counts */}
+          {detail && <ZonePeopleModal detail={detail} radiusMi={radiusMi} onClose={() => setDetail(null)} />}
 
           {addr?.missing > 0 && (
             <p className="text-xs text-gray-400">
