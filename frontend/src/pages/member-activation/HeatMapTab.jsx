@@ -1,6 +1,6 @@
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { MapContainer, TileLayer, CircleMarker, Circle, Marker, Popup, Tooltip, useMap, useMapEvents } from 'react-leaflet'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
 import { useStudio } from '@/contexts/StudioContext'
@@ -77,6 +77,18 @@ function FitToData({ points }) {
   return null
 }
 
+// Fly the map to a zone — driven by clicking a neighbourhood in "Flyer targets".
+// `target.n` changes on every click so re-picking the same zone still re-centres.
+function FlyToZone({ target }) {
+  const map = useMap()
+  useEffect(() => {
+    if (!target || target.lat == null || target.lng == null) return
+    const meters = Math.max(0.1, target.radiusMi || 0.25) * M_PER_MI
+    map.flyToBounds(L.latLng(target.lat, target.lng).toBounds(meters * 2.4), { duration: 0.7, maxZoom: 16 })
+  }, [target, map])
+  return null
+}
+
 // Who makes up a zone's member/lead count — opened by clicking the number.
 function ZonePeopleModal({ detail, radiusMi, onClose }) {
   const { zone, kind } = detail
@@ -141,6 +153,8 @@ export default function HeatMapTab() {
   const [showTypes, setShowTypes] = useState({ member: true, lead: true, missed_guest: true })
   const [radiusMi, setRadiusMi] = useState(0.5)
   const [detail, setDetail] = useState(null)    // { zone, kind: 'member' | 'lead' }
+  const [focusZone, setFocusZone] = useState(null)  // neighbourhood to centre the map on
+  const mapBoxRef = useRef(null)
   // Zone editing
   const [editMode, setEditMode] = useState(false)
   const [draft, setDraft] = useState(null)      // zone being edited/created (unsaved)
@@ -257,6 +271,12 @@ export default function HeatMapTab() {
   }, [addr, zones, radiusMi])
 
   const zoneMax = useMemo(() => zoneStats.reduce((m, z) => Math.max(m, z.members), 0), [zoneStats])
+
+  // Clicking a flyer target centres the address map on that neighbourhood.
+  const focusOnZone = (z) => {
+    setFocusZone(f => ({ id: z.id, lat: z.lat, lng: z.lng, radiusMi: zoneRadiusMi(z, radiusMi), n: (f?.n || 0) + 1 }))
+    mapBoxRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
 
   if (loading) return <div className="flex items-center justify-center h-64"><Loader2 size={26} className="animate-spin text-red-600" /></div>
 
@@ -503,10 +523,11 @@ export default function HeatMapTab() {
             </div>
           )}
 
-          <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+          <div ref={mapBoxRef} className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
             <div style={{ height: 520 }}>
               {/* preferCanvas keeps ~2k dots smooth without a clustering library */}
               <MapContainer center={DEFAULT_CENTER} zoom={12} style={{ height: '100%', width: '100%' }} scrollWheelZoom preferCanvas>
+                <FlyToZone target={focusZone} />
                 <TileLayer
                   attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                   url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -521,7 +542,9 @@ export default function HeatMapTab() {
                 {/* Canvassing zones underneath the dots */}
                 {zoneStats.filter(z => z.id !== draft?.id).map(z => (
                   <Circle key={z.id} center={[z.lat, z.lng]} radius={zoneRadiusMi(z, radiusMi) * M_PER_MI}
-                    pathOptions={{ color: z.type === 'apartment' ? '#7c3aed' : '#0ea5e9', weight: 1.5, fillOpacity: 0.06 }}
+                    pathOptions={focusZone?.id === z.id
+                      ? { color: '#dc2626', weight: 3, fillOpacity: 0.15 }
+                      : { color: z.type === 'apartment' ? '#7c3aed' : '#0ea5e9', weight: 1.5, fillOpacity: 0.06 }}
                     eventHandlers={{ click: () => { if (editMode) setDraft({ ...z, latitude: z.lat, longitude: z.lng }) } }}>
                     <Tooltip direction="top" opacity={0.95}>
                       <span className="text-xs">
@@ -584,17 +607,19 @@ export default function HeatMapTab() {
             <p className="text-xs text-gray-500 mb-3">
               Your canvassing zones ranked by how many members already live within {radiusMi} mi — proven demand.
               Lots of leads but few members can mean a conversion gap worth a drop.
+              <span className="text-gray-400"> Tap a name to jump to it on the map; tap a count to see who&apos;s in it.</span>
             </p>
             {zoneStats.length === 0 ? (
               <p className="text-sm text-gray-400">No canvassing zones with coordinates yet — add them in Canvassing.</p>
             ) : (
               <div className="space-y-1.5">
                 {zoneStats.slice(0, 15).map(z => (
-                  <div key={z.id} className="flex items-center gap-2">
-                    <span className="text-xs text-gray-700 flex-1 truncate">
+                  <div key={z.id} className={`flex items-center gap-2 rounded-md px-1 -mx-1 ${focusZone?.id === z.id ? 'bg-red-50' : ''}`}>
+                    <button onClick={() => focusOnZone(z)} title="Show this neighborhood on the map"
+                      className={`text-xs flex-1 truncate text-left hover:text-red-600 hover:underline ${focusZone?.id === z.id ? 'text-red-700 font-semibold' : 'text-gray-700'}`}>
                       {z.name}
                       {z.type === 'apartment' && <span className="ml-1.5 text-[10px] bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded">apts</span>}
-                    </span>
+                    </button>
                     <div className="w-28 h-2 bg-gray-100 rounded-full overflow-hidden">
                       <div className="h-full rounded-full bg-red-500" style={{ width: `${zoneMax ? (z.members / zoneMax) * 100 : 0}%` }} />
                     </div>
