@@ -796,7 +796,7 @@ function CoachingCard({ e, isOwner }) {
           <GoalBar label="EFT" prefix="$" goal={e.goal?.eft?.goal} actual={e.goal?.eft?.actual} />
         </div>
         <Stat label="Hours" value={e.hours} />
-        <Stat label="Cleaning / shift" value={e.cleaning_per_shift != null ? e.cleaning_per_shift : '—'} />
+        <Stat label="Avg cleaning tasks / shift" value={e.cleaning_per_shift != null ? e.cleaning_per_shift : '—'} />
         <Stat label="Marketing tasks" value={e.marketing_count} />
         <Stat label="B2B outreach" value={e.b2b_count} />
         <Stat label="Birthday outreach" value={e.birthday_outreach} />
