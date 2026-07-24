@@ -747,20 +747,27 @@ function CoachingChecklist({ userId }) {
 }
 
 function CoachingCard({ e, isOwner }) {
-  const band = BAND[e.severity_band] || BAND.slight
   const o = e.outreach || {}
+  const badge = e.status === 'negative' ? (BAND[e.severity_band] || BAND.slight)
+    : e.status === 'covered' ? { label: 'Covering cost', cls: 'bg-green-100 text-green-700 border-green-300' }
+    : { label: 'No pay rate set', cls: 'bg-gray-100 text-gray-500 border-gray-300' }
+  const ownerNet = isOwner && e.net_exact != null
+    ? (e.net_exact < 0
+        ? <span className="text-red-600 font-semibold"> · ${Math.abs(e.net_exact).toLocaleString()} under</span>
+        : <span className="text-green-700 font-semibold"> · ${e.net_exact.toLocaleString()} profit</span>)
+    : null
   return (
-    <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4">
+    <div className={`bg-white border rounded-xl shadow-sm p-4 ${e.status === 'negative' ? 'border-red-200' : 'border-gray-200'}`}>
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <div className="flex items-center gap-2">
             <h3 className="text-base font-bold text-gray-900">{e.name}</h3>
             <span className="text-[10px] uppercase font-semibold text-gray-400">{e.role}</span>
-            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${band.cls}`}>{band.label}</span>
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${badge.cls}`}>{badge.label}</span>
           </div>
           <p className="text-xs text-gray-500 mt-0.5">
-            Brought in <span className="font-bold text-gray-800">${e.revenue.toLocaleString()}</span>
-            {isOwner && e.deficit_exact != null && <span className="text-red-600 font-semibold"> · ${e.deficit_exact.toLocaleString()} under</span>}
+            Brought in <span className="font-bold text-gray-800">${e.revenue.toLocaleString()}</span> <TrendArrow dir={e.trend?.revenue} />
+            {ownerNet}
           </p>
         </div>
       </div>
@@ -771,12 +778,13 @@ function CoachingCard({ e, isOwner }) {
           <GoalBar label="Retail" prefix="$" goal={e.goal?.retail?.goal} actual={e.goal?.retail?.actual} />
           <GoalBar label="EFT" prefix="$" goal={e.goal?.eft?.goal} actual={e.goal?.eft?.actual} />
         </div>
-        <Stat label="Hours" value={e.hours} trend={e.trend?.hours} />
+        <Stat label="Hours" value={e.hours} />
         <Stat label="Cleaning on shift" value={e.cleaning_pct != null ? `${e.cleaning_pct}%` : '—'} />
         <Stat label="EOD submitted" value={e.eod_submission_rate != null ? `${e.eod_submission_rate}%` : '—'} />
         <Stat label="Marketing tasks" value={e.marketing_count} />
         <Stat label="B2B outreach" value={e.b2b_count} />
-        <Stat label="Saves (win-back)" value={e.cancellations_saved} />
+        <Stat label="Birthday outreach" value={e.birthday_outreach} />
+        <Stat label="Thank-you cards" value={e.thank_you_cards} />
       </div>
 
       <div className="mt-3 text-xs text-gray-600 bg-gray-50 rounded-lg px-3 py-2 flex flex-wrap gap-x-4 gap-y-1">
@@ -811,13 +819,12 @@ function TeamCoachingTab({ month, year, isOwner }) {
     <div className="space-y-4">
       <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 text-[12.5px] text-amber-800 flex items-start gap-2">
         <GraduationCap size={15} className="flex-shrink-0 mt-0.5 text-amber-600" />
-        <span>Reviewing <b>{rv ? `${MONTHS[rv.month - 1]} ${rv.year}` : 'last month'}</b> — team members whose revenue didn't cover their cost. {!isOwner && 'Exact dollars are visible to the owner; you see a severity band.'}</span>
+        <span>Everyone's results for <b>{rv ? `${MONTHS[rv.month - 1]} ${rv.year}` : 'last month'}</b> — sorted with anyone under cost first. {!isOwner && 'Exact dollars are visible to the owner; you see a cost-coverage band.'}</span>
       </div>
       {emps.length === 0 ? (
         <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
-          <p className="text-lg">🎉</p>
-          <p className="text-sm font-semibold text-gray-700 mt-1">Everyone covered their cost last month.</p>
-          <p className="text-xs text-gray-400 mt-1">Only staff with a pay rate set on Team ROI are evaluated.</p>
+          <p className="text-sm font-semibold text-gray-700">No team members to review yet.</p>
+          <p className="text-xs text-gray-400 mt-1">Add pay rates on Team ROI to see cost coverage.</p>
         </div>
       ) : emps.map(e => <CoachingCard key={e.user_id} e={e} isOwner={isOwner} />)}
     </div>
@@ -841,17 +848,48 @@ function SeasonalPrepTab({ month, year }) {
   const { currentStudio } = useStudio()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [thisNote, setThisNote] = useState('')
+  const [savingNote, setSavingNote] = useState(false)
   useEffect(() => {
     setLoading(true)
-    apiGet(`/api/monthly-planner/seasonal/${year}/${month}`).then(setData).catch(() => setData(null)).finally(() => setLoading(false))
+    apiGet(`/api/monthly-planner/seasonal/${year}/${month}`)
+      .then(r => { setData(r); setThisNote(r?.trends_notes?.this_year || '') })
+      .catch(() => setData(null)).finally(() => setLoading(false))
   }, [year, month, currentStudio?.id])
+  const saveNote = async () => {
+    setSavingNote(true)
+    try { await apiPut(`/api/monthly-planner/seasonal/${year}/${month}/notes`, { notes: thisNote }) } catch { /* ignore */ }
+    setSavingNote(false)
+  }
   if (loading) return <div className="flex justify-center py-16"><Loader2 className="animate-spin text-red-600" size={24} /></div>
   const d = data || { orders: [], maintenance: [], escalations: [] }
+  const lastNote = d.trends_notes?.last_year || ''
   return (
     <div className="space-y-4">
       <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-2.5 text-[12.5px] text-blue-800 flex items-start gap-2">
         <CalendarDays size={15} className="flex-shrink-0 mt-0.5 text-blue-500" />
         <span>What we ordered, fixed and escalated in <b>{MONTHS[month - 1]}</b> in past years — so we can prep. {d.note}</span>
+      </div>
+
+      {/* Reflections — last year's Studio Trends note to learn from + this year's to leave for next year */}
+      <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4">
+        <h3 className="text-sm font-bold text-gray-900 mb-2">Reflections for {MONTHS[month - 1]}</h3>
+        <div className="grid md:grid-cols-2 gap-4">
+          <div>
+            <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-1">{MONTHS[month - 1]} {year - 1} — last year&apos;s notes</p>
+            {lastNote
+              ? <p className="text-sm text-gray-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 whitespace-pre-line">{lastNote}</p>
+              : <p className="text-xs text-gray-400 italic">No notes were left for {MONTHS[month - 1]} {year - 1}.</p>}
+            <p className="text-[10px] text-gray-400 mt-1">Pulled from last year&apos;s Studio Trends notes.</p>
+          </div>
+          <div>
+            <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-1">{MONTHS[month - 1]} {year} — leave a note for next year</p>
+            <textarea value={thisNote} onChange={e => setThisNote(e.target.value)} onBlur={saveNote} rows={4}
+              placeholder="What changed this month? What worked, what to repeat or avoid next year…"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-500 resize-none" />
+            <p className="text-[10px] text-gray-400 mt-1">{savingNote ? 'Saving…' : 'Saves to this month’s Studio Trends notes — next year it shows on the left.'}</p>
+          </div>
+        </div>
       </div>
       <SeasonalList title="Orders" rows={d.orders} empty="No orders logged this month in prior years yet."
         render={r => <span className="flex-1 text-gray-700">{r.item_name}{r.quantity ? ` ×${r.quantity}` : ''}{r.vendor ? <span className="text-gray-400"> · {r.vendor}</span> : ''}{r.category ? <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded ml-1.5">{r.category}</span> : ''}</span>} />

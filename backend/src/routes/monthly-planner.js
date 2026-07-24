@@ -185,12 +185,17 @@ router.get('/coaching/:year/:month', ...GUARD, async (req, res) => {
     ])
     const totalHours = rows.reduce((s, r) => s + (r.hours || 0), 0)
     const prevBy = Object.fromEntries(prev.rows.map(r => [r.user_id, r]))
-    const flagged = rows.filter(r => r.has_rate && r.net < 0)
-    if (!flagged.length) return res.json({ reviewing: { year: py, month: pm }, is_owner: isOwner, employees: [] })
-    const ids = flagged.map(r => r.user_id)
+    // Show EVERY employee, worst-first: net-negative (most under first), then
+    // people with no pay rate set, then those covering their cost.
+    const all = [...rows].sort((a, b) => {
+      const g = (r) => !r.has_rate ? 1 : (r.net < 0 ? 0 : 2)
+      return g(a) - g(b) || a.net - b.net
+    })
+    if (!all.length) return res.json({ reviewing: { year: py, month: pm }, is_owner: isOwner, employees: [] })
+    const ids = all.map(r => r.user_id)
 
     // Bulk-load every per-person signal for the reviewed month (all scoped to the flagged set).
-    const [goalsRes, targetsRes, shiftsRes, eodRes, mktRes, b2bRes, terrRes, outreachRes, cancelRes, tpRes, cleanTasksRes, cleanCompRes] = await Promise.all([
+    const [goalsRes, targetsRes, shiftsRes, eodRes, mktRes, b2bRes, terrRes, outreachRes, recogRes, tpRes, cleanTasksRes, cleanCompRes] = await Promise.all([
       sb.from('personal_goals').select('tsa_id, pos_collected, retail_actual, eft_actual, sweat_basic, sweat_elite, total_memberships, calls_made, texts_made').eq('studio_id', sid).eq('month', pm).eq('year', py).in('tsa_id', ids),
       sb.from('studio_goals').select('memberships_target, retail_target, eft_target').eq('studio_id', sid).eq('month', pm).eq('year', py).maybeSingle(),
       sb.from('shifts').select('tsa_id, shift_date').eq('studio_id', sid).gte('shift_date', start).lte('shift_date', end).in('tsa_id', ids),
@@ -199,7 +204,7 @@ router.get('/coaching/:year/:month', ...GUARD, async (req, res) => {
       sb.from('b2b_interactions').select('logged_by').eq('studio_id', sid).gte('logged_at', `${start}T00:00:00Z`).lte('logged_at', `${end}T23:59:59.999Z`).in('logged_by', ids),
       sb.from('territory_visits').select('visited_by').eq('studio_id', sid).gte('visit_date', start).lte('visit_date', end).in('visited_by', ids),
       sb.from('outreach_logs').select('tsa_id, calls_made, texts_made').eq('studio_id', sid).gte('log_date', start).lte('log_date', end).in('tsa_id', ids),
-      sb.from('cancellation_log').select('handled_by').eq('studio_id', sid).eq('outcome', 'saved').gte('date_resolved', start).lte('date_resolved', end).in('handled_by', ids),
+      sb.from('onboarding_recognition_tasks').select('type, completed_by').eq('studio_id', sid).eq('status', 'completed').gte('completed_at', `${start}T00:00:00Z`).lte('completed_at', `${end}T23:59:59.999Z`).in('completed_by', ids),
       sb.from('onboarding_touchpoint_log').select('completed_by').eq('studio_id', sid).eq('done', true).gte('completed_at', `${start}T00:00:00Z`).lte('completed_at', `${end}T23:59:59.999Z`).in('completed_by', ids),
       sb.from('cleaning_tasks').select('*').eq('studio_id', sid).eq('active', true),
       sb.from('cleaning_completions').select('task_id, completion_date').eq('studio_id', sid).gte('completion_date', start).lte('completion_date', end),
@@ -212,16 +217,18 @@ router.get('/coaching/:year/:month', ...GUARD, async (req, res) => {
     const mktBy = countBy(mktRes.data || [], 'staff_id')
     const b2bBy = countBy(b2bRes.data || [], 'logged_by')
     const terrBy = countBy(terrRes.data || [], 'visited_by')
-    const cancelBy = countBy(cancelRes.data || [], 'handled_by')
+    const birthdayBy = countBy((recogRes.data || []).filter(r => r.type === 'birthday'), 'completed_by')
+    const thankyouBy = countBy((recogRes.data || []).filter(r => r.type === 'thank_you_card'), 'completed_by')
     const tpBy = countBy(tpRes.data || [], 'completed_by')
     const outreachBy = {}; for (const o of outreachRes.data || []) { const x = outreachBy[o.tsa_id] = outreachBy[o.tsa_id] || { c: 0, t: 0 }; x.c += o.calls_made || 0; x.t += o.texts_made || 0 }
     const activeTasks = cleanTasksRes.data || []
     const compByDate = {}; for (const c of cleanCompRes.data || []) (compByDate[c.completion_date] = compByDate[c.completion_date] || new Set()).add(c.task_id)
 
     const allocGoal = (target, hours) => (target != null && totalHours > 0) ? Math.round(Number(target) * (hours / totalHours)) : null
-    const employees = flagged.map(r => {
+    const employees = all.map(r => {
       const g = goalsBy[r.user_id] || {}
       const deficit = Math.round(-r.net * 100) / 100
+      const status = !r.has_rate ? 'no_rate' : (r.net < 0 ? 'negative' : 'covered')
       const dates = uniq(shiftDatesBy[r.user_id] || [])
       // Cleaning coverage on the days they worked (shared credit across staff on-shift).
       let due = 0, doneC = 0
@@ -233,8 +240,9 @@ router.get('/coaching/:year/:month', ...GUARD, async (req, res) => {
       return {
         user_id: r.user_id, name: r.name, role: r.role,
         revenue: r.revenue,
-        severity_band: bandFor(deficit),
-        ...(isOwner ? { deficit_exact: deficit } : {}),
+        status,                                          // 'negative' | 'covered' | 'no_rate'
+        severity_band: status === 'negative' ? bandFor(deficit) : null,
+        ...(isOwner && r.has_rate ? { net_exact: r.net } : {}),   // signed; owner sees pay anyway
         goal: {
           members: { goal: allocGoal(targets.memberships_target, r.hours), actual: memActual },
           retail:  { goal: allocGoal(targets.retail_target, r.hours),      actual: Math.round(Number(g.retail_actual) || 0) },
@@ -249,11 +257,11 @@ router.get('/coaching/:year/:month', ...GUARD, async (req, res) => {
           sail_calls: Number(g.calls_made) || 0, sail_texts: Number(g.texts_made) || 0,
         },
         eod_submission_rate: dates.length ? Math.round((eodDates.length / dates.length) * 100) : null,
-        cancellations_saved: cancelBy[r.user_id] || 0,
+        birthday_outreach: birthdayBy[r.user_id] || 0,
+        thank_you_cards: thankyouBy[r.user_id] || 0,
         trend: {
-          revenue: dir(r.revenue, pr.revenue),
-          hours: dir(r.hours, pr.hours),
-          outreach: dir(oc.c + oc.t, 0),   // team-hub calls/texts vs none last month (SAIL is monthly-only)
+          revenue: dir(r.revenue, pr.revenue),          // this month's revenue vs the month before
+          outreach: dir(r.outreach, pr.outreach),        // SAIL calls+texts vs the month before
         },
       }
     })
@@ -326,10 +334,12 @@ router.get('/seasonal/:year/:month', ...GUARD, async (req, res) => {
   const latest = `${year}-${mm}-${new Date(year, month, 0).getDate()}`   // include this year's same month if past
   const inMonth = (created) => { const c = String(created).slice(0, 7); return c.slice(5) === mm }
   try {
-    const [ord, mnt, esc] = await Promise.all([
+    const [ord, mnt, esc, thisNote, lastNote] = await Promise.all([
       sb.from('orders').select('item_name, quantity, category, vendor, est_cost, status, created_at').eq('studio_id', sid).gte('created_at', earliest).lte('created_at', `${latest}T23:59:59.999Z`),
       sb.from('maintenance_logs').select('title, area, priority, status, created_at').eq('studio_id', sid).gte('created_at', earliest).lte('created_at', `${latest}T23:59:59.999Z`),
       sb.from('escalation_logs').select('title, type, member_name, priority, status, created_at').eq('studio_id', sid).gte('created_at', earliest).lte('created_at', `${latest}T23:59:59.999Z`),
+      sb.from('studio_trends').select('manager_notes, updated_at').eq('studio_id', sid).eq('year', year).eq('month', month).maybeSingle(),
+      sb.from('studio_trends').select('manager_notes, updated_at').eq('studio_id', sid).eq('year', year - 1).eq('month', month).maybeSingle(),
     ])
     const shape = (rows) => (rows || []).filter(r => inMonth(r.created_at))
       .map(r => ({ ...r, year: Number(String(r.created_at).slice(0, 4)) }))
@@ -337,10 +347,38 @@ router.get('/seasonal/:year/:month', ...GUARD, async (req, res) => {
     res.json({
       month, current_year: year,
       orders: shape(ord.data), maintenance: shape(mnt.data), escalations: shape(esc.data),
+      // The Studio Trends "manager notes" for this month — last year's to reflect on,
+      // this year's to leave for next year.
+      trends_notes: {
+        this_year: thisNote.data?.manager_notes || '',
+        last_year: lastNote.data?.manager_notes || '',
+      },
       note: 'History accumulates over time — prior-year data starts May 2026.',
     })
   } catch (err) {
     console.error('GET /monthly-planner/seasonal', err)
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// PUT /api/monthly-planner/seasonal/:year/:month/notes — save this month's Studio
+// Trends manager_notes (leave a reflection for next year). Update-or-insert so it
+// never nulls the month's other trends fields.
+router.put('/seasonal/:year/:month/notes', ...GUARD, async (req, res) => {
+  const year = parseInt(req.params.year), month = parseInt(req.params.month)
+  if (!year || !month || month < 1 || month > 12) return res.status(400).json({ error: 'Invalid year/month' })
+  const notes = typeof req.body?.notes === 'string' ? req.body.notes : ''
+  const sb = supabase(), sid = req.studio.id
+  try {
+    const { data: existing } = await sb.from('studio_trends').select('id').eq('studio_id', sid).eq('year', year).eq('month', month).maybeSingle()
+    if (existing) {
+      await sb.from('studio_trends').update({ manager_notes: notes, updated_by: req.user.id, updated_at: new Date().toISOString() }).eq('id', existing.id)
+    } else {
+      await sb.from('studio_trends').insert({ studio_id: sid, year, month, manager_notes: notes, updated_by: req.user.id })
+    }
+    res.json({ ok: true })
+  } catch (err) {
+    console.error('PUT /monthly-planner/seasonal/notes', err)
     res.status(500).json({ error: err.message })
   }
 })
