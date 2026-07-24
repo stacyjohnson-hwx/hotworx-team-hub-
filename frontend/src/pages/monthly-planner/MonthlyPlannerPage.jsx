@@ -751,11 +751,9 @@ function CoachingCard({ e, isOwner }) {
   const badge = e.status === 'negative' ? (BAND[e.severity_band] || BAND.slight)
     : e.status === 'covered' ? { label: 'Covering cost', cls: 'bg-green-100 text-green-700 border-green-300' }
     : { label: 'No pay rate set', cls: 'bg-gray-100 text-gray-500 border-gray-300' }
-  const ownerNet = isOwner && e.net_exact != null
-    ? (e.net_exact < 0
-        ? <span className="text-red-600 font-semibold"> · ${Math.abs(e.net_exact).toLocaleString()} under</span>
-        : <span className="text-green-700 font-semibold"> · ${e.net_exact.toLocaleString()} profit</span>)
-    : null
+  const revDelta = e.revenue_prev != null ? Math.round(e.revenue - e.revenue_prev) : null
+  const cost = isOwner && e.net_exact != null ? Math.round((e.revenue - e.net_exact) * 100) / 100 : null
+  const money = (n) => `$${Math.abs(n).toLocaleString()}`
   return (
     <div className={`bg-white border rounded-xl shadow-sm p-4 ${e.status === 'negative' ? 'border-red-200' : 'border-gray-200'}`}>
       <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -765,10 +763,29 @@ function CoachingCard({ e, isOwner }) {
             <span className="text-[10px] uppercase font-semibold text-gray-400">{e.role}</span>
             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${badge.cls}`}>{badge.label}</span>
           </div>
-          <p className="text-xs text-gray-500 mt-0.5">
-            Brought in <span className="font-bold text-gray-800">${e.revenue.toLocaleString()}</span> <TrendArrow dir={e.trend?.revenue} />
-            {ownerNet}
-          </p>
+          <div className="mt-1">
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-xs text-gray-500">Brought in</span>
+              <span className="text-lg font-bold text-gray-900 leading-none">${e.revenue.toLocaleString()}</span>
+            </div>
+            {revDelta != null && (
+              <div className="text-[11px] font-semibold flex items-center gap-1 mt-0.5">
+                <TrendArrow dir={e.trend?.revenue} />
+                <span className={revDelta > 0 ? 'text-green-600' : revDelta < 0 ? 'text-red-600' : 'text-gray-400'}>
+                  {revDelta > 0 ? '+' : revDelta < 0 ? '−' : ''}{money(revDelta)}
+                </span>
+                <span className="text-gray-400 font-normal">vs prior month</span>
+              </div>
+            )}
+            {isOwner && cost != null && (
+              <div className="text-[11px] text-gray-600 mt-1">
+                {money(e.revenue)} revenue − {money(cost)} cost ={' '}
+                {e.net_exact < 0
+                  ? <span className="text-red-600 font-bold">{money(e.net_exact)} under</span>
+                  : <span className="text-green-700 font-bold">{money(e.net_exact)} profit</span>}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -779,7 +796,7 @@ function CoachingCard({ e, isOwner }) {
           <GoalBar label="EFT" prefix="$" goal={e.goal?.eft?.goal} actual={e.goal?.eft?.actual} />
         </div>
         <Stat label="Hours" value={e.hours} />
-        <Stat label="Cleaning on shift" value={e.cleaning_pct != null ? `${e.cleaning_pct}%` : '—'} />
+        <Stat label="Cleaning / shift" value={e.cleaning_per_shift != null ? e.cleaning_per_shift : '—'} />
         <Stat label="Marketing tasks" value={e.marketing_count} />
         <Stat label="B2B outreach" value={e.b2b_count} />
         <Stat label="Birthday outreach" value={e.birthday_outreach} />
