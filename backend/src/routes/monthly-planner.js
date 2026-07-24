@@ -167,6 +167,34 @@ const bandFor = (deficit) => deficit >= 800 ? 'deep' : deficit >= 250 ? 'under' 
 const dir = (now, was) => { const a = Number(now) || 0, b = Number(was) || 0; return a > b * 1.02 ? 'up' : a < b * 0.98 ? 'down' : 'flat' }
 const uniq = (arr) => [...new Set(arr)]
 
+// Gather every per-person coaching metric for one month → { userId: {...metrics} }.
+// Called for the reviewed month and the month before it so we can trend each metric.
+async function gatherCoachingExtras(sb, sid, month, year, ids) {
+  const mm = String(month).padStart(2, '0')
+  const lastDay = new Date(year, month, 0).getDate()
+  const start = `${year}-${mm}-01`, end = `${year}-${mm}-${String(lastDay).padStart(2, '0')}`
+  const [goalsRes, shiftsRes, eodRes, mktRes, b2bRes, terrRes, cleanRes] = await Promise.all([
+    sb.from('personal_goals').select('tsa_id, retail_actual, eft_actual, sweat_basic, sweat_elite, total_memberships, calls_made, texts_made').eq('studio_id', sid).eq('month', month).eq('year', year).in('tsa_id', ids),
+    sb.from('shifts').select('tsa_id').eq('studio_id', sid).gte('shift_date', start).lte('shift_date', end).in('tsa_id', ids),
+    sb.from('eod_submissions').select('submitted_by, outreach_birthday, outreach_thank_you, outreach_missed_guest, outreach_reengage14, outreach_milestones, outreach_new_member, phone_calls, sms_sent').eq('studio_id', sid).gte('shift_date', start).lte('shift_date', end).in('submitted_by', ids),
+    sb.from('marketing_task_completions').select('staff_id').eq('studio_id', sid).gte('completion_date', start).lte('completion_date', end).in('staff_id', ids),
+    sb.from('b2b_interactions').select('logged_by').eq('studio_id', sid).gte('logged_at', `${start}T00:00:00Z`).lte('logged_at', `${end}T23:59:59.999Z`).in('logged_by', ids),
+    sb.from('territory_visits').select('visited_by').eq('studio_id', sid).gte('visit_date', start).lte('visit_date', end).in('visited_by', ids),
+    sb.from('cleaning_completions').select('completed_by').eq('studio_id', sid).gte('completion_date', start).lte('completion_date', end).in('completed_by', ids),
+  ])
+  const by = {}
+  const E = (u) => (by[u] = by[u] || { members: 0, retail: 0, eft: 0, shifts: 0, clean: 0, marketing: 0, b2b: 0, birthday: 0, thank_you: 0, missed_guest: 0, reengage: 0, milestones: 0, new_member: 0, calls: 0, texts: 0, sail_calls: 0, sail_texts: 0 })
+  for (const g of goalsRes.data || []) { const x = E(g.tsa_id); x.members = (Number(g.sweat_basic) || 0) + (Number(g.sweat_elite) || 0) || (Number(g.total_memberships) || 0); x.retail = Math.round(Number(g.retail_actual) || 0); x.eft = Math.round(Number(g.eft_actual) || 0); x.sail_calls = Number(g.calls_made) || 0; x.sail_texts = Number(g.texts_made) || 0 }
+  for (const s of shiftsRes.data || []) E(s.tsa_id).shifts++
+  for (const e of eodRes.data || []) { const x = E(e.submitted_by); x.birthday += e.outreach_birthday || 0; x.thank_you += e.outreach_thank_you || 0; x.missed_guest += e.outreach_missed_guest || 0; x.reengage += e.outreach_reengage14 || 0; x.milestones += e.outreach_milestones || 0; x.new_member += e.outreach_new_member || 0; x.calls += e.phone_calls || 0; x.texts += e.sms_sent || 0 }
+  for (const m of mktRes.data || []) E(m.staff_id).marketing++
+  for (const b of b2bRes.data || []) E(b.logged_by).b2b++
+  for (const t of terrRes.data || []) E(t.visited_by).b2b++
+  for (const c of cleanRes.data || []) if (c.completed_by) E(c.completed_by).clean++
+  for (const u of Object.keys(by)) { const x = by[u]; x.member_touches = x.birthday + x.thank_you + x.missed_guest + x.reengage + x.milestones + x.new_member; x.cleaning_per_shift = x.shifts > 0 ? Math.round((x.clean / x.shifts) * 10) / 10 : null }
+  return by
+}
+
 router.get('/coaching/:year/:month', ...GUARD, async (req, res) => {
   const year = parseInt(req.params.year), month = parseInt(req.params.month)
   if (!year || !month || month < 1 || month > 12) return res.status(400).json({ error: 'Invalid year/month' })
@@ -198,80 +226,57 @@ router.get('/coaching/:year/:month', ...GUARD, async (req, res) => {
     if (!all.length) return res.json({ reviewing: { year: py, month: pm }, is_owner: isOwner, employees: [] })
     const ids = all.map(r => r.user_id)
 
-    // Bulk-load every per-person signal for the reviewed month. Member outreach comes
-    // from each person's own EOD submissions (submitted_by) — the authoritative
-    // per-person self-report — since touchpoint/recognition logs are mostly logged
-    // under one desk login and don't attribute to the individual.
-    const [goalsRes, targetsRes, shiftsRes, eodRes, mktRes, b2bRes, terrRes, cleanCompRes] = await Promise.all([
-      sb.from('personal_goals').select('tsa_id, pos_collected, retail_actual, eft_actual, sweat_basic, sweat_elite, total_memberships, calls_made, texts_made').eq('studio_id', sid).eq('month', pm).eq('year', py).in('tsa_id', ids),
+    // Every per-person metric for the reviewed month AND the month before it, so
+    // each metric can show whether it went up or down.
+    const [now, before, targetsRes] = await Promise.all([
+      gatherCoachingExtras(sb, sid, pm, py, ids),
+      gatherCoachingExtras(sb, sid, p2.month, p2.year, ids),
       sb.from('studio_goals').select('memberships_target, retail_target, eft_target').eq('studio_id', sid).eq('month', pm).eq('year', py).maybeSingle(),
-      sb.from('shifts').select('tsa_id, shift_date').eq('studio_id', sid).gte('shift_date', start).lte('shift_date', end).in('tsa_id', ids),
-      sb.from('eod_submissions').select('submitted_by, shift_date, outreach_birthday, outreach_thank_you, outreach_missed_guest, outreach_reengage14, outreach_milestones, outreach_new_member, phone_calls, sms_sent').eq('studio_id', sid).gte('shift_date', start).lte('shift_date', end).in('submitted_by', ids),
-      sb.from('marketing_task_completions').select('staff_id').eq('studio_id', sid).gte('completion_date', start).lte('completion_date', end).in('staff_id', ids),
-      sb.from('b2b_interactions').select('logged_by').eq('studio_id', sid).gte('logged_at', `${start}T00:00:00Z`).lte('logged_at', `${end}T23:59:59.999Z`).in('logged_by', ids),
-      sb.from('territory_visits').select('visited_by').eq('studio_id', sid).gte('visit_date', start).lte('visit_date', end).in('visited_by', ids),
-      sb.from('cleaning_completions').select('completed_by').eq('studio_id', sid).gte('completion_date', start).lte('completion_date', end).in('completed_by', ids),
     ])
-    const goalsBy = Object.fromEntries((goalsRes.data || []).map(g => [g.tsa_id, g]))
     const targets = targetsRes.data || {}
-    const shiftDatesBy = {}; for (const s of shiftsRes.data || []) (shiftDatesBy[s.tsa_id] = shiftDatesBy[s.tsa_id] || []).push(s.shift_date)
-    // Per-person EOD sums: member-outreach categories + calls/texts, and shift dates.
-    const eodDatesBy = {}, eodOutBy = {}
-    for (const e of eodRes.data || []) {
-      (eodDatesBy[e.submitted_by] = eodDatesBy[e.submitted_by] || []).push(e.shift_date)
-      const x = eodOutBy[e.submitted_by] = eodOutBy[e.submitted_by] || { birthday: 0, thank_you: 0, missed_guest: 0, reengage: 0, milestones: 0, new_member: 0, calls: 0, texts: 0 }
-      x.birthday += e.outreach_birthday || 0; x.thank_you += e.outreach_thank_you || 0
-      x.missed_guest += e.outreach_missed_guest || 0; x.reengage += e.outreach_reengage14 || 0
-      x.milestones += e.outreach_milestones || 0; x.new_member += e.outreach_new_member || 0
-      x.calls += e.phone_calls || 0; x.texts += e.sms_sent || 0
-    }
-    const countBy = (arr, key) => arr.reduce((m, r) => { m[r[key]] = (m[r[key]] || 0) + 1; return m }, {})
-    const mktBy = countBy(mktRes.data || [], 'staff_id')
-    const b2bBy = countBy(b2bRes.data || [], 'logged_by')
-    const terrBy = countBy(terrRes.data || [], 'visited_by')
-    const cleanBy = countBy(cleanCompRes.data || [], 'completed_by')   // tasks each person personally checked off
-
     const allocGoal = (target, hours) => (target != null && totalHours > 0) ? Math.round(Number(target) * (hours / totalHours)) : null
+    const num = (o, k) => Number(o?.[k]) || 0
+
     const employees = all.map(r => {
-      const g = goalsBy[r.user_id] || {}
+      const n = now[r.user_id] || {}, p = before[r.user_id] || {}
+      const pr = prevBy[r.user_id] || {}
       const deficit = Math.round(-r.net * 100) / 100
       const status = !r.has_rate ? 'no_rate' : (r.net < 0 ? 'negative' : 'covered')
-      const dates = uniq(shiftDatesBy[r.user_id] || [])
-      const shiftCount = (shiftDatesBy[r.user_id] || []).length     // number of shifts worked
-      const cleanDone = cleanBy[r.user_id] || 0                     // tasks they personally completed
-      const eodDates = uniq(eodDatesBy[r.user_id] || []).filter(d => dates.includes(d))
-      const memActual = (Number(g.sweat_basic) || 0) + (Number(g.sweat_elite) || 0) || (Number(g.total_memberships) || 0)
-      const eo = eodOutBy[r.user_id] || { birthday: 0, thank_you: 0, missed_guest: 0, reengage: 0, milestones: 0, new_member: 0, calls: 0, texts: 0 }
-      const pr = prevBy[r.user_id] || {}
+      const t = (k) => dir(num(n, k), num(p, k))   // trend for a gathered metric
       return {
         user_id: r.user_id, name: r.name, role: r.role,
         revenue: r.revenue,
-        revenue_prev: pr.revenue != null ? pr.revenue : null,   // prior month, to show the $ change
-        status,                                          // 'negative' | 'covered' | 'no_rate'
+        revenue_prev: pr.revenue != null ? pr.revenue : null,
+        status,
         severity_band: status === 'negative' ? bandFor(deficit) : null,
-        ...(isOwner && r.has_rate ? { net_exact: r.net } : {}),   // signed; owner sees pay anyway
+        ...(isOwner && r.has_rate ? { net_exact: r.net } : {}),
         goal: {
-          members: { goal: allocGoal(targets.memberships_target, r.hours), actual: memActual },
-          retail:  { goal: allocGoal(targets.retail_target, r.hours),      actual: Math.round(Number(g.retail_actual) || 0) },
-          eft:     { goal: allocGoal(targets.eft_target, r.hours),         actual: Math.round(Number(g.eft_actual) || 0) },
+          members: { goal: allocGoal(targets.memberships_target, r.hours), actual: num(n, 'members') },
+          retail:  { goal: allocGoal(targets.retail_target, r.hours),      actual: num(n, 'retail') },
+          eft:     { goal: allocGoal(targets.eft_target, r.hours),         actual: num(n, 'eft') },
         },
         hours: r.hours,
-        cleaning_total: cleanDone,
-        cleaning_per_shift: shiftCount > 0 ? Math.round((cleanDone / shiftCount) * 10) / 10 : null,
-        marketing_count: mktBy[r.user_id] || 0,
-        b2b_count: (b2bBy[r.user_id] || 0) + (terrBy[r.user_id] || 0),
+        cleaning_per_shift: n.cleaning_per_shift ?? null,
+        cleaning_total: num(n, 'clean'),
+        marketing_count: num(n, 'marketing'),
+        b2b_count: num(n, 'b2b'),
+        birthday_outreach: num(n, 'birthday'),
+        thank_you_cards: num(n, 'thank_you'),
         outreach: {
-          calls: eo.calls, texts: eo.texts,
-          missed_guest: eo.missed_guest, new_member: eo.new_member, reengage: eo.reengage, milestones: eo.milestones,
-          member_touches: eo.birthday + eo.thank_you + eo.missed_guest + eo.reengage + eo.milestones + eo.new_member,
-          sail_calls: Number(g.calls_made) || 0, sail_texts: Number(g.texts_made) || 0,
+          calls: num(n, 'calls'), texts: num(n, 'texts'),
+          missed_guest: num(n, 'missed_guest'), new_member: num(n, 'new_member'), reengage: num(n, 'reengage'), milestones: num(n, 'milestones'),
+          member_touches: num(n, 'member_touches'),
+          sail_calls: num(n, 'sail_calls'), sail_texts: num(n, 'sail_texts'),
         },
-        eod_submission_rate: dates.length ? Math.round((eodDates.length / dates.length) * 100) : null,
-        birthday_outreach: eo.birthday,
-        thank_you_cards: eo.thank_you,
+        // Direction vs the month before, per metric.
         trend: {
-          revenue: dir(r.revenue, pr.revenue),          // this month's revenue vs the month before
-          outreach: dir(r.outreach, pr.outreach),        // SAIL calls+texts vs the month before
+          revenue: dir(r.revenue, pr.revenue),
+          hours: dir(r.hours, pr.hours),
+          members: t('members'), retail: t('retail'), eft: t('eft'),
+          cleaning: dir(num(n, 'cleaning_per_shift'), num(p, 'cleaning_per_shift')),
+          marketing: t('marketing'), b2b: t('b2b'),
+          birthday: t('birthday'), thank_you: t('thank_you'),
+          member_touches: t('member_touches'), calls: t('calls'), texts: t('texts'),
         },
       }
     })

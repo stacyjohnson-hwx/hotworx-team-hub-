@@ -669,13 +669,13 @@ const TrendArrow = ({ dir }) => dir === 'up'
   : dir === 'down' ? <span className="text-red-600" title="Down vs prior month">▼</span>
   : <span className="text-gray-300" title="Flat">–</span>
 
-function GoalBar({ label, goal, actual, prefix = '' }) {
+function GoalBar({ label, goal, actual, prefix = '', trend }) {
   const pct = goal > 0 ? Math.min(100, Math.round((actual / goal) * 100)) : null
   const hit = goal != null && actual >= goal
   return (
     <div>
       <div className="flex justify-between text-[11px] mb-0.5">
-        <span className="text-gray-500">{label}</span>
+        <span className="text-gray-500">{label} <TrendArrow dir={trend} /></span>
         <span className={`font-semibold ${hit ? 'text-green-700' : 'text-gray-800'}`}>{prefix}{actual}{goal != null ? <span className="text-gray-400 font-normal"> / {prefix}{goal}</span> : <span className="text-gray-300"> · no goal</span>}</span>
       </div>
       <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
@@ -791,22 +791,22 @@ function CoachingCard({ e, isOwner }) {
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5 mt-3">
         <div className="col-span-2 md:col-span-3 grid grid-cols-3 gap-2.5">
-          <GoalBar label="New members" goal={e.goal?.members?.goal} actual={e.goal?.members?.actual} />
-          <GoalBar label="Retail" prefix="$" goal={e.goal?.retail?.goal} actual={e.goal?.retail?.actual} />
-          <GoalBar label="EFT" prefix="$" goal={e.goal?.eft?.goal} actual={e.goal?.eft?.actual} />
+          <GoalBar label="New members" goal={e.goal?.members?.goal} actual={e.goal?.members?.actual} trend={e.trend?.members} />
+          <GoalBar label="Retail" prefix="$" goal={e.goal?.retail?.goal} actual={e.goal?.retail?.actual} trend={e.trend?.retail} />
+          <GoalBar label="EFT" prefix="$" goal={e.goal?.eft?.goal} actual={e.goal?.eft?.actual} trend={e.trend?.eft} />
         </div>
         <Stat label="Hours" value={e.hours} />
-        <Stat label="Avg cleaning tasks / shift" value={e.cleaning_per_shift != null ? e.cleaning_per_shift : '—'} />
-        <Stat label="Marketing tasks" value={e.marketing_count} />
-        <Stat label="B2B outreach" value={e.b2b_count} />
-        <Stat label="Birthday outreach" value={e.birthday_outreach} />
-        <Stat label="Thank-you cards" value={e.thank_you_cards} />
+        <Stat label="Avg cleaning tasks / shift" value={e.cleaning_per_shift != null ? e.cleaning_per_shift : '—'} trend={e.trend?.cleaning} />
+        <Stat label="Marketing tasks" value={e.marketing_count} trend={e.trend?.marketing} />
+        <Stat label="B2B outreach" value={e.b2b_count} trend={e.trend?.b2b} />
+        <Stat label="Birthday outreach" value={e.birthday_outreach} trend={e.trend?.birthday} />
+        <Stat label="Thank-you cards" value={e.thank_you_cards} trend={e.trend?.thank_you} />
       </div>
 
       <div className="mt-3 text-xs text-gray-600 bg-gray-50 rounded-lg px-3 py-2 space-y-1">
         <div className="flex flex-wrap gap-x-3 gap-y-1">
           <span className="font-bold text-gray-700">Member outreach</span>
-          <span className="font-semibold">{o.member_touches} touches</span>
+          <span className="font-semibold">{o.member_touches} touches <TrendArrow dir={e.trend?.member_touches} /></span>
           <span className="text-gray-400">·</span>
           <span>{o.missed_guest} missed-guest</span>
           <span>{o.new_member} new-member</span>
@@ -814,7 +814,7 @@ function CoachingCard({ e, isOwner }) {
           <span>{o.reengage} re-engage</span>
         </div>
         <div className="flex flex-wrap gap-x-3 gap-y-1 pt-1 border-t border-gray-100">
-          <span>{o.calls} calls · {o.texts} texts</span>
+          <span>{o.calls} calls <TrendArrow dir={e.trend?.calls} /> · {o.texts} texts <TrendArrow dir={e.trend?.texts} /></span>
           <span className="text-gray-400">|</span>
           <span className="text-gray-500">SAIL: {o.sail_calls} calls · {o.sail_texts} texts</span>
         </div>
