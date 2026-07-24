@@ -148,7 +148,7 @@ router.post('/:year/:month/review', ...GUARD, async (req, res) => {
 // Reviews the PREVIOUS month and surfaces employees who ran net-negative on Team
 // ROI, with the coaching signals. PAY-SAFE: never returns cost/wage/commission;
 // managers get a severity band only, the owner also gets the exact deficit.
-const { computeRoiRows, studioTeam } = require('./labor')
+const { computeRoiRows } = require('./labor')
 
 // Cleaning "task active on date" rule (mirrors scorecard.js).
 function cleaningActiveOnDate(task, dateStr) {
@@ -181,9 +181,11 @@ router.get('/coaching/:year/:month', ...GUARD, async (req, res) => {
   const start = `${py}-${mm}-01`, end = `${py}-${mm}-${String(lastDay).padStart(2, '0')}`
 
   try {
+    // Full month (not month-to-date) — a coaching review looks at the whole month,
+    // even if you're planning while it's still in progress.
     const [{ rows }, prev] = await Promise.all([
-      computeRoiRows(sb, sid, pm, py),
-      computeRoiRows(sb, sid, p2.month, p2.year),
+      computeRoiRows(sb, sid, pm, py, { fullMonth: true }),
+      computeRoiRows(sb, sid, p2.month, p2.year, { fullMonth: true }),
     ])
     const totalHours = rows.reduce((s, r) => s + (r.hours || 0), 0)
     const prevBy = Object.fromEntries(prev.rows.map(r => [r.user_id, r]))
@@ -195,42 +197,38 @@ router.get('/coaching/:year/:month', ...GUARD, async (req, res) => {
     })
     if (!all.length) return res.json({ reviewing: { year: py, month: pm }, is_owner: isOwner, employees: [] })
     const ids = all.map(r => r.user_id)
-    // completed_by on touchpoint/recognition rows is an EMAIL (or occasionally a
-    // user id), so match on both and resolve back to the user id.
-    const team = await studioTeam(sb, sid)
-    const emailById = Object.fromEntries(team.map(t => [t.id, t.email]))
-    const idByEmail = Object.fromEntries(team.map(t => [t.email, t.id]))
-    const idSet = new Set(ids)
-    const cbKeys = [...ids, ...ids.map(id => emailById[id]).filter(Boolean)]
-    const resolveCb = (cb) => idByEmail[cb] || (idSet.has(cb) ? cb : null)
 
-    // Bulk-load every per-person signal for the reviewed month (all scoped to the flagged set).
-    const [goalsRes, targetsRes, shiftsRes, eodRes, mktRes, b2bRes, terrRes, outreachRes, recogRes, tpRes, cleanCompRes] = await Promise.all([
+    // Bulk-load every per-person signal for the reviewed month. Member outreach comes
+    // from each person's own EOD submissions (submitted_by) — the authoritative
+    // per-person self-report — since touchpoint/recognition logs are mostly logged
+    // under one desk login and don't attribute to the individual.
+    const [goalsRes, targetsRes, shiftsRes, eodRes, mktRes, b2bRes, terrRes, cleanCompRes] = await Promise.all([
       sb.from('personal_goals').select('tsa_id, pos_collected, retail_actual, eft_actual, sweat_basic, sweat_elite, total_memberships, calls_made, texts_made').eq('studio_id', sid).eq('month', pm).eq('year', py).in('tsa_id', ids),
       sb.from('studio_goals').select('memberships_target, retail_target, eft_target').eq('studio_id', sid).eq('month', pm).eq('year', py).maybeSingle(),
       sb.from('shifts').select('tsa_id, shift_date').eq('studio_id', sid).gte('shift_date', start).lte('shift_date', end).in('tsa_id', ids),
-      sb.from('eod_submissions').select('submitted_by, shift_date').eq('studio_id', sid).gte('shift_date', start).lte('shift_date', end).in('submitted_by', ids),
+      sb.from('eod_submissions').select('submitted_by, shift_date, outreach_birthday, outreach_thank_you, outreach_missed_guest, outreach_reengage14, outreach_milestones, outreach_new_member, phone_calls, sms_sent').eq('studio_id', sid).gte('shift_date', start).lte('shift_date', end).in('submitted_by', ids),
       sb.from('marketing_task_completions').select('staff_id').eq('studio_id', sid).gte('completion_date', start).lte('completion_date', end).in('staff_id', ids),
       sb.from('b2b_interactions').select('logged_by').eq('studio_id', sid).gte('logged_at', `${start}T00:00:00Z`).lte('logged_at', `${end}T23:59:59.999Z`).in('logged_by', ids),
       sb.from('territory_visits').select('visited_by').eq('studio_id', sid).gte('visit_date', start).lte('visit_date', end).in('visited_by', ids),
-      sb.from('outreach_logs').select('tsa_id, calls_made, texts_made').gte('log_date', start).lte('log_date', end).in('tsa_id', ids),
-      sb.from('onboarding_recognition_tasks').select('type, completed_by').eq('studio_id', sid).eq('status', 'completed').gte('completed_at', `${start}T00:00:00Z`).lte('completed_at', `${end}T23:59:59.999Z`).in('completed_by', cbKeys),
-      sb.from('onboarding_touchpoint_log').select('completed_by').eq('studio_id', sid).eq('done', true).gte('completed_at', `${start}T00:00:00Z`).lte('completed_at', `${end}T23:59:59.999Z`).in('completed_by', cbKeys),
       sb.from('cleaning_completions').select('completed_by').eq('studio_id', sid).gte('completion_date', start).lte('completion_date', end).in('completed_by', ids),
     ])
     const goalsBy = Object.fromEntries((goalsRes.data || []).map(g => [g.tsa_id, g]))
     const targets = targetsRes.data || {}
     const shiftDatesBy = {}; for (const s of shiftsRes.data || []) (shiftDatesBy[s.tsa_id] = shiftDatesBy[s.tsa_id] || []).push(s.shift_date)
-    const eodDatesBy = {}; for (const e of eodRes.data || []) (eodDatesBy[e.submitted_by] = eodDatesBy[e.submitted_by] || []).push(e.shift_date)
+    // Per-person EOD sums: member-outreach categories + calls/texts, and shift dates.
+    const eodDatesBy = {}, eodOutBy = {}
+    for (const e of eodRes.data || []) {
+      (eodDatesBy[e.submitted_by] = eodDatesBy[e.submitted_by] || []).push(e.shift_date)
+      const x = eodOutBy[e.submitted_by] = eodOutBy[e.submitted_by] || { birthday: 0, thank_you: 0, missed_guest: 0, reengage: 0, milestones: 0, new_member: 0, calls: 0, texts: 0 }
+      x.birthday += e.outreach_birthday || 0; x.thank_you += e.outreach_thank_you || 0
+      x.missed_guest += e.outreach_missed_guest || 0; x.reengage += e.outreach_reengage14 || 0
+      x.milestones += e.outreach_milestones || 0; x.new_member += e.outreach_new_member || 0
+      x.calls += e.phone_calls || 0; x.texts += e.sms_sent || 0
+    }
     const countBy = (arr, key) => arr.reduce((m, r) => { m[r[key]] = (m[r[key]] || 0) + 1; return m }, {})
     const mktBy = countBy(mktRes.data || [], 'staff_id')
     const b2bBy = countBy(b2bRes.data || [], 'logged_by')
     const terrBy = countBy(terrRes.data || [], 'visited_by')
-    const countResolved = (arr) => arr.reduce((m, r) => { const u = resolveCb(r.completed_by); if (u) m[u] = (m[u] || 0) + 1; return m }, {})
-    const birthdayBy = countResolved((recogRes.data || []).filter(r => r.type === 'birthday'))
-    const thankyouBy = countResolved((recogRes.data || []).filter(r => r.type === 'thank_you_card'))
-    const tpBy = countResolved(tpRes.data || [])
-    const outreachBy = {}; for (const o of outreachRes.data || []) { const x = outreachBy[o.tsa_id] = outreachBy[o.tsa_id] || { c: 0, t: 0 }; x.c += o.calls_made || 0; x.t += o.texts_made || 0 }
     const cleanBy = countBy(cleanCompRes.data || [], 'completed_by')   // tasks each person personally checked off
 
     const allocGoal = (target, hours) => (target != null && totalHours > 0) ? Math.round(Number(target) * (hours / totalHours)) : null
@@ -243,7 +241,7 @@ router.get('/coaching/:year/:month', ...GUARD, async (req, res) => {
       const cleanDone = cleanBy[r.user_id] || 0                     // tasks they personally completed
       const eodDates = uniq(eodDatesBy[r.user_id] || []).filter(d => dates.includes(d))
       const memActual = (Number(g.sweat_basic) || 0) + (Number(g.sweat_elite) || 0) || (Number(g.total_memberships) || 0)
-      const oc = outreachBy[r.user_id] || { c: 0, t: 0 }
+      const eo = eodOutBy[r.user_id] || { birthday: 0, thank_you: 0, missed_guest: 0, reengage: 0, milestones: 0, new_member: 0, calls: 0, texts: 0 }
       const pr = prevBy[r.user_id] || {}
       return {
         user_id: r.user_id, name: r.name, role: r.role,
@@ -263,12 +261,14 @@ router.get('/coaching/:year/:month', ...GUARD, async (req, res) => {
         marketing_count: mktBy[r.user_id] || 0,
         b2b_count: (b2bBy[r.user_id] || 0) + (terrBy[r.user_id] || 0),
         outreach: {
-          teamhub_calls: oc.c, teamhub_texts: oc.t, teamhub_touchpoints: tpBy[r.user_id] || 0,
+          calls: eo.calls, texts: eo.texts,
+          missed_guest: eo.missed_guest, new_member: eo.new_member, reengage: eo.reengage, milestones: eo.milestones,
+          member_touches: eo.birthday + eo.thank_you + eo.missed_guest + eo.reengage + eo.milestones + eo.new_member,
           sail_calls: Number(g.calls_made) || 0, sail_texts: Number(g.texts_made) || 0,
         },
         eod_submission_rate: dates.length ? Math.round((eodDates.length / dates.length) * 100) : null,
-        birthday_outreach: birthdayBy[r.user_id] || 0,
-        thank_you_cards: thankyouBy[r.user_id] || 0,
+        birthday_outreach: eo.birthday,
+        thank_you_cards: eo.thank_you,
         trend: {
           revenue: dir(r.revenue, pr.revenue),          // this month's revenue vs the month before
           outreach: dir(r.outreach, pr.outreach),        // SAIL calls+texts vs the month before

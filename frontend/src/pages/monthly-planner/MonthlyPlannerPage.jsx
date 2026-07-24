@@ -803,11 +803,22 @@ function CoachingCard({ e, isOwner }) {
         <Stat label="Thank-you cards" value={e.thank_you_cards} />
       </div>
 
-      <div className="mt-3 text-xs text-gray-600 bg-gray-50 rounded-lg px-3 py-2 flex flex-wrap gap-x-4 gap-y-1">
-        <span><b>Outreach</b> {TrendArrowInline(e.trend?.outreach)}</span>
-        <span>Team Hub: {o.teamhub_calls} calls · {o.teamhub_texts} texts · {o.teamhub_touchpoints} member touches</span>
-        <span className="text-gray-400">|</span>
-        <span>SAIL: {o.sail_calls} calls · {o.sail_texts} texts</span>
+      <div className="mt-3 text-xs text-gray-600 bg-gray-50 rounded-lg px-3 py-2 space-y-1">
+        <div className="flex flex-wrap gap-x-3 gap-y-1">
+          <span className="font-bold text-gray-700">Member outreach</span>
+          <span className="font-semibold">{o.member_touches} touches</span>
+          <span className="text-gray-400">·</span>
+          <span>{o.missed_guest} missed-guest</span>
+          <span>{o.new_member} new-member</span>
+          <span>{o.milestones} milestone</span>
+          <span>{o.reengage} re-engage</span>
+        </div>
+        <div className="flex flex-wrap gap-x-3 gap-y-1 pt-1 border-t border-gray-100">
+          <span>{o.calls} calls · {o.texts} texts</span>
+          <span className="text-gray-400">|</span>
+          <span className="text-gray-500">SAIL: {o.sail_calls} calls · {o.sail_texts} texts</span>
+        </div>
+        <p className="text-[10px] text-gray-400">Member outreach &amp; calls/texts are from their EOD checkouts.</p>
       </div>
 
       <CoachingChecklist userId={e.user_id} />

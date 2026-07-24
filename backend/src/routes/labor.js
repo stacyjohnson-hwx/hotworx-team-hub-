@@ -22,12 +22,13 @@ const round1 = (n) => Math.round((Number(n) || 0) * 10) / 10
 // Scheduled hours per user from the shifts table. The CURRENT month is counted
 // month-to-date (through today, America/Chicago) so an in-progress month shows how
 // it's trending; past and future months use the full month. Returns { map, through, mode }.
-async function scheduledHoursMap(sb, studioId, month, year) {
+async function scheduledHoursMap(sb, studioId, month, year, { fullMonth = false } = {}) {
   const m = String(month).padStart(2, '0')
   const lastDay = new Date(year, month, 0).getDate()
   const [cy, cm, cd] = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' }).split('-').map(Number)
   let endDay, mode
-  if (year < cy || (year === cy && month < cm)) { endDay = lastDay; mode = 'full' }        // past → full month
+  if (fullMonth) { endDay = lastDay; mode = 'full' }                                        // review: always full month
+  else if (year < cy || (year === cy && month < cm)) { endDay = lastDay; mode = 'full' }    // past → full month
   else if (year === cy && month === cm) { endDay = Math.min(cd, lastDay); mode = 'mtd' }    // current → to-date
   else { endDay = lastDay; mode = 'full' }                                                  // future → full plan
   const through = `${year}-${m}-${String(endDay).padStart(2, '0')}`
@@ -163,10 +164,10 @@ function roiRow(t, { comp, override, goals, studioData, scheduled }) {
 // Compute every employee's ROI row for a month. Shared by /summary and the
 // Monthly Planner coaching tab (which strips the pay fields by role). Returns
 // { rows, sched }.
-async function computeRoiRows(sb, sid, month, year) {
+async function computeRoiRows(sb, sid, month, year, opts = {}) {
   const [team, sched, { data: comp }, { data: overrides }, { data: goalsData }, { data: studioData }] = await Promise.all([
     studioTeam(sb, sid),
-    scheduledHoursMap(sb, sid, month, year),
+    scheduledHoursMap(sb, sid, month, year, opts),
     sb.from('employee_comp').select('*').eq('studio_id', sid),
     sb.from('employee_hours_actual').select('user_id, hours').eq('studio_id', sid).eq('month', month).eq('year', year),
     sb.from('personal_goals').select('*').eq('studio_id', sid).eq('month', month).eq('year', year),
