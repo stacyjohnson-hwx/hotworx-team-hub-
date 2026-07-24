@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useMonth } from '@/contexts/MonthContext'
 import { useStudio } from '@/contexts/StudioContext'
+import { useRole } from '@/hooks/useRole'
 import { apiGet, apiPut, apiPost, apiDelete } from '@/hooks/useApi'
 import SocialPostCalendar from '@/components/SocialPostCalendar'
 import {
@@ -357,10 +358,18 @@ function EventRow({ e, onEdit }) {
   )
 }
 
+const PLANNER_TABS = [
+  { k: 'plan', label: 'Plan', Icon: CalendarRange },
+  { k: 'coaching', label: 'Team Coaching', Icon: GraduationCap },
+  { k: 'seasonal', label: 'Seasonal Prep', Icon: CalendarDays },
+]
+
 export default function MonthlyPlannerPage() {
   const { selectedMonth: { month, year } } = useMonth()
   const { currentStudio } = useStudio()
+  const { isOwner } = useRole()
   const studioId = currentStudio?.id
+  const [tab, setTab] = useState('plan')
 
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState('')
@@ -506,6 +515,20 @@ export default function MonthlyPlannerPage() {
       {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3 flex items-center gap-2"><AlertCircle size={15} /> {error}</div>}
       {savingContent && <p className="text-xs text-gray-400 -mt-2">Saving…</p>}
 
+      {/* Tabs */}
+      <div className="flex gap-1 border-b border-gray-200">
+        {PLANNER_TABS.map(t => (
+          <button key={t.k} onClick={() => setTab(t.k)}
+            className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${tab === t.k ? 'border-red-600 text-red-600' : 'border-transparent text-gray-500 hover:text-gray-800'}`}>
+            <t.Icon size={15} /> {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'coaching' && <TeamCoachingTab month={month} year={year} isOwner={isOwner} />}
+      {tab === 'seasonal' && <SeasonalPrepTab month={month} year={year} />}
+
+      {tab === 'plan' && <>
       {/* 1. GOALS */}
       <Card icon={Target} title="Goals for the month"
         subtitle={`Set this month's targets — compared to ${MONTHS[month-1]} ${year - 1} actuals.`}>
@@ -630,6 +653,212 @@ export default function MonthlyPlannerPage() {
           placeholder="Staffing, maintenance, orders, training, community partnerships…" rows={3}
           className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-500" />
       </Card>
+      </>}
+    </div>
+  )
+}
+
+// ─── Team Coaching tab ────────────────────────────────────────────────────────
+const BAND = {
+  deep:   { label: 'Deep loss',   cls: 'bg-red-100 text-red-700 border-red-300' },
+  under:  { label: 'Under',       cls: 'bg-orange-100 text-orange-700 border-orange-300' },
+  slight: { label: 'Slightly under', cls: 'bg-amber-100 text-amber-700 border-amber-300' },
+}
+const TrendArrow = ({ dir }) => dir === 'up'
+  ? <span className="text-green-600" title="Up vs prior month">▲</span>
+  : dir === 'down' ? <span className="text-red-600" title="Down vs prior month">▼</span>
+  : <span className="text-gray-300" title="Flat">–</span>
+
+function GoalBar({ label, goal, actual, prefix = '' }) {
+  const pct = goal > 0 ? Math.min(100, Math.round((actual / goal) * 100)) : null
+  const hit = goal != null && actual >= goal
+  return (
+    <div>
+      <div className="flex justify-between text-[11px] mb-0.5">
+        <span className="text-gray-500">{label}</span>
+        <span className={`font-semibold ${hit ? 'text-green-700' : 'text-gray-800'}`}>{prefix}{actual}{goal != null ? <span className="text-gray-400 font-normal"> / {prefix}{goal}</span> : <span className="text-gray-300"> · no goal</span>}</span>
+      </div>
+      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+        <div className={`h-full rounded-full ${hit ? 'bg-green-500' : 'bg-red-400'}`} style={{ width: `${pct ?? 0}%` }} />
+      </div>
+    </div>
+  )
+}
+function Stat({ label, value, trend }) {
+  return (
+    <div className="bg-gray-50 rounded-lg px-2.5 py-2">
+      <div className="text-[15px] font-bold text-gray-900 leading-none flex items-center gap-1">{value}{trend && <TrendArrow dir={trend} />}</div>
+      <div className="text-[10px] text-gray-500 mt-1 leading-tight">{label}</div>
+    </div>
+  )
+}
+
+function CoachingChecklist({ userId }) {
+  const [data, setData] = useState({ items: [], notes: [] })
+  const [text, setText] = useState(''); const [due, setDue] = useState('')
+  const [note, setNote] = useState('')
+  const load = useCallback(() => { apiGet(`/api/monthly-planner/coaching/items/${userId}`).then(setData).catch(() => {}) }, [userId])
+  useEffect(() => { load() }, [load])
+  const addItem = async () => { if (!text.trim()) return; await apiPost('/api/monthly-planner/coaching/items', { subject_user_id: userId, text, due_date: due || null }); setText(''); setDue(''); load() }
+  const toggle = async (it) => { await apiPut(`/api/monthly-planner/coaching/items/${it.id}`, { done: !it.done }); load() }
+  const delItem = async (it) => { await apiDelete(`/api/monthly-planner/coaching/items/${it.id}`); load() }
+  const addNote = async () => { if (!note.trim()) return; await apiPost('/api/monthly-planner/coaching/notes', { subject_user_id: userId, note }); setNote(''); load() }
+  const delNote = async (n) => { await apiDelete(`/api/monthly-planner/coaching/notes/${n.id}`); load() }
+  const overdue = (d) => d && d < new Date().toLocaleDateString('en-CA')
+  return (
+    <div className="grid md:grid-cols-2 gap-4 mt-3 pt-3 border-t border-gray-100">
+      <div>
+        <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-1.5">Action items</p>
+        <div className="space-y-1">
+          {data.items.map(it => (
+            <div key={it.id} className="flex items-center gap-2 text-sm group">
+              <button onClick={() => toggle(it)} className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center ${it.done ? 'bg-green-500 border-green-500 text-white' : 'border-gray-300'}`}>{it.done && <Check size={11} />}</button>
+              <span className={`flex-1 ${it.done ? 'line-through text-gray-400' : 'text-gray-700'}`}>{it.text}</span>
+              {it.due_date && <span className={`text-[10px] font-semibold ${!it.done && overdue(it.due_date) ? 'text-red-600' : 'text-gray-400'}`}>{it.due_date.slice(5)}</span>}
+              <button onClick={() => delItem(it)} className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100"><X size={13} /></button>
+            </div>
+          ))}
+          {data.items.length === 0 && <p className="text-xs text-gray-400">No action items yet.</p>}
+        </div>
+        <div className="flex gap-1.5 mt-2">
+          <input value={text} onChange={e => setText(e.target.value)} onKeyDown={e => e.key === 'Enter' && addItem()} placeholder="Add an action item…" className="flex-1 border border-gray-300 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-red-400" />
+          <input type="date" value={due} onChange={e => setDue(e.target.value)} className="border border-gray-300 rounded-lg px-1.5 py-1 text-xs text-gray-600" />
+          <button onClick={addItem} className="bg-gray-800 hover:bg-black text-white rounded-lg px-2"><Plus size={13} /></button>
+        </div>
+      </div>
+      <div>
+        <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-1.5">1:1 notes log</p>
+        <div className="space-y-1.5 max-h-32 overflow-y-auto">
+          {data.notes.map(n => (
+            <div key={n.id} className="text-xs bg-gray-50 rounded-lg px-2.5 py-1.5 group">
+              <div className="flex justify-between text-[10px] text-gray-400 mb-0.5"><span>{new Date(n.created_at).toLocaleDateString()}</span><button onClick={() => delNote(n)} className="opacity-0 group-hover:opacity-100 hover:text-red-500"><X size={11} /></button></div>
+              <p className="text-gray-700 whitespace-pre-line">{n.note}</p>
+            </div>
+          ))}
+          {data.notes.length === 0 && <p className="text-xs text-gray-400">No notes yet.</p>}
+        </div>
+        <div className="flex gap-1.5 mt-2">
+          <input value={note} onChange={e => setNote(e.target.value)} onKeyDown={e => e.key === 'Enter' && addNote()} placeholder="Log a 1:1 note…" className="flex-1 border border-gray-300 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-red-400" />
+          <button onClick={addNote} className="bg-gray-800 hover:bg-black text-white rounded-lg px-2"><Plus size={13} /></button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function CoachingCard({ e, isOwner }) {
+  const band = BAND[e.severity_band] || BAND.slight
+  const o = e.outreach || {}
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <div className="flex items-center gap-2">
+            <h3 className="text-base font-bold text-gray-900">{e.name}</h3>
+            <span className="text-[10px] uppercase font-semibold text-gray-400">{e.role}</span>
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${band.cls}`}>{band.label}</span>
+          </div>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Brought in <span className="font-bold text-gray-800">${e.revenue.toLocaleString()}</span>
+            {isOwner && e.deficit_exact != null && <span className="text-red-600 font-semibold"> · ${e.deficit_exact.toLocaleString()} under</span>}
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5 mt-3">
+        <div className="col-span-2 md:col-span-3 grid grid-cols-3 gap-2.5">
+          <GoalBar label="New members" goal={e.goal?.members?.goal} actual={e.goal?.members?.actual} />
+          <GoalBar label="Retail" prefix="$" goal={e.goal?.retail?.goal} actual={e.goal?.retail?.actual} />
+          <GoalBar label="EFT" prefix="$" goal={e.goal?.eft?.goal} actual={e.goal?.eft?.actual} />
+        </div>
+        <Stat label="Hours" value={e.hours} trend={e.trend?.hours} />
+        <Stat label="Cleaning on shift" value={e.cleaning_pct != null ? `${e.cleaning_pct}%` : '—'} />
+        <Stat label="EOD submitted" value={e.eod_submission_rate != null ? `${e.eod_submission_rate}%` : '—'} />
+        <Stat label="Marketing tasks" value={e.marketing_count} />
+        <Stat label="B2B outreach" value={e.b2b_count} />
+        <Stat label="Saves (win-back)" value={e.cancellations_saved} />
+      </div>
+
+      <div className="mt-3 text-xs text-gray-600 bg-gray-50 rounded-lg px-3 py-2 flex flex-wrap gap-x-4 gap-y-1">
+        <span><b>Outreach</b> {TrendArrowInline(e.trend?.outreach)}</span>
+        <span>Team Hub: {o.teamhub_calls} calls · {o.teamhub_texts} texts · {o.teamhub_touchpoints} member touches</span>
+        <span className="text-gray-400">|</span>
+        <span>SAIL: {o.sail_calls} calls · {o.sail_texts} texts</span>
+      </div>
+
+      <CoachingChecklist userId={e.user_id} />
+    </div>
+  )
+}
+function TrendArrowInline(dir) { return dir === 'up' ? '▲' : dir === 'down' ? '▼' : '' }
+
+function TeamCoachingTab({ month, year, isOwner }) {
+  const { currentStudio } = useStudio()
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    setLoading(true); setError('')
+    apiGet(`/api/monthly-planner/coaching/${year}/${month}`)
+      .then(setData).catch(e => setError(e?.message || 'Failed to load')).finally(() => setLoading(false))
+  }, [year, month, currentStudio?.id])
+
+  if (loading) return <div className="flex justify-center py-16"><Loader2 className="animate-spin text-red-600" size={24} /></div>
+  if (error) return <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">{error}</div>
+  const rv = data?.reviewing
+  const emps = data?.employees || []
+  return (
+    <div className="space-y-4">
+      <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 text-[12.5px] text-amber-800 flex items-start gap-2">
+        <GraduationCap size={15} className="flex-shrink-0 mt-0.5 text-amber-600" />
+        <span>Reviewing <b>{rv ? `${MONTHS[rv.month - 1]} ${rv.year}` : 'last month'}</b> — team members whose revenue didn't cover their cost. {!isOwner && 'Exact dollars are visible to the owner; you see a severity band.'}</span>
+      </div>
+      {emps.length === 0 ? (
+        <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
+          <p className="text-lg">🎉</p>
+          <p className="text-sm font-semibold text-gray-700 mt-1">Everyone covered their cost last month.</p>
+          <p className="text-xs text-gray-400 mt-1">Only staff with a pay rate set on Team ROI are evaluated.</p>
+        </div>
+      ) : emps.map(e => <CoachingCard key={e.user_id} e={e} isOwner={isOwner} />)}
+    </div>
+  )
+}
+
+// ─── Seasonal Prep tab ────────────────────────────────────────────────────────
+function SeasonalList({ title, rows, render, empty }) {
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4">
+      <h3 className="text-sm font-bold text-gray-900 mb-2">{title} <span className="text-gray-400 font-normal">({rows.length})</span></h3>
+      {rows.length === 0 ? <p className="text-xs text-gray-400">{empty}</p> : (
+        <div className="space-y-1">{rows.map((r, i) => <div key={i} className="flex items-center gap-2 text-sm border-b border-gray-50 last:border-0 py-1.5">
+          <span className="text-[10px] font-bold text-gray-400 w-9 flex-shrink-0">{r.year}</span>{render(r)}
+        </div>)}</div>
+      )}
+    </div>
+  )
+}
+function SeasonalPrepTab({ month, year }) {
+  const { currentStudio } = useStudio()
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  useEffect(() => {
+    setLoading(true)
+    apiGet(`/api/monthly-planner/seasonal/${year}/${month}`).then(setData).catch(() => setData(null)).finally(() => setLoading(false))
+  }, [year, month, currentStudio?.id])
+  if (loading) return <div className="flex justify-center py-16"><Loader2 className="animate-spin text-red-600" size={24} /></div>
+  const d = data || { orders: [], maintenance: [], escalations: [] }
+  return (
+    <div className="space-y-4">
+      <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-2.5 text-[12.5px] text-blue-800 flex items-start gap-2">
+        <CalendarDays size={15} className="flex-shrink-0 mt-0.5 text-blue-500" />
+        <span>What we ordered, fixed and escalated in <b>{MONTHS[month - 1]}</b> in past years — so we can prep. {d.note}</span>
+      </div>
+      <SeasonalList title="Orders" rows={d.orders} empty="No orders logged this month in prior years yet."
+        render={r => <span className="flex-1 text-gray-700">{r.item_name}{r.quantity ? ` ×${r.quantity}` : ''}{r.vendor ? <span className="text-gray-400"> · {r.vendor}</span> : ''}{r.category ? <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded ml-1.5">{r.category}</span> : ''}</span>} />
+      <SeasonalList title="Maintenance" rows={d.maintenance} empty="No maintenance logged this month in prior years yet."
+        render={r => <span className="flex-1 text-gray-700">🔧 {r.title}{r.area ? <span className="text-gray-400"> · {r.area}</span> : ''}{r.priority ? <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded ml-1.5">{r.priority}</span> : ''}</span>} />
+      <SeasonalList title="Escalations" rows={d.escalations} empty="No escalations logged this month in prior years yet."
+        render={r => <span className="flex-1 text-gray-700">⚠️ {r.title}{r.type ? <span className="text-gray-400"> · {r.type}</span> : ''}{r.member_name ? <span className="text-gray-400"> · {r.member_name}</span> : ''}</span>} />
     </div>
   )
 }

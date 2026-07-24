@@ -144,4 +144,205 @@ router.post('/:year/:month/review', ...GUARD, async (req, res) => {
   res.json(data)
 })
 
+// ─── Team Coaching tab ────────────────────────────────────────────────────────
+// Reviews the PREVIOUS month and surfaces employees who ran net-negative on Team
+// ROI, with the coaching signals. PAY-SAFE: never returns cost/wage/commission;
+// managers get a severity band only, the owner also gets the exact deficit.
+const { computeRoiRows } = require('./labor')
+
+// Cleaning "task active on date" rule (mirrors scorecard.js).
+function cleaningActiveOnDate(task, dateStr) {
+  const d = new Date(dateStr + 'T00:00:00Z'); const dow = d.getUTCDay()
+  switch (task.frequency) {
+    case 'daily': return true
+    case 'weekly': return task.day_of_week === dow
+    case 'specific_days': return Array.isArray(task.days_of_week) && task.days_of_week.includes(dow)
+    case 'monthly': return task.day_of_month === d.getUTCDate()
+    case 'quarterly': return Array.isArray(task.quarterly_dates) && task.quarterly_dates.includes(dateStr)
+    case 'one_off': return task.one_off_date === dateStr
+    default: return false
+  }
+}
+const bandFor = (deficit) => deficit >= 800 ? 'deep' : deficit >= 250 ? 'under' : 'slight'
+const dir = (now, was) => { const a = Number(now) || 0, b = Number(was) || 0; return a > b * 1.02 ? 'up' : a < b * 0.98 ? 'down' : 'flat' }
+const uniq = (arr) => [...new Set(arr)]
+
+router.get('/coaching/:year/:month', ...GUARD, async (req, res) => {
+  const year = parseInt(req.params.year), month = parseInt(req.params.month)
+  if (!year || !month || month < 1 || month > 12) return res.status(400).json({ error: 'Invalid year/month' })
+  const isOwner = req.studio.role === 'owner' || req.role === 'owner'
+  const sb = supabase(), sid = req.studio.id
+  const { year: py, month: pm } = prevMonth(year, month)          // review the previous month
+  const p2 = prevMonth(py, pm)                                    // month before that (for trend)
+  const mm = String(pm).padStart(2, '0')
+  const lastDay = new Date(py, pm, 0).getDate()
+  const start = `${py}-${mm}-01`, end = `${py}-${mm}-${String(lastDay).padStart(2, '0')}`
+
+  try {
+    const [{ rows }, prev] = await Promise.all([
+      computeRoiRows(sb, sid, pm, py),
+      computeRoiRows(sb, sid, p2.month, p2.year),
+    ])
+    const totalHours = rows.reduce((s, r) => s + (r.hours || 0), 0)
+    const prevBy = Object.fromEntries(prev.rows.map(r => [r.user_id, r]))
+    const flagged = rows.filter(r => r.has_rate && r.net < 0)
+    if (!flagged.length) return res.json({ reviewing: { year: py, month: pm }, is_owner: isOwner, employees: [] })
+    const ids = flagged.map(r => r.user_id)
+
+    // Bulk-load every per-person signal for the reviewed month (all scoped to the flagged set).
+    const [goalsRes, targetsRes, shiftsRes, eodRes, mktRes, b2bRes, terrRes, outreachRes, cancelRes, tpRes, cleanTasksRes, cleanCompRes] = await Promise.all([
+      sb.from('personal_goals').select('tsa_id, pos_collected, retail_actual, eft_actual, sweat_basic, sweat_elite, total_memberships, calls_made, texts_made').eq('studio_id', sid).eq('month', pm).eq('year', py).in('tsa_id', ids),
+      sb.from('studio_goals').select('memberships_target, retail_target, eft_target').eq('studio_id', sid).eq('month', pm).eq('year', py).maybeSingle(),
+      sb.from('shifts').select('tsa_id, shift_date').eq('studio_id', sid).gte('shift_date', start).lte('shift_date', end).in('tsa_id', ids),
+      sb.from('eod_submissions').select('submitted_by, shift_date').eq('studio_id', sid).gte('shift_date', start).lte('shift_date', end).in('submitted_by', ids),
+      sb.from('marketing_task_completions').select('staff_id').eq('studio_id', sid).gte('completion_date', start).lte('completion_date', end).in('staff_id', ids),
+      sb.from('b2b_interactions').select('logged_by').eq('studio_id', sid).gte('logged_at', `${start}T00:00:00Z`).lte('logged_at', `${end}T23:59:59.999Z`).in('logged_by', ids),
+      sb.from('territory_visits').select('visited_by').eq('studio_id', sid).gte('visit_date', start).lte('visit_date', end).in('visited_by', ids),
+      sb.from('outreach_logs').select('tsa_id, calls_made, texts_made').eq('studio_id', sid).gte('log_date', start).lte('log_date', end).in('tsa_id', ids),
+      sb.from('cancellation_log').select('handled_by').eq('studio_id', sid).eq('outcome', 'saved').gte('date_resolved', start).lte('date_resolved', end).in('handled_by', ids),
+      sb.from('onboarding_touchpoint_log').select('completed_by').eq('studio_id', sid).eq('done', true).gte('completed_at', `${start}T00:00:00Z`).lte('completed_at', `${end}T23:59:59.999Z`).in('completed_by', ids),
+      sb.from('cleaning_tasks').select('*').eq('studio_id', sid).eq('active', true),
+      sb.from('cleaning_completions').select('task_id, completion_date').eq('studio_id', sid).gte('completion_date', start).lte('completion_date', end),
+    ])
+    const goalsBy = Object.fromEntries((goalsRes.data || []).map(g => [g.tsa_id, g]))
+    const targets = targetsRes.data || {}
+    const shiftDatesBy = {}; for (const s of shiftsRes.data || []) (shiftDatesBy[s.tsa_id] = shiftDatesBy[s.tsa_id] || []).push(s.shift_date)
+    const eodDatesBy = {}; for (const e of eodRes.data || []) (eodDatesBy[e.submitted_by] = eodDatesBy[e.submitted_by] || []).push(e.shift_date)
+    const countBy = (arr, key) => arr.reduce((m, r) => { m[r[key]] = (m[r[key]] || 0) + 1; return m }, {})
+    const mktBy = countBy(mktRes.data || [], 'staff_id')
+    const b2bBy = countBy(b2bRes.data || [], 'logged_by')
+    const terrBy = countBy(terrRes.data || [], 'visited_by')
+    const cancelBy = countBy(cancelRes.data || [], 'handled_by')
+    const tpBy = countBy(tpRes.data || [], 'completed_by')
+    const outreachBy = {}; for (const o of outreachRes.data || []) { const x = outreachBy[o.tsa_id] = outreachBy[o.tsa_id] || { c: 0, t: 0 }; x.c += o.calls_made || 0; x.t += o.texts_made || 0 }
+    const activeTasks = cleanTasksRes.data || []
+    const compByDate = {}; for (const c of cleanCompRes.data || []) (compByDate[c.completion_date] = compByDate[c.completion_date] || new Set()).add(c.task_id)
+
+    const allocGoal = (target, hours) => (target != null && totalHours > 0) ? Math.round(Number(target) * (hours / totalHours)) : null
+    const employees = flagged.map(r => {
+      const g = goalsBy[r.user_id] || {}
+      const deficit = Math.round(-r.net * 100) / 100
+      const dates = uniq(shiftDatesBy[r.user_id] || [])
+      // Cleaning coverage on the days they worked (shared credit across staff on-shift).
+      let due = 0, doneC = 0
+      for (const dt of dates) for (const task of activeTasks) if (cleaningActiveOnDate(task, dt)) { due++; if (compByDate[dt]?.has(task.id)) doneC++ }
+      const eodDates = uniq(eodDatesBy[r.user_id] || []).filter(d => dates.includes(d))
+      const memActual = (Number(g.sweat_basic) || 0) + (Number(g.sweat_elite) || 0) || (Number(g.total_memberships) || 0)
+      const oc = outreachBy[r.user_id] || { c: 0, t: 0 }
+      const pr = prevBy[r.user_id] || {}
+      return {
+        user_id: r.user_id, name: r.name, role: r.role,
+        revenue: r.revenue,
+        severity_band: bandFor(deficit),
+        ...(isOwner ? { deficit_exact: deficit } : {}),
+        goal: {
+          members: { goal: allocGoal(targets.memberships_target, r.hours), actual: memActual },
+          retail:  { goal: allocGoal(targets.retail_target, r.hours),      actual: Math.round(Number(g.retail_actual) || 0) },
+          eft:     { goal: allocGoal(targets.eft_target, r.hours),         actual: Math.round(Number(g.eft_actual) || 0) },
+        },
+        hours: r.hours,
+        cleaning_pct: due > 0 ? Math.round((doneC / due) * 100) : null,
+        marketing_count: mktBy[r.user_id] || 0,
+        b2b_count: (b2bBy[r.user_id] || 0) + (terrBy[r.user_id] || 0),
+        outreach: {
+          teamhub_calls: oc.c, teamhub_texts: oc.t, teamhub_touchpoints: tpBy[r.user_id] || 0,
+          sail_calls: Number(g.calls_made) || 0, sail_texts: Number(g.texts_made) || 0,
+        },
+        eod_submission_rate: dates.length ? Math.round((eodDates.length / dates.length) * 100) : null,
+        cancellations_saved: cancelBy[r.user_id] || 0,
+        trend: {
+          revenue: dir(r.revenue, pr.revenue),
+          hours: dir(r.hours, pr.hours),
+          outreach: dir(oc.c + oc.t, 0),   // team-hub calls/texts vs none last month (SAIL is monthly-only)
+        },
+      }
+    })
+    res.json({ reviewing: { year: py, month: pm }, is_owner: isOwner, employees })
+  } catch (err) {
+    console.error('GET /monthly-planner/coaching', err)
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ─── Team Coaching: action items + 1:1 notes (per subject employee) ───────────
+router.get('/coaching/items/:userId', ...GUARD, async (req, res) => {
+  const [items, notes] = await Promise.all([
+    supabase().from('team_coaching_items').select('*').eq('studio_id', req.studio.id).eq('subject_user_id', req.params.userId).order('done').order('due_date', { nullsFirst: false }),
+    supabase().from('team_coaching_notes').select('*').eq('studio_id', req.studio.id).eq('subject_user_id', req.params.userId).order('created_at', { ascending: false }),
+  ])
+  res.json({ items: items.data || [], notes: notes.data || [] })
+})
+router.post('/coaching/items', ...GUARD, async (req, res) => {
+  const { subject_user_id, text, due_date } = req.body
+  if (!subject_user_id || !(text || '').trim()) return res.status(400).json({ error: 'subject_user_id and text required' })
+  const { data, error } = await supabase().from('team_coaching_items').insert({
+    studio_id: req.studio.id, subject_user_id, text: text.trim(), due_date: due_date || null, created_by: req.user.id,
+  }).select().single()
+  if (error) return res.status(500).json({ error: error.message })
+  res.status(201).json(data)
+})
+router.put('/coaching/items/:id', ...GUARD, async (req, res) => {
+  const patch = {}
+  if (req.body.done !== undefined) { patch.done = !!req.body.done; patch.done_at = req.body.done ? new Date().toISOString() : null }
+  if (req.body.text !== undefined) patch.text = String(req.body.text).trim()
+  if (req.body.due_date !== undefined) patch.due_date = req.body.due_date || null
+  const { data, error } = await supabase().from('team_coaching_items').update(patch)
+    .eq('id', req.params.id).eq('studio_id', req.studio.id).select().single()
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data)
+})
+router.delete('/coaching/items/:id', ...GUARD, async (req, res) => {
+  const { error } = await supabase().from('team_coaching_items').delete().eq('id', req.params.id).eq('studio_id', req.studio.id)
+  if (error) return res.status(500).json({ error: error.message })
+  res.status(204).end()
+})
+router.post('/coaching/notes', ...GUARD, async (req, res) => {
+  const { subject_user_id, note } = req.body
+  if (!subject_user_id || !(note || '').trim()) return res.status(400).json({ error: 'subject_user_id and note required' })
+  const { data, error } = await supabase().from('team_coaching_notes').insert({
+    studio_id: req.studio.id, subject_user_id, note: note.trim(), created_by: req.user.id,
+  }).select().single()
+  if (error) return res.status(500).json({ error: error.message })
+  res.status(201).json(data)
+})
+router.delete('/coaching/notes/:id', ...GUARD, async (req, res) => {
+  const { error } = await supabase().from('team_coaching_notes').delete().eq('id', req.params.id).eq('studio_id', req.studio.id)
+  if (error) return res.status(500).json({ error: error.message })
+  res.status(204).end()
+})
+
+// ─── Seasonal Prep tab ────────────────────────────────────────────────────────
+// Orders / maintenance / escalations logged in this MONTH across prior years, plus
+// this-year trailing (a stand-in until real prior-year history accumulates).
+router.get('/seasonal/:year/:month', ...GUARD, async (req, res) => {
+  const year = parseInt(req.params.year), month = parseInt(req.params.month)
+  if (!year || !month || month < 1 || month > 12) return res.status(400).json({ error: 'Invalid year/month' })
+  const sb = supabase(), sid = req.studio.id
+  const mm = String(month).padStart(2, '0')
+  // Every past instance of this calendar month, back a few years.
+  const spans = []
+  for (let y = year - 1; y >= year - 4; y--) spans.push({ y, from: `${y}-${mm}-01`, to: `${y}-${mm}-${new Date(y, month, 0).getDate()}` })
+  const earliest = spans[spans.length - 1].from
+  const latest = `${year}-${mm}-${new Date(year, month, 0).getDate()}`   // include this year's same month if past
+  const inMonth = (created) => { const c = String(created).slice(0, 7); return c.slice(5) === mm }
+  try {
+    const [ord, mnt, esc] = await Promise.all([
+      sb.from('orders').select('item_name, quantity, category, vendor, est_cost, status, created_at').eq('studio_id', sid).gte('created_at', earliest).lte('created_at', `${latest}T23:59:59.999Z`),
+      sb.from('maintenance_logs').select('title, area, priority, status, created_at').eq('studio_id', sid).gte('created_at', earliest).lte('created_at', `${latest}T23:59:59.999Z`),
+      sb.from('escalation_logs').select('title, type, member_name, priority, status, created_at').eq('studio_id', sid).gte('created_at', earliest).lte('created_at', `${latest}T23:59:59.999Z`),
+    ])
+    const shape = (rows) => (rows || []).filter(r => inMonth(r.created_at))
+      .map(r => ({ ...r, year: Number(String(r.created_at).slice(0, 4)) }))
+      .sort((a, b) => b.created_at < a.created_at ? -1 : 1)
+    res.json({
+      month, current_year: year,
+      orders: shape(ord.data), maintenance: shape(mnt.data), escalations: shape(esc.data),
+      note: 'History accumulates over time — prior-year data starts May 2026.',
+    })
+  } catch (err) {
+    console.error('GET /monthly-planner/seasonal', err)
+    res.status(500).json({ error: err.message })
+  }
+})
+
 module.exports = router

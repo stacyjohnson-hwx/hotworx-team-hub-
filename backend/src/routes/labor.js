@@ -160,43 +160,48 @@ function roiRow(t, { comp, override, goals, studioData, scheduled }) {
   }
 }
 
+// Compute every employee's ROI row for a month. Shared by /summary and the
+// Monthly Planner coaching tab (which strips the pay fields by role). Returns
+// { rows, sched }.
+async function computeRoiRows(sb, sid, month, year) {
+  const [team, sched, { data: comp }, { data: overrides }, { data: goalsData }, { data: studioData }] = await Promise.all([
+    studioTeam(sb, sid),
+    scheduledHoursMap(sb, sid, month, year),
+    sb.from('employee_comp').select('*').eq('studio_id', sid),
+    sb.from('employee_hours_actual').select('user_id, hours').eq('studio_id', sid).eq('month', month).eq('year', year),
+    sb.from('personal_goals').select('*').eq('studio_id', sid).eq('month', month).eq('year', year),
+    sb.from('studio_trends').select('*').eq('studio_id', sid).eq('month', month).eq('year', year).maybeSingle(),
+  ])
+  const hoursMap = sched.map
+  const compBy = Object.fromEntries((comp || []).map(c => [c.user_id, c]))
+  const overrideBy = Object.fromEntries((overrides || []).map(o => [o.user_id, o.hours]))
+  const goalsBy = Object.fromEntries((goalsData || []).map(g => [g.tsa_id, g]))
+  const GOAL_DEFAULTS = { pos_collected: 0, retail_actual: 0, eft_actual: 0, pif_6mo: 0, pif_12mo: 0, sweat_basic: 0, sweat_elite: 0, calls_made: 0, texts_made: 0 }
+  const rows = team
+    .filter(t => compBy[t.id]?.active !== false)   // owner can exclude someone
+    .map(t => roiRow(t, {
+      comp: compBy[t.id],
+      override: overrideBy[t.id],
+      goals: goalsBy[t.id] || { ...GOAL_DEFAULTS },
+      studioData: studioData || {},
+      scheduled: hoursMap[t.id] || 0,
+    }))
+    .sort((a, b) => {
+      if (a.ratio == null && b.ratio == null) return b.net - a.net
+      if (a.ratio == null) return 1
+      if (b.ratio == null) return -1
+      return b.ratio - a.ratio
+    })
+  return { rows, sched }
+}
+
 // ─── GET /api/labor/summary?year=&month= — the core comparison ───────────────
 router.get('/summary', async (req, res) => {
   const month = Number(req.query.month), year = Number(req.query.year)
   if (!month || !year) return res.status(400).json({ error: 'month and year required' })
   try {
     const sb = db()
-    const sid = req.studio.id
-    const [team, sched, { data: comp }, { data: overrides }, { data: goalsData }, { data: studioData }] = await Promise.all([
-      studioTeam(sb, sid),
-      scheduledHoursMap(sb, sid, month, year),
-      sb.from('employee_comp').select('*').eq('studio_id', sid),
-      sb.from('employee_hours_actual').select('user_id, hours').eq('studio_id', sid).eq('month', month).eq('year', year),
-      sb.from('personal_goals').select('*').eq('studio_id', sid).eq('month', month).eq('year', year),
-      sb.from('studio_trends').select('*').eq('studio_id', sid).eq('month', month).eq('year', year).maybeSingle(),
-    ])
-    const hoursMap = sched.map
-    const compBy = Object.fromEntries((comp || []).map(c => [c.user_id, c]))
-    const overrideBy = Object.fromEntries((overrides || []).map(o => [o.user_id, o.hours]))
-    const goalsBy = Object.fromEntries((goalsData || []).map(g => [g.tsa_id, g]))
-    const GOAL_DEFAULTS = { pos_collected: 0, retail_actual: 0, eft_actual: 0, pif_6mo: 0, pif_12mo: 0, sweat_basic: 0, sweat_elite: 0, calls_made: 0, texts_made: 0 }
-
-    const rows = team
-      .filter(t => compBy[t.id]?.active !== false)   // owner can exclude someone
-      .map(t => roiRow(t, {
-        comp: compBy[t.id],
-        override: overrideBy[t.id],
-        goals: goalsBy[t.id] || { ...GOAL_DEFAULTS },
-        studioData: studioData || {},
-        scheduled: hoursMap[t.id] || 0,
-      }))
-      .sort((a, b) => {
-        if (a.ratio == null && b.ratio == null) return b.net - a.net
-        if (a.ratio == null) return 1
-        if (b.ratio == null) return -1
-        return b.ratio - a.ratio
-      })
-
+    const { rows, sched } = await computeRoiRows(sb, req.studio.id, month, year)
     const sum = (f) => rows.reduce((s, r) => s + (r[f] || 0), 0)
     const totalCost = sum('total_cost'), totalRev = sum('revenue')
     res.json({
@@ -254,3 +259,7 @@ router.get('/trend/:userId', async (req, res) => {
 })
 
 module.exports = router
+// Reused by the Monthly Planner coaching tab (which strips pay fields by role).
+module.exports.computeRoiRows = computeRoiRows
+module.exports.studioTeam = studioTeam
+module.exports.scheduledHoursMap = scheduledHoursMap
