@@ -780,7 +780,6 @@ function CoachingCard({ e, isOwner }) {
         </div>
         <Stat label="Hours" value={e.hours} />
         <Stat label="Cleaning on shift" value={e.cleaning_pct != null ? `${e.cleaning_pct}%` : '—'} />
-        <Stat label="EOD submitted" value={e.eod_submission_rate != null ? `${e.eod_submission_rate}%` : '—'} />
         <Stat label="Marketing tasks" value={e.marketing_count} />
         <Stat label="B2B outreach" value={e.b2b_count} />
         <Stat label="Birthday outreach" value={e.birthday_outreach} />
