@@ -1159,7 +1159,7 @@ function PipelineTab({ contacts, users, isOwnerOrManager, onEdit, onDelete, onSt
 }
 
 // ─── Active Partner card ───────────────────────────────────────────────────────
-function ActivePartnerCard({ contact, users, isOwnerOrManager, onEdit, onLog, signal }) {
+function ActivePartnerCard({ contact, users, isOwnerOrManager, onEdit, onDelete, onLog, signal }) {
   const [interactions,  setInteractions]  = useState(null)
   const [linkedEvents,  setLinkedEvents]  = useState(null)
   const [loadingHist,   setLoadingHist]   = useState(false)
@@ -1203,10 +1203,24 @@ function ActivePartnerCard({ contact, users, isOwnerOrManager, onEdit, onLog, si
             {contact.industry && <p className="text-xs text-gray-400">{contact.industry}</p>}
           </div>
           {isOwnerOrManager && (
-            <button onClick={() => onEdit(contact)} title="Edit"
-              className="p-1.5 text-gray-300 hover:text-gray-600 rounded transition-colors flex-shrink-0">
-              <Edit2 size={13} />
-            </button>
+            <div className="flex items-center gap-0.5 flex-shrink-0">
+              <button onClick={() => onEdit(contact)} title="Edit"
+                className="p-1.5 text-gray-300 hover:text-gray-600 rounded transition-colors">
+                <Edit2 size={13} />
+              </button>
+              {confirmDelete ? (
+                <div className="flex items-center gap-1">
+                  <button onClick={() => onDelete(contact.id)}
+                    className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded font-semibold">Delete</button>
+                  <button onClick={() => setConfirmDelete(false)} className="px-1.5 py-1 text-gray-500 hover:text-gray-700 text-xs">No</button>
+                </div>
+              ) : (
+                <button onClick={() => setConfirmDelete(true)} title="Delete"
+                  className="p-1.5 text-gray-300 hover:text-red-500 rounded transition-colors">
+                  <Trash2 size={13} />
+                </button>
+              )}
+            </div>
           )}
         </div>
 
@@ -1512,6 +1526,7 @@ function ActivePartnersTab({ contacts, users, isOwnerOrManager, onEdit, onDelete
                   users={users}
                   isOwnerOrManager={isOwnerOrManager}
                   onEdit={onEdit}
+                  onDelete={onDelete}
                   onLog={cb => setLogTarget({ contact: c, callback: cb })}
                   signal={b2bSignals[String(c.id)] ?? null}
                 />
@@ -1734,8 +1749,12 @@ export default function B2bPage() {
   }
 
   const handleDelete = async (id) => {
-    await apiDelete(`/api/b2b/contacts/${id}`)
-    setContacts(prev => prev.filter(c => c.id !== id))
+    try {
+      await apiDelete(`/api/b2b/contacts/${id}`)
+      setContacts(prev => prev.filter(c => c.id !== id))
+    } catch (err) {
+      alert(err.message || 'Could not delete this partner. Please try again.')
+    }
   }
 
   const handleStatusChange = async (id, newStatus) => {
