@@ -403,7 +403,7 @@ export default function SchedulePage() {
         <ShiftForm
           shift={formState.shift}
           defaultDate={formState.date}
-          users={users}
+          users={users.filter(u => u.is_active !== false)}
           onSaved={onSaved}
           onClose={() => setFormState(null)}
         />
