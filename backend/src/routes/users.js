@@ -189,9 +189,52 @@ router.post('/', authenticate, requireStudio, requireRole('owner', 'manager'), a
     return res.status(400).json({ error: 'Invalid role' })
   }
 
-  const pwd = tempPassword()
   try {
     const supabase = adminClient()
+    const emailNorm = email.trim().toLowerCase()
+
+    // Does an account with this email already exist? (e.g. someone who already
+    // works at another studio.) If so, link that account to THIS studio instead
+    // of failing with "email already taken".
+    const { data: { users: allUsers }, error: listErr } = await supabase.auth.admin.listUsers({ perPage: 200 })
+    if (listErr) return res.status(500).json({ error: listErr.message })
+    const existing = (allUsers || []).find(u => u.email?.toLowerCase() === emailNorm)
+
+    if (existing) {
+      // Already a member of this studio? Nothing to do.
+      const { data: membership } = await supabase
+        .from('user_studios')
+        .select('role')
+        .eq('user_id', existing.id)
+        .eq('studio_id', req.studio.id)
+        .maybeSingle()
+      if (membership) {
+        return res.status(409).json({ error: 'This person is already on this studio’s team.' })
+      }
+
+      // Link the existing account to this studio with the requested role.
+      const { error: linkErr } = await supabase.from('user_studios').insert({
+        user_id:   existing.id,
+        studio_id: req.studio.id,
+        role,
+      })
+      if (linkErr) return res.status(400).json({ error: linkErr.message })
+
+      // Ensure a profile row exists — without clobbering their existing details.
+      const prof = await getProfile(supabase, existing.id)
+      await supabase.from('user_profiles').upsert({
+        id:        existing.id,
+        full_name: prof.full_name || full_name,
+        phone:     prof.phone     || phone    || null,
+        birthday:  prof.birthday  || birthday || null,
+      }, { onConflict: 'id' })
+
+      const p = await getProfile(supabase, existing.id)
+      return res.json({ ...formatUser(existing, p, role), linked_existing: true })
+    }
+
+    // Brand-new person — create the account.
+    const pwd = tempPassword()
     const { data: { user }, error: createErr } = await supabase.auth.admin.createUser({
       email,
       password:      pwd,

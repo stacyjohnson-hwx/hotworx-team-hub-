@@ -56,6 +56,7 @@ function UserModal({ user, currentRole, onSave, onClose }) {
   const [saving, setSaving]         = useState(false)
   const [error, setError]           = useState('')
   const [tempPwd, setTempPwd]       = useState(null)
+  const [linked, setLinked]         = useState(null)
   const [copied, setCopied]         = useState(false)
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
@@ -83,7 +84,9 @@ function UserModal({ user, currentRole, onSave, onClose }) {
         ? await apiPut(`/api/users/${user.id}`, payload)
         : await apiPost('/api/users', payload)
 
-      if (!isEdit && saved.temp_password) {
+      if (!isEdit && saved.linked_existing) {
+        setLinked(saved)
+      } else if (!isEdit && saved.temp_password) {
         setTempPwd(saved.temp_password)
       } else {
         onSave(saved)
@@ -96,6 +99,30 @@ function UserModal({ user, currentRole, onSave, onClose }) {
     navigator.clipboard.writeText(tempPwd)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
+  }
+
+  // Existing account linked to this studio — no new password needed
+  if (linked) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <div className="bg-white rounded-xl w-full max-w-md shadow-2xl border border-gray-200">
+          <div className="px-6 py-5 border-b border-gray-200 bg-gray-800 rounded-t-xl">
+            <h2 className="text-white font-bold text-lg">Added to This Studio ✓</h2>
+          </div>
+          <div className="px-6 py-5 space-y-4">
+            <p className="text-gray-700 text-sm">
+              <strong>{linked.name || form.full_name}</strong> already has a Team Hub account, so we added them to this studio as <strong>{linked.role}</strong>.
+            </p>
+            <p className="text-gray-700 text-sm">
+              They keep their <strong>existing login</strong> — no new password. Next time they sign in they can switch between studios from the studio selector.
+            </p>
+          </div>
+          <div className="flex justify-end px-6 py-4 border-t border-gray-200">
+            <button onClick={() => onSave(linked)} className="px-6 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-bold rounded-lg">Done</button>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   // After creating — show temp password screen
@@ -171,7 +198,7 @@ function UserModal({ user, currentRole, onSave, onClose }) {
 
           {!isEdit && (
             <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-xs text-blue-700">
-              <strong>A temporary password will be generated.</strong> You'll be able to copy it and share with the new team member. They can change it after logging in.
+              <strong>New team member?</strong> A temporary password will be generated to share with them. <strong>Already have an account at another studio?</strong> Enter their same email and we'll just add them here — they keep their existing login.
             </div>
           )}
         </div>
