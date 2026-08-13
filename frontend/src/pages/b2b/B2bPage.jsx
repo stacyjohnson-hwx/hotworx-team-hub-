@@ -118,7 +118,7 @@ async function geocodeAddress(address) {
 }
 
 // ─── Contact Modal ────────────────────────────────────────────────────────────
-function ContactModal({ contact, users, onSave, onClose }) {
+function ContactModal({ contact, users, onSave, onClose, onDelete }) {
   const [form, setForm] = useState(contact ? {
     business_name:    contact.business_name || '',
     contact_name:     contact.contact_name || '',
@@ -202,6 +202,14 @@ function ContactModal({ contact, users, onSave, onClose }) {
       onSave(saved)
     } catch (err) { setError(err.message || 'Save failed') }
     finally { setSaving(false) }
+  }
+
+  const [deleting, setDeleting] = useState(false)
+  const remove = async () => {
+    if (!window.confirm(`Delete "${form.business_name || 'this contact'}"? This can't be undone.`)) return
+    setDeleting(true)
+    try { await onDelete(contact.id); onClose() }
+    catch (err) { setError(err?.message || 'Could not delete this contact.'); setDeleting(false) }
   }
 
   return (
@@ -380,11 +388,19 @@ function ContactModal({ contact, users, onSave, onClose }) {
           )}
         </div>
 
-        <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-200">
-          <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 font-medium transition-colors">Cancel</button>
-          <button type="submit" disabled={saving} className="px-6 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-bold rounded-lg transition-colors disabled:opacity-50">
-            {saving ? 'Saving…' : contact ? 'Save Changes' : 'Add Contact'}
-          </button>
+        <div className="flex items-center justify-between gap-3 px-6 py-4 border-t border-gray-200">
+          {contact?.id && onDelete ? (
+            <button type="button" onClick={remove} disabled={deleting}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm text-red-600 hover:text-red-700 font-medium transition-colors disabled:opacity-50">
+              <Trash2 size={14} /> {deleting ? 'Deleting…' : 'Delete'}
+            </button>
+          ) : <span />}
+          <div className="flex gap-3">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 font-medium transition-colors">Cancel</button>
+            <button type="submit" disabled={saving} className="px-6 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-bold rounded-lg transition-colors disabled:opacity-50">
+              {saving ? 'Saving…' : contact ? 'Save Changes' : 'Add Contact'}
+            </button>
+          </div>
         </div>
       </form>
     </div>
@@ -2030,7 +2046,7 @@ export default function B2bPage() {
       {tab === 'report' && <ReportTab contacts={contacts} onOpenContact={setModalContact} />}
 
       {modalContact !== null && (
-        <ContactModal contact={modalContact || null} users={users} onSave={handleSave} onClose={() => setModalContact(null)} />
+        <ContactModal contact={modalContact || null} users={users} onSave={handleSave} onClose={() => setModalContact(null)} onDelete={handleDelete} />
       )}
     </div>
   )
