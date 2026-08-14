@@ -87,12 +87,19 @@ function Sparkline({ daily }) {
 function BusinessPicker({ mode, onClose, onSubmit }) {
   const [rows, setRows] = useState(null)
   const [q, setQ] = useState('')
+  const [ind, setInd] = useState('')
   const [sel, setSel] = useState({})
   const [role, setRole] = useState('business_ambassador')
   const [saving, setSaving] = useState(false)
   useEffect(() => { apiGet('/api/presale/businesses').then(setRows).catch(() => setRows([])) }, [])
   const ids = Object.keys(sel).filter(k => sel[k])
-  const filtered = (rows || []).filter(r => !q || (r.business_name || '').toLowerCase().includes(q.toLowerCase()) || (r.industry || '').toLowerCase().includes(q.toLowerCase()))
+  const industries = Array.from(new Set((rows || []).map(r => r.industry).filter(Boolean))).sort()
+  const filtered = (rows || []).filter(r =>
+    (!ind || r.industry === ind) &&
+    (!q || (r.business_name || '').toLowerCase().includes(q.toLowerCase()) || (r.industry || '').toLowerCase().includes(q.toLowerCase())))
+  const title = mode === 'attach' ? 'Attach businesses to event' : mode === 'plan' ? 'Add businesses to plan' : 'Add businesses to campaign'
+  const selectAll = () => setSel(s => { const n = { ...s }; filtered.forEach(r => { n[r.id] = true }); return n })
+  const clearAll = () => setSel({})
   const submit = async () => {
     if (!ids.length) return
     setSaving(true); await onSubmit(ids, role); setSaving(false); onClose()
@@ -101,11 +108,11 @@ function BusinessPicker({ mode, onClose, onSubmit }) {
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between p-4 border-b border-gray-100">
-          <h3 className="font-bold text-gray-900">{mode === 'attach' ? 'Attach businesses to event' : 'Add businesses to campaign'}</h3>
+          <h3 className="font-bold text-gray-900">{title}</h3>
           <button onClick={onClose}><X size={18} className="text-gray-400" /></button>
         </div>
         <div className="p-4 space-y-3">
-          {mode !== 'attach' && (
+          {mode === 'partner' && (
             <div>
               <label className="text-xs font-semibold text-gray-500">Role</label>
               <select value={role} onChange={e => setRole(e.target.value)} className="w-full mt-1 border border-gray-300 rounded-lg px-2 py-1.5 text-sm">
@@ -113,9 +120,22 @@ function BusinessPicker({ mode, onClose, onSubmit }) {
               </select>
             </div>
           )}
-          <div className="relative">
-            <Search size={14} className="absolute left-2.5 top-2.5 text-gray-400" />
-            <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search your B2B contacts…" className="w-full border border-gray-300 rounded-lg pl-8 pr-2 py-1.5 text-sm" />
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Search size={14} className="absolute left-2.5 top-2.5 text-gray-400" />
+              <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search…" className="w-full border border-gray-300 rounded-lg pl-8 pr-2 py-1.5 text-sm" />
+            </div>
+            <select value={ind} onChange={e => setInd(e.target.value)} className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm max-w-[45%]">
+              <option value="">All categories</option>
+              {industries.map(i => <option key={i} value={i}>{i}</option>)}
+            </select>
+          </div>
+          <div className="flex items-center justify-between text-[11px]">
+            <span className="text-gray-400">{filtered.length} shown · {ids.length} selected</span>
+            <span className="flex gap-2">
+              <button onClick={selectAll} className="font-semibold text-[#C8102E]">Select all shown</button>
+              {ids.length > 0 && <button onClick={clearAll} className="font-semibold text-gray-400">Clear</button>}
+            </span>
           </div>
         </div>
         <div className="flex-1 overflow-y-auto px-4 pb-2">
@@ -358,43 +378,134 @@ function RouteRow({ r, onVisit }) {
   )
 }
 
+const planDateFmt = (s) => s ? new Date(s + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : '—'
+
+function CanvassPlanCard({ plan, onToggle, onRemoveStop, onAddBiz, onDelete }) {
+  const done = plan.stops.filter(s => s.done).length
+  const total = plan.stops.length
+  const pct = total ? Math.round((done / total) * 100) : 0
+  return (
+    <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <div className="text-sm font-black uppercase tracking-wide text-gray-800">{planDateFmt(plan.plan_date)}</div>
+          {plan.name ? <div className="text-[12px] text-gray-500">{plan.name}</div> : null}
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-bold text-gray-500">{done}/{total} done</span>
+          <button onClick={() => onAddBiz(plan)} className="text-[12px] font-semibold text-[#C8102E] border border-[#C8102E]/30 rounded-lg px-2 py-1 hover:bg-[#C8102E]/5">+ stops</button>
+          <button onClick={() => onDelete(plan)} className="text-gray-300 hover:text-red-500 p-1"><Trash2 size={14} /></button>
+        </div>
+      </div>
+      {total > 0 && (
+        <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden my-2">
+          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: HEAT_R }} />
+        </div>
+      )}
+      {total === 0 ? (
+        <p className="text-[12px] text-gray-400 py-1">No stops yet — tap <b>+ stops</b> to pick businesses (filter by category to grab all sororities at once).</p>
+      ) : plan.stops.map(s => (
+        <div key={s.id} className="flex items-center gap-2 py-1.5 border-b border-gray-50 last:border-0">
+          <input type="checkbox" checked={s.done} onChange={() => onToggle(s)} className="accent-[#F26922] w-4 h-4" />
+          <div className="flex-1 min-w-0">
+            <div className={`text-sm font-semibold ${s.done ? 'text-gray-400 line-through' : 'text-gray-800'}`}>{s.business_name}</div>
+            <div className="text-[11px] text-gray-400 truncate">{[s.industry, s.address].filter(Boolean).join(' · ') || '—'}</div>
+          </div>
+          <button onClick={() => onRemoveStop(s)} className="text-gray-300 hover:text-red-500 p-1"><X size={13} /></button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function CanvassTab() {
   const [data, setData] = useState(null)
   const [q, setQ] = useState('')
   const [type, setType] = useState('all')
   const [view, setView] = useState('list')
-  const load = useCallback(() => { apiGet('/api/presale/canvass').then(setData).catch(() => setData({ routes: [] })) }, [])
+  const [plans, setPlans] = useState([])
+  const [newPlan, setNewPlan] = useState(null)   // { plan_date, name }
+  const [planPicker, setPlanPicker] = useState(null) // planId to add stops to
+  const load = useCallback(() => {
+    apiGet('/api/presale/canvass').then(setData).catch(() => setData({ routes: [] }))
+    apiGet('/api/presale/canvass-plans').then(d => setPlans(Array.isArray(d) ? d : [])).catch(() => setPlans([]))
+  }, [])
   useEffect(() => { load() }, [load])
   const logVisit = async (r, f) => {
     try { await apiPost(`/api/presale/canvass/${r.id}/visit`, f); load() } catch { /* ignore */ }
   }
+  const createPlan = async () => {
+    if (!newPlan?.plan_date) return
+    try { await apiPost('/api/presale/canvass-plans', newPlan); setNewPlan(null); load() } catch { /* ignore */ }
+  }
+  const addStops = async (contact_ids) => {
+    if (!planPicker) return
+    try { await apiPost(`/api/presale/canvass-plans/${planPicker}/stops`, { contact_ids }); load() } catch { /* ignore */ }
+  }
+  const toggleStop = async (s) => { try { await apiPut(`/api/presale/canvass-stops/${s.id}`, { done: !s.done }); load() } catch { /* ignore */ } }
+  const removeStop = async (s) => { try { await apiDelete(`/api/presale/canvass-stops/${s.id}`); load() } catch { /* ignore */ } }
+  const deletePlan = async (p) => { if (!window.confirm(`Delete the ${planDateFmt(p.plan_date)} plan?`)) return; try { await apiDelete(`/api/presale/canvass-plans/${p.id}`); load() } catch { /* ignore */ } }
   if (!data) return <div className="py-16 flex justify-center"><Loader2 className="animate-spin text-[#C8102E]" /></div>
   const types = Array.from(new Set((data.routes || []).map(r => r.type).filter(Boolean)))
   const routes = (data.routes || []).filter(r =>
     (type === 'all' || r.type === type) &&
     (!q || (r.name || '').toLowerCase().includes(q.toLowerCase()) || (r.address || '').toLowerCase().includes(q.toLowerCase())))
   return (
-    <div className="space-y-3">
-      <div className="flex gap-2 flex-wrap">
-        <div className="relative flex-1 min-w-[160px]">
-          <Search size={14} className="absolute left-2.5 top-2.5 text-gray-400" />
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search routes…" className="w-full border border-gray-300 rounded-lg pl-8 pr-2 py-1.5 text-sm" />
+    <div className="space-y-4">
+      {/* Canvassing plans by date */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-sm font-black uppercase tracking-wide text-gray-800 flex items-center gap-1.5"><CalendarPlus size={15} style={{ color: '#F26922' }} /> Canvassing Plans</h2>
+          <button onClick={() => setNewPlan(newPlan ? null : { plan_date: '', name: '' })} className="flex items-center gap-1 text-[13px] font-semibold text-[#C8102E] border border-[#C8102E]/30 rounded-lg px-2.5 py-1 hover:bg-[#C8102E]/5">
+            <Plus size={13} /> New plan
+          </button>
         </div>
-        <select value={type} onChange={e => setType(e.target.value)} className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm">
-          <option value="all">All types</option>
-          {types.map(t => <option key={t} value={t}>{t}</option>)}
-        </select>
-        <div className="flex rounded-lg border border-gray-200 overflow-hidden">
-          <button onClick={() => setView('list')} className={`flex items-center gap-1 px-2.5 py-1.5 text-sm font-semibold ${view === 'list' ? 'bg-[#F26922] text-white' : 'text-gray-500'}`}><List size={14} /></button>
-          <button onClick={() => setView('map')} className={`flex items-center gap-1 px-2.5 py-1.5 text-sm font-semibold ${view === 'map' ? 'bg-[#F26922] text-white' : 'text-gray-500'}`}><MapIcon size={14} /></button>
-        </div>
+        {newPlan && (
+          <div className="flex flex-wrap items-center gap-2 mb-3 p-2.5 bg-gray-50 rounded-lg">
+            <input type="date" value={newPlan.plan_date} onChange={e => setNewPlan({ ...newPlan, plan_date: e.target.value })} className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm" />
+            <input value={newPlan.name} onChange={e => setNewPlan({ ...newPlan, name: e.target.value })} placeholder="Label (optional, e.g. Sorority row)" className="flex-1 min-w-[140px] border border-gray-300 rounded-lg px-2 py-1.5 text-sm" />
+            <button onClick={createPlan} disabled={!newPlan.plan_date} className="bg-[#C8102E] text-white text-sm font-semibold rounded-lg px-3 py-1.5 disabled:opacity-40">Create</button>
+          </div>
+        )}
+        {plans.length === 0 ? (
+          <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-5 text-center text-sm text-gray-400">No plans yet. Pick a date, then choose the businesses to hit that day — filter by category to grab a whole group (all sororities, all apartments) at once.</div>
+        ) : (
+          <div className="space-y-3">
+            {plans.map(p => (
+              <CanvassPlanCard key={p.id} plan={p} onToggle={toggleStop} onRemoveStop={removeStop} onAddBiz={pl => setPlanPicker(pl.id)} onDelete={deletePlan} />
+            ))}
+          </div>
+        )}
       </div>
-      {view === 'map' ? <CanvassMap routes={routes} /> : (
-        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4">
-          <p className="text-[11px] text-gray-400 mb-1">{routes.length} route{routes.length === 1 ? '' : 's'} · a visit logs onto the route, the ledger, and (if it's a business) its B2B card.</p>
-          {routes.length === 0 ? <p className="text-sm text-gray-400 py-4">No routes match.</p>
-            : routes.map(r => <RouteRow key={r.id} r={r} onVisit={logVisit} />)}
+
+      {/* Recurring routes (territories) */}
+      <div>
+        <h2 className="text-sm font-black uppercase tracking-wide text-gray-800 flex items-center gap-1.5 mb-2"><MapPin size={15} style={{ color: '#F26922' }} /> Routes</h2>
+        <div className="flex gap-2 flex-wrap mb-3">
+          <div className="relative flex-1 min-w-[160px]">
+            <Search size={14} className="absolute left-2.5 top-2.5 text-gray-400" />
+            <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search routes…" className="w-full border border-gray-300 rounded-lg pl-8 pr-2 py-1.5 text-sm" />
+          </div>
+          <select value={type} onChange={e => setType(e.target.value)} className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm">
+            <option value="all">All types</option>
+            {types.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+          <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+            <button onClick={() => setView('list')} className={`flex items-center gap-1 px-2.5 py-1.5 text-sm font-semibold ${view === 'list' ? 'bg-[#F26922] text-white' : 'text-gray-500'}`}><List size={14} /></button>
+            <button onClick={() => setView('map')} className={`flex items-center gap-1 px-2.5 py-1.5 text-sm font-semibold ${view === 'map' ? 'bg-[#F26922] text-white' : 'text-gray-500'}`}><MapIcon size={14} /></button>
+          </div>
         </div>
+        {view === 'map' ? <CanvassMap routes={routes} /> : (
+          <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4">
+            <p className="text-[11px] text-gray-400 mb-1">{routes.length} route{routes.length === 1 ? '' : 's'} · a visit logs onto the route, the ledger, and (if it's a business) its B2B card.</p>
+            {routes.length === 0 ? <p className="text-sm text-gray-400 py-4">No routes match.</p>
+              : routes.map(r => <RouteRow key={r.id} r={r} onVisit={logVisit} />)}
+          </div>
+        )}
+      </div>
+
+      {planPicker && (
+        <BusinessPicker mode="plan" onClose={() => setPlanPicker(null)} onSubmit={(ids) => addStops(ids)} />
       )}
     </div>
   )

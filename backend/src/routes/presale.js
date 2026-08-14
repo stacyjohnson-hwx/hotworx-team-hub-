@@ -683,4 +683,91 @@ router.post('/businesses/import', requireRole('owner', 'manager'), async (req, r
   } catch (err) { console.error('POST /presale/businesses/import', err.message); res.status(500).json({ error: err.message }) }
 })
 
+// ─── Canvassing plans (pick a date → pick businesses to visit, check off) ─────
+router.get('/canvass-plans', async (req, res) => {
+  try {
+    const sb = db(); const sid = req.studio.id
+    const campaign = await activeCampaign(sb, sid)
+    if (!campaign) return res.json([])
+    const { data: plans } = await sb.from('presale_canvass_plans').select('*').eq('campaign_id', campaign.id).order('plan_date', { ascending: true })
+    const ids = (plans || []).map(p => p.id)
+    const { data: stops } = ids.length
+      ? await sb.from('presale_canvass_stops').select('*, b2b_contacts(business_name, industry, address, status, phone, latitude, longitude)').in('plan_id', ids).order('sort_order')
+      : { data: [] }
+    const byPlan = {}
+    for (const s of stops || []) {
+      (byPlan[s.plan_id] = byPlan[s.plan_id] || []).push({
+        id: s.id, b2b_contact_id: s.b2b_contact_id, done: s.done, sort_order: s.sort_order,
+        business_name: s.b2b_contacts?.business_name, industry: s.b2b_contacts?.industry,
+        address: s.b2b_contacts?.address, status: s.b2b_contacts?.status, phone: s.b2b_contacts?.phone,
+      })
+    }
+    res.json((plans || []).map(p => ({ ...p, stops: byPlan[p.id] || [] })))
+  } catch (err) { console.error('GET /presale/canvass-plans', err.message); res.status(500).json({ error: err.message }) }
+})
+
+router.post('/canvass-plans', async (req, res) => {
+  try {
+    const sb = db(); const sid = req.studio.id
+    const campaign = await activeCampaign(sb, sid)
+    if (!campaign) return res.status(400).json({ error: 'No campaign' })
+    const { plan_date, name, notes, contact_ids } = req.body
+    if (!plan_date) return res.status(400).json({ error: 'plan_date required' })
+    const { data: plan, error } = await sb.from('presale_canvass_plans').insert({
+      campaign_id: campaign.id, studio_id: sid, plan_date, name: name || null, notes: notes || null, created_by: req.user.id,
+    }).select().single()
+    if (error) return res.status(500).json({ error: error.message })
+    if (Array.isArray(contact_ids) && contact_ids.length) {
+      const rows = contact_ids.map((cid, i) => ({ plan_id: plan.id, studio_id: sid, b2b_contact_id: cid, sort_order: i }))
+      await sb.from('presale_canvass_stops').upsert(rows, { onConflict: 'plan_id,b2b_contact_id', ignoreDuplicates: true })
+    }
+    res.status(201).json(plan)
+  } catch (err) { console.error('POST /presale/canvass-plans', err.message); res.status(500).json({ error: err.message }) }
+})
+
+router.put('/canvass-plans/:id', async (req, res) => {
+  const sb = db(); const sid = req.studio.id
+  const patch = {}
+  for (const k of ['name', 'notes']) if (req.body[k] !== undefined) patch[k] = req.body[k] === '' ? null : req.body[k]
+  if (req.body.plan_date !== undefined && req.body.plan_date) patch.plan_date = req.body.plan_date
+  const { data, error } = await sb.from('presale_canvass_plans').update(patch).eq('id', req.params.id).eq('studio_id', sid).select().single()
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data)
+})
+
+router.delete('/canvass-plans/:id', async (req, res) => {
+  const { error } = await db().from('presale_canvass_plans').delete().eq('id', req.params.id).eq('studio_id', req.studio.id)
+  if (error) return res.status(500).json({ error: error.message })
+  res.status(204).end()
+})
+
+router.post('/canvass-plans/:id/stops', async (req, res) => {
+  const sb = db(); const sid = req.studio.id
+  const { contact_ids } = req.body
+  if (!Array.isArray(contact_ids) || !contact_ids.length) return res.status(400).json({ error: 'contact_ids required' })
+  const { data: plan } = await sb.from('presale_canvass_plans').select('id').eq('id', req.params.id).eq('studio_id', sid).maybeSingle()
+  if (!plan) return res.status(404).json({ error: 'Plan not found' })
+  const { count } = await sb.from('presale_canvass_stops').select('id', { count: 'exact', head: true }).eq('plan_id', plan.id)
+  const base = count || 0
+  const rows = contact_ids.map((cid, i) => ({ plan_id: plan.id, studio_id: sid, b2b_contact_id: cid, sort_order: base + i }))
+  const { error } = await sb.from('presale_canvass_stops').upsert(rows, { onConflict: 'plan_id,b2b_contact_id', ignoreDuplicates: true })
+  if (error) return res.status(500).json({ error: error.message })
+  res.status(201).json({ ok: true })
+})
+
+router.put('/canvass-stops/:stopId', async (req, res) => {
+  const sb = db(); const sid = req.studio.id
+  const patch = {}
+  if (req.body.done !== undefined) { patch.done = !!req.body.done; patch.done_at = req.body.done ? new Date().toISOString() : null }
+  const { data, error } = await sb.from('presale_canvass_stops').update(patch).eq('id', req.params.stopId).eq('studio_id', sid).select().single()
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data)
+})
+
+router.delete('/canvass-stops/:stopId', async (req, res) => {
+  const { error } = await db().from('presale_canvass_stops').delete().eq('id', req.params.stopId).eq('studio_id', req.studio.id)
+  if (error) return res.status(500).json({ error: error.message })
+  res.status(204).end()
+})
+
 module.exports = router
