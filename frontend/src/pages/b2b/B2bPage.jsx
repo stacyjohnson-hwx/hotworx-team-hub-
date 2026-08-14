@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRole } from '@/hooks/useRole'
+import { useStudio } from '@/contexts/StudioContext'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
 import { supabase } from '@/lib/supabase'
 import ThumbsWidget, { useFeedbackSignals } from '@/components/ThumbsWidget'
@@ -150,6 +151,8 @@ function ContactModal({ contact, users, onSave, onClose, onDelete }) {
   const [error, setError] = useState('')
   const [history, setHistory] = useState(null)   // interaction history (edit mode)
   const [events, setEvents] = useState(null)     // events linked to this business
+  const [presale, setPresale] = useState(null)   // pre-sale campaign activity (when enabled)
+  const { currentStudio } = useStudio()
   const logoInputRef = useRef(null)
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -161,7 +164,12 @@ function ContactModal({ contact, users, onSave, onClose, onDelete }) {
     apiGet(`/api/b2b/contacts/${contact.id}/events`)
       .then(d => setEvents(Array.isArray(d) ? d : []))
       .catch(() => setEvents([]))
-  }, [contact?.id])
+    if (currentStudio?.presale_enabled) {
+      apiGet(`/api/presale/contact/${contact.id}/activity`)
+        .then(d => setPresale(d?.in_campaign ? d : null))
+        .catch(() => setPresale(null))
+    }
+  }, [contact?.id, currentStudio?.presale_enabled])
 
   const handleLogoChange = async (e) => {
     const file = e.target.files?.[0]
@@ -359,6 +367,30 @@ function ContactModal({ contact, users, onSave, onClose, onDelete }) {
                     {(ev.start_date || ev.event_date) && <span className="text-gray-400 ml-auto flex-shrink-0">{fmtDate(ev.start_date || ev.event_date)}</span>}
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* Pre-Sale campaign role(s) for this business — read-only, only when in the campaign */}
+          {contact && presale && (
+            <div className="pt-4 border-t border-gray-100">
+              <p className="text-xs font-semibold uppercase tracking-wider text-[#C8102E] mb-2 flex items-center gap-1.5">
+                🚀 Pre-Sale · {presale.campaign_name}
+              </p>
+              <div className="rounded-lg bg-[#C8102E]/5 border border-[#C8102E]/15 px-3 py-2.5 space-y-1.5">
+                {(presale.partners || []).map((p, idx) => (
+                  <div key={idx} className="flex items-center justify-between gap-2 text-xs">
+                    <span className="font-semibold text-gray-700 capitalize">{(p.role || '').replace(/_/g, ' ')}</span>
+                    <span className="flex items-center gap-2 text-gray-500">
+                      <span className="capitalize font-medium">{p.status}</span>
+                      {p.hour_slot ? <span>· {p.hour_slot}</span> : null}
+                      {p.prize_item ? <span>· 🎁 {p.prize_item}</span> : null}
+                    </span>
+                  </div>
+                ))}
+                <div className="text-[11px] text-gray-500 pt-1 border-t border-[#C8102E]/10">
+                  <b className="text-gray-700">{presale.leads_attributed || 0}</b> leads attributed to this business
+                </div>
               </div>
             </div>
           )}
