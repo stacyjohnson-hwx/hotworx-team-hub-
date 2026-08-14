@@ -1,8 +1,12 @@
 import { useState, useEffect, useCallback } from 'react'
+import { QRCodeSVG } from 'qrcode.react'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
 import { useStudio } from '@/contexts/StudioContext'
 import { useRole } from '@/hooks/useRole'
-import { Rocket, Loader2, Plus, Check, Calendar, TrendingUp, Pencil, X, Users, Store, Search, Trash2, Link2, CalendarPlus, MapPin, Megaphone, Target, Copy } from 'lucide-react'
+import { Flame, Loader2, Plus, Check, Calendar, TrendingUp, Pencil, X, Users, Store, Search, Trash2, Link2, CalendarPlus, MapPin, Megaphone, Target, Copy, List, Map as MapIcon, Upload, QrCode, BookOpen } from 'lucide-react'
+import PlaybookTab from './PlaybookTab'
+import CanvassMap from './CanvassMap'
+import { HEAT, HEAT_R, Waves, Kicker } from './presaleTheme'
 
 const fmt = (n) => (n ?? 0).toLocaleString()
 const GROUP_ORDER = ['Always on', 'Feet on the street', 'Ambassadors', 'People', 'Other']
@@ -43,7 +47,7 @@ function ChannelRow({ ch, editing, onLog, onPlan }) {
         <span className="text-xs font-bold text-gray-900">{fmt(ch.actual)}<span className="text-gray-400 font-normal"> / {fmt(ch.planned)}</span></span>
       </div>
       <div className="h-2 bg-gray-100 rounded-full overflow-hidden mb-1.5">
-        <div className="h-full rounded-full bg-[#C8102E]" style={{ width: `${pct}%` }} />
+        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: HEAT_R }} />
       </div>
       {editing ? (
         <div className="flex items-center gap-2 text-xs text-gray-500">
@@ -73,7 +77,7 @@ function Sparkline({ daily }) {
   return (
     <div className="flex items-end gap-0.5 h-10">
       {daily.map(d => (
-        <div key={d.date} title={`${d.date}: ${d.count}`} className="flex-1 bg-[#C8102E]/70 rounded-sm" style={{ height: `${Math.max(4, (d.count / max) * 100)}%` }} />
+        <div key={d.date} title={`${d.date}: ${d.count}`} className="flex-1 rounded-sm" style={{ height: `${Math.max(4, (d.count / max) * 100)}%`, background: 'linear-gradient(180deg,#F26922,#FFBD00)' }} />
       ))}
     </div>
   )
@@ -139,6 +143,125 @@ function BusinessPicker({ mode, onClose, onSubmit }) {
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Add {ids.length || ''}
           </button>
         </div>
+      </div>
+    </div>
+  )
+}
+
+// QR + shareable link for an ambassador's source tag. The destination base is editable
+// and remembered locally (the actual lead-capture landing page is out of scope here).
+function QrModal({ ambassador, onClose }) {
+  const [base, setBase] = useState(() => localStorage.getItem('presale_qr_base') || 'https://www.hotworx.com/')
+  const url = `${base}${base.includes('?') ? '&' : '?'}src=${ambassador.source_tag}`
+  const [copied, setCopied] = useState(false)
+  useEffect(() => { localStorage.setItem('presale_qr_base', base) }, [base])
+  const copy = () => { navigator.clipboard?.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 1400) }
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-4 border-b border-gray-100">
+          <h3 className="font-black uppercase tracking-wide text-gray-900 text-sm">{ambassador.full_name}'s link</h3>
+          <button onClick={onClose}><X size={18} className="text-gray-400" /></button>
+        </div>
+        <div className="p-5 flex flex-col items-center gap-3">
+          <div className="p-3 rounded-2xl" style={{ background: HEAT }}>
+            <div className="bg-white p-3 rounded-xl"><QRCodeSVG value={url} size={168} level="M" /></div>
+          </div>
+          <div className="w-full">
+            <label className="text-[11px] font-semibold text-gray-500">Destination base</label>
+            <input value={base} onChange={e => setBase(e.target.value)} className="w-full mt-1 border border-gray-300 rounded-lg px-2 py-1.5 text-sm" />
+          </div>
+          <div className="w-full flex items-center gap-1.5">
+            <input readOnly value={url} className="flex-1 min-w-0 border border-gray-200 bg-gray-50 rounded-lg px-2 py-1.5 text-xs text-gray-600" />
+            <button onClick={copy} className="flex-shrink-0 bg-gray-800 hover:bg-black text-white rounded-lg px-3 py-2 text-xs font-semibold flex items-center gap-1">
+              {copied ? <><Check size={12} /> Copied</> : <><Copy size={12} /> Copy</>}
+            </button>
+          </div>
+          <p className="text-[11px] text-gray-400 text-center">Point the QR at wherever leads sign up — every scan carries <b>?src={ambassador.source_tag}</b> so it's attributed to {ambassador.full_name.split(' ')[0]}.</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Minimal CSV parser (handles quoted fields + commas) → row objects keyed by header.
+function parseCsv(text) {
+  const rows = []
+  let field = '', row = [], inQ = false
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]
+    if (inQ) {
+      if (c === '"' && text[i + 1] === '"') { field += '"'; i++ }
+      else if (c === '"') inQ = false
+      else field += c
+    } else if (c === '"') inQ = true
+    else if (c === ',') { row.push(field); field = '' }
+    else if (c === '\n' || c === '\r') { if (field !== '' || row.length) { row.push(field); rows.push(row); row = []; field = '' } if (c === '\r' && text[i + 1] === '\n') i++ }
+    else field += c
+  }
+  if (field !== '' || row.length) { row.push(field); rows.push(row) }
+  if (!rows.length) return []
+  const header = rows[0].map(h => h.trim().toLowerCase().replace(/\s+/g, '_'))
+  const map = { name: 'business_name', business: 'business_name', company: 'business_name', contact: 'contact_name', phone_number: 'phone', tel: 'phone', category: 'industry', street: 'address' }
+  return rows.slice(1).filter(r => r.some(v => (v || '').trim())).map(r => {
+    const o = {}
+    header.forEach((h, i) => { o[map[h] || h] = (r[i] || '').trim() })
+    return o
+  })
+}
+
+function CsvImportModal({ onClose, onDone }) {
+  const [rows, setRows] = useState(null)
+  const [role, setRole] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState(null)
+  const handleText = (text) => { const parsed = parseCsv(text).filter(r => r.business_name); setRows(parsed) }
+  const handleFile = (e) => { const f = e.target.files?.[0]; if (!f) return; const rd = new FileReader(); rd.onload = () => handleText(String(rd.result || '')); rd.readAsText(f) }
+  const submit = async () => {
+    if (!rows?.length) return
+    setBusy(true)
+    try { const r = await apiPost('/api/presale/businesses/import', { rows, role: role || undefined }); setResult(r) } catch { setResult({ error: true }) }
+    setBusy(false)
+  }
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-4 border-b border-gray-100">
+          <h3 className="font-black uppercase tracking-wide text-gray-900 text-sm flex items-center gap-1.5"><Upload size={15} /> Import businesses (CSV)</h3>
+          <button onClick={onClose}><X size={18} className="text-gray-400" /></button>
+        </div>
+        {result ? (
+          <div className="p-6 text-center">
+            {result.error ? <p className="text-sm text-red-500">Import failed. Check the file and try again.</p>
+              : <><p className="text-3xl font-black text-gray-900">{result.created}</p><p className="text-sm text-gray-600">businesses added to your B2B tracker{result.attached ? ` · ${result.attached} added to the campaign` : ''}.</p></>}
+            <button onClick={onDone} className="mt-4 bg-[#C8102E] text-white text-sm font-semibold rounded-lg px-4 py-2">Done</button>
+          </div>
+        ) : (
+          <>
+            <div className="p-4 space-y-3 overflow-y-auto">
+              <p className="text-xs text-gray-500">Columns recognized: <b>business_name</b> (required), contact_name, phone, email, address, industry. First row = headers.</p>
+              <label className="block text-sm font-semibold text-[#C8102E] cursor-pointer border border-dashed border-[#C8102E]/40 rounded-lg py-3 text-center hover:bg-[#C8102E]/5">
+                Choose a .csv file<input type="file" accept=".csv,text/csv" onChange={handleFile} className="hidden" />
+              </label>
+              <div className="text-center text-[11px] text-gray-400">or paste rows</div>
+              <textarea onChange={e => handleText(e.target.value)} rows={4} placeholder="business_name,phone,industry&#10;Twisted Vine,608-555-0100,Restaurant" className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs font-mono" />
+              {rows && <p className="text-xs font-semibold text-gray-700">{rows.length} row{rows.length === 1 ? '' : 's'} ready {rows.length ? `· e.g. "${rows[0].business_name}"` : ''}</p>}
+              <div>
+                <label className="text-xs font-semibold text-gray-500">Also add to campaign as (optional)</label>
+                <select value={role} onChange={e => setRole(e.target.value)} className="w-full mt-1 border border-gray-300 rounded-lg px-2 py-1.5 text-sm">
+                  <option value="">Just add to B2B tracker</option>
+                  {ROLES.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="p-4 border-t border-gray-100 flex justify-end gap-2">
+              <button onClick={onClose} className="text-sm font-semibold text-gray-500 px-3 py-2">Cancel</button>
+              <button onClick={submit} disabled={!rows?.length || busy} className="bg-[#C8102E] text-white text-sm font-semibold rounded-lg px-4 py-2 disabled:opacity-40 flex items-center gap-1.5">
+                {busy ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />} Import {rows?.length || ''}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   )
@@ -239,6 +362,7 @@ function CanvassTab() {
   const [data, setData] = useState(null)
   const [q, setQ] = useState('')
   const [type, setType] = useState('all')
+  const [view, setView] = useState('list')
   const load = useCallback(() => { apiGet('/api/presale/canvass').then(setData).catch(() => setData({ routes: [] })) }, [])
   useEffect(() => { load() }, [load])
   const logVisit = async (r, f) => {
@@ -260,18 +384,24 @@ function CanvassTab() {
           <option value="all">All types</option>
           {types.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
+        <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+          <button onClick={() => setView('list')} className={`flex items-center gap-1 px-2.5 py-1.5 text-sm font-semibold ${view === 'list' ? 'bg-[#F26922] text-white' : 'text-gray-500'}`}><List size={14} /></button>
+          <button onClick={() => setView('map')} className={`flex items-center gap-1 px-2.5 py-1.5 text-sm font-semibold ${view === 'map' ? 'bg-[#F26922] text-white' : 'text-gray-500'}`}><MapIcon size={14} /></button>
+        </div>
       </div>
-      <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4">
-        <p className="text-[11px] text-gray-400 mb-1">{routes.length} route{routes.length === 1 ? '' : 's'} · a visit logs onto the route, the ledger, and (if it's a business) its B2B card.</p>
-        {routes.length === 0 ? <p className="text-sm text-gray-400 py-4">No routes match.</p>
-          : routes.map(r => <RouteRow key={r.id} r={r} onVisit={logVisit} />)}
-      </div>
+      {view === 'map' ? <CanvassMap routes={routes} /> : (
+        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4">
+          <p className="text-[11px] text-gray-400 mb-1">{routes.length} route{routes.length === 1 ? '' : 's'} · a visit logs onto the route, the ledger, and (if it's a business) its B2B card.</p>
+          {routes.length === 0 ? <p className="text-sm text-gray-400 py-4">No routes match.</p>
+            : routes.map(r => <RouteRow key={r.id} r={r} onVisit={logVisit} />)}
+        </div>
+      )}
     </div>
   )
 }
 
 // ─── Ambassadors tab ─────────────────────────────────────────────────────────
-function AmbassadorRow({ a, canManage, onLog, onDelete }) {
+function AmbassadorRow({ a, canManage, onLog, onDelete, onQr }) {
   const [n, setN] = useState('')
   const [saving, setSaving] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -295,6 +425,7 @@ function AmbassadorRow({ a, canManage, onLog, onDelete }) {
       </div>
       <span className="text-xs font-bold text-gray-700">{a.leads_attributed || 0} leads</span>
       <div className="flex items-center gap-1">
+        <button onClick={() => onQr(a)} className="text-gray-400 hover:text-[#F26922] p-1" title="QR / link"><QrCode size={15} /></button>
         <input type="number" value={n} onChange={e => setN(e.target.value)} onKeyDown={e => e.key === 'Enter' && log()} placeholder="+ leads" className="w-16 border border-gray-300 rounded-lg px-2 py-1 text-sm" />
         <button onClick={log} disabled={saving} className="bg-gray-800 hover:bg-black text-white rounded-lg px-2 py-1.5 disabled:opacity-50">
           {saving ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
@@ -308,6 +439,7 @@ function AmbassadorRow({ a, canManage, onLog, onDelete }) {
 function AmbassadorsTab({ canManage }) {
   const [data, setData] = useState(null)
   const [adding, setAdding] = useState(null)
+  const [qr, setQr] = useState(null)
   const load = useCallback(() => { apiGet('/api/presale/ambassadors').then(setData).catch(() => setData({ ambassadors: [] })) }, [])
   useEffect(() => { load() }, [load])
   const create = async () => {
@@ -341,8 +473,9 @@ function AmbassadorsTab({ canManage }) {
         )}
         {(!data.ambassadors || data.ambassadors.length === 0) ? (
           <p className="text-sm text-gray-400 py-3">No ambassadors yet. Add members, community connectors, and staff — each gets a unique <b>source tag</b> so their referred leads are attributed automatically. Business ambassadors live under Partners.</p>
-        ) : data.ambassadors.map(a => <AmbassadorRow key={a.id} a={a} canManage={canManage} onLog={logLeads} onDelete={del} />)}
+        ) : data.ambassadors.map(a => <AmbassadorRow key={a.id} a={a} canManage={canManage} onLog={logLeads} onDelete={del} onQr={setQr} />)}
       </div>
+      {qr && <QrModal ambassador={qr} onClose={() => setQr(null)} />}
     </div>
   )
 }
@@ -427,6 +560,7 @@ const TABS = [
   { key: 'canvass', label: 'Canvass', icon: MapPin },
   { key: 'ambassadors', label: 'Ambassadors', icon: Megaphone },
   { key: 'drivers', label: 'Daily Drivers', icon: Target },
+  { key: 'playbook', label: 'Playbook', icon: BookOpen },
 ]
 
 export default function PreSalePage() {
@@ -440,6 +574,7 @@ export default function PreSalePage() {
   const [tab, setTab] = useState('track')
   const [picker, setPicker] = useState(null) // {mode:'partner'} | {mode:'attach', eventId}
   const [newEvent, setNewEvent] = useState(null) // {title,start_date}
+  const [csvOpen, setCsvOpen] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -502,10 +637,10 @@ export default function PreSalePage() {
     try { await apiPost(`/api/presale/events/${eventId}/attach`, { contact_ids }); await load() } catch { /* ignore */ }
   }
 
-  if (loading) return <div className="flex justify-center py-20"><Loader2 className="animate-spin text-[#C8102E]" size={26} /></div>
+  if (loading) return <div className="flex justify-center py-20"><Loader2 className="animate-spin text-[#F26922]" size={26} /></div>
   if (!data?.campaign) return (
     <div className="max-w-2xl mx-auto text-center py-20">
-      <Rocket className="mx-auto text-gray-300 mb-3" size={30} />
+      <Flame className="mx-auto text-gray-300 mb-3" size={30} />
       <p className="text-sm font-semibold text-gray-700">No pre-sale campaign for this studio.</p>
       <p className="text-xs text-gray-400 mt-1">The Pre-Sale tab is enabled per studio in Franchise Admin.</p>
     </div>
@@ -520,11 +655,14 @@ export default function PreSalePage() {
   const partnersByRole = {}
   for (const p of partners) (partnersByRole[p.role] = partnersByRole[p.role] || []).push(p)
 
+  const onPace = pace.per_day_required != null && pace.per_day_required <= 40
+  const hype = pct >= 100 ? "GOAL SMASHED — light it up! 🔥" : onPace ? "On pace — keep the burn going 🔥" : "Time to turn up the heat 🔥"
+
   return (
     <div className="max-w-3xl mx-auto space-y-4 pb-10">
       <div className="flex items-center justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2.5"><Rocket size={22} className="text-[#C8102E]" /> {campaign.name}</h1>
+          <h1 className="text-2xl font-black uppercase tracking-tight text-gray-900 flex items-center gap-2.5"><Flame size={22} style={{ color: '#F26922' }} /> {campaign.name}</h1>
           <p className="text-sm text-gray-500 mt-0.5">{currentStudio?.name} · pre-sale lead campaign</p>
         </div>
         {isOwner && tab === 'track' && (
@@ -538,9 +676,11 @@ export default function PreSalePage() {
       <div className="flex gap-1 overflow-x-auto -mx-1 px-1 pb-1">
         {TABS.map(t => {
           const Icon = t.icon
+          const on = tab === t.key
           return (
             <button key={t.key} onClick={() => setTab(t.key)}
-              className={`flex items-center gap-1.5 whitespace-nowrap text-[13px] font-semibold px-3 py-1.5 rounded-lg border ${tab === t.key ? 'bg-[#C8102E] text-white border-[#C8102E]' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
+              style={on ? { background: HEAT_R } : undefined}
+              className={`flex items-center gap-1.5 whitespace-nowrap text-[12px] font-bold uppercase tracking-wide px-3 py-1.5 rounded-lg border ${on ? 'text-white border-transparent shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
               <Icon size={14} /> {t.label}
             </button>
           )
@@ -549,50 +689,55 @@ export default function PreSalePage() {
 
       {/* ── Track ── */}
       {tab === 'track' && (<>
-        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-5">
-          <div className="flex items-end justify-between flex-wrap gap-3">
-            <div>
-              <div className="text-4xl font-black text-gray-900 tracking-tight">{fmt(actual)}<span className="text-xl text-gray-400 font-bold"> / {fmt(goal)}</span></div>
-              <div className="text-xs text-gray-500 mt-0.5">leads banked · {pct}% of goal</div>
-            </div>
-            <div className="flex gap-4 text-center">
+        {/* Heat hero */}
+        <div className="relative overflow-hidden rounded-2xl shadow-sm text-white p-5" style={{ background: HEAT }}>
+          <Waves className="absolute inset-0 pointer-events-none" opacity={0.18} />
+          <div className="relative">
+            <div className="flex items-end justify-between flex-wrap gap-3">
               <div>
-                <div className="text-2xl font-bold text-gray-900">{pace.days_remaining ?? '—'}</div>
-                <div className="text-[11px] text-gray-500">days to launch</div>
+                <div className="text-5xl font-black tracking-tighter leading-none drop-shadow-sm">{fmt(actual)}<span className="text-2xl font-bold text-white/70"> / {fmt(goal)}</span></div>
+                <div className="text-[13px] font-bold uppercase tracking-wide text-white/90 mt-1">leads banked · {pct}% of goal</div>
               </div>
-              <div>
-                <div className="text-2xl font-bold text-[#C8102E]">{pace.per_day_required != null ? fmt(pace.per_day_required) : '—'}</div>
-                <div className="text-[11px] text-gray-500">leads/day needed</div>
+              <div className="flex gap-4 text-center">
+                <div>
+                  <div className="text-3xl font-black leading-none">{pace.days_remaining ?? '—'}</div>
+                  <div className="text-[10px] font-bold uppercase tracking-wide text-white/80 mt-1">days to launch</div>
+                </div>
+                <div>
+                  <div className="text-3xl font-black leading-none">{pace.per_day_required != null ? fmt(pace.per_day_required) : '—'}</div>
+                  <div className="text-[10px] font-bold uppercase tracking-wide text-white/80 mt-1">leads/day needed</div>
+                </div>
               </div>
             </div>
-          </div>
-          <div className="mt-4 relative h-4 bg-gray-100 rounded-full overflow-hidden">
-            <div className="absolute inset-y-0 left-0 bg-gray-200 rounded-full" style={{ width: `${planPct}%` }} title={`Plan: ${fmt(planned)}`} />
-            <div className="absolute inset-y-0 left-0 bg-[#C8102E] rounded-full" style={{ width: `${pct}%` }} title={`Actual: ${fmt(actual)}`} />
-          </div>
-          <div className="flex justify-between text-[11px] text-gray-400 mt-1">
-            <span><span className="inline-block w-2 h-2 rounded-full bg-[#C8102E] mr-1" />Actual {fmt(actual)}</span>
-            <span><span className="inline-block w-2 h-2 rounded-full bg-gray-300 mr-1" />Planned {fmt(planned)}</span>
-            <span>Goal {fmt(goal)}</span>
-          </div>
-          {isOwner && editing && (
-            <div className="flex flex-wrap items-center gap-3 mt-4 pt-3 border-t border-gray-100 text-sm">
-              <label className="flex items-center gap-1.5 text-gray-600">Goal
-                <input type="number" defaultValue={goal} onBlur={e => saveCampaign({ goal_leads: e.target.value })} className="w-24 border border-gray-300 rounded px-2 py-1" /></label>
-              <label className="flex items-center gap-1.5 text-gray-600"><Calendar size={14} /> Launch day
-                <input type="date" defaultValue={campaign.launch_day || ''} onBlur={e => saveCampaign({ launch_day: e.target.value })} className="border border-gray-300 rounded px-2 py-1" /></label>
+            {/* progress on the hero (white track) */}
+            <div className="mt-4 relative h-3 bg-black/15 rounded-full overflow-hidden">
+              <div className="absolute inset-y-0 left-0 bg-white/40 rounded-full" style={{ width: `${planPct}%` }} title={`Plan: ${fmt(planned)}`} />
+              <div className="absolute inset-y-0 left-0 bg-white rounded-full" style={{ width: `${pct}%` }} title={`Actual: ${fmt(actual)}`} />
             </div>
-          )}
+            <div className="flex justify-between items-center text-[11px] font-semibold text-white/90 mt-1.5">
+              <span>{hype}</span>
+              <span>Goal {fmt(goal)}</span>
+            </div>
+          </div>
         </div>
 
+        {isOwner && editing && (
+          <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 flex flex-wrap items-center gap-3 text-sm">
+            <label className="flex items-center gap-1.5 text-gray-600">Goal
+              <input type="number" defaultValue={goal} onBlur={e => saveCampaign({ goal_leads: e.target.value })} className="w-24 border border-gray-300 rounded px-2 py-1" /></label>
+            <label className="flex items-center gap-1.5 text-gray-600"><Calendar size={14} /> Launch day
+              <input type="date" defaultValue={campaign.launch_day || ''} onBlur={e => saveCampaign({ launch_day: e.target.value })} className="border border-gray-300 rounded px-2 py-1" /></label>
+          </div>
+        )}
+
         <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4">
-          <div className="flex items-center justify-between mb-1.5"><span className="text-[13px] font-bold text-gray-700 flex items-center gap-1.5"><TrendingUp size={14} /> Last 14 days</span></div>
+          <Kicker className="flex items-center gap-1.5 mb-1.5"><TrendingUp size={13} /> Last 14 days</Kicker>
           <Sparkline daily={daily} />
         </div>
 
         {orderedGroups.map(g => (
           <div key={g} className="bg-white border border-gray-200 rounded-2xl shadow-sm p-5">
-            <h2 className="text-[11px] font-bold text-gray-400 uppercase tracking-wide mb-1">{g}</h2>
+            <Kicker className="mb-1">{g}</Kicker>
             {groups[g].map(ch => <ChannelRow key={ch.id} ch={ch} editing={editing} onLog={logLead} onPlan={savePlan} />)}
           </div>
         ))}
@@ -602,11 +747,18 @@ export default function PreSalePage() {
       {/* ── Partners & Events ── */}
       {tab === 'connect' && (<>
         <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-5">
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-sm font-bold text-gray-800 flex items-center gap-1.5"><Store size={15} className="text-[#C8102E]" /> Partners</h2>
-            <button onClick={() => setPicker({ mode: 'partner' })} className="flex items-center gap-1 text-[13px] font-semibold text-[#C8102E] border border-[#C8102E]/30 rounded-lg px-2.5 py-1 hover:bg-[#C8102E]/5">
-              <Users size={13} /> Add businesses
-            </button>
+          <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
+            <h2 className="text-sm font-black uppercase tracking-wide text-gray-800 flex items-center gap-1.5"><Store size={15} style={{ color: '#F26922' }} /> Partners</h2>
+            <div className="flex items-center gap-1.5">
+              {isOwnerOrManager && (
+                <button onClick={() => setCsvOpen(true)} className="flex items-center gap-1 text-[13px] font-semibold text-gray-600 border border-gray-200 rounded-lg px-2.5 py-1 hover:bg-gray-50">
+                  <Upload size={13} /> Import CSV
+                </button>
+              )}
+              <button onClick={() => setPicker({ mode: 'partner' })} className="flex items-center gap-1 text-[13px] font-semibold text-[#C8102E] border border-[#C8102E]/30 rounded-lg px-2.5 py-1 hover:bg-[#C8102E]/5">
+                <Users size={13} /> Add businesses
+              </button>
+            </div>
           </div>
           {partners.length === 0 ? (
             <p className="text-sm text-gray-400 py-3">No partners yet. Pull hour sponsors, prize donors, ambassadors, and corporate/apartment partners straight from your B2B contacts — every action logs back onto their business card.</p>
@@ -652,10 +804,11 @@ export default function PreSalePage() {
         <p className="text-xs text-gray-400 flex items-center gap-1.5"><Check size={12} /> Partner & event actions also post to each business's B2B card.</p>
       </>)}
 
-      {/* ── Canvass / Ambassadors / Drivers ── */}
+      {/* ── Canvass / Ambassadors / Drivers / Playbook ── */}
       {tab === 'canvass' && <CanvassTab />}
       {tab === 'ambassadors' && <AmbassadorsTab canManage={isOwnerOrManager} />}
       {tab === 'drivers' && <DriversTab canManage={isOwnerOrManager} />}
+      {tab === 'playbook' && <PlaybookTab canManage={isOwnerOrManager} />}
 
       {picker && (
         <BusinessPicker
@@ -664,6 +817,7 @@ export default function PreSalePage() {
           onSubmit={picker.mode === 'attach' ? (ids) => attachToEvent(ids) : (ids, role) => addPartners(ids, role)}
         />
       )}
+      {csvOpen && <CsvImportModal onClose={() => setCsvOpen(false)} onDone={() => { setCsvOpen(false); load() }} />}
     </div>
   )
 }

@@ -170,7 +170,7 @@ router.put('/partners/:id', async (req, res) => {
   const { data: existing } = await sb.from('presale_partners').select('*').eq('id', req.params.id).eq('studio_id', sid).maybeSingle()
   if (!existing) return res.status(404).json({ error: 'Partner not found' })
   const patch = { updated_at: new Date().toISOString() }
-  for (const k of ['status', 'commitment', 'prize_item', 'hour_slot']) if (req.body[k] !== undefined) patch[k] = req.body[k] === '' ? null : req.body[k]
+  for (const k of ['status', 'commitment', 'prize_item', 'hour_slot', 'bundle_id']) if (req.body[k] !== undefined) patch[k] = req.body[k] === '' ? null : req.body[k]
   if (req.body.ig_live_confirmed !== undefined) patch.ig_live_confirmed = !!req.body.ig_live_confirmed
   if (req.body.prize_value !== undefined) patch.prize_value = req.body.prize_value === '' ? null : Number(req.body.prize_value)
   const { data, error } = await sb.from('presale_partners').update(patch).eq('id', req.params.id).eq('studio_id', sid).select().single()
@@ -579,6 +579,108 @@ router.post('/drivers/:id/log', async (req, res) => {
   ).select().single()
   if (error) return res.status(500).json({ error: error.message })
   res.json(data)
+})
+
+// ─── Phase 4 — Polish: prize bundles ─────────────────────────────────────────
+router.get('/bundles', async (req, res) => {
+  try {
+    const sb = db(); const sid = req.studio.id
+    const campaign = await activeCampaign(sb, sid)
+    if (!campaign) return res.json({ bundles: [], unassigned: [] })
+    const [{ data: bundles }, { data: donors }] = await Promise.all([
+      sb.from('presale_bundles').select('*').eq('campaign_id', campaign.id).order('sort_order'),
+      sb.from('presale_partners').select('id, prize_item, prize_value, bundle_id, status, b2b_contacts(business_name)')
+        .eq('campaign_id', campaign.id).eq('role', 'prize_donor'),
+    ])
+    const byBundle = {}
+    for (const d of donors || []) {
+      const row = { id: d.id, business_name: d.b2b_contacts?.business_name, prize_item: d.prize_item, prize_value: Number(d.prize_value) || 0, status: d.status }
+      if (d.bundle_id) (byBundle[d.bundle_id] = byBundle[d.bundle_id] || []).push(row)
+    }
+    res.json({
+      bundles: (bundles || []).map(b => {
+        const prizes = byBundle[b.id] || []
+        return { ...b, target_value: Number(b.target_value) || 0, committed_value: prizes.reduce((s, p) => s + p.prize_value, 0), prizes }
+      }),
+      unassigned: (donors || []).filter(d => !d.bundle_id).map(d => ({ id: d.id, business_name: d.b2b_contacts?.business_name, prize_item: d.prize_item, prize_value: Number(d.prize_value) || 0 })),
+    })
+  } catch (err) { console.error('GET /presale/bundles', err.message); res.status(500).json({ error: err.message }) }
+})
+
+router.post('/bundles', requireRole('owner', 'manager'), async (req, res) => {
+  const sb = db(); const sid = req.studio.id
+  const campaign = await activeCampaign(sb, sid)
+  if (!campaign) return res.status(400).json({ error: 'No campaign' })
+  if (!req.body.name) return res.status(400).json({ error: 'name required' })
+  const { data, error } = await sb.from('presale_bundles').insert({
+    campaign_id: campaign.id, studio_id: sid, name: String(req.body.name).trim(),
+    tag: req.body.tag || null, blurb: req.body.blurb || null,
+    target_value: Number(req.body.target_value) || 0, sort_order: parseInt(req.body.sort_order) || 0,
+  }).select().single()
+  if (error) return res.status(500).json({ error: error.message })
+  res.status(201).json(data)
+})
+
+router.put('/bundles/:id', requireRole('owner', 'manager'), async (req, res) => {
+  const sb = db(); const sid = req.studio.id
+  const patch = {}
+  for (const k of ['name', 'tag', 'blurb']) if (req.body[k] !== undefined) patch[k] = req.body[k] === '' ? null : req.body[k]
+  if (req.body.target_value !== undefined) patch.target_value = Number(req.body.target_value) || 0
+  if (req.body.sort_order !== undefined) patch.sort_order = parseInt(req.body.sort_order) || 0
+  const { data, error } = await sb.from('presale_bundles').update(patch).eq('id', req.params.id).eq('studio_id', sid).select().single()
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data)
+})
+
+router.delete('/bundles/:id', requireRole('owner', 'manager'), async (req, res) => {
+  const { error } = await db().from('presale_bundles').delete().eq('id', req.params.id).eq('studio_id', req.studio.id)
+  if (error) return res.status(500).json({ error: error.message })
+  res.status(204).end()
+})
+
+// ─── GET /api/presale/promotions — read-only panel of what the team can offer ─
+router.get('/promotions', async (req, res) => {
+  const sb = db()
+  const { data, error } = await sb.from('promotions')
+    .select('id, title, description, promo_type, discount_value, discount_unit, start_date, end_date, ongoing, active')
+    .eq('studio_id', req.studio.id).order('active', { ascending: false }).order('title')
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data || [])
+})
+
+// ─── POST /api/presale/businesses/import — bulk-create B2B contacts from CSV ──
+router.post('/businesses/import', requireRole('owner', 'manager'), async (req, res) => {
+  try {
+    const sb = db(); const sid = req.studio.id
+    const { rows, role } = req.body
+    if (!Array.isArray(rows) || !rows.length) return res.status(400).json({ error: 'rows required' })
+    const clean = rows
+      .map(r => ({
+        studio_id: sid,
+        business_name: String(r.business_name || '').trim(),
+        contact_name: r.contact_name ? String(r.contact_name).trim() : null,
+        phone: r.phone ? String(r.phone).trim() : null,
+        email: r.email ? String(r.email).trim() : null,
+        address: r.address ? String(r.address).trim() : null,
+        industry: r.industry ? String(r.industry).trim() : null,
+        status: 'new_lead',
+      }))
+      .filter(r => r.business_name)
+    if (!clean.length) return res.status(400).json({ error: 'No rows had a business name' })
+    const { data: inserted, error } = await sb.from('b2b_contacts').insert(clean).select('id')
+    if (error) return res.status(500).json({ error: error.message })
+    let attached = 0
+    if (role && ROLE_LABEL[role]) {
+      const campaign = await activeCampaign(sb, sid)
+      if (campaign) {
+        const pr = (inserted || []).map(c => ({ campaign_id: campaign.id, studio_id: sid, b2b_contact_id: c.id, role }))
+        const { data: pdata } = await sb.from('presale_partners').upsert(pr, { onConflict: 'campaign_id,b2b_contact_id,role', ignoreDuplicates: true }).select('id')
+        attached = (pdata || []).length
+        for (const c of inserted || []) await logInteraction(sb, { contact_id: c.id, studio_id: sid, type: 'other', note: `Imported + added as ${ROLE_LABEL[role]} — ${campaign.name}`, logged_by: req.user.id })
+      }
+    }
+    res.status(201).json({ created: (inserted || []).length, attached })
+  } catch (err) { console.error('POST /presale/businesses/import', err.message); res.status(500).json({ error: err.message }) }
 })
 
 module.exports = router
