@@ -117,6 +117,50 @@ router.post('/leads', async (req, res) => {
   }
 })
 
+// ─── GET /api/presale/leads/recent — recent ledger entries (to review / undo) ─
+router.get('/leads/recent', async (req, res) => {
+  try {
+    const sb = db(); const sid = req.studio.id
+    const campaign = await activeCampaign(sb, sid)
+    if (!campaign) return res.json([])
+    const { data: rows } = await sb.from('presale_lead_log').select('id, lead_count, logged_on, source_tag, notes, channel_id, event_id, b2b_contact_id, created_at')
+      .eq('campaign_id', campaign.id).order('created_at', { ascending: false }).limit(40)
+    const chIds = [...new Set((rows || []).map(r => r.channel_id).filter(Boolean))]
+    const evIds = [...new Set((rows || []).map(r => r.event_id).filter(Boolean))]
+    const bIds = [...new Set((rows || []).map(r => r.b2b_contact_id).filter(Boolean))]
+    const [chs, evs, bs] = await Promise.all([
+      chIds.length ? sb.from('presale_channels').select('id, label').in('id', chIds) : Promise.resolve({ data: [] }),
+      evIds.length ? sb.from('events').select('id, title').in('id', evIds) : Promise.resolve({ data: [] }),
+      bIds.length ? sb.from('b2b_contacts').select('id, business_name').in('id', bIds) : Promise.resolve({ data: [] }),
+    ])
+    const chMap = Object.fromEntries((chs.data || []).map(c => [c.id, c.label]))
+    const evMap = Object.fromEntries((evs.data || []).map(e => [e.id, e.title]))
+    const bMap = Object.fromEntries((bs.data || []).map(b => [b.id, b.business_name]))
+    res.json((rows || []).map(r => ({
+      id: r.id, lead_count: r.lead_count, logged_on: r.logged_on, source_tag: r.source_tag,
+      channel_label: chMap[r.channel_id] || 'Lead',
+      source: evMap[r.event_id] || bMap[r.b2b_contact_id] || null,
+    })))
+  } catch (err) { console.error('GET /presale/leads/recent', err.message); res.status(500).json({ error: err.message }) }
+})
+
+// ─── DELETE /api/presale/leads/:id — remove a mistaken ledger entry ───────────
+router.delete('/leads/:id', async (req, res) => {
+  try {
+    const sb = db(); const sid = req.studio.id
+    const { data: row } = await sb.from('presale_lead_log').select('id, lead_count, b2b_contact_id').eq('id', req.params.id).eq('studio_id', sid).maybeSingle()
+    if (!row) return res.status(404).json({ error: 'Entry not found' })
+    // Reverse the guests_referred bump if it was attributed to a business.
+    if (row.b2b_contact_id && row.lead_count > 0) {
+      const { data: c } = await sb.from('b2b_contacts').select('guests_referred').eq('id', row.b2b_contact_id).maybeSingle()
+      await sb.from('b2b_contacts').update({ guests_referred: Math.max(0, (c?.guests_referred || 0) - row.lead_count) }).eq('id', row.b2b_contact_id)
+    }
+    const { error } = await sb.from('presale_lead_log').delete().eq('id', req.params.id).eq('studio_id', sid)
+    if (error) return res.status(500).json({ error: error.message })
+    res.status(204).end()
+  } catch (err) { console.error('DELETE /presale/leads/:id', err.message); res.status(500).json({ error: err.message }) }
+})
+
 // ─── GET /api/presale/businesses — the B2B picker source ─────────────────────
 router.get('/businesses', async (req, res) => {
   try {
@@ -692,14 +736,19 @@ router.get('/canvass-plans', async (req, res) => {
     const { data: plans } = await sb.from('presale_canvass_plans').select('*').eq('campaign_id', campaign.id).order('plan_date', { ascending: true })
     const ids = (plans || []).map(p => p.id)
     const { data: stops } = ids.length
-      ? await sb.from('presale_canvass_stops').select('*, b2b_contacts(business_name, industry, address, status, phone, latitude, longitude)').in('plan_id', ids).order('sort_order')
+      ? await sb.from('presale_canvass_stops').select('*, b2b_contacts(business_name, industry, address, status, phone, logo_url), territories(name, type, address)').in('plan_id', ids).order('sort_order')
       : { data: [] }
     const byPlan = {}
     for (const s of stops || []) {
+      const isTerr = !!s.territory_id;
       (byPlan[s.plan_id] = byPlan[s.plan_id] || []).push({
-        id: s.id, b2b_contact_id: s.b2b_contact_id, done: s.done, sort_order: s.sort_order,
-        business_name: s.b2b_contacts?.business_name, industry: s.b2b_contacts?.industry,
-        address: s.b2b_contacts?.address, status: s.b2b_contacts?.status, phone: s.b2b_contacts?.phone,
+        id: s.id, b2b_contact_id: s.b2b_contact_id, territory_id: s.territory_id, kind: isTerr ? 'neighborhood' : 'business',
+        done: s.done, sort_order: s.sort_order,
+        business_name: isTerr ? s.territories?.name : s.b2b_contacts?.business_name,
+        industry: isTerr ? 'Neighborhood' : s.b2b_contacts?.industry,
+        address: isTerr ? s.territories?.address : s.b2b_contacts?.address,
+        status: isTerr ? null : s.b2b_contacts?.status, phone: isTerr ? null : s.b2b_contacts?.phone,
+        logo_url: isTerr ? null : s.b2b_contacts?.logo_url,
       })
     }
     res.json((plans || []).map(p => ({ ...p, stops: byPlan[p.id] || [] })))
@@ -743,16 +792,43 @@ router.delete('/canvass-plans/:id', async (req, res) => {
 
 router.post('/canvass-plans/:id/stops', async (req, res) => {
   const sb = db(); const sid = req.studio.id
-  const { contact_ids } = req.body
-  if (!Array.isArray(contact_ids) || !contact_ids.length) return res.status(400).json({ error: 'contact_ids required' })
+  const contact_ids = Array.isArray(req.body.contact_ids) ? req.body.contact_ids : []
+  const territory_ids = Array.isArray(req.body.territory_ids) ? req.body.territory_ids : []
+  if (!contact_ids.length && !territory_ids.length) return res.status(400).json({ error: 'contact_ids or territory_ids required' })
   const { data: plan } = await sb.from('presale_canvass_plans').select('id').eq('id', req.params.id).eq('studio_id', sid).maybeSingle()
   if (!plan) return res.status(404).json({ error: 'Plan not found' })
   const { count } = await sb.from('presale_canvass_stops').select('id', { count: 'exact', head: true }).eq('plan_id', plan.id)
-  const base = count || 0
-  const rows = contact_ids.map((cid, i) => ({ plan_id: plan.id, studio_id: sid, b2b_contact_id: cid, sort_order: base + i }))
-  const { error } = await sb.from('presale_canvass_stops').upsert(rows, { onConflict: 'plan_id,b2b_contact_id', ignoreDuplicates: true })
-  if (error) return res.status(500).json({ error: error.message })
+  let n = count || 0
+  const results = []
+  if (contact_ids.length) {
+    const rows = contact_ids.map(cid => ({ plan_id: plan.id, studio_id: sid, b2b_contact_id: cid, sort_order: n++ }))
+    results.push(sb.from('presale_canvass_stops').upsert(rows, { onConflict: 'plan_id,b2b_contact_id', ignoreDuplicates: true }))
+  }
+  if (territory_ids.length) {
+    const rows = territory_ids.map(tid => ({ plan_id: plan.id, studio_id: sid, territory_id: tid, sort_order: n++ }))
+    results.push(sb.from('presale_canvass_stops').upsert(rows, { onConflict: 'plan_id,territory_id', ignoreDuplicates: true }))
+  }
+  const settled = await Promise.all(results)
+  const err = settled.find(r => r.error)?.error
+  if (err) return res.status(500).json({ error: err.message })
   res.status(201).json({ ok: true })
+})
+
+// ─── GET /api/presale/canvass-targets — businesses + neighborhoods for the picker
+router.get('/canvass-targets', async (req, res) => {
+  try {
+    const sb = db(); const sid = req.studio.id
+    const [{ data: contacts }, { data: studio }, { data: terrs }] = await Promise.all([
+      sb.from('b2b_contacts').select('id, business_name, industry, logo_url, address, latitude, longitude').eq('studio_id', sid).order('business_name'),
+      sb.from('studios').select('latitude, longitude').eq('id', sid).maybeSingle(),
+      sb.from('territories').select('id, name, address, latitude, longitude').eq('studio_id', sid).eq('active', true).eq('type', 'neighborhood').order('name'),
+    ])
+    const dist = (lat, lng) => { const d = studio ? haversineMi(studio.latitude, studio.longitude, lat, lng) : null; return d == null ? null : Math.round(d * 10) / 10 }
+    res.json([
+      ...(contacts || []).map(c => ({ kind: 'business', id: c.id, name: c.business_name, category: c.industry || 'Business', logo_url: c.logo_url, address: c.address, distance_mi: dist(c.latitude, c.longitude) })),
+      ...(terrs || []).map(t => ({ kind: 'neighborhood', id: t.id, name: t.name, category: 'Neighborhood', logo_url: null, address: t.address, distance_mi: dist(t.latitude, t.longitude) })),
+    ])
+  } catch (err) { console.error('GET /presale/canvass-targets', err.message); res.status(500).json({ error: err.message }) }
 })
 
 router.put('/canvass-stops/:stopId', async (req, res) => {
