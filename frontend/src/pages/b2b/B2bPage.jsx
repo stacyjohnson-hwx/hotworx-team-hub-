@@ -44,7 +44,7 @@ const INDUSTRIES = [
   'MedSpa', 'Municipal', 'Neighborhood / HOA', 'Networking Group', 'Nutrition / Wellness',
   'Physical Therapy', 'Private Club', 'Property Management', 'Real Estate', 'Recreation',
   'Restaurant / Bar', 'Restaurant Group', 'Retail', 'Salon / Spa', 'School',
-  'Sports / Athletics', 'Wellness', 'Yoga / Pilates', 'Other',
+  'Sorority', 'Sports / Athletics', 'Wellness', 'Yoga / Pilates', 'Other',
 ]
 
 function statusMeta(val) {
