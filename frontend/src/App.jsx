@@ -41,6 +41,7 @@ import CompetitorsPage from '@/pages/competitors/CompetitorsPage'
 import RetailPage from '@/pages/retail/RetailPage'
 import InventoryCountPage from '@/pages/retail/InventoryCountPage'
 import MonthlyPlannerPage from '@/pages/monthly-planner/MonthlyPlannerPage'
+import PreSalePage from '@/pages/presale/PreSalePage'
 import ContestPage from '@/pages/contest/ContestPage'
 
 function ProtectedRoute({ children }) {
@@ -127,6 +128,7 @@ function AppRoutes() {
         <Route path="/social"    element={<SocialAnalyticsPage />} />
         <Route path="/orders"    element={<OrdersPage />} />
         <Route path="/eod"       element={<EodPage />} />
+        <Route path="/presale"   element={<PreSalePage />} />
         <Route path="/cleaning"  element={<CleaningPage />} />
         <Route path="/timeoff"   element={<TimeOffPage />} />
         <Route path="/sops"        element={<SopsPage />} />

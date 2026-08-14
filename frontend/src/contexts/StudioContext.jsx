@@ -71,6 +71,7 @@ export function StudioProvider({ children }) {
           timezone: studio.timezone,
           latitude: studio.latitude,
           longitude: studio.longitude,
+          presale_enabled: studio.presale_enabled === true,
           userRole: userStudio?.role,
           color: studioAccent(studio.code).accent,
         }

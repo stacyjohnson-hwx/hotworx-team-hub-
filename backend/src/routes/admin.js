@@ -64,6 +64,17 @@ router.get('/studios/:id', async (req, res) => {
   res.json({ ...studio, members })
 })
 
+// PATCH /api/admin/studios/:id — flip per-studio settings (e.g. the Pre-Sale tab).
+router.patch('/studios/:id', async (req, res) => {
+  const sb = adminClient()
+  const patch = {}
+  if (req.body.presale_enabled !== undefined) patch.presale_enabled = !!req.body.presale_enabled
+  if (!Object.keys(patch).length) return res.status(400).json({ error: 'No supported fields to update' })
+  const { data, error } = await sb.from('studios').update(patch).eq('id', req.params.id).select().single()
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data)
+})
+
 // POST /api/admin/provision — stand up a new franchisee end to end:
 // studio row → owner auth user → profile → owner membership → seed starter libraries.
 // Ordered + idempotent (unique studios.code, seed skips populated tables) so a retry resumes.

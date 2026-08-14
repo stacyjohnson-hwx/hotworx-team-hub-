@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
-import { apiGet, apiPost } from '@/hooks/useApi'
-import { Building2, Plus, Loader2, Copy, Check, X, ShieldCheck, Users } from 'lucide-react'
+import { apiGet, apiPost, apiPatch } from '@/hooks/useApi'
+import { Building2, Plus, Loader2, Copy, Check, X, ShieldCheck, Users, Rocket } from 'lucide-react'
 
 const BLANK = { code: '', name: '', address: '', timezone: 'America/Chicago', owner_full_name: '', owner_email: '' }
 
@@ -20,6 +20,14 @@ export default function AdminPortalPage() {
     catch (e) { setError(e.message); setStudios([]) }
   }, [])
   useEffect(() => { load() }, [load])
+
+  // Show/hide the Pre-Sale tab for a studio.
+  const togglePresale = async (s) => {
+    const next = !s.presale_enabled
+    setStudios(list => list.map(x => x.id === s.id ? { ...x, presale_enabled: next } : x))
+    try { await apiPatch(`/api/admin/studios/${s.id}`, { presale_enabled: next }) }
+    catch (e) { setError(e.message); setStudios(list => list.map(x => x.id === s.id ? { ...x, presale_enabled: !next } : x)) }
+  }
 
   return (
     <div className="max-w-5xl mx-auto">
@@ -53,11 +61,12 @@ export default function AdminPortalPage() {
                 <th className="text-left px-4 py-2.5 font-semibold">Owner(s)</th>
                 <th className="text-right px-4 py-2.5 font-semibold">Team</th>
                 <th className="text-left px-4 py-2.5 font-semibold">Status</th>
+                <th className="text-center px-4 py-2.5 font-semibold">Pre-Sale</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {studios.length === 0 ? (
-                <tr><td colSpan={5} className="text-center text-gray-400 py-10">No studios yet.</td></tr>
+                <tr><td colSpan={6} className="text-center text-gray-400 py-10">No studios yet.</td></tr>
               ) : studios.map(s => (
                 <tr key={s.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3">
@@ -73,6 +82,12 @@ export default function AdminPortalPage() {
                   <td className="px-4 py-3 text-gray-600">{s.owners?.length ? s.owners.join(', ') : <span className="text-gray-300">—</span>}</td>
                   <td className="px-4 py-3 text-right text-gray-600"><span className="inline-flex items-center gap-1"><Users size={12} className="text-gray-400" />{s.member_count}</span></td>
                   <td className="px-4 py-3"><span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">{s.status || 'active'}</span></td>
+                  <td className="px-4 py-3 text-center">
+                    <button onClick={() => togglePresale(s)} title={s.presale_enabled ? 'Pre-Sale tab is ON — click to hide' : 'Pre-Sale tab is OFF — click to show'}
+                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${s.presale_enabled ? 'bg-red-600' : 'bg-gray-300'}`}>
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${s.presale_enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>

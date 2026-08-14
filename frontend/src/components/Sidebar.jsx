@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRole } from '@/hooks/useRole'
+import { useStudio } from '@/contexts/StudioContext'
 import { supabase } from '@/lib/supabase'
 import { StudioSwitcher } from '@/components/StudioSwitcher'
 import {
@@ -39,6 +40,7 @@ import {
   Trophy,
   ShieldCheck,
   Scale,
+  Rocket,
 } from 'lucide-react'
 
 // Sidebar organized into sections. Dashboard is pinned (no header); the footer
@@ -48,6 +50,8 @@ const NAV_SECTIONS = [
     title: null,
     items: [
       { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['owner', 'manager', 'tsa'] },
+      // Only shows for studios in pre-sale (Franchise Admin toggle).
+      { to: '/presale', label: 'Pre-Sale', icon: Rocket, roles: ['owner', 'manager', 'tsa'], studioFlag: 'presale_enabled' },
     ],
   },
   {
@@ -148,6 +152,7 @@ function Avatar({ name, avatarUrl, size = 7 }) {
 export function Sidebar({ onNavigate }) {
   const { user, signOut, profile } = useAuth()
   const { role, isPlatformAdmin } = useRole()
+  const { currentStudio } = useStudio()
   const navigate = useNavigate()
 
   const roleLabel = role === 'owner' ? 'Owner' : role === 'manager' ? 'Manager' : 'TSA'
@@ -176,7 +181,11 @@ export function Sidebar({ onNavigate }) {
       <div className="flex-1 overflow-y-auto relative min-h-0">
         <nav className="py-3 px-2">
           {NAV_SECTIONS.map((section, si) => {
-            const items = section.items.filter(item => item.platformOnly ? isPlatformAdmin : item.roles.includes(role))
+            const items = section.items.filter(item => {
+              if (item.platformOnly) return isPlatformAdmin
+              if (item.studioFlag && !currentStudio?.[item.studioFlag]) return false
+              return item.roles.includes(role)
+            })
             if (!items.length) return null
             return (
               <div key={si} className={section.title ? 'mt-4 first:mt-0' : ''}>
