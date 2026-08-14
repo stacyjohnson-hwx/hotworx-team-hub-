@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom'
 import { MapContainer, TileLayer, Marker, Popup, Circle, useMap, useMapEvents } from 'react-leaflet'
 import { Plus, MapPin, X, Search, Loader2, Trash2, Building2, Home, ChevronRight, ExternalLink, Clock, FileText, Pencil, Navigation, Edit2, Check } from 'lucide-react'
 import { MAP_ACTIVITIES, EMPLOYEES } from '../data/mockData'
-import { apiGet, apiPut } from '@/hooks/useApi'
+import { apiGet, apiPut, apiDelete } from '@/hooks/useApi'
 import { useRole } from '@/hooks/useRole'
 import { useStudio } from '@/contexts/StudioContext'
 
@@ -1060,11 +1060,11 @@ function LocationRow({ item, type, activities, onFly, onDelete, onShowHistory, o
             <FileText size={13} />
           </button>
         )}
-        {/* Delete (neighborhoods, manager/owner) */}
-        {onDelete && type === 'neighborhood' && (
+        {/* Delete (neighborhoods + businesses, manager/owner) */}
+        {onDelete && (
           <button onClick={e => { e.stopPropagation(); onDelete(item.id) }}
             className="p-1.5 text-gray-200 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all rounded"
-            title="Remove neighborhood">
+            title={type === 'neighborhood' ? 'Remove neighborhood' : 'Remove from tracker'}>
             <Trash2 size={12} />
           </button>
         )}
@@ -1220,6 +1220,20 @@ export default function MapTab({ focus } = {}) {
   // Delete activity — remove from state (saveActivities useEffect persists it)
   function handleDeleteActivity(id) {
     setActivities(prev => prev.filter(a => a.id !== id))
+  }
+
+  // Delete a B2B contact (apartment / business) straight from the map or list — for
+  // pruning places that aren't near us. Removes it from the tracker entirely.
+  async function deleteBiz(id) {
+    const c = b2bContacts.find(x => x.id === id)
+    if (!window.confirm(`Remove "${c?.business_name || 'this place'}" from the B2B tracker? This permanently deletes the contact and its outreach history.`)) return
+    try {
+      await apiDelete(`/api/b2b/contacts/${id}`, null, currentStudio?.id)
+      setB2bContacts(prev => prev.filter(x => x.id !== id))
+      setBizDetail(prev => (prev?.id === id ? null : prev))
+    } catch (e) {
+      alert(`Could not delete: ${e?.message || 'unknown error'}`)
+    }
   }
 
   // ALL B2B contacts normalized → shown in the list (single source of truth)
@@ -1418,6 +1432,12 @@ export default function MapTab({ focus } = {}) {
                     <p style={{fontSize:11,color:'#6b7280'}}>{fmt(a.dateCompleted)} · <span style={{color,fontWeight:600}}>{INTENSITY[intensity].label}</span></p>
                     {a.notes && <p style={{fontSize:11,color:'#374151',fontStyle:'italic',borderTop:'1px solid #f3f4f6',paddingTop:4,marginTop:4}}>{a.notes}</p>}
                     <p style={{fontSize:11,fontWeight:700,color:'#E8611A',marginTop:4}}>+{a.points} pts</p>
+                    <button
+                      onClick={() => { if (window.confirm('Delete this outreach pin? This removes the logged activity.')) handleDeleteActivity(a.id) }}
+                      style={{marginTop:8,display:'inline-flex',alignItems:'center',gap:4,color:'#ef4444',fontSize:11,fontWeight:600,background:'none',border:'none',cursor:'pointer',padding:0}}
+                      title="Delete this outreach pin">
+                      <Trash2 size={12} /> Delete pin
+                    </button>
                   </div>
                 </Popup>
               </Marker>
@@ -1447,6 +1467,12 @@ export default function MapTab({ focus } = {}) {
                       : <p style={{fontSize:11,color:'#9ca3af'}}>No outreach logged yet</p>
                     }
                     {b.address && <p style={{fontSize:11,color:'#6b7280',marginTop:2}}>{b.address}</p>}
+                    <button
+                      onClick={() => deleteBiz(b.id)}
+                      style={{marginTop:8,display:'inline-flex',alignItems:'center',gap:4,color:'#ef4444',fontSize:11,fontWeight:600,background:'none',border:'none',cursor:'pointer',padding:0}}
+                      title="Remove from B2B tracker">
+                      <Trash2 size={12} /> Delete from tracker
+                    </button>
                   </div>
                 </Popup>
               </Marker>
@@ -1530,7 +1556,7 @@ export default function MapTab({ focus } = {}) {
                 type={listTab === 'neighborhoods' ? 'neighborhood' : 'business'}
                 activities={activities}
                 onFly={flyToItem}
-                onDelete={listTab === 'neighborhoods' && isOwnerOrManager ? delNeighborhood : undefined}
+                onDelete={isOwnerOrManager ? (listTab === 'neighborhoods' ? delNeighborhood : deleteBiz) : undefined}
                 onShowHistory={listTab === 'neighborhoods' ? handleShowNbhHistory : undefined}
                 onLogActivity={listTab === 'neighborhoods' ? handleLogForNbh : undefined}
                 onViewBiz={listTab !== 'neighborhoods' ? handleViewBiz : undefined}

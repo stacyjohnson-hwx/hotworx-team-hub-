@@ -557,7 +557,7 @@ function DriversTab({ canManage }) {
 const TABS = [
   { key: 'track', label: 'Track', icon: TrendingUp },
   { key: 'connect', label: 'Partners & Events', icon: Store },
-  { key: 'canvass', label: 'Canvass', icon: MapPin },
+  { key: 'canvass', label: 'Canvas', icon: MapPin },
   { key: 'ambassadors', label: 'Ambassadors', icon: Megaphone },
   { key: 'drivers', label: 'Daily Drivers', icon: Target },
   { key: 'playbook', label: 'Playbook', icon: BookOpen },
