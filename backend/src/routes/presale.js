@@ -308,4 +308,277 @@ router.put('/campaign', requireRole('owner'), async (req, res) => {
   res.json(data)
 })
 
+// ─── Phase 3 — Field: shared helpers ─────────────────────────────────────────
+const slugify = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 18) || 'x'
+async function channelIdByKey(sb, campaignId, key) {
+  const { data } = await sb.from('presale_channels').select('id').eq('campaign_id', campaignId).eq('key', key).maybeSingle()
+  return data?.id || null
+}
+// All active team members of the studio (incl. owner/manager) → { map, team } for assignees.
+async function studioNames(sb, studioId) {
+  const [{ data: usersRes }, { data: members }, { data: inactive }] = await Promise.all([
+    sb.auth.admin.listUsers(),
+    sb.from('user_studios').select('user_id, role').eq('studio_id', studioId),
+    sb.from('user_profiles').select('id').eq('is_active', false),
+  ])
+  const roleBy = Object.fromEntries((members || []).map(m => [m.user_id, m.role]))
+  const inactiveIds = new Set((inactive || []).map(r => r.id))
+  const map = {}, team = []
+  for (const u of usersRes?.users || []) {
+    if (!roleBy[u.id] || inactiveIds.has(u.id)) continue
+    const name = u.user_metadata?.full_name || u.email?.split('@')[0] || 'Team Member'
+    map[u.id] = name; team.push({ id: u.id, name, role: roleBy[u.id] })
+  }
+  team.sort((a, b) => a.name.localeCompare(b.name))
+  return { map, team }
+}
+// Insert a ledger row and, when attributed to a business, mirror it onto the B2B card.
+async function postLeads(sb, { campaign_id, channel_id, studio_id, n, logged_on, source_tag, b2b_contact_id, event_id, territory_id, ambassador_id, logged_by }) {
+  const { data, error } = await sb.from('presale_lead_log').insert({
+    campaign_id, channel_id, studio_id, logged_on: logged_on || todayInChicago(), lead_count: n,
+    source_tag: source_tag || null, b2b_contact_id: b2b_contact_id || null, event_id: event_id || null,
+    territory_id: territory_id || null, ambassador_id: ambassador_id || null, logged_by,
+  }).select().single()
+  if (error) throw new Error(error.message)
+  if (b2b_contact_id && n > 0) {
+    const { data: c } = await sb.from('b2b_contacts').select('guests_referred').eq('id', b2b_contact_id).maybeSingle()
+    await sb.from('b2b_contacts').update({ guests_referred: (c?.guests_referred || 0) + n, updated_at: new Date().toISOString() }).eq('id', b2b_contact_id)
+    await logInteraction(sb, { contact_id: b2b_contact_id, studio_id, type: 'other', note: `${n} leads attributed${source_tag ? ` via ?src=${source_tag}` : ''}`, logged_by })
+  }
+  return data
+}
+
+// ─── Canvass — routes read from territories; a visit dual-writes ──────────────
+router.get('/canvass', async (req, res) => {
+  try {
+    const sb = db(); const sid = req.studio.id
+    const campaign = await activeCampaign(sb, sid)
+    const [{ data: terrs }, { data: visits }, { data: leads }, names, bizCh, aptCh] = await Promise.all([
+      sb.from('territories').select('id, name, type, address, latitude, longitude, cadence_days, assigned_to, b2b_contact_id, active').eq('studio_id', sid).eq('active', true).order('name'),
+      sb.from('territory_visits').select('territory_id, visit_date').eq('studio_id', sid),
+      campaign ? sb.from('presale_lead_log').select('territory_id, lead_count').eq('campaign_id', campaign.id).not('territory_id', 'is', null) : Promise.resolve({ data: [] }),
+      studioNames(sb, sid),
+      campaign ? channelIdByKey(sb, campaign.id, 'bizcanvass') : Promise.resolve(null),
+      campaign ? channelIdByKey(sb, campaign.id, 'apartments') : Promise.resolve(null),
+    ])
+    const lastBy = {}; for (const v of visits || []) if (!lastBy[v.territory_id] || v.visit_date > lastBy[v.territory_id]) lastBy[v.territory_id] = v.visit_date
+    const leadsBy = {}; for (const l of leads || []) leadsBy[l.territory_id] = (leadsBy[l.territory_id] || 0) + (l.lead_count || 0)
+    res.json({
+      channels: { bizcanvass: bizCh, apartments: aptCh },
+      team: names.team,
+      routes: (terrs || []).map(t => ({
+        ...t, assignee_name: t.assigned_to ? (names.map[t.assigned_to] || null) : null,
+        last_visit: lastBy[t.id] || null, leads: leadsBy[t.id] || 0,
+      })),
+    })
+  } catch (err) { console.error('GET /presale/canvass', err.message); res.status(500).json({ error: err.message }) }
+})
+
+router.post('/canvass/:territoryId/visit', async (req, res) => {
+  try {
+    const sb = db(); const sid = req.studio.id
+    const { data: terr } = await sb.from('territories').select('id, name, type, b2b_contact_id').eq('id', req.params.territoryId).eq('studio_id', sid).maybeSingle()
+    if (!terr) return res.status(404).json({ error: 'Route not found' })
+    const doors = parseInt(req.body.doors) || 0
+    const worked = parseInt(req.body.worked) || 0
+    const leads = parseInt(req.body.leads) || 0
+    const userNote = (req.body.notes || '').trim()
+    const parts = []
+    if (doors) parts.push(`${doors} doors`)
+    if (worked) parts.push(`${worked} worked`)
+    if (leads) parts.push(`${leads} leads`)
+    if (userNote) parts.push(userNote)
+    const note = parts.join(' · ') || 'Route visit'
+    await sb.from('territory_visits').insert({
+      territory_id: terr.id, studio_id: sid, visited_by: req.user.id,
+      visit_date: todayInChicago(), activity_type: 'canvass', notes: note,
+    })
+    // Dual write: if the route is a business, the visit shows on its B2B card.
+    if (terr.b2b_contact_id) {
+      await logInteraction(sb, { contact_id: terr.b2b_contact_id, studio_id: sid, type: 'visit', note: `Route visit — ${note}`, logged_by: req.user.id })
+    }
+    // Leads post to the ledger on the right channel, tagged to the route.
+    let logged = null
+    if (leads > 0) {
+      const campaign = await activeCampaign(sb, sid)
+      if (campaign) {
+        const key = terr.type === 'apartment' ? 'apartments' : 'bizcanvass'
+        const channel_id = await channelIdByKey(sb, campaign.id, key)
+        if (channel_id) {
+          logged = await postLeads(sb, {
+            campaign_id: campaign.id, channel_id, studio_id: sid, n: leads,
+            source_tag: `terr-${slugify(terr.name)}`, territory_id: terr.id,
+            b2b_contact_id: terr.b2b_contact_id || null, logged_by: req.user.id,
+          })
+        }
+      }
+    }
+    res.status(201).json({ ok: true, leads_logged: logged?.lead_count || 0 })
+  } catch (err) { console.error('POST /presale/canvass/visit', err.message); res.status(500).json({ error: err.message }) }
+})
+
+// ─── Ambassadors — roster + source-tag attribution ───────────────────────────
+router.get('/ambassadors', async (req, res) => {
+  try {
+    const sb = db(); const sid = req.studio.id
+    const campaign = await activeCampaign(sb, sid)
+    if (!campaign) return res.json({ ambassadors: [], team: [] })
+    const [{ data: ambs }, { data: leads }, names] = await Promise.all([
+      sb.from('presale_ambassadors').select('*').eq('campaign_id', campaign.id).order('created_at'),
+      sb.from('presale_lead_log').select('ambassador_id, lead_count').eq('campaign_id', campaign.id).not('ambassador_id', 'is', null),
+      studioNames(sb, sid),
+    ])
+    const leadsBy = {}; for (const l of leads || []) leadsBy[l.ambassador_id] = (leadsBy[l.ambassador_id] || 0) + (l.lead_count || 0)
+    res.json({
+      team: names.team,
+      ambassadors: (ambs || []).map(a => ({ ...a, leads_attributed: leadsBy[a.id] || 0, assignee_name: a.assigned_to ? (names.map[a.assigned_to] || null) : null })),
+    })
+  } catch (err) { console.error('GET /presale/ambassadors', err.message); res.status(500).json({ error: err.message }) }
+})
+
+router.post('/ambassadors', requireRole('owner', 'manager'), async (req, res) => {
+  try {
+    const sb = db(); const sid = req.studio.id
+    const campaign = await activeCampaign(sb, sid)
+    if (!campaign) return res.status(400).json({ error: 'No campaign' })
+    const { full_name, handle, type, org_name, b2b_contact_id, reward_tier, contact, assigned_to } = req.body
+    if (!full_name) return res.status(400).json({ error: 'full_name required' })
+    const t = ['member', 'community', 'staff'].includes(type) ? type : 'community'
+    const prefix = t === 'member' ? 'mem' : t === 'staff' ? 'staff' : 'comm'
+    const base = `${prefix}-${slugify(handle || full_name)}`
+    let tag = base, attempt = 0, row = null
+    while (attempt < 5 && !row) {
+      const { data, error } = await sb.from('presale_ambassadors').insert({
+        campaign_id: campaign.id, studio_id: sid, full_name: String(full_name).trim(),
+        handle: handle || null, type: t, org_name: org_name || null, b2b_contact_id: b2b_contact_id || null,
+        source_tag: tag, reward_tier: reward_tier || null, contact: contact || null, assigned_to: assigned_to || null,
+      }).select().single()
+      if (!error) { row = data; break }
+      if (String(error.message).includes('duplicate') || error.code === '23505') { attempt++; tag = `${base}${attempt + 1}` }
+      else return res.status(500).json({ error: error.message })
+    }
+    if (!row) return res.status(500).json({ error: 'Could not generate a unique source tag' })
+    res.status(201).json(row)
+  } catch (err) { console.error('POST /presale/ambassadors', err.message); res.status(500).json({ error: err.message }) }
+})
+
+router.put('/ambassadors/:id', requireRole('owner', 'manager'), async (req, res) => {
+  const sb = db(); const sid = req.studio.id
+  const patch = {}
+  for (const k of ['full_name', 'handle', 'org_name', 'reward_tier', 'contact']) if (req.body[k] !== undefined) patch[k] = req.body[k] === '' ? null : req.body[k]
+  if (req.body.assigned_to !== undefined) patch.assigned_to = req.body.assigned_to || null
+  if (req.body.active !== undefined) patch.active = !!req.body.active
+  const { data, error } = await sb.from('presale_ambassadors').update(patch).eq('id', req.params.id).eq('studio_id', sid).select().single()
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data)
+})
+
+router.delete('/ambassadors/:id', requireRole('owner', 'manager'), async (req, res) => {
+  const { error } = await db().from('presale_ambassadors').delete().eq('id', req.params.id).eq('studio_id', req.studio.id)
+  if (error) return res.status(500).json({ error: error.message })
+  res.status(204).end()
+})
+
+router.post('/ambassadors/:id/leads', async (req, res) => {
+  try {
+    const sb = db(); const sid = req.studio.id
+    const campaign = await activeCampaign(sb, sid)
+    const n = parseInt(req.body.lead_count)
+    if (!campaign || !Number.isFinite(n) || n === 0) return res.status(400).json({ error: 'lead_count required' })
+    const { data: amb } = await sb.from('presale_ambassadors').select('*').eq('id', req.params.id).eq('studio_id', sid).maybeSingle()
+    if (!amb) return res.status(404).json({ error: 'Ambassador not found' })
+    const key = amb.type === 'member' ? 'members' : 'commamb'
+    const channel_id = await channelIdByKey(sb, campaign.id, key)
+    if (!channel_id) return res.status(400).json({ error: `No ${key} channel` })
+    const data = await postLeads(sb, {
+      campaign_id: campaign.id, channel_id, studio_id: sid, n,
+      source_tag: amb.source_tag, ambassador_id: amb.id, b2b_contact_id: amb.b2b_contact_id || null, logged_by: req.user.id,
+    })
+    res.status(201).json(data)
+  } catch (err) { console.error('POST /presale/ambassadors/leads', err.message); res.status(500).json({ error: err.message }) }
+})
+
+// ─── Daily drivers — per-person targets with an upsert counter + 7-day strip ──
+router.get('/drivers', async (req, res) => {
+  try {
+    const sb = db(); const sid = req.studio.id
+    const campaign = await activeCampaign(sb, sid)
+    if (!campaign) return res.json({ drivers: [], team: [] })
+    const { data: drivers } = await sb.from('presale_daily_drivers').select('*').eq('campaign_id', campaign.id).eq('active', true).order('sort_order')
+    const ids = (drivers || []).map(d => d.id)
+    const today = todayInChicago()
+    const since = new Date(today + 'T00:00:00Z'); since.setUTCDate(since.getUTCDate() - 6)
+    const sinceStr = since.toISOString().slice(0, 10)
+    const [{ data: logs }, names] = await Promise.all([
+      ids.length ? sb.from('presale_driver_log').select('driver_id, logged_on, count, logged_by').in('driver_id', ids).gte('logged_on', sinceStr) : Promise.resolve({ data: [] }),
+      studioNames(sb, sid),
+    ])
+    const dayList = []
+    for (let i = 6; i >= 0; i--) { const d = new Date(today + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - i); dayList.push(d.toISOString().slice(0, 10)) }
+    const byDriver = {}
+    for (const l of logs || []) {
+      const bd = byDriver[l.driver_id] || (byDriver[l.driver_id] = { total: {}, mine: {} })
+      bd.total[l.logged_on] = (bd.total[l.logged_on] || 0) + (l.count || 0)
+      if (l.logged_by === req.user.id) bd.mine[l.logged_on] = (bd.mine[l.logged_on] || 0) + (l.count || 0)
+    }
+    res.json({
+      team: names.team, today,
+      drivers: (drivers || []).map(d => {
+        const bd = byDriver[d.id] || { total: {}, mine: {} }
+        return {
+          ...d, assignee_name: d.assigned_to ? (names.map[d.assigned_to] || null) : null,
+          my_today: bd.mine[today] || 0,
+          strip: dayList.map(ds => ({ date: ds, count: bd.total[ds] || 0, hit: d.target > 0 && (bd.total[ds] || 0) >= d.target })),
+        }
+      }),
+    })
+  } catch (err) { console.error('GET /presale/drivers', err.message); res.status(500).json({ error: err.message }) }
+})
+
+router.post('/drivers', requireRole('owner', 'manager'), async (req, res) => {
+  const sb = db(); const sid = req.studio.id
+  const campaign = await activeCampaign(sb, sid)
+  if (!campaign) return res.status(400).json({ error: 'No campaign' })
+  const { label, target, assigned_to, sort_order } = req.body
+  if (!label) return res.status(400).json({ error: 'label required' })
+  const { data, error } = await sb.from('presale_daily_drivers').insert({
+    campaign_id: campaign.id, studio_id: sid, label: String(label).trim(),
+    target: parseInt(target) || 0, assigned_to: assigned_to || null, sort_order: parseInt(sort_order) || 0,
+  }).select().single()
+  if (error) return res.status(500).json({ error: error.message })
+  res.status(201).json(data)
+})
+
+router.put('/drivers/:id', requireRole('owner', 'manager'), async (req, res) => {
+  const sb = db(); const sid = req.studio.id
+  const patch = {}
+  if (req.body.label !== undefined) patch.label = String(req.body.label).trim()
+  if (req.body.target !== undefined) patch.target = parseInt(req.body.target) || 0
+  if (req.body.assigned_to !== undefined) patch.assigned_to = req.body.assigned_to || null
+  if (req.body.active !== undefined) patch.active = !!req.body.active
+  const { data, error } = await sb.from('presale_daily_drivers').update(patch).eq('id', req.params.id).eq('studio_id', sid).select().single()
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data)
+})
+
+router.delete('/drivers/:id', requireRole('owner', 'manager'), async (req, res) => {
+  const { error } = await db().from('presale_daily_drivers').delete().eq('id', req.params.id).eq('studio_id', req.studio.id)
+  if (error) return res.status(500).json({ error: error.message })
+  res.status(204).end()
+})
+
+// Upsert today's count for the current user (absolute value, not an increment).
+router.post('/drivers/:id/log', async (req, res) => {
+  const sb = db(); const sid = req.studio.id
+  const { data: driver } = await sb.from('presale_daily_drivers').select('id').eq('id', req.params.id).eq('studio_id', sid).maybeSingle()
+  if (!driver) return res.status(404).json({ error: 'Driver not found' })
+  const count = Math.max(0, parseInt(req.body.count) || 0)
+  const { data, error } = await sb.from('presale_driver_log').upsert(
+    { driver_id: driver.id, studio_id: sid, logged_on: todayInChicago(), count, logged_by: req.user.id },
+    { onConflict: 'driver_id,logged_on,logged_by' },
+  ).select().single()
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data)
+})
+
 module.exports = router
