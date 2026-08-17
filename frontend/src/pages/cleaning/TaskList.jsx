@@ -160,6 +160,7 @@ export default function TaskList() {
 
   const [filterFreq, setFilterFreq] = useState('all')
   const [filterType, setFilterType] = useState('all')
+  const [showCompleted, setShowCompleted] = useState(false) // hide done tasks by default to cut scrolling
 
   const load = useCallback(async (showSpinner = false) => {
     if (showSpinner) setLoading(true)
@@ -229,8 +230,12 @@ export default function TaskList() {
 
   const completedCount = filtered.filter(t => t.completed).length
   const total = filtered.length
+  const hiddenDone = filtered.filter(t => t.completed).length
 
-  const grouped = filtered.reduce((acc, t) => {
+  // Hide completed tasks by default so the open list stays short and scroll-free.
+  const visible = showCompleted ? filtered : filtered.filter(t => !t.completed)
+
+  const grouped = visible.reduce((acc, t) => {
     const key = t.area || 'General'
     if (!acc[key]) acc[key] = []
     acc[key].push(t)
@@ -300,7 +305,7 @@ export default function TaskList() {
 
       {/* Filters */}
       {tasks.length > 0 && (
-        <div className="flex gap-2 mb-4 flex-wrap">
+        <div className="flex gap-2 mb-4 flex-wrap items-center">
           {activeFreqs.length > 1 && (
             <FilterSelect
               value={filterFreq}
@@ -321,6 +326,13 @@ export default function TaskList() {
               ]}
             />
           )}
+          {hiddenDone > 0 && (
+            <button
+              onClick={() => setShowCompleted(v => !v)}
+              className="ml-auto text-sm font-medium text-red-600 hover:text-red-700 px-3 py-2 rounded-lg border border-gray-200 bg-white">
+              {showCompleted ? `Hide ${hiddenDone} completed` : `Show all (${hiddenDone} done)`}
+            </button>
+          )}
         </div>
       )}
 
@@ -334,6 +346,16 @@ export default function TaskList() {
       {tasks.length > 0 && filtered.length === 0 && (
         <div className="text-center py-10 text-gray-400 text-sm">
           No tasks match the selected filters.
+        </div>
+      )}
+
+      {filtered.length > 0 && visible.length === 0 && !showCompleted && (
+        <div className="text-center py-12">
+          <p className="text-base font-semibold text-gray-700">🎉 All caught up!</p>
+          <p className="text-sm text-gray-400 mt-1">Every task here is done for today.</p>
+          <button onClick={() => setShowCompleted(true)} className="mt-3 text-sm font-medium text-red-600 hover:text-red-700">
+            Show completed tasks
+          </button>
         </div>
       )}
 
