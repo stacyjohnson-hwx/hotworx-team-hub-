@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
 import { useStudio } from '@/contexts/StudioContext'
 import { useRole } from '@/hooks/useRole'
-import { Gift, Plus, X, Loader2, Search, Trash2, Phone, MessageSquare, Mail, AtSign, DollarSign, Clock, Store, Calendar, CalendarPlus, Users } from 'lucide-react'
+import { Gift, Plus, X, Loader2, Search, Trash2, Phone, MessageSquare, Mail, AtSign, DollarSign, Clock, Store, Calendar, CalendarPlus, Users, Download } from 'lucide-react'
 
 // ── Vocab ───────────────────────────────────────────────────────────────────
 const CATEGORIES = [
@@ -59,6 +59,23 @@ const todayCA = () => new Date().toLocaleDateString('en-CA')
 const daysSince = (s) => s ? Math.round((new Date(todayCA()) - new Date(s + 'T00:00:00')) / 86400000) : null
 const plusDays = (n) => { const d = new Date(todayCA() + 'T00:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10) }
 const isOverdue = (b) => b.next_action_at && b.next_action_at < todayCA() && b.stage !== 'passed'
+
+// CSV export (Phase 4) — client-side, no backend.
+function downloadBrandsCsv(rows) {
+  const esc = (v) => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s }
+  const cols = [
+    ['Brand', b => b.name], ['Category', b => labelOf(CATEGORIES, b.category)], ['Stage', b => labelOf(STAGES, b.stage)],
+    ['Ask level', b => labelOf(ASK_LEVELS, b.ask_level)], ['Decision-maker', b => labelOf(CONTACT_TYPES, b.contact_type)],
+    ['Owner', b => b.owner_name || ''], ['Contact', b => b.contact_name || ''], ['Email', b => b.email || ''], ['Phone', b => b.phone || ''],
+    ['Last touch', b => b.last_touch_on || ''], ['Last sample', b => b.last_sample_on || ''], ['Last order', b => b.last_order_on || ''],
+    ['Total spend', b => b.total_spend || 0], ['Donated value', b => b.donated_value || 0], ['Orders', b => b.order_count || 0],
+    ['Events', b => b.event_count || 0], ['Next action', b => b.next_action_at || ''], ['Notes', b => b.notes || ''],
+  ]
+  const csv = [cols.map(c => esc(c[0])).join(','), ...rows.map(r => cols.map(c => esc(c[1](r))).join(','))].join('\n')
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }))
+  const a = document.createElement('a'); a.href = url; a.download = `sponsor-brands-${todayCA()}.csv`
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url)
+}
 
 const inp = 'w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400'
 const lbl = 'block text-[11px] font-semibold text-gray-500 mb-1'
@@ -189,7 +206,7 @@ function BrandDrawer({ brandId, users, onClose, onChanged }) {
           <div className="p-4">
             {tab === 'details' && form && (
               <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div><label className={lbl}>Name</label><input className={inp} value={form.name || ''} onChange={e => set('name', e.target.value)} /></div>
                   <div><label className={lbl}>Website domain</label><input className={inp} value={form.domain || ''} onChange={e => set('domain', e.target.value)} placeholder="barebells.com" /></div>
                   <div><label className={lbl}>Category</label><select className={inp} value={form.category} onChange={e => set('category', e.target.value)}>{CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select></div>
@@ -829,7 +846,9 @@ export default function SponsorDeskPage() {
         <button onClick={() => setBuysOnly(v => !v)} className={`flex items-center gap-1.5 text-sm rounded-lg px-2.5 py-1.5 border font-medium ${buysOnly ? 'bg-amber-600 text-white border-amber-600' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}><DollarSign size={14} /> We buy from them</button>
         <button onClick={() => setDueOnly(v => !v)} className={`flex items-center gap-1.5 text-sm rounded-lg px-2.5 py-1.5 border font-medium ${dueOnly ? 'bg-red-600 text-white border-red-600' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}><Clock size={14} /> Due now</button>
         {(q || cat || buysOnly || dueOnly) && <span className="text-xs text-gray-400">{filtered.length} of {brands.length}</span>}
-        <div className="ml-auto flex rounded-lg border border-gray-200 overflow-hidden">
+        <button onClick={() => downloadBrandsCsv(sorted)} disabled={!sorted.length} title="Export the current list to CSV"
+          className="ml-auto flex items-center gap-1.5 text-sm font-medium text-gray-600 border border-gray-300 rounded-lg px-2.5 py-1.5 hover:bg-gray-50 disabled:opacity-40"><Download size={14} /> CSV</button>
+        <div className="flex rounded-lg border border-gray-200 overflow-hidden">
           {[['cards', 'Cards'], ['list', 'List'], ['board', 'Board']].map(([v, label]) => (
             <button key={v} onClick={() => setView(v)} className={`px-2.5 py-1.5 text-xs font-semibold ${view === v ? 'bg-red-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}>{label}</button>
           ))}
