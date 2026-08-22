@@ -5,10 +5,11 @@ import { useStudio } from '@/contexts/StudioContext'
 import { useRole } from '@/hooks/useRole'
 import { apiGet, apiPut, apiPost, apiDelete } from '@/hooks/useApi'
 import SocialPostCalendar from '@/components/SocialPostCalendar'
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip } from 'recharts'
 import {
   CalendarRange, Target, Building2, Trophy, Megaphone,
   PartyPopper, GraduationCap, Sparkles, Check, Plus, ExternalLink, Loader2,
-  CalendarDays, AlertCircle, CheckCircle2, Edit2, X, Clock, Tag, Search, Trash2,
+  CalendarDays, AlertCircle, CheckCircle2, Edit2, X, Clock, Tag, Search, Trash2, Lightbulb,
 } from 'lucide-react'
 
 // ─── date / label helpers ─────────────────────────────────────────────────────
@@ -827,11 +828,86 @@ function CoachingCard({ e, isOwner }) {
 }
 function TrendArrowInline(dir) { return dir === 'up' ? '▲' : dir === 'down' ? '▼' : '' }
 
+// One metric's month-over-month trend line.
+function TrendMini({ data, dataKey, label, money }) {
+  const fmt = (v) => v == null ? '—' : (money ? `$${Math.round(v).toLocaleString()}` : (Math.round(v * 10) / 10))
+  const last = data.length ? data[data.length - 1][dataKey] : null
+  const prev = data.length > 1 ? data[data.length - 2][dataKey] : null
+  const delta = (last != null && prev != null) ? last - prev : null
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl p-3">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-[11px] font-semibold text-gray-500 leading-tight">{label}</span>
+        <span className="text-sm font-bold text-gray-900">{fmt(last)}</span>
+      </div>
+      {delta != null && delta !== 0 && (
+        <div className={`text-[10px] font-semibold ${delta > 0 ? 'text-green-600' : 'text-red-600'}`}>
+          {delta > 0 ? '▲ +' : '▼ '}{money ? `$${Math.abs(Math.round(delta)).toLocaleString()}` : Math.abs(Math.round(delta * 10) / 10)} <span className="text-gray-400 font-normal">vs prior</span>
+        </div>
+      )}
+      <div className="h-14 mt-1 -mx-1">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={data} margin={{ top: 4, right: 6, bottom: 0, left: 6 }}>
+            <Tooltip formatter={(v) => [fmt(v), label]} contentStyle={{ fontSize: 11, borderRadius: 8, padding: '3px 8px' }} />
+            <XAxis dataKey="label" hide />
+            <YAxis hide domain={['dataMin', 'dataMax']} />
+            <Line type="monotone" dataKey={dataKey} stroke="#dc2626" strokeWidth={2} dot={{ r: 2 }} isAnimationActive={false} connectNulls />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  )
+}
+
+function MemberTrends({ userId, month, year, isOwner }) {
+  const { currentStudio } = useStudio()
+  const [d, setD] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    setLoading(true); setError('')
+    apiGet(`/api/monthly-planner/coaching/history/${userId}/${year}/${month}`)
+      .then(setD).catch(e => setError(e?.message || 'Failed to load')).finally(() => setLoading(false))
+  }, [userId, year, month, currentStudio?.id])
+  if (loading) return <div className="flex justify-center py-16"><Loader2 className="animate-spin text-red-600" size={22} /></div>
+  if (error) return <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">{error}</div>
+  const pts = d?.months || []
+  const charts = [
+    { k: 'revenue', label: 'Revenue brought in', money: true },
+    ...(isOwner ? [{ k: 'net', label: 'Net (revenue − cost)', money: true }] : []),
+    { k: 'members', label: 'New members' }, { k: 'retail', label: 'Retail', money: true }, { k: 'eft', label: 'EFT', money: true },
+    { k: 'hours', label: 'Hours' }, { k: 'cleaning_per_shift', label: 'Cleaning tasks / shift' },
+    { k: 'marketing', label: 'Marketing tasks' }, { k: 'b2b', label: 'B2B outreach' },
+    { k: 'member_touches', label: 'Member outreach' }, { k: 'calls', label: 'Calls' }, { k: 'texts', label: 'Texts' },
+    { k: 'birthday', label: 'Birthday outreach' }, { k: 'thank_you', label: 'Thank-you cards' },
+  ]
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        <h3 className="text-base font-bold text-gray-900">{d.user?.name}</h3>
+        <span className="text-[10px] uppercase font-semibold text-gray-400">{d.user?.role}</span>
+        <span className="text-xs text-gray-400">· last {pts.length} months</span>
+      </div>
+      <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
+        <div className="flex items-center gap-1.5 mb-2 text-indigo-800 font-bold text-sm"><Lightbulb size={15} /> Coaching insights</div>
+        {d.insights?.length ? (
+          <ul className="space-y-1 text-sm text-indigo-900">{d.insights.map((s, i) => <li key={i}>• {s}</li>)}</ul>
+        ) : <p className="text-sm text-indigo-900/70">No standout signals over this period — steady.</p>}
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        {charts.map(c => <TrendMini key={c.k} data={pts} dataKey={c.k} label={c.label} money={c.money} />)}
+      </div>
+      <CoachingChecklist userId={userId} />
+    </div>
+  )
+}
+
 function TeamCoachingTab({ month, year, isOwner }) {
   const { currentStudio } = useStudio()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [sub, setSub] = useState('overview')  // 'overview' | userId
   useEffect(() => {
     setLoading(true); setError('')
     apiGet(`/api/monthly-planner/coaching/${year}/${month}`)
@@ -842,18 +918,37 @@ function TeamCoachingTab({ month, year, isOwner }) {
   if (error) return <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">{error}</div>
   const rv = data?.reviewing
   const emps = data?.employees || []
+  const active = sub !== 'overview' && emps.some(e => e.user_id === sub) ? sub : 'overview'
   return (
     <div className="space-y-4">
-      <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 text-[12.5px] text-amber-800 flex items-start gap-2">
-        <GraduationCap size={15} className="flex-shrink-0 mt-0.5 text-amber-600" />
-        <span>Everyone's results for <b>{rv ? `${MONTHS[rv.month - 1]} ${rv.year}` : 'last month'}</b> — sorted with anyone under cost first. {!isOwner && 'Exact dollars are visible to the owner; you see a cost-coverage band.'}</span>
-      </div>
-      {emps.length === 0 ? (
-        <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
-          <p className="text-sm font-semibold text-gray-700">No team members to review yet.</p>
-          <p className="text-xs text-gray-400 mt-1">Add pay rates on Team ROI to see cost coverage.</p>
+      {/* Sub-tabs: Overview + one per team member (their trends) */}
+      {emps.length > 0 && (
+        <div className="flex gap-1.5 flex-wrap">
+          <button onClick={() => setSub('overview')}
+            className={`text-[13px] font-semibold rounded-lg px-3 py-1.5 border ${active === 'overview' ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>Overview</button>
+          {emps.map(e => (
+            <button key={e.user_id} onClick={() => setSub(e.user_id)}
+              className={`text-[13px] font-semibold rounded-lg px-3 py-1.5 border ${active === e.user_id ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
+              {e.name}{e.status === 'negative' ? ' 🔴' : ''}
+            </button>
+          ))}
         </div>
-      ) : emps.map(e => <CoachingCard key={e.user_id} e={e} isOwner={isOwner} />)}
+      )}
+
+      {active === 'overview' ? (<>
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 text-[12.5px] text-amber-800 flex items-start gap-2">
+          <GraduationCap size={15} className="flex-shrink-0 mt-0.5 text-amber-600" />
+          <span>Everyone's results for <b>{rv ? `${MONTHS[rv.month - 1]} ${rv.year}` : 'last month'}</b> — sorted with anyone under cost first. Tap a name above for their month-over-month trends. {!isOwner && 'Exact dollars are visible to the owner; you see a cost-coverage band.'}</span>
+        </div>
+        {emps.length === 0 ? (
+          <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
+            <p className="text-sm font-semibold text-gray-700">No team members to review yet.</p>
+            <p className="text-xs text-gray-400 mt-1">Add pay rates on Team ROI to see cost coverage.</p>
+          </div>
+        ) : emps.map(e => <CoachingCard key={e.user_id} e={e} isOwner={isOwner} />)}
+      </>) : (
+        <MemberTrends userId={active} month={month} year={year} isOwner={isOwner} />
+      )}
     </div>
   )
 }

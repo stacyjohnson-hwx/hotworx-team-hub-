@@ -148,7 +148,35 @@ router.post('/:year/:month/review', ...GUARD, async (req, res) => {
 // Reviews the PREVIOUS month and surfaces employees who ran net-negative on Team
 // ROI, with the coaching signals. PAY-SAFE: never returns cost/wage/commission;
 // managers get a severity band only, the owner also gets the exact deficit.
-const { computeRoiRows } = require('./labor')
+const { computeRoiRows, studioTeam } = require('./labor')
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+// Rule-based coaching insights from a per-metric monthly series (oldest→newest).
+function coachingInsights(pts, isOwner) {
+  const out = []
+  if (pts.length < 2) return out
+  const last = pts[pts.length - 1], prev = pts[pts.length - 2]
+  const avg = (k, n) => { const s = pts.slice(-n); return s.reduce((a, p) => a + (Number(p[k]) || 0), 0) / (s.length || 1) }
+  const pct = (a, b) => b ? Math.round(((a - b) / b) * 100) : null
+  const rev = pts.slice(-3).map(p => p.revenue)
+  if (rev.length === 3 && rev[0] > rev[1] && rev[1] > rev[2]) out.push(`📉 Revenue has fallen 3 months running — now $${Math.round(last.revenue).toLocaleString()}.`)
+  else { const d = pct(last.revenue, avg('revenue', 4)); if (d != null && d <= -15) out.push(`Revenue is ${Math.abs(d)}% below their recent average.`); else if (d != null && d >= 15) out.push(`🔥 Revenue is ${d}% above their recent average — momentum.`) }
+  if (isOwner) {
+    const negs = pts.slice(-3).filter(p => typeof p.net === 'number' && p.net < 0).length
+    if (negs >= 2) out.push(`⚠️ Net-negative in ${negs} of the last 3 months.`)
+    else if (typeof last.net === 'number' && last.net >= 0 && typeof prev.net === 'number' && prev.net < 0) out.push(`✅ Back to covering their cost this month.`)
+  }
+  if (last.cleaning_per_shift != null && prev.cleaning_per_shift != null && last.cleaning_per_shift < prev.cleaning_per_shift)
+    out.push(`Cleaning tasks/shift slipped ${prev.cleaning_per_shift} → ${last.cleaning_per_shift}.`)
+  const od = pct(last.member_touches, prev.member_touches)
+  const maxTouch = Math.max(...pts.map(p => p.member_touches || 0))
+  if (od != null && od <= -30) out.push(`Member outreach dropped ${Math.abs(od)}% vs last month.`)
+  else if (last.member_touches > 0 && last.member_touches === maxTouch && pts.length >= 3) out.push(`Member outreach at a ${pts.length}-month high.`)
+  const m2 = pts.slice(-2).map(p => p.members)
+  if (m2.length === 2 && m2[0] === 0 && m2[1] === 0) out.push(`No new members signed in the last 2 months.`)
+  if (last.hours > prev.hours && last.revenue < prev.revenue) out.push(`Worked more hours but brought in less than last month.`)
+  return out.slice(0, 5)
+}
 
 // Cleaning "task active on date" rule (mirrors scorecard.js).
 function cleaningActiveOnDate(task, dateStr) {
@@ -283,6 +311,51 @@ router.get('/coaching/:year/:month', ...GUARD, async (req, res) => {
     res.json({ reviewing: { year: py, month: pm }, is_owner: isOwner, employees })
   } catch (err) {
     console.error('GET /monthly-planner/coaching', err)
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ─── Team Coaching: per-employee month-over-month trends + insights ───────────
+// PAY-SAFE: net/cost only for the owner. Reviews the 6 months ending at last month.
+router.get('/coaching/history/:userId/:year/:month', ...GUARD, async (req, res) => {
+  const year = parseInt(req.params.year), month = parseInt(req.params.month)
+  const userId = req.params.userId
+  if (!year || !month || month < 1 || month > 12) return res.status(400).json({ error: 'Invalid year/month' })
+  const isOwner = req.studio.role === 'owner' || req.role === 'owner'
+  const sb = supabase(), sid = req.studio.id
+  const N = 6
+  try {
+    // Month list ending at last month (the month before the one being planned).
+    let cur = prevMonth(year, month)
+    const list = []
+    for (let i = 0; i < N; i++) { list.unshift({ year: cur.year, month: cur.month }); cur = prevMonth(cur.year, cur.month) }
+    const team = await studioTeam(sb, sid)
+    const me = team.find(t => t.id === userId)
+    const num = (o, k) => Number(o?.[k]) || 0
+    const points = await Promise.all(list.map(async ({ year: y, month: m }) => {
+      const [{ rows }, extras] = await Promise.all([
+        computeRoiRows(sb, sid, m, y, { fullMonth: true }),
+        gatherCoachingExtras(sb, sid, m, y, [userId]),
+      ])
+      const r = rows.find(x => x.user_id === userId) || {}
+      const n = extras[userId] || {}
+      const p = {
+        label: `${MONTHS_SHORT[m - 1]} '${String(y).slice(2)}`, year: y, month: m,
+        revenue: Math.round(r.revenue || 0), hours: Math.round((r.hours || 0) * 10) / 10,
+        members: num(n, 'members'), retail: Math.round(num(n, 'retail')), eft: Math.round(num(n, 'eft')),
+        cleaning_per_shift: n.cleaning_per_shift ?? null, marketing: num(n, 'marketing'), b2b: num(n, 'b2b'),
+        birthday: num(n, 'birthday'), thank_you: num(n, 'thank_you'), member_touches: num(n, 'member_touches'),
+        calls: num(n, 'calls'), texts: num(n, 'texts'), sail_calls: num(n, 'sail_calls'), sail_texts: num(n, 'sail_texts'),
+      }
+      if (isOwner && r.has_rate) { p.net = Math.round(r.net * 100) / 100; p.cost = Math.round((r.revenue - r.net) * 100) / 100 }
+      return p
+    }))
+    res.json({
+      user: { id: userId, name: me?.name || 'Team Member', role: me?.role || '' },
+      is_owner: isOwner, months: points, insights: coachingInsights(points, isOwner),
+    })
+  } catch (err) {
+    console.error('GET /monthly-planner/coaching/history', err)
     res.status(500).json({ error: err.message })
   }
 })
