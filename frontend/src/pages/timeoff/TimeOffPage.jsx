@@ -24,6 +24,7 @@ export default function TimeOffPage() {
   const { currentStudio } = useStudio()
   const studioId = currentStudio?.id
   const [tab, setTab] = useState(isOwnerOrManager ? 'requests' : 'mine')
+  const [allSub, setAllSub] = useState('upcoming')  // 'upcoming' | 'past' sub-tab under All Requests
   const isAvailabilityTab = tab === 'availability' || tab === 'team-availability'
   const [requests, setRequests] = useState([])
   const [loading, setLoading] = useState(true)
@@ -71,6 +72,11 @@ export default function TimeOffPage() {
 
   const pending = requests.filter(r => r.status === 'pending')
   const mine = requests // for TSA this is already filtered server-side
+  // Split "All Requests" by whether the time off has already passed.
+  const todayStr = new Date().toLocaleDateString('en-CA')
+  const endOf = (r) => r.end_date || r.start_date || ''
+  const upcoming = requests.filter(r => endOf(r) >= todayStr).sort((a, b) => (a.start_date || '').localeCompare(b.start_date || ''))
+  const past = requests.filter(r => endOf(r) < todayStr).sort((a, b) => (b.start_date || '').localeCompare(a.start_date || ''))
 
   const containerWidth = isAvailabilityTab ? 'max-w-5xl' : 'max-w-2xl'
 
@@ -135,14 +141,24 @@ export default function TimeOffPage() {
               />
             )}
             {(tab === 'all') && (
-              <RequestList
-                requests={requests}
-                showActions={isOwnerOrManager}
-                showName={true}
-                emptyMsg="No requests yet."
-                onReview={handleReview}
-                onDelete={handleDelete}
-              />
+              <>
+                <div className="flex gap-2 mb-4">
+                  {[['upcoming', 'Upcoming', upcoming.length], ['past', 'Past', past.length]].map(([k, label, n]) => (
+                    <button key={k} onClick={() => setAllSub(k)}
+                      className={`text-sm font-semibold rounded-full px-3.5 py-1.5 border transition-colors ${allSub === k ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
+                      {label} <span className={allSub === k ? 'text-white/80' : 'text-gray-400'}>{n}</span>
+                    </button>
+                  ))}
+                </div>
+                <RequestList
+                  requests={allSub === 'upcoming' ? upcoming : past}
+                  showActions={isOwnerOrManager}
+                  showName={true}
+                  emptyMsg={allSub === 'upcoming' ? 'No upcoming time off.' : 'No past time off.'}
+                  onReview={handleReview}
+                  onDelete={handleDelete}
+                />
+              </>
             )}
             {(tab === 'mine') && (
               <RequestList
