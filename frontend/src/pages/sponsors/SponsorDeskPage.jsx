@@ -57,6 +57,7 @@ const fmt$ = (n) => `$${(Number(n) || 0).toLocaleString(undefined, { maximumFrac
 const fmtDate = (s) => s ? new Date(s + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
 const todayCA = () => new Date().toLocaleDateString('en-CA')
 const daysSince = (s) => s ? Math.round((new Date(todayCA()) - new Date(s + 'T00:00:00')) / 86400000) : null
+const plusDays = (n) => { const d = new Date(todayCA() + 'T00:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10) }
 const isOverdue = (b) => b.next_action_at && b.next_action_at < todayCA() && b.stage !== 'passed'
 
 const inp = 'w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400'
@@ -557,6 +558,178 @@ function EventsView({ brands }) {
   )
 }
 
+// ── Mini-CRM: quick "log a follow-up" (records outreach + schedules the next) ──
+function QuickTouchModal({ brand, onClose, onSaved }) {
+  const [channel, setChannel] = useState('email')
+  const [note, setNote] = useState('')
+  const [next, setNext] = useState('')
+  const [saving, setSaving] = useState(false)
+  const save = async () => {
+    setSaving(true)
+    try {
+      await apiPost(`/api/sponsors/brands/${brand.id}/touches`, { channel, note })
+      if (next) await apiPut(`/api/sponsors/brands/${brand.id}`, { next_action_at: next })
+      onSaved()
+    } catch { setSaving(false) }
+  }
+  return (
+    <div className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-4 border-b border-gray-100"><h3 className="font-bold text-gray-900 truncate">Log follow-up · {brand.name}</h3><button onClick={onClose}><X size={18} className="text-gray-400" /></button></div>
+        <div className="p-4 space-y-3">
+          <div><label className={lbl}>Channel</label><select className={inp} value={channel} onChange={e => setChannel(e.target.value)}>{CHANNELS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select></div>
+          <div><label className={lbl}>Note (optional)</label><input className={inp} value={note} onChange={e => setNote(e.target.value)} placeholder="Left a DM about launch day…" autoFocus /></div>
+          <div>
+            <label className={lbl}>Follow up again</label>
+            <div className="flex gap-1.5 flex-wrap mb-1.5">
+              {[['+1w', 7], ['+2w', 14], ['+1mo', 30], ['+3mo', 90]].map(([lab, n]) => (
+                <button key={lab} onClick={() => setNext(plusDays(n))} className={`text-xs font-semibold rounded-lg px-2 py-1 border ${next === plusDays(n) ? 'bg-red-600 text-white border-red-600' : 'border-gray-300 text-gray-600'}`}>{lab}</button>
+              ))}
+            </div>
+            <input type="date" className={inp} value={next} onChange={e => setNext(e.target.value)} />
+          </div>
+        </div>
+        <div className="p-4 border-t border-gray-100 flex justify-end gap-2">
+          <button onClick={onClose} className="text-sm font-semibold text-gray-500 px-3 py-2">Cancel</button>
+          <button onClick={save} disabled={saving} className="bg-red-600 text-white text-sm font-bold rounded-lg px-4 py-2 disabled:opacity-40 flex items-center gap-1.5">{saving && <Loader2 size={14} className="animate-spin" />} Log it</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Who to follow up with, when. Overdue + due-today brands, quick-actionable.
+function FollowupsPanel({ brands, onQuick, onSnooze }) {
+  const [open, setOpen] = useState(true)
+  const today = todayCA()
+  const due = brands
+    .filter(b => b.next_action_at && b.next_action_at <= today && b.stage !== 'passed')
+    .sort((a, b) => (a.next_action_at || '').localeCompare(b.next_action_at || ''))
+  if (!due.length) return null
+  return (
+    <div className="mb-4 bg-amber-50 border border-amber-300 rounded-xl p-4">
+      <button onClick={() => setOpen(o => !o)} className="flex items-center gap-2 w-full text-left">
+        <Clock size={16} className="text-amber-700" />
+        <h3 className="text-sm font-bold text-amber-900 flex-1">{due.length} follow-up{due.length === 1 ? '' : 's'} due</h3>
+        <span className="text-xs text-amber-700">{open ? 'hide' : 'show'}</span>
+      </button>
+      {open && (
+        <div className="space-y-1.5 mt-3 max-h-[24rem] overflow-y-auto">
+          {due.map(b => {
+            const over = b.next_action_at < today
+            const od = over ? Math.round((new Date(today) - new Date(b.next_action_at + 'T00:00:00')) / 86400000) : 0
+            return (
+              <div key={b.id} className="flex items-center gap-2 bg-white border border-amber-200 rounded-lg px-3 py-2 flex-wrap">
+                <BrandLogo domain={b.domain} name={b.name} size={26} />
+                <div className="flex-1 min-w-[120px]">
+                  <div className="text-sm font-semibold text-gray-800">{b.name}</div>
+                  <div className="text-[11px] text-gray-400">
+                    {labelOf(STAGES, b.stage)}{b.last_touch_on ? ` · last touch ${daysSince(b.last_touch_on)}d ago` : ' · never touched'}
+                    <span className={`ml-1 font-semibold ${over ? 'text-red-600' : 'text-amber-700'}`}>· {over ? `${od}d overdue` : 'due today'}</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => onQuick(b)} className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-lg"><Phone size={12} /> Log follow-up</button>
+                  <button onClick={() => onSnooze(b.id, plusDays(7))} title="Snooze 1 week" className="px-2 py-1.5 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg">+1w</button>
+                  <button onClick={() => onSnooze(b.id, plusDays(30))} title="Snooze 1 month" className="px-2 py-1.5 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg">+1mo</button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Kanban by stage — drag a card to a new column to change its stage.
+function BrandBoard({ brands, onOpen, onStage, onQuick }) {
+  const [dragId, setDragId] = useState(null)
+  const [overCol, setOverCol] = useState(null)
+  const today = todayCA()
+  const drop = (stage) => { const id = dragId; setOverCol(null); setDragId(null); if (!id) return; const b = brands.find(x => x.id === id); if (b && b.stage !== stage) onStage(id, stage) }
+  return (
+    <div className="flex gap-3 overflow-x-auto pb-4">
+      {STAGES.map(s => {
+        const items = brands.filter(b => b.stage === s.value)
+        const active = overCol === s.value
+        return (
+          <div key={s.value}
+            onDragOver={e => { e.preventDefault(); if (!active) setOverCol(s.value) }}
+            onDragLeave={e => { if (e.currentTarget === e.target) setOverCol(c => c === s.value ? null : c) }}
+            onDrop={() => drop(s.value)}
+            className={`flex-shrink-0 w-64 rounded-xl border flex flex-col max-h-[72vh] ${active ? 'border-red-400 bg-red-50/60' : 'border-gray-200 bg-gray-50'}`}>
+            <div className={`flex items-center justify-between px-3 py-2 rounded-t-xl ${s.cls}`}>
+              <span className="text-xs font-bold">{s.label}</span>
+              <span className="text-xs font-semibold bg-white/70 text-gray-600 rounded-full px-1.5">{items.length}</span>
+            </div>
+            <div className="p-2 space-y-2 overflow-y-auto">
+              {items.map(b => {
+                const over = isOverdue(b)
+                return (
+                  <div key={b.id} draggable onDragStart={() => setDragId(b.id)} onDragEnd={() => { setDragId(null); setOverCol(null) }}
+                    onClick={() => onOpen(b.id)}
+                    className={`bg-white rounded-lg border p-2.5 shadow-sm cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow ${over ? 'border-red-300' : 'border-gray-200'} ${dragId === b.id ? 'opacity-40' : ''}`}>
+                    <div className="flex items-center gap-2">
+                      <BrandLogo domain={b.domain} name={b.name} size={26} />
+                      <p className="text-sm font-semibold text-gray-900 truncate flex-1">{b.name}</p>
+                      <button onClick={e => { e.stopPropagation(); onQuick(b) }} title="Log follow-up" className="flex-shrink-0 p-1 text-gray-300 hover:text-amber-600"><Phone size={13} /></button>
+                    </div>
+                    <div className="flex items-center justify-between mt-1.5 text-[11px]">
+                      <span className="text-gray-400">{b.last_touch_on ? `${daysSince(b.last_touch_on)}d ago` : 'never'}</span>
+                      <span className={over ? 'font-bold text-red-600' : 'text-gray-400'}>{b.next_action_at ? fmtDate(b.next_action_at) : '—'}</span>
+                    </div>
+                    {Number(b.total_spend) > 0 && <div className="text-[10px] font-semibold text-amber-700 mt-1">💰 {fmt$(b.total_spend)} spent</div>}
+                  </div>
+                )
+              })}
+              {items.length === 0 && <p className="text-xs text-gray-300 text-center py-6 select-none">Drop here</p>}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function BrandListView({ brands, onOpen, onQuick }) {
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead className="bg-gray-50 border-b border-gray-200 text-gray-500 text-xs uppercase tracking-wide">
+          <tr>
+            <th className="text-left px-4 py-2.5 font-semibold">Brand</th>
+            <th className="text-left px-3 py-2.5 font-semibold">Stage</th>
+            <th className="text-left px-3 py-2.5 font-semibold">Owner</th>
+            <th className="text-left px-3 py-2.5 font-semibold">Last touch</th>
+            <th className="text-left px-3 py-2.5 font-semibold">Next action</th>
+            <th className="text-right px-3 py-2.5 font-semibold">Spent</th>
+            <th className="text-right px-3 py-2.5 font-semibold">Donated</th>
+            <th className="px-3 py-2.5"></th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100">
+          {brands.map(b => {
+            const st = stageMeta(b.stage); const over = isOverdue(b)
+            return (
+              <tr key={b.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => onOpen(b.id)}>
+                <td className="px-4 py-2.5"><div className="flex items-center gap-2"><BrandLogo domain={b.domain} name={b.name} size={26} /><div><div className="font-semibold text-gray-900">{b.name}</div><div className="text-[11px] text-gray-400">{labelOf(CATEGORIES, b.category)}</div></div></div></td>
+                <td className="px-3 py-2.5"><span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${st.cls}`}>{st.label}</span></td>
+                <td className="px-3 py-2.5 text-gray-600 text-xs">{b.owner_name || '—'}</td>
+                <td className="px-3 py-2.5 text-gray-600 text-xs">{b.last_touch_on ? `${daysSince(b.last_touch_on)}d ago` : '—'}</td>
+                <td className={`px-3 py-2.5 text-xs ${over ? 'font-bold text-red-600' : 'text-gray-600'}`}>{fmtDate(b.next_action_at)}</td>
+                <td className="px-3 py-2.5 text-right text-gray-700 text-xs">{Number(b.total_spend) > 0 ? fmt$(b.total_spend) : '—'}</td>
+                <td className="px-3 py-2.5 text-right text-emerald-700 text-xs">{Number(b.donated_value) > 0 ? fmt$(b.donated_value) : '—'}</td>
+                <td className="px-3 py-2.5 text-right" onClick={e => e.stopPropagation()}><button onClick={() => onQuick(b)} title="Log follow-up" className="p-1.5 text-gray-300 hover:text-amber-600"><Phone size={14} /></button></td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 export default function SponsorDeskPage() {
   const { currentStudio } = useStudio()
   const { role } = useRole()
@@ -571,6 +744,11 @@ export default function SponsorDeskPage() {
   const [openId, setOpenId] = useState(null)
   const [adding, setAdding] = useState(false)
   const [tab, setTab] = useState('brands')
+  const [view, setView] = useState('cards') // 'cards' | 'list' | 'board'
+  const [quickFor, setQuickFor] = useState(null)
+
+  const setStage = async (id, stage) => { try { await apiPut(`/api/sponsors/brands/${id}`, { stage }); load() } catch { /* ignore */ } }
+  const snooze = async (id, next_action_at) => { try { await apiPut(`/api/sponsors/brands/${id}`, { next_action_at }); load() } catch { /* ignore */ } }
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -623,6 +801,9 @@ export default function SponsorDeskPage() {
         </div>
       )}
 
+      {/* Mini-CRM: who to follow up with, when */}
+      <FollowupsPanel brands={brands} onQuick={setQuickFor} onSnooze={snooze} />
+
       {/* Search + filters */}
       <div className="flex gap-2 flex-wrap items-center mb-4">
         <div className="relative">
@@ -635,6 +816,11 @@ export default function SponsorDeskPage() {
         <button onClick={() => setBuysOnly(v => !v)} className={`flex items-center gap-1.5 text-sm rounded-lg px-2.5 py-1.5 border font-medium ${buysOnly ? 'bg-amber-600 text-white border-amber-600' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}><DollarSign size={14} /> We buy from them</button>
         <button onClick={() => setDueOnly(v => !v)} className={`flex items-center gap-1.5 text-sm rounded-lg px-2.5 py-1.5 border font-medium ${dueOnly ? 'bg-red-600 text-white border-red-600' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}><Clock size={14} /> Due now</button>
         {(q || cat || buysOnly || dueOnly) && <span className="text-xs text-gray-400">{filtered.length} of {brands.length}</span>}
+        <div className="ml-auto flex rounded-lg border border-gray-200 overflow-hidden">
+          {[['cards', 'Cards'], ['list', 'List'], ['board', 'Board']].map(([v, label]) => (
+            <button key={v} onClick={() => setView(v)} className={`px-2.5 py-1.5 text-xs font-semibold ${view === v ? 'bg-red-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}>{label}</button>
+          ))}
+        </div>
       </div>
 
       {loading ? <div className="flex justify-center py-20"><Loader2 className="animate-spin text-red-500" size={26} /></div>
@@ -645,6 +831,8 @@ export default function SponsorDeskPage() {
             <p className="text-xs text-gray-400 mt-1">Add the consumer brands you want free product from — protein bars, drinks, snacks.</p>
           </div>
         ) : sorted.length === 0 ? <p className="text-center text-gray-400 py-16 text-sm">No brands match.</p>
+          : view === 'board' ? <BrandBoard brands={sorted} onOpen={setOpenId} onStage={setStage} onQuick={setQuickFor} />
+          : view === 'list' ? <BrandListView brands={sorted} onOpen={setOpenId} onQuick={setQuickFor} />
           : (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {sorted.map(b => <BrandCard key={b.id} b={b} onOpen={() => setOpenId(b.id)} />)}
@@ -654,6 +842,7 @@ export default function SponsorDeskPage() {
 
       {openId && <BrandDrawer brandId={openId} users={users} onClose={() => setOpenId(null)} onChanged={load} />}
       {adding && <NewBrandModal users={users} onClose={() => setAdding(false)} onCreated={(b) => { setAdding(false); load(); setOpenId(b.id) }} />}
+      {quickFor && <QuickTouchModal brand={quickFor} onClose={() => setQuickFor(null)} onSaved={() => { setQuickFor(null); load() }} />}
     </div>
   )
 }
