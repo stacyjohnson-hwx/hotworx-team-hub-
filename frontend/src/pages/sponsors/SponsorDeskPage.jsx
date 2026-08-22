@@ -381,7 +381,9 @@ function EventDrawer({ eventId, brands, onClose, onChanged }) {
   const addBrand = async (body) => { try { await apiPost(`/api/sponsors/events/${eventId}/brands`, body); onChanged(); load() } catch { /* ignore */ } }
   const setStatus = async (rowId, status) => { try { await apiPut(`/api/sponsors/event-brands/${rowId}`, { status }); onChanged(); load() } catch { /* ignore */ } }
   const removeBrand = async (rowId) => { try { await apiDelete(`/api/sponsors/event-brands/${rowId}`); onChanged(); load() } catch { /* ignore */ } }
+  const unlink = async () => { if (!window.confirm('Unlink from the calendar event? It becomes a standalone sponsor event (brands stay attached).')) return; try { await apiPut(`/api/sponsors/events/${eventId}`, { event_id: null }); onChanged(); load() } catch { /* ignore */ } }
   const e = d?.event
+  const linked = e?.linked
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={onClose}>
       <div className="w-full max-w-lg bg-gray-50 h-full overflow-y-auto shadow-xl" onClick={ev => ev.stopPropagation()}>
@@ -420,10 +422,16 @@ function EventDrawer({ eventId, brands, onClose, onChanged }) {
             )}
             {tab === 'details' && form && (
               <div className="space-y-3">
-                <div><label className={lbl}>Event name</label><input className={inp} value={form.name || ''} onChange={ev => set('name', ev.target.value)} /></div>
+                {linked && (
+                  <div className="flex items-center gap-2 bg-sky-50 border border-sky-200 rounded-lg px-3 py-2 text-[13px] text-sky-800">
+                    <Calendar size={14} /> <span className="flex-1">Linked to calendar event <b>{e.linked_title}</b> — name &amp; date sync from Events &amp; Promos.</span>
+                    <button onClick={unlink} className="font-semibold text-sky-700 hover:text-sky-900 whitespace-nowrap">Unlink</button>
+                  </div>
+                )}
+                <div><label className={lbl}>Event name</label><input className={`${inp} ${linked ? 'bg-gray-100 text-gray-500' : ''}`} value={form.name || ''} onChange={ev => set('name', ev.target.value)} disabled={linked} /></div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><label className={lbl}>Date</label><input type="date" className={inp} value={form.event_date || ''} onChange={ev => set('event_date', ev.target.value)} /></div>
-                  <div><label className={lbl}>Location</label><input className={inp} value={form.location || ''} onChange={ev => set('location', ev.target.value)} /></div>
+                  <div><label className={lbl}>Date</label><input type="date" className={`${inp} ${linked ? 'bg-gray-100 text-gray-500' : ''}`} value={form.event_date || ''} onChange={ev => set('event_date', ev.target.value)} disabled={linked} /></div>
+                  <div><label className={lbl}>Location</label><input className={`${inp} ${linked ? 'bg-gray-100 text-gray-500' : ''}`} value={form.location || ''} onChange={ev => set('location', ev.target.value)} disabled={linked} /></div>
                   <div><label className={lbl}>Type</label><input className={inp} value={form.event_type || ''} onChange={ev => set('event_type', ev.target.value)} placeholder="Pop-up, launch…" /></div>
                   <div><label className={lbl}>Attendance</label><input type="number" className={inp} value={form.attendance ?? ''} onChange={ev => set('attendance', ev.target.value)} /></div>
                   <div><label className={lbl}>Leads collected</label><input type="number" className={inp} value={form.leads_collected ?? ''} onChange={ev => set('leads_collected', ev.target.value)} /></div>
@@ -441,23 +449,49 @@ function EventDrawer({ eventId, brands, onClose, onChanged }) {
 }
 
 function NewEventModal({ onClose, onCreated }) {
+  const [mode, setMode] = useState('link') // 'link' existing calendar event | 'standalone'
   const [f, setF] = useState({ name: '', event_date: '', location: '' })
+  const [linkable, setLinkable] = useState(null)
+  const [eventId, setEventId] = useState('')
   const [saving, setSaving] = useState(false)
-  const save = async () => { if (!f.name.trim() || !f.event_date) return; setSaving(true); try { const e = await apiPost('/api/sponsors/events', f); onCreated(e) } catch { setSaving(false) } }
+  useEffect(() => { apiGet('/api/sponsors/linkable-events').then(setLinkable).catch(() => setLinkable([])) }, [])
+  const canSave = mode === 'link' ? !!eventId : (f.name.trim() && f.event_date)
+  const save = async () => {
+    if (!canSave) return
+    setSaving(true)
+    try { const e = await apiPost('/api/sponsors/events', mode === 'link' ? { event_id: eventId } : f); onCreated(e) } catch { setSaving(false) }
+  }
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between p-4 border-b border-gray-100"><h3 className="font-bold text-gray-900">New event</h3><button onClick={onClose}><X size={18} className="text-gray-400" /></button></div>
         <div className="p-4 space-y-3">
-          <div><label className={lbl}>Event name *</label><input className={inp} value={f.name} onChange={e => setF({ ...f, name: e.target.value })} placeholder="Madison launch day" autoFocus /></div>
-          <div className="grid grid-cols-2 gap-3">
-            <div><label className={lbl}>Date *</label><input type="date" className={inp} value={f.event_date} onChange={e => setF({ ...f, event_date: e.target.value })} /></div>
-            <div><label className={lbl}>Location</label><input className={inp} value={f.location} onChange={e => setF({ ...f, location: e.target.value })} /></div>
+          <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm font-semibold">
+            <button onClick={() => setMode('link')} className={`flex-1 py-1.5 ${mode === 'link' ? 'bg-red-600 text-white' : 'text-gray-500'}`}>Link a calendar event</button>
+            <button onClick={() => setMode('standalone')} className={`flex-1 py-1.5 ${mode === 'standalone' ? 'bg-red-600 text-white' : 'text-gray-500'}`}>Standalone</button>
           </div>
+          {mode === 'link' ? (
+            <div>
+              <label className={lbl}>Studio calendar event</label>
+              {linkable === null ? <div className="py-3 text-center"><Loader2 size={16} className="animate-spin mx-auto text-gray-300" /></div>
+                : linkable.length === 0 ? <p className="text-[13px] text-gray-400 py-2">No unlinked calendar events for this studio. Create one in Events &amp; Promos, or use Standalone.</p>
+                  : (<select className={inp} value={eventId} onChange={e => setEventId(e.target.value)} autoFocus>
+                      <option value="">Choose an event…</option>
+                      {linkable.map(e => <option key={e.id} value={e.id}>{e.title}{e.start_date ? ` — ${fmtDate(e.start_date)}` : ''}</option>)}
+                    </select>)}
+              <p className="text-[11px] text-gray-400 mt-1">Name &amp; date stay in sync with the calendar event. Brands attach here.</p>
+            </div>
+          ) : (<>
+            <div><label className={lbl}>Event name *</label><input className={inp} value={f.name} onChange={e => setF({ ...f, name: e.target.value })} placeholder="Brand demo day" autoFocus /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className={lbl}>Date *</label><input type="date" className={inp} value={f.event_date} onChange={e => setF({ ...f, event_date: e.target.value })} /></div>
+              <div><label className={lbl}>Location</label><input className={inp} value={f.location} onChange={e => setF({ ...f, location: e.target.value })} /></div>
+            </div>
+          </>)}
         </div>
         <div className="p-4 border-t border-gray-100 flex justify-end gap-2">
           <button onClick={onClose} className="text-sm font-semibold text-gray-500 px-3 py-2">Cancel</button>
-          <button onClick={save} disabled={!f.name.trim() || !f.event_date || saving} className="bg-red-600 text-white text-sm font-bold rounded-lg px-4 py-2 disabled:opacity-40 flex items-center gap-1.5">{saving && <Loader2 size={14} className="animate-spin" />} Create</button>
+          <button onClick={save} disabled={!canSave || saving} className="bg-red-600 text-white text-sm font-bold rounded-lg px-4 py-2 disabled:opacity-40 flex items-center gap-1.5">{saving && <Loader2 size={14} className="animate-spin" />} {mode === 'link' ? 'Link event' : 'Create'}</button>
         </div>
       </div>
     </div>
@@ -468,9 +502,9 @@ function EventCard({ e, onOpen }) {
   const past = e.event_date < todayCA()
   return (
     <button onClick={() => onOpen(e)} className="text-left bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md transition-shadow">
-      <div className="flex items-center justify-between">
-        <span className="font-bold text-gray-900 truncate">{e.name}</span>
-        <span className="text-[11px] font-semibold text-gray-500">{fmtDate(e.event_date)}</span>
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-bold text-gray-900 truncate flex items-center gap-1.5">{e.name}{e.linked && <Calendar size={12} className="text-sky-500 flex-shrink-0" title="Linked to calendar event" />}</span>
+        <span className="text-[11px] font-semibold text-gray-500 flex-shrink-0">{fmtDate(e.event_date)}</span>
       </div>
       {e.location ? <div className="text-[11px] text-gray-400 mt-0.5">{e.location}</div> : null}
       <div className="flex items-center gap-3 mt-3 text-[11px]">

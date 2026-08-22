@@ -188,6 +188,33 @@ for (const [seg, table] of [['touches', 'sponsor_touches'], ['samples', 'sponsor
   })
 }
 
+// ── Linked calendar events: keep sponsor events in sync with the real `events` row.
+async function calendarMap(sb, eventIds) {
+  const ids = [...new Set((eventIds || []).filter(Boolean))]
+  if (!ids.length) return {}
+  const { data } = await sb.from('events').select('id, title, start_date, location, event_type').in('id', ids)
+  const m = {}; for (const e of data || []) m[e.id] = e
+  return m
+}
+function applyLinkedEvent(e, cal) {
+  const c = e.event_id && cal[e.event_id]
+  if (!c) return { ...e, linked: false }
+  return { ...e, linked: true, name: c.title || e.name, event_date: c.start_date || e.event_date, location: c.location ?? e.location, linked_title: c.title }
+}
+
+// GET /api/sponsors/linkable-events — this studio's calendar events not yet linked.
+router.get('/linkable-events', async (req, res) => {
+  try {
+    const sb = db(); const sid = req.studio.id
+    const [{ data: cal }, { data: taken }] = await Promise.all([
+      sb.from('events').select('id, title, start_date, event_type, location').eq('studio_id', sid).order('start_date', { ascending: false }).limit(200),
+      sb.from('sponsor_events').select('event_id').eq('studio_id', sid).not('event_id', 'is', null),
+    ])
+    const used = new Set((taken || []).map(t => t.event_id))
+    res.json((cal || []).filter(e => !used.has(e.id)))
+  } catch (err) { console.error('GET /sponsors/linkable-events', err.message); res.status(500).json({ error: err.message }) }
+})
+
 // ══ Phase 2 — Events (studio-specific activations + brand roster) ═════════════
 // GET /api/sponsors/events — this studio's events with roster/lock/giveback counts.
 router.get('/events', async (req, res) => {
@@ -202,17 +229,26 @@ router.get('/events', async (req, res) => {
     const total = {}, locked = {}, owed = {}
     for (const r of roster || []) { total[r.event_id] = (total[r.event_id] || 0) + 1; if (['confirmed', 'delivered'].includes(r.status)) locked[r.event_id] = (locked[r.event_id] || 0) + 1 }
     for (const g of gbs || []) if (!g.completed_at) owed[g.event_id] = (owed[g.event_id] || 0) + 1
-    res.json((events || []).map(e => ({ ...e, brands_total: total[e.id] || 0, brands_locked: locked[e.id] || 0, givebacks_owed: owed[e.id] || 0 })))
+    // Overlay live values from linked calendar events so they stay in sync.
+    const cal = await calendarMap(sb, (events || []).map(e => e.event_id).filter(Boolean))
+    res.json((events || []).map(e => ({ ...applyLinkedEvent(e, cal), brands_total: total[e.id] || 0, brands_locked: locked[e.id] || 0, givebacks_owed: owed[e.id] || 0 })))
   } catch (err) { console.error('GET /sponsors/events', err.message); res.status(500).json({ error: err.message }) }
 })
 
 router.post('/events', async (req, res) => {
   const sb = db(); const sid = req.studio.id
-  if (!req.body.name || !req.body.event_date) return res.status(400).json({ error: 'name and event_date required' })
   const row = { studio_id: sid }
-  for (const k of ['name', 'event_date', 'location', 'event_type', 'attendance', 'leads_collected', 'notes']) if (req.body[k] !== undefined) row[k] = req.body[k] === '' ? null : req.body[k]
+  // Link an existing calendar event (name/date come from it) or create standalone.
+  if (req.body.event_id) {
+    const { data: cal } = await sb.from('events').select('id, title, start_date, location, event_type').eq('id', req.body.event_id).eq('studio_id', sid).maybeSingle()
+    if (!cal) return res.status(400).json({ error: 'Calendar event not found for this studio' })
+    row.event_id = cal.id; row.name = cal.title; row.event_date = cal.start_date; row.location = cal.location || null; row.event_type = cal.event_type || null
+  } else {
+    if (!req.body.name || !req.body.event_date) return res.status(400).json({ error: 'name and event_date required' })
+    for (const k of ['name', 'event_date', 'location', 'event_type', 'attendance', 'leads_collected', 'notes']) if (req.body[k] !== undefined) row[k] = req.body[k] === '' ? null : req.body[k]
+  }
   const { data, error } = await sb.from('sponsor_events').insert(row).select().single()
-  if (error) return res.status(500).json({ error: error.message })
+  if (error) return res.status(error.code === '23505' ? 409 : 500).json({ error: error.code === '23505' ? 'That calendar event is already on the sponsor desk.' : error.message })
   res.status(201).json(data)
 })
 
@@ -220,8 +256,17 @@ router.put('/events/:id', async (req, res) => {
   const sb = db(); const sid = req.studio.id
   const patch = {}
   for (const k of ['name', 'event_date', 'location', 'event_type', 'attendance', 'leads_collected', 'notes']) if (req.body[k] !== undefined) patch[k] = req.body[k] === '' ? null : req.body[k]
+  // Link / unlink a calendar event.
+  if (req.body.event_id !== undefined) {
+    if (!req.body.event_id) { patch.event_id = null }
+    else {
+      const { data: cal } = await sb.from('events').select('id, title, start_date, location, event_type').eq('id', req.body.event_id).eq('studio_id', sid).maybeSingle()
+      if (!cal) return res.status(400).json({ error: 'Calendar event not found for this studio' })
+      patch.event_id = cal.id; patch.name = cal.title; patch.event_date = cal.start_date; patch.location = cal.location || null
+    }
+  }
   const { data, error } = await sb.from('sponsor_events').update(patch).eq('id', req.params.id).eq('studio_id', sid).select().single()
-  if (error) return res.status(500).json({ error: error.message })
+  if (error) return res.status(error.code === '23505' ? 409 : 500).json({ error: error.code === '23505' ? 'That calendar event is already linked.' : error.message })
   res.json(data)
 })
 
@@ -237,9 +282,10 @@ router.get('/events/:id', async (req, res) => {
     const sb = db(); const sid = req.studio.id
     const { data: event } = await sb.from('sponsor_events').select('*').eq('id', req.params.id).eq('studio_id', sid).maybeSingle()
     if (!event) return res.status(404).json({ error: 'Event not found' })
+    const cal = await calendarMap(sb, [event.event_id].filter(Boolean))
     const { data: roster } = await sb.from('sponsor_event_brands').select('*, sponsor_brands(name, domain, category)').eq('event_id', event.id)
     res.json({
-      event,
+      event: applyLinkedEvent(event, cal),
       brands: (roster || []).map(r => ({ id: r.id, brand_id: r.brand_id, role: r.role, slot: r.slot, item: r.item, status: r.status, name: r.sponsor_brands?.name, domain: r.sponsor_brands?.domain, category: r.sponsor_brands?.category })),
     })
   } catch (err) { console.error('GET /sponsors/events/:id', err.message); res.status(500).json({ error: err.message }) }
