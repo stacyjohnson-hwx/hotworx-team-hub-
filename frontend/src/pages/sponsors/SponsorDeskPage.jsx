@@ -277,6 +277,19 @@ function OrderTab({ d, onAdd, onDel }) {
         <div className="text-[11px] text-gray-400">{fmtDate(o.ordered_on)}{o.studio_name ? ` · ${o.studio_name}` : ''}{o.source ? ` · ${labelOf(ORDER_SOURCES, o.source)}` : ''}{o.note ? ` · ${o.note}` : ''}</div>
       </TimelineRow>
     ))}
+    {(d.ops_orders || []).length > 0 && (<>
+      <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide pt-3 pb-1">From the Orders module <span className="font-normal normal-case text-gray-300">· matched by vendor name</span></div>
+      {d.ops_orders.map(o => (
+        <div key={o.id} className="flex items-start gap-2 py-2 border-b border-gray-50 last:border-0 text-sm">
+          <div className="flex-1 min-w-0">
+            <div className="font-semibold text-gray-800">{o.item_name}{o.quantity ? <span className="text-gray-400 font-normal"> ×{o.quantity}</span> : null}{o.est_cost ? <span className="text-amber-600 font-normal"> · {fmt$(o.est_cost)}</span> : null}</div>
+            <div className="text-[11px] text-gray-400">{fmtDate(o.ordered_on)}{o.studio_name ? ` · ${o.studio_name}` : ''}{o.status ? ` · ${o.status}` : ''}{o.category ? ` · ${o.category}` : ''}</div>
+          </div>
+          <span className="text-[10px] font-bold text-sky-600 bg-sky-50 rounded px-1.5 py-0.5 flex-shrink-0">Orders</span>
+        </div>
+      ))}
+      <p className="text-[11px] text-gray-400 pt-1">Pulled from your Orders module. Only ordered/received count toward spend.</p>
+    </>)}
   </div>)
 }
 

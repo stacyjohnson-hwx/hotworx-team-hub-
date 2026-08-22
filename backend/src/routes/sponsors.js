@@ -36,6 +36,30 @@ async function studioNameMap(sb, ids) {
   return m
 }
 
+// Bridge to the operations Orders module: orders placed there whose vendor matches a
+// brand name surface on that brand (no schema change). Only ordered/received count as
+// spend; est_cost is the best figure we have.
+const OPS_SPENT_STATUSES = new Set(['ordered', 'received'])
+async function opsOrdersForOrg(sb, studioIds) {
+  if (!studioIds.length) return []
+  const { data } = await sb.from('orders')
+    .select('id, item_name, quantity, category, notes, vendor, est_cost, status, ordered_at, received_at, created_at, studio_id')
+    .in('studio_id', studioIds).not('vendor', 'is', null)
+  return data || []
+}
+function indexOpsByVendor(orders) {
+  const m = {}
+  for (const o of orders) {
+    const key = String(o.vendor || '').trim().toLowerCase()
+    if (!key) continue
+    const e = m[key] || (m[key] = { count: 0, spend: 0, rows: [] })
+    e.count++; e.rows.push(o)
+    if (OPS_SPENT_STATUSES.has(o.status)) e.spend += Number(o.est_cost) || 0
+  }
+  return m
+}
+const opsDate = (o) => String(o.ordered_at || o.received_at || o.created_at || '').slice(0, 10)
+
 // Auto-advance stage on activity, never downgrading a partner (PRD §8).
 const ADVANCEABLE = new Set(['prospect', 'contacted', 'talking', 'committed'])
 
@@ -59,7 +83,18 @@ router.get('/brands', async (req, res) => {
       givebacksOwed = count || 0
     }
     const today = todayInChicago()
-    const rows = (brands || []).map(b => ({ ...b, owner_name: b.owner_user_id ? (names[b.owner_user_id] || null) : null }))
+    // Fold in matching Orders-module purchases (by vendor name) so leverage is real.
+    const opsIdx = indexOpsByVendor(await opsOrdersForOrg(sb, studioIds))
+    const rows = (brands || []).map(b => {
+      const ops = opsIdx[String(b.name || '').trim().toLowerCase()]
+      return {
+        ...b,
+        owner_name: b.owner_user_id ? (names[b.owner_user_id] || null) : null,
+        total_spend: (Number(b.total_spend) || 0) + (ops?.spend || 0),
+        order_count: (b.order_count || 0) + (ops?.count || 0),
+        ops_order_count: ops?.count || 0,
+      }
+    })
     res.json({ brands: rows, metrics: computeSponsorMetrics(rows, today, givebacksOwed) })
   } catch (err) { console.error('GET /sponsors/brands', err.message); res.status(500).json({ error: err.message }) }
 })
@@ -80,12 +115,25 @@ router.get('/brands/:id', async (req, res) => {
       orgStudioIds(sb, org),
     ])
     const studioNames = await studioNameMap(sb, studioIds)
+    // Matching Orders-module purchases (by vendor name) → read-only rows + combined spend.
+    const opsIdx = indexOpsByVendor(await opsOrdersForOrg(sb, studioIds))
+    const ops = opsIdx[String(brand.name || '').trim().toLowerCase()]
+    const opsRows = ops ? ops.rows : []
+    const opsOrders = opsRows.map(o => ({
+      id: o.id, item_name: o.item_name, quantity: o.quantity, est_cost: o.est_cost, status: o.status,
+      category: o.category, ordered_on: opsDate(o), studio_name: o.studio_id ? (studioNames[o.studio_id] || null) : null,
+    })).sort((a, b) => (b.ordered_on || '').localeCompare(a.ordered_on || ''))
     res.json({
-      brand: { ...brand, owner_name: brand.owner_user_id ? (names[brand.owner_user_id] || null) : null },
+      brand: {
+        ...brand, owner_name: brand.owner_user_id ? (names[brand.owner_user_id] || null) : null,
+        total_spend: (Number(brand.total_spend) || 0) + (ops?.spend || 0),
+        order_count: (brand.order_count || 0) + (ops?.count || 0),
+      },
       touches: (touches || []).map(t => ({ ...t, by_name: t.by_user_id ? (names[t.by_user_id] || null) : null })),
       samples: samples || [],
       orders: (orders || []).map(o => ({ ...o, studio_name: o.studio_id ? (studioNames[o.studio_id] || null) : null })),
-      reorder_cadence_days: reorderCadenceDays((orders || []).map(o => o.ordered_on)),
+      ops_orders: opsOrders,
+      reorder_cadence_days: reorderCadenceDays([...(orders || []).map(o => o.ordered_on), ...opsRows.map(opsDate)]),
       events: (eventLinks || []).map(e => ({ id: e.id, event_id: e.event_id, role: e.role, status: e.status, slot: e.slot, item: e.item, name: e.sponsor_events?.name, event_date: e.sponsor_events?.event_date })),
     })
   } catch (err) { console.error('GET /sponsors/brands/:id', err.message); res.status(500).json({ error: err.message }) }
