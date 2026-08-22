@@ -402,16 +402,18 @@ function Stat({ label, value, cls = 'text-gray-900' }) {
     </div>
   )
 }
-function RBar({ label, value, max, cls = 'bg-red-400' }) {
+function RBar({ label, value, max, cls = 'bg-red-400', onClick }) {
+  const clickable = onClick && value > 0
   return (
-    <div className="flex items-center gap-3">
-      <span className="w-36 flex-shrink-0 text-xs font-semibold text-gray-600 truncate">{label}</span>
+    <div onClick={clickable ? onClick : undefined} title={clickable ? `See the ${value} member${value === 1 ? '' : 's'}` : undefined}
+      className={`flex items-center gap-3 rounded-lg ${clickable ? 'cursor-pointer hover:bg-gray-50 -mx-1 px-1' : ''}`}>
+      <span className={`w-36 flex-shrink-0 text-xs font-semibold truncate ${clickable ? 'text-red-600 hover:underline' : 'text-gray-600'}`}>{label}</span>
       <div className="flex-1 bg-gray-100 rounded-full h-5 overflow-hidden"><div className={`${cls} h-full rounded-full`} style={{ width: `${(value / max) * 100}%` }} /></div>
       <span className="w-8 text-right text-sm font-bold text-gray-800">{value}</span>
     </div>
   )
 }
-function CancellationReport() {
+function CancellationReport({ onPickReason }) {
   const [d, setD] = useState(null)
   const [err, setErr] = useState('')
   useEffect(() => { apiGet('/api/cancellations/report').then(setD).catch(e => setErr(e.message)) }, [])
@@ -442,9 +444,10 @@ function CancellationReport() {
 
       {/* Reasons */}
       <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
-        <h3 className="text-sm font-bold text-gray-900 mb-4">Why members cancel</h3>
+        <h3 className="text-sm font-bold text-gray-900 mb-1">Why members cancel</h3>
+        <p className="text-[11px] text-gray-400 mb-3">Tap a reason to see those members.</p>
         <div className="space-y-2.5">
-          {REASONS.map(r => <RBar key={r.value} label={r.label} value={d.byReason?.[r.value] || 0} max={reasonMax} />)}
+          {REASONS.map(r => <RBar key={r.value} label={r.label} value={d.byReason?.[r.value] || 0} max={reasonMax} onClick={onPickReason ? () => onPickReason(r.value) : undefined} />)}
         </div>
       </div>
 
@@ -751,7 +754,7 @@ export default function CancellationsPage() {
         ))}
       </div>
 
-      {tab === 'report' && <CancellationReport />}
+      {tab === 'report' && <CancellationReport onPickReason={(reason) => { setF({ reason, outcome: '', win_back_step: '', handled_by: '' }); setActiveOnly(false); setTierFilter(''); setSearch(''); setSort({ key: 'winback_score', dir: 'desc' }); setTab('all'); window.scrollTo({ top: 0 }) }} />}
 
       {tab === 'followups' && (<>
       <p className="text-xs text-gray-500 mb-3">
