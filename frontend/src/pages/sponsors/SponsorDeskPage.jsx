@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
 import { useStudio } from '@/contexts/StudioContext'
 import { useRole } from '@/hooks/useRole'
-import { Gift, Plus, X, Loader2, Search, Trash2, Phone, MessageSquare, Mail, AtSign, DollarSign, Clock, Store } from 'lucide-react'
+import { Gift, Plus, X, Loader2, Search, Trash2, Phone, MessageSquare, Mail, AtSign, DollarSign, Clock, Store, Calendar, CalendarPlus, Users } from 'lucide-react'
 
 // ── Vocab ───────────────────────────────────────────────────────────────────
 const CATEGORIES = [
@@ -39,6 +39,17 @@ const USED_FOR = [
 const ORDER_SOURCES = [
   { value: '', label: '—' }, { value: 'direct', label: 'Direct' }, { value: 'distributor', label: 'Distributor' },
   { value: 'retail', label: 'Retail' }, { value: 'club', label: 'Club' },
+]
+const EVENT_ROLES = [
+  { value: 'hour_sponsor', label: 'Hour sponsor' }, { value: 'product_donation', label: 'Product donation' },
+  { value: 'prize_bundle', label: 'Prize bundle' }, { value: 'giveaway', label: 'Giveaway' }, { value: 'paid_sponsor', label: 'Paid sponsor' },
+]
+const EB_STATUS = [
+  { value: 'asked', label: 'Asked', cls: 'bg-gray-100 text-gray-600' },
+  { value: 'confirmed', label: 'Confirmed', cls: 'bg-emerald-100 text-emerald-700' },
+  { value: 'delivered', label: 'Delivered', cls: 'bg-green-600 text-white' },
+  { value: 'no_show', label: 'No-show', cls: 'bg-red-100 text-red-600' },
+  { value: 'declined', label: 'Declined', cls: 'bg-red-100 text-red-500' },
 ]
 const labelOf = (arr, v) => arr.find(x => x.value === v)?.label || v || '—'
 const stageMeta = (v) => STAGES.find(s => s.value === v) || STAGES[0]
@@ -262,7 +273,7 @@ function OrderTab({ d, onAdd, onDel }) {
     {d.orders.map(o => (
       <TimelineRow key={o.id} onDelete={() => onDel(o.id)}>
         <div className="font-semibold text-gray-800">{o.item} {o.quantity ? <span className="text-gray-400 font-normal">×{o.quantity}</span> : null} {o.cost ? <span className="text-amber-600 font-normal">· {fmt$(o.cost)}</span> : null}</div>
-        <div className="text-[11px] text-gray-400">{fmtDate(o.ordered_on)}{o.source ? ` · ${labelOf(ORDER_SOURCES, o.source)}` : ''}{o.note ? ` · ${o.note}` : ''}</div>
+        <div className="text-[11px] text-gray-400">{fmtDate(o.ordered_on)}{o.studio_name ? ` · ${o.studio_name}` : ''}{o.source ? ` · ${labelOf(ORDER_SOURCES, o.source)}` : ''}{o.note ? ` · ${o.note}` : ''}</div>
       </TimelineRow>
     ))}
   </div>)
@@ -321,6 +332,197 @@ function NewBrandModal({ users, onClose, onCreated }) {
   )
 }
 
+// ── Events (Phase 2) ──────────────────────────────────────────────────────────
+function EventBrandPicker({ brands, existing, onClose, onAdd }) {
+  const [q, setQ] = useState('')
+  const [sel, setSel] = useState('')
+  const [role, setRole] = useState('product_donation')
+  const [slot, setSlot] = useState('')
+  const [item, setItem] = useState('')
+  const [saving, setSaving] = useState(false)
+  const taken = new Set(existing.map(e => `${e.brand_id}:${e.role}`))
+  const list = brands.filter(b => !q || b.name.toLowerCase().includes(q.toLowerCase()))
+  const submit = async () => { if (!sel) return; setSaving(true); await onAdd({ brand_id: sel, role, slot, item }); setSaving(false); onClose() }
+  return (
+    <div className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-4 border-b border-gray-100"><h3 className="font-bold text-gray-900">Attach a brand</h3><button onClick={onClose}><X size={18} className="text-gray-400" /></button></div>
+        <div className="p-4 space-y-3">
+          <div className="relative"><Search size={14} className="absolute left-2.5 top-2.5 text-gray-400" /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Search brands…" className={`${inp} pl-8`} /></div>
+          <select className={inp} value={sel} onChange={e => setSel(e.target.value)} size={1}>
+            <option value="">Choose a brand…</option>
+            {list.map(b => <option key={b.id} value={b.id} disabled={taken.has(`${b.id}:${role}`)}>{b.name}{taken.has(`${b.id}:${role}`) ? ' (already added)' : ''}</option>)}
+          </select>
+          <div className="grid grid-cols-2 gap-2">
+            <div><label className={lbl}>Role</label><select className={inp} value={role} onChange={e => setRole(e.target.value)}>{EVENT_ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}</select></div>
+            <div><label className={lbl}>Slot</label><input className={inp} value={slot} onChange={e => setSlot(e.target.value)} placeholder="10–11am" /></div>
+          </div>
+          <div><label className={lbl}>Item / commitment</label><input className={inp} value={item} onChange={e => setItem(e.target.value)} placeholder="2 cases + prize" /></div>
+        </div>
+        <div className="p-4 border-t border-gray-100 flex justify-end gap-2">
+          <button onClick={onClose} className="text-sm font-semibold text-gray-500 px-3 py-2">Cancel</button>
+          <button onClick={submit} disabled={!sel || saving} className="bg-red-600 text-white text-sm font-bold rounded-lg px-4 py-2 disabled:opacity-40 flex items-center gap-1.5">{saving && <Loader2 size={14} className="animate-spin" />} Attach</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function EventDrawer({ eventId, brands, onClose, onChanged }) {
+  const [d, setD] = useState(null)
+  const [tab, setTab] = useState('brands')
+  const [form, setForm] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const [picking, setPicking] = useState(false)
+  const load = useCallback(() => { apiGet(`/api/sponsors/events/${eventId}`).then(res => { setD(res); setForm(res.event) }).catch(() => setD(null)) }, [eventId])
+  useEffect(() => { load() }, [load])
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+  const saveDetails = async () => { setSaving(true); try { await apiPut(`/api/sponsors/events/${eventId}`, form); onChanged(); load() } catch { /* ignore */ } setSaving(false) }
+  const addBrand = async (body) => { try { await apiPost(`/api/sponsors/events/${eventId}/brands`, body); onChanged(); load() } catch { /* ignore */ } }
+  const setStatus = async (rowId, status) => { try { await apiPut(`/api/sponsors/event-brands/${rowId}`, { status }); onChanged(); load() } catch { /* ignore */ } }
+  const removeBrand = async (rowId) => { try { await apiDelete(`/api/sponsors/event-brands/${rowId}`); onChanged(); load() } catch { /* ignore */ } }
+  const e = d?.event
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={onClose}>
+      <div className="w-full max-w-lg bg-gray-50 h-full overflow-y-auto shadow-xl" onClick={ev => ev.stopPropagation()}>
+        {!d ? <div className="flex justify-center py-20"><Loader2 className="animate-spin text-red-500" /></div> : (<>
+          <div className="sticky top-0 bg-white border-b border-gray-200 px-5 py-4 flex items-center gap-3 z-10">
+            <div className="flex-1 min-w-0"><div className="font-bold text-gray-900 truncate">{e.name}</div><div className="text-[11px] text-gray-400">{fmtDate(e.event_date)}{e.location ? ` · ${e.location}` : ''}</div></div>
+            <button onClick={onClose}><X size={20} className="text-gray-400" /></button>
+          </div>
+          <div className="flex gap-1 px-4 pt-4 border-b border-gray-200 bg-gray-50">
+            {[['brands', `Brands${d.brands.length ? ` (${d.brands.length})` : ''}`], ['details', 'Details']].map(([k, label]) => (
+              <button key={k} onClick={() => setTab(k)} className={`px-3 py-2 text-[13px] font-semibold border-b-2 -mb-px ${tab === k ? 'border-red-600 text-red-600' : 'border-transparent text-gray-500'}`}>{label}</button>
+            ))}
+          </div>
+          <div className="p-4">
+            {tab === 'brands' && (
+              <div className="space-y-2">
+                <button onClick={() => setPicking(true)} className="w-full flex items-center justify-center gap-1.5 text-sm font-semibold text-red-600 border border-red-200 rounded-lg py-2 hover:bg-red-50"><Plus size={14} /> Attach a brand</button>
+                {d.brands.length === 0 ? <p className="text-sm text-gray-400 text-center py-6">No brands on this event yet.</p>
+                  : d.brands.map(r => {
+                    const st = EB_STATUS.find(s => s.value === r.status) || EB_STATUS[0]
+                    return (
+                      <div key={r.id} className="bg-white border border-gray-200 rounded-lg px-3 py-2.5 flex items-center gap-2.5">
+                        <BrandLogo domain={r.domain} name={r.name} size={30} />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-semibold text-gray-800 truncate">{r.name}</div>
+                          <div className="text-[11px] text-gray-400">{labelOf(EVENT_ROLES, r.role)}{r.slot ? ` · ${r.slot}` : ''}{r.item ? ` · ${r.item}` : ''}</div>
+                        </div>
+                        <select value={r.status} onChange={ev => setStatus(r.id, ev.target.value)} className={`text-[11px] font-bold rounded-full px-2 py-1 border-0 ${st.cls}`}>
+                          {EB_STATUS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                        </select>
+                        <button onClick={() => removeBrand(r.id)} className="text-gray-300 hover:text-red-500 p-1"><Trash2 size={14} /></button>
+                      </div>
+                    )
+                  })}
+              </div>
+            )}
+            {tab === 'details' && form && (
+              <div className="space-y-3">
+                <div><label className={lbl}>Event name</label><input className={inp} value={form.name || ''} onChange={ev => set('name', ev.target.value)} /></div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className={lbl}>Date</label><input type="date" className={inp} value={form.event_date || ''} onChange={ev => set('event_date', ev.target.value)} /></div>
+                  <div><label className={lbl}>Location</label><input className={inp} value={form.location || ''} onChange={ev => set('location', ev.target.value)} /></div>
+                  <div><label className={lbl}>Type</label><input className={inp} value={form.event_type || ''} onChange={ev => set('event_type', ev.target.value)} placeholder="Pop-up, launch…" /></div>
+                  <div><label className={lbl}>Attendance</label><input type="number" className={inp} value={form.attendance ?? ''} onChange={ev => set('attendance', ev.target.value)} /></div>
+                  <div><label className={lbl}>Leads collected</label><input type="number" className={inp} value={form.leads_collected ?? ''} onChange={ev => set('leads_collected', ev.target.value)} /></div>
+                </div>
+                <div><label className={lbl}>Notes</label><textarea className={inp} rows={3} value={form.notes || ''} onChange={ev => set('notes', ev.target.value)} /></div>
+                <button onClick={saveDetails} disabled={saving} className="w-full bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-lg py-2 disabled:opacity-50 flex items-center justify-center gap-2">{saving && <Loader2 size={14} className="animate-spin" />} Save changes</button>
+              </div>
+            )}
+          </div>
+          {picking && <EventBrandPicker brands={brands} existing={d.brands} onClose={() => setPicking(false)} onAdd={addBrand} />}
+        </>)}
+      </div>
+    </div>
+  )
+}
+
+function NewEventModal({ onClose, onCreated }) {
+  const [f, setF] = useState({ name: '', event_date: '', location: '' })
+  const [saving, setSaving] = useState(false)
+  const save = async () => { if (!f.name.trim() || !f.event_date) return; setSaving(true); try { const e = await apiPost('/api/sponsors/events', f); onCreated(e) } catch { setSaving(false) } }
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-4 border-b border-gray-100"><h3 className="font-bold text-gray-900">New event</h3><button onClick={onClose}><X size={18} className="text-gray-400" /></button></div>
+        <div className="p-4 space-y-3">
+          <div><label className={lbl}>Event name *</label><input className={inp} value={f.name} onChange={e => setF({ ...f, name: e.target.value })} placeholder="Madison launch day" autoFocus /></div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className={lbl}>Date *</label><input type="date" className={inp} value={f.event_date} onChange={e => setF({ ...f, event_date: e.target.value })} /></div>
+            <div><label className={lbl}>Location</label><input className={inp} value={f.location} onChange={e => setF({ ...f, location: e.target.value })} /></div>
+          </div>
+        </div>
+        <div className="p-4 border-t border-gray-100 flex justify-end gap-2">
+          <button onClick={onClose} className="text-sm font-semibold text-gray-500 px-3 py-2">Cancel</button>
+          <button onClick={save} disabled={!f.name.trim() || !f.event_date || saving} className="bg-red-600 text-white text-sm font-bold rounded-lg px-4 py-2 disabled:opacity-40 flex items-center gap-1.5">{saving && <Loader2 size={14} className="animate-spin" />} Create</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function EventCard({ e, onOpen }) {
+  const past = e.event_date < todayCA()
+  return (
+    <button onClick={() => onOpen(e)} className="text-left bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md transition-shadow">
+      <div className="flex items-center justify-between">
+        <span className="font-bold text-gray-900 truncate">{e.name}</span>
+        <span className="text-[11px] font-semibold text-gray-500">{fmtDate(e.event_date)}</span>
+      </div>
+      {e.location ? <div className="text-[11px] text-gray-400 mt-0.5">{e.location}</div> : null}
+      <div className="flex items-center gap-3 mt-3 text-[11px]">
+        <span className="text-gray-500"><Users size={12} className="inline align-[-2px] mr-1" />{e.brands_locked}/{e.brands_total} locked</span>
+        {e.givebacks_owed > 0 && <span className="font-semibold text-red-600">{e.givebacks_owed} give-back{e.givebacks_owed === 1 ? '' : 's'} owed</span>}
+        {past && e.attendance != null && <span className="text-gray-500">· {e.attendance} attended</span>}
+        {past && e.leads_collected != null && <span className="text-gray-500">· {e.leads_collected} leads</span>}
+      </div>
+    </button>
+  )
+}
+
+function EventsView({ brands }) {
+  const [events, setEvents] = useState(null)
+  const [openId, setOpenId] = useState(null)
+  const [adding, setAdding] = useState(false)
+  const load = useCallback(() => { apiGet('/api/sponsors/events').then(e => setEvents(Array.isArray(e) ? e : [])).catch(() => setEvents([])) }, [])
+  useEffect(() => { load() }, [load])
+  if (!events) return <div className="flex justify-center py-20"><Loader2 className="animate-spin text-red-500" size={26} /></div>
+  const upcoming = events.filter(e => e.event_date >= todayCA())
+  const past = events.filter(e => e.event_date < todayCA()).reverse()
+  const nextUp = upcoming[0]
+  const daysOut = nextUp ? Math.round((new Date(nextUp.event_date + 'T00:00:00') - new Date(todayCA())) / 86400000) : null
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-sm text-gray-500">Events are studio-specific · brands come from the shared pool.</p>
+        <button onClick={() => setAdding(true)} className="flex items-center gap-1.5 text-sm font-semibold text-red-600 border border-red-200 rounded-lg px-3 py-1.5 hover:bg-red-50"><CalendarPlus size={15} /> New event</button>
+      </div>
+      {nextUp && (
+        <button onClick={() => setOpenId(nextUp.id)} className="w-full text-left bg-gradient-to-br from-red-50 to-orange-50 border border-red-200 rounded-xl p-5 mb-4">
+          <div className="text-[11px] font-bold uppercase tracking-wide text-red-500">Next up · {daysOut === 0 ? 'today' : `${daysOut} day${daysOut === 1 ? '' : 's'} out`}</div>
+          <div className="text-xl font-black text-gray-900 mt-0.5">{nextUp.name}</div>
+          <div className="text-sm text-gray-500">{fmtDate(nextUp.event_date)}{nextUp.location ? ` · ${nextUp.location}` : ''}</div>
+          <div className="mt-2 text-[13px] font-semibold text-gray-700">{nextUp.brands_locked}/{nextUp.brands_total} brands locked{nextUp.givebacks_owed > 0 ? ` · ${nextUp.givebacks_owed} give-backs owed` : ''}</div>
+        </button>
+      )}
+      {events.length === 0 ? (
+        <div className="text-center py-16"><Calendar className="mx-auto text-gray-300 mb-3" size={30} /><p className="text-sm font-semibold text-gray-700">No events yet.</p><p className="text-xs text-gray-400 mt-1">Create a pop-up or launch day, then attach the brands sponsoring it.</p></div>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {upcoming.map(e => <EventCard key={e.id} e={e} onOpen={() => setOpenId(e.id)} />)}
+          {past.length > 0 && <div className="col-span-full text-[11px] font-bold text-gray-400 uppercase tracking-wide mt-2">Past</div>}
+          {past.map(e => <EventCard key={e.id} e={e} onOpen={() => setOpenId(e.id)} />)}
+        </div>
+      )}
+      {openId && <EventDrawer eventId={openId} brands={brands} onClose={() => setOpenId(null)} onChanged={load} />}
+      {adding && <NewEventModal onClose={() => setAdding(false)} onCreated={(e) => { setAdding(false); load(); setOpenId(e.id) }} />}
+    </div>
+  )
+}
+
 export default function SponsorDeskPage() {
   const { currentStudio } = useStudio()
   const { role } = useRole()
@@ -334,6 +536,7 @@ export default function SponsorDeskPage() {
   const [dueOnly, setDueOnly] = useState(false)
   const [openId, setOpenId] = useState(null)
   const [adding, setAdding] = useState(false)
+  const [tab, setTab] = useState('brands')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -361,8 +564,19 @@ export default function SponsorDeskPage() {
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2.5"><Gift size={24} className="text-red-600" /> Sample &amp; Sponsor Desk</h1>
           <p className="text-sm text-gray-500 mt-0.5">Source free product from brands · {currentStudio?.name}</p>
         </div>
-        <button onClick={() => setAdding(true)} className="flex items-center gap-2 px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-lg shadow-sm"><Plus size={16} /> Add Brand</button>
+        {tab === 'brands' && <button onClick={() => setAdding(true)} className="flex items-center gap-2 px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-lg shadow-sm"><Plus size={16} /> Add Brand</button>}
       </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 mb-5 border-b border-gray-200">
+        {[{ k: 'brands', label: 'Brands', Icon: Store }, { k: 'events', label: 'Events', Icon: Calendar }].map(t => (
+          <button key={t.k} onClick={() => setTab(t.k)} className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px ${tab === t.k ? 'border-red-600 text-red-600' : 'border-transparent text-gray-500 hover:text-gray-800'}`}>
+            <t.Icon size={15} /> {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'events' ? <EventsView brands={brands} /> : (<>
 
       {/* Stat strip */}
       {metrics && (
@@ -402,6 +616,7 @@ export default function SponsorDeskPage() {
               {sorted.map(b => <BrandCard key={b.id} b={b} onOpen={() => setOpenId(b.id)} />)}
             </div>
           )}
+      </>)}
 
       {openId && <BrandDrawer brandId={openId} users={users} onClose={() => setOpenId(null)} onChanged={load} />}
       {adding && <NewBrandModal users={users} onClose={() => setAdding(false)} onCreated={(b) => { setAdding(false); load(); setOpenId(b.id) }} />}
