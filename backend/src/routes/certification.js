@@ -326,6 +326,40 @@ router.get('/matrix', canAuthor, async (req, res) => {
   res.json({ skills: skills || [], tsas, rollup })
 })
 
+// ─── Skills heatmap (red/yellow/green per person per skill) ─────────────────────
+// All roles read; only owner/manager set levels.
+router.get('/heatmap', async (req, res) => {
+  const sb = db(); const sid = req.studio.id
+  const [tsaIds, { data: cats }, { data: skills }, { data: rows }] = await Promise.all([
+    activeTeamIds(sb, sid),
+    sb.from('skill_category').select('id, name, sort_order').eq('active', true).order('sort_order'),
+    sb.from('skill').select('id, name, category_id, sort_order').eq('active', true).order('sort_order'),
+    sb.from('tsa_skill_status').select('tsa_user_id, skill_id, skill_level, level_note').eq('studio_id', sid),
+  ])
+  const names = await namesFor(sb, tsaIds)
+  const levels = {}
+  for (const r of rows || []) if (r.skill_level) levels[`${r.tsa_user_id}|${r.skill_id}`] = { level: r.skill_level, note: r.level_note || null }
+  res.json({
+    members: tsaIds.map(id => ({ id, name: names[id] || 'Team Member' })),
+    categories: cats || [], skills: skills || [], levels,
+  })
+})
+
+// PUT /skill-level — set (or clear) one person's level on one skill.
+router.put('/skill-level', canAuthor, async (req, res) => {
+  const sb = db(); const sid = req.studio.id
+  const { tsa_user_id, skill_id, skill_level, level_note } = req.body || {}
+  if (!tsa_user_id || !skill_id) return res.status(400).json({ error: 'tsa_user_id and skill_id required' })
+  if (skill_level != null && !['red', 'yellow', 'green'].includes(skill_level)) return res.status(400).json({ error: 'Invalid level' })
+  const { data, error } = await sb.from('tsa_skill_status').upsert({
+    studio_id: sid, tsa_user_id, skill_id,
+    skill_level: skill_level || null, level_note: level_note ?? null,
+    level_set_by: req.user.id, level_set_at: new Date().toISOString(),
+  }, { onConflict: 'studio_id,tsa_user_id,skill_id' }).select().single()
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data)
+})
+
 // ─── Coaching feedback feed ─────────────────────────────────────────────────────
 // GET /feedback?tsa_user_id= — TSA sees own; Lead/Owner can pass any TSA
 router.get('/feedback', async (req, res) => {

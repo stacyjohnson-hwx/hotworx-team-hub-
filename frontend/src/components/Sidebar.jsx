@@ -103,7 +103,7 @@ const NAV_SECTIONS = [
     items: [
       { to: '/sops',     label: 'SOPs',     icon: BookOpen,      roles: ['owner', 'manager', 'tsa'] },
       { to: '/training', label: 'Training', icon: GraduationCap, roles: ['owner', 'manager', 'tsa'] },
-      { to: '/certification', label: 'Sales Certification', icon: Award, roles: ['owner', 'manager', 'tsa'] },
+      { to: '/certification', label: 'Sales Skills', icon: Award, roles: ['owner', 'manager', 'tsa'] },
     ],
   },
   {

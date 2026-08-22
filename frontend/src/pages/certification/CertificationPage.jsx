@@ -381,9 +381,27 @@ function Matrix() {
 }
 
 // ─── Owner/Lead: library authoring ──────────────────────────────────────────
-function Library() {
+// Read-only SOP viewer — a team member reads the best-practice script + video.
+function SkillViewer({ skillId, onBack }) {
+  const [d, setD] = useState(null)
+  useEffect(() => { apiGet(`/api/certification/skills/${skillId}`).then(setD).catch(() => setD(null)) }, [skillId])
+  if (!d) return <Spinner />
+  return (
+    <div className="space-y-4 max-w-2xl">
+      <button onClick={onBack} className="text-sm text-gray-500 hover:text-gray-700">← Back to library</button>
+      <h3 className="text-lg font-bold text-gray-900">{d.skill.name}</h3>
+      {d.script?.body
+        ? <div className="bg-white border border-gray-200 rounded-xl p-4 whitespace-pre-line text-sm text-gray-700 leading-relaxed">{d.script.body.replace(/\[\[|\]\]/g, '')}</div>
+        : <p className="text-sm text-gray-400">No script/best practice written yet.</p>}
+      {d.script?.video_url && <a href={d.script.video_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-sm font-semibold" style={{ color: ACCENT }}><Video size={15} /> Watch what good looks like</a>}
+    </div>
+  )
+}
+
+function Library({ readOnly }) {
   const [cats, setCats] = useState(null)
-  const [editing, setEditing] = useState(null) // skill id being edited
+  const [editing, setEditing] = useState(null) // skill id being edited (managers)
+  const [viewing, setViewing] = useState(null) // skill id being read (view-only)
   const load = useCallback(() => { apiGet('/api/certification/library').then(setCats).catch(() => setCats([])) }, [])
   useEffect(() => { load() }, [load])
 
@@ -398,25 +416,28 @@ function Library() {
 
   if (!cats) return <Spinner />
   if (editing) return <SkillEditor skillId={editing} categories={cats} onBack={() => { setEditing(null); load() }} />
+  if (viewing) return <SkillViewer skillId={viewing} onBack={() => setViewing(null)} />
   return (
     <div className="space-y-5">
-      <div className="flex justify-end"><button onClick={addCategory} className="text-xs font-semibold flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700"><Plus size={13} /> Add category</button></div>
+      {!readOnly && <div className="flex justify-end"><button onClick={addCategory} className="text-xs font-semibold flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700"><Plus size={13} /> Add category</button></div>}
       {cats.map(cat => (
         <div key={cat.id}>
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-1.5 group">
               <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">{cat.name}</p>
-              <button onClick={() => renameCategory(cat)} title="Rename category" className="text-gray-300 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity"><Pencil size={11} /></button>
-              <button onClick={() => delCategory(cat)} title="Delete category" className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={11} /></button>
+              {!readOnly && <>
+                <button onClick={() => renameCategory(cat)} title="Rename category" className="text-gray-300 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity"><Pencil size={11} /></button>
+                <button onClick={() => delCategory(cat)} title="Delete category" className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={11} /></button>
+              </>}
             </div>
-            <button onClick={() => addSkill(cat.id)} className="text-[11px] text-gray-500 hover:text-gray-700 flex items-center gap-1"><Plus size={11} /> Add skill</button>
+            {!readOnly && <button onClick={() => addSkill(cat.id)} className="text-[11px] text-gray-500 hover:text-gray-700 flex items-center gap-1"><Plus size={11} /> Add skill</button>}
           </div>
           <div className="space-y-1.5">
             {cat.skills.map(sk => (
-              <button key={sk.id} onClick={() => setEditing(sk.id)} className="w-full flex items-center gap-3 bg-white border border-gray-200 rounded-lg px-4 py-2.5 text-left hover:border-gray-300">
+              <button key={sk.id} onClick={() => readOnly ? setViewing(sk.id) : setEditing(sk.id)} className="w-full flex items-center gap-3 bg-white border border-gray-200 rounded-lg px-4 py-2.5 text-left hover:border-gray-300">
                 <span className="flex-1 text-sm font-medium text-gray-800">{sk.name}</span>
-                <span className="text-[10px] text-gray-400">{sk.current_version ? `Script v${sk.current_version}` : 'No script'} · {sk.quiz_count} Qs{sk.has_video ? ' · 🎥' : ''}</span>
-                <Pencil size={13} className="text-gray-400" />
+                <span className="text-[10px] text-gray-400">{sk.current_version ? `Script v${sk.current_version}` : 'No script'}{sk.has_video ? ' · 🎥' : ''}</span>
+                {readOnly ? <ChevronRight size={13} className="text-gray-400" /> : <Pencil size={13} className="text-gray-400" />}
               </button>
             ))}
             {cat.skills.length === 0 && <p className="text-xs text-gray-400 px-1">No skills yet.</p>}
@@ -557,13 +578,10 @@ function SkillEditor({ skillId, categories = [], onBack }) {
   }
 
   const saveScript = async () => {
-    if (!confirm('Save a new version? Anyone currently Certified on this skill will move to "Needs Recert" and must re-quiz + re-demo.')) return
     setSavingScript(true)
     try { await apiPut(`/api/certification/skills/${skillId}/script`, { body, video_url: video.trim() || null }); await load() }
     finally { setSavingScript(false) }
   }
-  const [qForm, setQForm] = useState(null) // null | 'new' | question object
-  const delQuestion = async (qid) => { if (confirm('Delete this question?')) { await apiDelete(`/api/certification/questions/${qid}`); load() } }
 
   if (!data) return <Spinner />
   const inputCls = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--studio-accent)]/30'
@@ -578,15 +596,11 @@ function SkillEditor({ skillId, categories = [], onBack }) {
             <label className="block text-xs font-medium text-gray-600 mb-1">Skill name</label>
             <input className={inputCls} value={name} onChange={e => setName(e.target.value)} />
           </div>
-          <div className="sm:col-span-2">
+          <div className="sm:col-span-3">
             <label className="block text-xs font-medium text-gray-600 mb-1">Category</label>
             <select className={inputCls} value={categoryId} onChange={e => setCategoryId(e.target.value)}>
               {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
-          </div>
-          <div className="sm:col-span-1">
-            <label className="block text-xs font-medium text-gray-600 mb-1">Pass %</label>
-            <input type="number" className={inputCls} value={threshold} onChange={e => setThreshold(e.target.value)} />
           </div>
         </div>
         <div className="flex items-center justify-between">
@@ -603,48 +617,6 @@ function SkillEditor({ skillId, categories = [], onBack }) {
         <div className="flex justify-end"><button onClick={saveScript} disabled={savingScript} className="px-4 py-2 rounded-lg text-white text-sm font-semibold disabled:opacity-50 flex items-center gap-2" style={{ backgroundColor: ACCENT }}>{savingScript ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save new version</button></div>
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-gray-700">Quiz ({data.questions.length}) · pass {data.skill.pass_threshold}%</h3>
-          {qForm == null && (
-            <button onClick={() => setQForm('new')} className="text-xs font-semibold flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700"><Plus size={13} /> Add question</button>
-          )}
-        </div>
-
-        {qForm === 'new' && (
-          <QuestionForm skillId={skillId} question={null} onSaved={() => { setQForm(null); load() }} onCancel={() => setQForm(null)} />
-        )}
-
-        {data.questions.length === 0 && qForm == null ? <p className="text-xs text-gray-400">No quiz questions yet — TSAs can't certify until at least one exists.</p>
-          : data.questions.map((q, i) => (
-            qForm && qForm !== 'new' && qForm.id === q.id ? (
-              <QuestionForm key={q.id} skillId={skillId} question={q} onSaved={() => { setQForm(null); load() }} onCancel={() => setQForm(null)} />
-            ) : (
-              <div key={q.id} className="flex items-start gap-2 border-b border-gray-50 pb-2 last:border-0">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-gray-800">{i + 1}. {q.prompt}</p>
-                  {q.type === 'multiple_choice' && Array.isArray(q.choices) ? (
-                    <ul className="mt-1 space-y-0.5">
-                      {q.choices.map((c, ci) => (
-                        <li key={ci} className={`text-xs flex items-center gap-1.5 ${c === q.correct_answer ? 'text-green-700 font-medium' : 'text-gray-500'}`}>
-                          {c === q.correct_answer ? <CheckCircle2 size={12} className="text-green-500 flex-shrink-0" /> : <Circle size={12} className="text-gray-300 flex-shrink-0" />}
-                          {c}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="text-[11px] text-gray-400 mt-0.5">Recall · answer: <span className="text-green-600 font-medium">{q.correct_answer}</span></p>
-                  )}
-                  {q.explanation && <p className="text-[11px] text-gray-400 mt-1 italic">{q.explanation}</p>}
-                </div>
-                <div className="flex items-center gap-1 flex-shrink-0">
-                  <button onClick={() => setQForm(q)} className="text-gray-300 hover:text-gray-600" title="Edit"><Pencil size={13} /></button>
-                  <button onClick={() => delQuestion(q.id)} className="text-gray-300 hover:text-red-500" title="Delete"><Trash2 size={14} /></button>
-                </div>
-              </div>
-            )
-          ))}
-      </div>
     </div>
   )
 }
@@ -846,46 +818,146 @@ function EmployeeCoachingModal({ employeeId, onClose, onChange }) {
 
 function Spinner() { return <div className="flex items-center justify-center py-16"><Loader2 className="animate-spin text-gray-300" size={22} /></div> }
 
+// ─── Skills heatmap (red / yellow / green per person per skill) ────────────────
+const LEVELS = {
+  green:  { label: 'Strong',         sq: 'bg-green-500',  chip: 'bg-green-100 text-green-700' },
+  yellow: { label: 'Developing',     sq: 'bg-yellow-400', chip: 'bg-yellow-100 text-yellow-800' },
+  red:    { label: 'Needs training', sq: 'bg-red-500',    chip: 'bg-red-100 text-red-700' },
+}
+
+function LevelPicker({ member, skill, current, onSet, onClose }) {
+  const [note, setNote] = useState(current?.note || '')
+  const [saving, setSaving] = useState(false)
+  const choose = async (level) => { setSaving(true); await onSet(level, note.trim() || null); setSaving(false); onClose() }
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-4 border-b border-gray-100">
+          <div><div className="font-bold text-gray-900">{member.name}</div><div className="text-xs text-gray-500">{skill.name}</div></div>
+          <button onClick={onClose}><X size={18} className="text-gray-400" /></button>
+        </div>
+        <div className="p-4 space-y-3">
+          <div className="grid grid-cols-3 gap-2">
+            {['green', 'yellow', 'red'].map(lv => (
+              <button key={lv} onClick={() => choose(lv)} disabled={saving}
+                className={`rounded-xl py-3 text-xs font-bold text-white ${LEVELS[lv].sq} ${current?.level === lv ? 'ring-2 ring-offset-1 ring-gray-800' : 'opacity-90 hover:opacity-100'}`}>
+                {LEVELS[lv].label}
+              </button>
+            ))}
+          </div>
+          <input value={note} onChange={e => setNote(e.target.value)} placeholder="Note (optional) — what to work on…" className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm" />
+          <div className="flex justify-between items-center">
+            <button onClick={() => choose(null)} disabled={saving} className="text-xs font-semibold text-gray-400 hover:text-gray-600">Clear rating</button>
+            {saving && <Loader2 size={14} className="animate-spin text-gray-400" />}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SkillHeatmap() {
+  const { isOwnerOrManager } = useRole()
+  const [d, setD] = useState(null)
+  const [pick, setPick] = useState(null)
+  const load = useCallback(() => { apiGet('/api/certification/heatmap').then(setD).catch(() => setD({ members: [], categories: [], skills: [], levels: {} })) }, [])
+  useEffect(() => { load() }, [load])
+  const setLevel = async (memberId, skillId, level, note) => {
+    try {
+      await apiPut('/api/certification/skill-level', { tsa_user_id: memberId, skill_id: skillId, skill_level: level, level_note: note })
+      setD(prev => { const levels = { ...prev.levels }; const k = `${memberId}|${skillId}`; if (level) levels[k] = { level, note }; else delete levels[k]; return { ...prev, levels } })
+    } catch { /* ignore */ }
+  }
+  if (!d) return <Spinner />
+  if (!d.members.length) return <p className="text-sm text-gray-400">No active team members in this studio yet.</p>
+  if (!d.skills.length) return <p className="text-sm text-gray-400">No skills yet — add them in the Library tab.</p>
+
+  const skillsByCat = {}
+  for (const sk of d.skills) (skillsByCat[sk.category_id] = skillsByCat[sk.category_id] || []).push(sk)
+  const groups = d.categories.map(c => ({ name: c.name, skills: skillsByCat[c.id] || [] })).filter(g => g.skills.length)
+  const counts = { green: 0, yellow: 0, red: 0 }
+  for (const v of Object.values(d.levels)) if (counts[v.level] != null) counts[v.level]++
+
+  const cell = (m, sk) => {
+    const lv = d.levels[`${m.id}|${sk.id}`]
+    return (
+      <td key={m.id} className="px-2 py-1.5 text-center">
+        <button disabled={!isOwnerOrManager} onClick={() => setPick({ member: m, skill: sk, current: lv })}
+          title={lv ? `${LEVELS[lv.level].label}${lv.note ? ` — ${lv.note}` : ''}` : 'Not rated'}
+          className={`mx-auto block w-7 h-7 rounded-md ${lv ? LEVELS[lv.level].sq : 'bg-gray-100 border border-gray-200'} ${isOwnerOrManager ? 'hover:ring-2 hover:ring-gray-300 cursor-pointer' : 'cursor-default'} ${lv?.note ? 'ring-1 ring-inset ring-black/20' : ''}`} />
+      </td>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3 flex-wrap text-xs">
+        <span className="flex items-center gap-1.5"><span className="w-3.5 h-3.5 rounded bg-green-500" /> Strong <b>{counts.green}</b></span>
+        <span className="flex items-center gap-1.5"><span className="w-3.5 h-3.5 rounded bg-yellow-400" /> Developing <b>{counts.yellow}</b></span>
+        <span className="flex items-center gap-1.5"><span className="w-3.5 h-3.5 rounded bg-red-500" /> Needs training <b>{counts.red}</b></span>
+        <span className="flex items-center gap-1.5 text-gray-400"><span className="w-3.5 h-3.5 rounded bg-gray-100 border border-gray-200" /> Not rated</span>
+        <span className="ml-auto text-gray-400">{isOwnerOrManager ? 'Tap a square to rate.' : 'View only.'}</span>
+      </div>
+      {counts.red > 0 && <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-[13px] text-red-700"><b>{counts.red}</b> training {counts.red === 1 ? 'opportunity' : 'opportunities'} flagged red — prioritize these in 1:1s.</div>}
+      <div className="bg-white border border-gray-200 rounded-xl overflow-x-auto shadow-sm">
+        <table className="text-sm border-collapse">
+          <thead>
+            <tr className="border-b border-gray-200">
+              <th className="sticky left-0 bg-gray-50 px-3 py-2 text-left text-xs font-semibold text-gray-500 z-10">Skill</th>
+              {d.members.map(m => <th key={m.id} className="px-2 py-2 text-[11px] font-semibold text-gray-600 whitespace-nowrap">{m.name.split(' ')[0]}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {groups.map(g => (
+              <Fragment key={g.name}>
+                <tr className="bg-gray-50/70"><td colSpan={d.members.length + 1} className="sticky left-0 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-gray-400">{g.name}</td></tr>
+                {g.skills.map(sk => (
+                  <tr key={sk.id} className="border-b border-gray-50">
+                    <td className="sticky left-0 bg-white px-3 py-1.5 font-medium text-gray-800 whitespace-nowrap max-w-[220px] truncate">{sk.name}</td>
+                    {d.members.map(m => cell(m, sk))}
+                  </tr>
+                ))}
+              </Fragment>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {pick && <LevelPicker member={pick.member} skill={pick.skill} current={pick.current}
+        onSet={(level, note) => setLevel(pick.member.id, pick.skill.id, level, note)} onClose={() => setPick(null)} />}
+    </div>
+  )
+}
+
 // ─── Page shell ──────────────────────────────────────────────────────────────
-// Coaching moved to its own "Coaching" side-nav item (Team & Coaching).
-const LEAD_TABS = [
-  { id: 'matrix',  label: 'Matrix',     Icon: Grid3x3 },
-  { id: 'tests',   label: 'Live Tests', Icon: ClipboardList },
-  { id: 'library', label: 'Library',    Icon: BookOpen },
+const TABS = [
+  { id: 'heatmap', label: 'Skills Heatmap', Icon: Grid3x3 },
+  { id: 'library', label: 'Library',        Icon: BookOpen },
 ]
 
 export default function CertificationPage() {
   const { isOwnerOrManager } = useRole()
-  const [tab, setTab] = useState(() => {
-    const t = new URLSearchParams(window.location.search).get('tab')
-    return ['matrix', 'tests', 'library'].includes(t) ? t : 'matrix'
-  })
-
+  const [tab, setTab] = useState('heatmap')
   return (
     <div className="max-w-5xl mx-auto pb-12">
       <div className="flex items-center gap-2 mb-1">
         <Award size={20} style={{ color: ACCENT }} />
-        <h1 className="text-2xl font-bold text-gray-900">Sales Certification</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Sales Skills</h1>
       </div>
       <p className="text-sm text-gray-500 mb-5">
-        {isOwnerOrManager ? 'Track who has mastered each sales skill — quiz, then live demo to certify.' : 'Your sales skill ladder. Study the scripts, pass the quiz, then earn your live-demo certification.'}
+        {isOwnerOrManager
+          ? 'Rate each person red / yellow / green on every sales skill to spot where the team needs training. The Library holds the SOPs & best practices.'
+          : 'Where you stand on each sales skill, and the SOP library of scripts & best practices to level up.'}
       </p>
-
-      {isOwnerOrManager ? (
-        <>
-          <div className="flex gap-1 mb-5 bg-gray-100 rounded-lg p-0.5 w-fit">
-            {LEAD_TABS.map(t => (
-              <button key={t.id} onClick={() => setTab(t.id)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${tab === t.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
-                <t.Icon size={13} /> {t.label}
-              </button>
-            ))}
-          </div>
-          {tab === 'matrix' && <Matrix />}
-          {tab === 'tests' && <PendingQueue />}
-          {tab === 'library' && <Library />}
-        </>
-      ) : <TsaBoard />}
+      <div className="flex gap-1 mb-5 bg-gray-100 rounded-lg p-0.5 w-fit">
+        {TABS.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${tab === t.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+            <t.Icon size={13} /> {t.label}
+          </button>
+        ))}
+      </div>
+      {tab === 'heatmap' && <SkillHeatmap />}
+      {tab === 'library' && <Library readOnly={!isOwnerOrManager} />}
     </div>
   )
 }

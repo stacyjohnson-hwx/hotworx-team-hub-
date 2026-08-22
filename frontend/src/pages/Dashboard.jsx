@@ -387,9 +387,6 @@ export default function Dashboard() {
         </p>
       </div>
 
-      {/* Overdue-coaching alert (owner/manager) */}
-      {isOwnerOrManager && <CoachingAlerts />}
-
       {/* Quick-access cards — full-width band */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 mb-6">
         <QuickCard
@@ -453,8 +450,8 @@ export default function Dashboard() {
         {isOwnerOrManager && (
           <QuickCard
             title="Coaching"
-            description="Session notes & action items"
-            href="/coaching"
+            description="Results, trends & 1:1 notes"
+            href="/coaching-tracker"
             color="bg-teal-50 border-teal-200"
             iconColor="text-teal-600"
           />
