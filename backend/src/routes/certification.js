@@ -346,10 +346,13 @@ router.get('/heatmap', async (req, res) => {
 })
 
 // PUT /skill-level — set (or clear) one person's level on one skill.
-router.put('/skill-level', canAuthor, async (req, res) => {
+// Anyone can rate their OWN skills; owner/manager can rate anyone.
+router.put('/skill-level', async (req, res) => {
   const sb = db(); const sid = req.studio.id
   const { tsa_user_id, skill_id, skill_level, level_note } = req.body || {}
   if (!tsa_user_id || !skill_id) return res.status(400).json({ error: 'tsa_user_id and skill_id required' })
+  const isLead = req.role === 'owner' || req.role === 'manager'
+  if (!isLead && tsa_user_id !== req.user.id) return res.status(403).json({ error: 'You can only rate your own skills.' })
   if (skill_level != null && !['red', 'yellow', 'green'].includes(skill_level)) return res.status(400).json({ error: 'Invalid level' })
   const { data, error } = await sb.from('tsa_skill_status').upsert({
     studio_id: sid, tsa_user_id, skill_id,

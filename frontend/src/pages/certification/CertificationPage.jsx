@@ -857,7 +857,7 @@ function LevelPicker({ member, skill, current, onSet, onClose }) {
 }
 
 function SkillHeatmap() {
-  const { isOwnerOrManager } = useRole()
+  const { isOwnerOrManager, userId } = useRole()
   const [d, setD] = useState(null)
   const [pick, setPick] = useState(null)
   const load = useCallback(() => { apiGet('/api/certification/heatmap').then(setD).catch(() => setD({ members: [], categories: [], skills: [], levels: {} })) }, [])
@@ -880,11 +880,12 @@ function SkillHeatmap() {
 
   const cell = (m, sk) => {
     const lv = d.levels[`${m.id}|${sk.id}`]
+    const canEdit = isOwnerOrManager || m.id === userId
     return (
       <td key={m.id} className="px-2 py-1.5 text-center">
-        <button disabled={!isOwnerOrManager} onClick={() => setPick({ member: m, skill: sk, current: lv })}
-          title={lv ? `${LEVELS[lv.level].label}${lv.note ? ` — ${lv.note}` : ''}` : 'Not rated'}
-          className={`mx-auto block w-7 h-7 rounded-md ${lv ? LEVELS[lv.level].sq : 'bg-gray-100 border border-gray-200'} ${isOwnerOrManager ? 'hover:ring-2 hover:ring-gray-300 cursor-pointer' : 'cursor-default'} ${lv?.note ? 'ring-1 ring-inset ring-black/20' : ''}`} />
+        <button disabled={!canEdit} onClick={() => setPick({ member: m, skill: sk, current: lv })}
+          title={lv ? `${LEVELS[lv.level].label}${lv.note ? ` — ${lv.note}` : ''}` : (canEdit ? 'Tap to rate' : 'Not rated')}
+          className={`mx-auto block w-7 h-7 rounded-md ${lv ? LEVELS[lv.level].sq : 'bg-gray-100 border border-gray-200'} ${canEdit ? 'hover:ring-2 hover:ring-gray-300 cursor-pointer' : 'cursor-default'} ${lv?.note ? 'ring-1 ring-inset ring-black/20' : ''}`} />
       </td>
     )
   }
@@ -896,7 +897,7 @@ function SkillHeatmap() {
         <span className="flex items-center gap-1.5"><span className="w-3.5 h-3.5 rounded bg-yellow-400" /> Developing <b>{counts.yellow}</b></span>
         <span className="flex items-center gap-1.5"><span className="w-3.5 h-3.5 rounded bg-red-500" /> Needs training <b>{counts.red}</b></span>
         <span className="flex items-center gap-1.5 text-gray-400"><span className="w-3.5 h-3.5 rounded bg-gray-100 border border-gray-200" /> Not rated</span>
-        <span className="ml-auto text-gray-400">{isOwnerOrManager ? 'Tap a square to rate.' : 'View only.'}</span>
+        <span className="ml-auto text-gray-400">{isOwnerOrManager ? 'Tap any square to rate.' : 'Tap your own column to self-rate.'}</span>
       </div>
       {counts.red > 0 && <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-[13px] text-red-700"><b>{counts.red}</b> training {counts.red === 1 ? 'opportunity' : 'opportunities'} flagged red — prioritize these in 1:1s.</div>}
       <div className="bg-white border border-gray-200 rounded-xl overflow-x-auto shadow-sm">
@@ -904,7 +905,7 @@ function SkillHeatmap() {
           <thead>
             <tr className="border-b border-gray-200">
               <th className="sticky left-0 bg-gray-50 px-3 py-2 text-left text-xs font-semibold text-gray-500 z-10">Skill</th>
-              {d.members.map(m => <th key={m.id} className="px-2 py-2 text-[11px] font-semibold text-gray-600 whitespace-nowrap">{m.name.split(' ')[0]}</th>)}
+              {d.members.map(m => <th key={m.id} className={`px-2 py-2 text-[11px] font-semibold whitespace-nowrap ${m.id === userId ? 'text-red-600' : 'text-gray-600'}`}>{m.name.split(' ')[0]}{m.id === userId ? ' (you)' : ''}</th>)}
             </tr>
           </thead>
           <tbody>
@@ -946,7 +947,7 @@ export default function CertificationPage() {
       <p className="text-sm text-gray-500 mb-5">
         {isOwnerOrManager
           ? 'Rate each person red / yellow / green on every sales skill to spot where the team needs training. The Library holds the SOPs & best practices.'
-          : 'Where you stand on each sales skill, and the SOP library of scripts & best practices to level up.'}
+          : 'Rate yourself red / yellow / green on each sales skill, and use the SOP library of scripts & best practices to level up.'}
       </p>
       <div className="flex gap-1 mb-5 bg-gray-100 rounded-lg p-0.5 w-fit">
         {TABS.map(t => (
