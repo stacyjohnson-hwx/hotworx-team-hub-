@@ -41,6 +41,7 @@ import {
   ShieldCheck,
   Scale,
   Rocket,
+  Gift,
 } from 'lucide-react'
 
 // Sidebar organized into sections. Dashboard is pinned (no header); the footer
@@ -74,6 +75,7 @@ const NAV_SECTIONS = [
     items: [
       { to: '/cancellations',     label: 'Cancellations',      icon: UserMinus,      roles: ['owner', 'manager', 'tsa'] },
       { to: '/member-activation', label: 'Member Activation',  icon: HeartHandshake, roles: ['owner', 'manager', 'tsa'] },
+      { to: '/sponsors',          label: 'Sample & Sponsor',   icon: Gift,           roles: ['owner', 'manager', 'tsa'] },
     ],
   },
   {

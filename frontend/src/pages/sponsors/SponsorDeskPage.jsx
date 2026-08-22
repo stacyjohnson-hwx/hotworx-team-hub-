@@ -1,0 +1,410 @@
+import { useState, useEffect, useCallback } from 'react'
+import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
+import { useStudio } from '@/contexts/StudioContext'
+import { useRole } from '@/hooks/useRole'
+import { Gift, Plus, X, Loader2, Search, Trash2, Phone, MessageSquare, Mail, AtSign, DollarSign, Clock, Store } from 'lucide-react'
+
+// ── Vocab ───────────────────────────────────────────────────────────────────
+const CATEGORIES = [
+  { value: 'protein_bar', label: 'Protein bar' }, { value: 'electrolyte', label: 'Electrolyte' },
+  { value: 'energy_drink', label: 'Energy drink' }, { value: 'protein_shake', label: 'Protein shake' },
+  { value: 'snack', label: 'Snack' }, { value: 'recovery', label: 'Recovery' }, { value: 'other', label: 'Other' },
+]
+const STAGES = [
+  { value: 'prospect', label: 'Prospect', cls: 'bg-gray-100 text-gray-600' },
+  { value: 'contacted', label: 'Contacted', cls: 'bg-sky-100 text-sky-700' },
+  { value: 'talking', label: 'Talking', cls: 'bg-indigo-100 text-indigo-700' },
+  { value: 'committed', label: 'Committed', cls: 'bg-amber-100 text-amber-700' },
+  { value: 'received', label: 'Received', cls: 'bg-emerald-100 text-emerald-700' },
+  { value: 'partner', label: 'Partner', cls: 'bg-green-600 text-white' },
+  { value: 'dormant', label: 'Dormant', cls: 'bg-stone-100 text-stone-500' },
+  { value: 'passed', label: 'Passed', cls: 'bg-red-100 text-red-500' },
+]
+const ASK_LEVELS = [
+  { value: 'none', label: 'No ask yet' }, { value: 'product', label: 'Product' },
+  { value: 'attend', label: 'Attend event' }, { value: 'ongoing', label: 'Ongoing' }, { value: 'paid', label: 'Paid sponsor' },
+]
+const CONTACT_TYPES = [
+  { value: 'unknown', label: 'Unknown' }, { value: 'corporate', label: 'Corporate' },
+  { value: 'distributor', label: 'Distributor' }, { value: 'local_rep', label: 'Local rep' },
+]
+const CHANNELS = [
+  { value: 'email', label: 'Email' }, { value: 'web_form', label: 'Web form' }, { value: 'instagram_dm', label: 'Instagram DM' },
+  { value: 'phone', label: 'Phone' }, { value: 'in_person', label: 'In person' }, { value: 'linkedin', label: 'LinkedIn' },
+]
+const USED_FOR = [
+  { value: '', label: '—' }, { value: 'event', label: 'Event' }, { value: 'member_swag', label: 'Member swag' },
+  { value: 'retail_test', label: 'Retail test' }, { value: 'staff', label: 'Staff' }, { value: 'prize_bundle', label: 'Prize bundle' },
+]
+const ORDER_SOURCES = [
+  { value: '', label: '—' }, { value: 'direct', label: 'Direct' }, { value: 'distributor', label: 'Distributor' },
+  { value: 'retail', label: 'Retail' }, { value: 'club', label: 'Club' },
+]
+const labelOf = (arr, v) => arr.find(x => x.value === v)?.label || v || '—'
+const stageMeta = (v) => STAGES.find(s => s.value === v) || STAGES[0]
+const fmt$ = (n) => `$${(Number(n) || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+const fmtDate = (s) => s ? new Date(s + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
+const todayCA = () => new Date().toLocaleDateString('en-CA')
+const daysSince = (s) => s ? Math.round((new Date(todayCA()) - new Date(s + 'T00:00:00')) / 86400000) : null
+const isOverdue = (b) => b.next_action_at && b.next_action_at < todayCA() && b.stage !== 'passed'
+
+const inp = 'w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400'
+const lbl = 'block text-[11px] font-semibold text-gray-500 mb-1'
+
+function BrandLogo({ domain, name, size = 40 }) {
+  const [err, setErr] = useState(false)
+  if (domain && !err) return <img src={`https://www.google.com/s2/favicons?domain=${domain}&sz=128`} alt="" onError={() => setErr(true)} style={{ width: size, height: size }} className="rounded-lg object-contain bg-white border border-gray-100 flex-shrink-0" />
+  return <div style={{ width: size, height: size }} className="rounded-lg bg-gray-100 text-gray-400 font-black flex items-center justify-center flex-shrink-0">{(name || '?').trim().charAt(0).toUpperCase()}</div>
+}
+
+function Stat({ label, value, sub, accent }) {
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 flex-1 min-w-[130px]">
+      <div className={`text-2xl font-black ${accent || 'text-gray-900'}`}>{value}</div>
+      <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mt-0.5">{label}</div>
+      {sub ? <div className="text-[11px] text-gray-400">{sub}</div> : null}
+    </div>
+  )
+}
+
+function ContactIcons({ b }) {
+  return (
+    <span className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+      {b.phone && <a href={`tel:${b.phone}`} title={`Call ${b.phone}`} className="text-gray-400 hover:text-red-600"><Phone size={14} /></a>}
+      {b.phone && <a href={`sms:${b.phone}`} title={`Text ${b.phone}`} className="text-gray-400 hover:text-red-600"><MessageSquare size={14} /></a>}
+      {b.email && <a href={`mailto:${b.email}`} title={b.email} className="text-gray-400 hover:text-red-600"><Mail size={14} /></a>}
+      {b.social_handle && <a href={`https://instagram.com/${String(b.social_handle).replace(/^@/, '')}`} target="_blank" rel="noreferrer" title={b.social_handle} className="text-gray-400 hover:text-red-600"><AtSign size={14} /></a>}
+    </span>
+  )
+}
+
+function BrandCard({ b, onOpen }) {
+  const overdue = isOverdue(b)
+  const st = stageMeta(b.stage)
+  const buys = Number(b.total_spend) > 0
+  return (
+    <button onClick={() => onOpen(b)}
+      className={`text-left bg-white rounded-xl border p-4 hover:shadow-md transition-shadow ${overdue ? 'border-red-300 ring-1 ring-red-200' : 'border-gray-200'}`}>
+      <div className="flex items-start gap-3">
+        <BrandLogo domain={b.domain} name={b.name} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-bold text-gray-900 truncate">{b.name}</span>
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${st.cls}`}>{st.label}</span>
+          </div>
+          <div className="text-[11px] text-gray-400 mt-0.5">{labelOf(CATEGORIES, b.category)} · {labelOf(CONTACT_TYPES, b.contact_type)}</div>
+        </div>
+        <ContactIcons b={b} />
+      </div>
+      <div className="grid grid-cols-3 gap-2 mt-3 text-[11px]">
+        <div><div className="text-gray-400">Last sample</div><div className="font-semibold text-gray-700">{fmtDate(b.last_sample_on)}</div></div>
+        <div><div className="text-gray-400">Last order</div><div className="font-semibold text-gray-700">{fmtDate(b.last_order_on)}</div></div>
+        <div><div className="text-gray-400">Last touch</div><div className="font-semibold text-gray-700">{b.last_touch_on ? `${daysSince(b.last_touch_on)}d ago` : '—'}</div></div>
+      </div>
+      <div className="flex items-center justify-between mt-3 pt-2 border-t border-gray-100 text-[11px]">
+        <span className="text-gray-400">{b.owner_name ? `👤 ${b.owner_name}` : 'Unassigned'}</span>
+        <span className={overdue ? 'font-bold text-red-600' : 'text-gray-500'}>
+          {b.stage === 'dormant' ? 'Re-ask' : 'Next'}: {fmtDate(b.next_action_at)}
+        </span>
+      </div>
+      {buys && (
+        <div className="mt-2 text-[11px] font-semibold text-amber-700 bg-amber-50 rounded-lg px-2 py-1">
+          💰 We've spent {fmt$(b.total_spend)} here · they've given {fmt$(b.donated_value)}
+        </div>
+      )}
+    </button>
+  )
+}
+
+// ── Detail slide-over ─────────────────────────────────────────────────────────
+function TimelineRow({ children, onDelete }) {
+  return (
+    <div className="flex items-start gap-2 py-2 border-b border-gray-50 last:border-0">
+      <div className="flex-1 min-w-0 text-sm">{children}</div>
+      {onDelete && <button onClick={onDelete} className="text-gray-300 hover:text-red-500 p-0.5 flex-shrink-0"><Trash2 size={13} /></button>}
+    </div>
+  )
+}
+
+function BrandDrawer({ brandId, users, onClose, onChanged }) {
+  const [d, setD] = useState(null)
+  const [tab, setTab] = useState('details')
+  const [form, setForm] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const load = useCallback(() => {
+    apiGet(`/api/sponsors/brands/${brandId}`).then(res => { setD(res); setForm(res.brand) }).catch(() => setD(null))
+  }, [brandId])
+  useEffect(() => { load() }, [load])
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+  const saveDetails = async () => {
+    setSaving(true)
+    try { await apiPut(`/api/sponsors/brands/${brandId}`, form); onChanged(); load() } catch { /* ignore */ }
+    setSaving(false)
+  }
+  const addChild = async (seg, body, reset) => {
+    try { await apiPost(`/api/sponsors/brands/${brandId}/${seg}`, body); reset(); onChanged(); load() } catch { /* ignore */ }
+  }
+  const delChild = async (seg, id) => { try { await apiDelete(`/api/sponsors/${seg}/${id}`); onChanged(); load() } catch { /* ignore */ } }
+
+  const b = d?.brand
+  const buys = b && Number(b.total_spend) > 0
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={onClose}>
+      <div className="w-full max-w-lg bg-gray-50 h-full overflow-y-auto shadow-xl" onClick={e => e.stopPropagation()}>
+        {!d ? <div className="flex justify-center py-20"><Loader2 className="animate-spin text-red-500" /></div> : (<>
+          <div className="sticky top-0 bg-white border-b border-gray-200 px-5 py-4 flex items-center gap-3 z-10">
+            <BrandLogo domain={b.domain} name={b.name} size={36} />
+            <div className="flex-1 min-w-0">
+              <div className="font-bold text-gray-900 truncate">{b.name}</div>
+              <div className="text-[11px] text-gray-400">{labelOf(CATEGORIES, b.category)} · {labelOf(STAGES, b.stage)}</div>
+            </div>
+            <button onClick={onClose}><X size={20} className="text-gray-400" /></button>
+          </div>
+
+          {buys && (
+            <div className="mx-4 mt-4 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 text-[13px] text-amber-800">
+              <b>You're a customer here</b> — {fmt$(b.total_spend)} across {b.order_count} order{b.order_count === 1 ? '' : 's'}. Lead the ask with that, not a cold intro.
+            </div>
+          )}
+
+          <div className="flex gap-1 px-4 pt-4 border-b border-gray-200 bg-gray-50 sticky top-[65px] z-10">
+            {[['details', 'Details'], ['samples', `Samples${d.samples.length ? ` (${d.samples.length})` : ''}`], ['orders', `Orders${d.orders.length ? ` (${d.orders.length})` : ''}`], ['outreach', `Outreach${d.touches.length ? ` (${d.touches.length})` : ''}`]].map(([k, label]) => (
+              <button key={k} onClick={() => setTab(k)} className={`px-3 py-2 text-[13px] font-semibold border-b-2 -mb-px ${tab === k ? 'border-red-600 text-red-600' : 'border-transparent text-gray-500'}`}>{label}</button>
+            ))}
+          </div>
+
+          <div className="p-4">
+            {tab === 'details' && form && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className={lbl}>Name</label><input className={inp} value={form.name || ''} onChange={e => set('name', e.target.value)} /></div>
+                  <div><label className={lbl}>Website domain</label><input className={inp} value={form.domain || ''} onChange={e => set('domain', e.target.value)} placeholder="barebells.com" /></div>
+                  <div><label className={lbl}>Category</label><select className={inp} value={form.category} onChange={e => set('category', e.target.value)}>{CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select></div>
+                  <div><label className={lbl}>Decision-maker</label><select className={inp} value={form.contact_type} onChange={e => set('contact_type', e.target.value)}>{CONTACT_TYPES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select></div>
+                  <div><label className={lbl}>Stage</label><select className={inp} value={form.stage} onChange={e => set('stage', e.target.value)}>{STAGES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}</select></div>
+                  <div><label className={lbl}>Biggest yes</label><select className={inp} value={form.ask_level} onChange={e => set('ask_level', e.target.value)}>{ASK_LEVELS.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}</select></div>
+                  <div><label className={lbl}>Owner</label><select className={inp} value={form.owner_user_id || ''} onChange={e => set('owner_user_id', e.target.value)}><option value="">Unassigned</option>{users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
+                  <div><label className={lbl}>{form.stage === 'dormant' ? 'Re-ask date' : 'Next action'}</label><input type="date" className={inp} value={form.next_action_at || ''} onChange={e => set('next_action_at', e.target.value)} /></div>
+                  <div><label className={lbl}>Contact name</label><input className={inp} value={form.contact_name || ''} onChange={e => set('contact_name', e.target.value)} /></div>
+                  <div><label className={lbl}>Contact title</label><input className={inp} value={form.contact_title || ''} onChange={e => set('contact_title', e.target.value)} /></div>
+                  <div><label className={lbl}>Email</label><input className={inp} value={form.email || ''} onChange={e => set('email', e.target.value)} /></div>
+                  <div><label className={lbl}>Phone</label><input className={inp} value={form.phone || ''} onChange={e => set('phone', e.target.value)} /></div>
+                  <div className="col-span-2"><label className={lbl}>Social handle</label><input className={inp} value={form.social_handle || ''} onChange={e => set('social_handle', e.target.value)} placeholder="@brand" /></div>
+                </div>
+                <div><label className={lbl}>Notes</label><textarea className={inp} rows={3} value={form.notes || ''} onChange={e => set('notes', e.target.value)} /></div>
+                <button onClick={saveDetails} disabled={saving} className="w-full bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-lg py-2 disabled:opacity-50 flex items-center justify-center gap-2">
+                  {saving && <Loader2 size={14} className="animate-spin" />} Save changes
+                </button>
+                {d.events.length > 0 && (
+                  <div className="pt-2">
+                    <div className={lbl}>Events supported</div>
+                    {d.events.map(e => <div key={e.id} className="text-[13px] text-gray-600 py-1 border-b border-gray-50 last:border-0">{e.name} · {fmtDate(e.event_date)} · {e.role} · {e.status}</div>)}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {tab === 'samples' && <SampleTab d={d} onAdd={(body, reset) => addChild('samples', body, reset)} onDel={(id) => delChild('samples', id)} />}
+            {tab === 'orders' && <OrderTab d={d} onAdd={(body, reset) => addChild('orders', body, reset)} onDel={(id) => delChild('orders', id)} />}
+            {tab === 'outreach' && <OutreachTab d={d} onAdd={(body, reset) => addChild('touches', body, reset)} onDel={(id) => delChild('touches', id)} />}
+          </div>
+        </>)}
+      </div>
+    </div>
+  )
+}
+
+function SampleTab({ d, onAdd, onDel }) {
+  const blank = { item: '', quantity: '', retail_value: '', used_for: '', received_on: todayCA(), note: '' }
+  const [f, setF] = useState(blank)
+  return (<div className="space-y-3">
+    <div className="bg-white border border-gray-200 rounded-xl p-3 space-y-2">
+      <div className="grid grid-cols-2 gap-2">
+        <input className={inp} placeholder="Item *" value={f.item} onChange={e => setF({ ...f, item: e.target.value })} />
+        <input type="date" className={inp} value={f.received_on} onChange={e => setF({ ...f, received_on: e.target.value })} />
+        <input type="number" className={inp} placeholder="Qty" value={f.quantity} onChange={e => setF({ ...f, quantity: e.target.value })} />
+        <input type="number" className={inp} placeholder="Retail value $" value={f.retail_value} onChange={e => setF({ ...f, retail_value: e.target.value })} />
+        <select className={inp} value={f.used_for} onChange={e => setF({ ...f, used_for: e.target.value })}>{USED_FOR.map(u => <option key={u.value} value={u.value}>{u.label || 'Used for…'}</option>)}</select>
+      </div>
+      <input className={inp} placeholder="Note (optional)" value={f.note} onChange={e => setF({ ...f, note: e.target.value })} />
+      <button disabled={!f.item} onClick={() => onAdd(f, () => setF(blank))} className="w-full bg-gray-800 hover:bg-black text-white text-sm font-semibold rounded-lg py-2 disabled:opacity-40 flex items-center justify-center gap-1.5"><Plus size={14} /> Log sample received</button>
+    </div>
+    {d.samples.map(s => (
+      <TimelineRow key={s.id} onDelete={() => onDel(s.id)}>
+        <div className="font-semibold text-gray-800">{s.item} {s.quantity ? <span className="text-gray-400 font-normal">×{s.quantity}</span> : null} {s.retail_value ? <span className="text-emerald-600 font-normal">· {fmt$(s.retail_value)}</span> : null}</div>
+        <div className="text-[11px] text-gray-400">{fmtDate(s.received_on)}{s.used_for ? ` · ${labelOf(USED_FOR, s.used_for)}` : ''}{s.note ? ` · ${s.note}` : ''}</div>
+      </TimelineRow>
+    ))}
+  </div>)
+}
+
+function OrderTab({ d, onAdd, onDel }) {
+  const blank = { item: '', quantity: '', cost: '', source: '', ordered_on: todayCA(), external_ref: '', note: '' }
+  const [f, setF] = useState(blank)
+  return (<div className="space-y-3">
+    <div className="flex gap-2 text-[11px]">
+      <div className="flex-1 bg-white border border-gray-200 rounded-lg px-3 py-2"><div className="text-gray-400">Total spend</div><div className="font-black text-gray-900 text-base">{fmt$(d.brand.total_spend)}</div></div>
+      <div className="flex-1 bg-white border border-gray-200 rounded-lg px-3 py-2"><div className="text-gray-400">Orders</div><div className="font-black text-gray-900 text-base">{d.brand.order_count}</div></div>
+      <div className="flex-1 bg-white border border-gray-200 rounded-lg px-3 py-2"><div className="text-gray-400">Avg gap</div><div className="font-black text-gray-900 text-base">{d.reorder_cadence_days != null ? `${d.reorder_cadence_days}d` : '—'}</div></div>
+    </div>
+    <div className="bg-white border border-gray-200 rounded-xl p-3 space-y-2">
+      <div className="grid grid-cols-2 gap-2">
+        <input className={inp} placeholder="Item *" value={f.item} onChange={e => setF({ ...f, item: e.target.value })} />
+        <input type="date" className={inp} value={f.ordered_on} onChange={e => setF({ ...f, ordered_on: e.target.value })} />
+        <input type="number" className={inp} placeholder="Qty" value={f.quantity} onChange={e => setF({ ...f, quantity: e.target.value })} />
+        <input type="number" className={inp} placeholder="Cost $" value={f.cost} onChange={e => setF({ ...f, cost: e.target.value })} />
+        <select className={inp} value={f.source} onChange={e => setF({ ...f, source: e.target.value })}>{ORDER_SOURCES.map(u => <option key={u.value} value={u.value}>{u.label || 'Source…'}</option>)}</select>
+      </div>
+      <input className={inp} placeholder="Note (optional)" value={f.note} onChange={e => setF({ ...f, note: e.target.value })} />
+      <button disabled={!f.item} onClick={() => onAdd(f, () => setF(blank))} className="w-full bg-gray-800 hover:bg-black text-white text-sm font-semibold rounded-lg py-2 disabled:opacity-40 flex items-center justify-center gap-1.5"><Plus size={14} /> Log a purchase</button>
+    </div>
+    {d.orders.map(o => (
+      <TimelineRow key={o.id} onDelete={() => onDel(o.id)}>
+        <div className="font-semibold text-gray-800">{o.item} {o.quantity ? <span className="text-gray-400 font-normal">×{o.quantity}</span> : null} {o.cost ? <span className="text-amber-600 font-normal">· {fmt$(o.cost)}</span> : null}</div>
+        <div className="text-[11px] text-gray-400">{fmtDate(o.ordered_on)}{o.source ? ` · ${labelOf(ORDER_SOURCES, o.source)}` : ''}{o.note ? ` · ${o.note}` : ''}</div>
+      </TimelineRow>
+    ))}
+  </div>)
+}
+
+function OutreachTab({ d, onAdd, onDel }) {
+  const blank = { channel: 'email', occurred_on: todayCA(), note: '' }
+  const [f, setF] = useState(blank)
+  return (<div className="space-y-3">
+    <div className="bg-white border border-gray-200 rounded-xl p-3 space-y-2">
+      <div className="grid grid-cols-2 gap-2">
+        <select className={inp} value={f.channel} onChange={e => setF({ ...f, channel: e.target.value })}>{CHANNELS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select>
+        <input type="date" className={inp} value={f.occurred_on} onChange={e => setF({ ...f, occurred_on: e.target.value })} />
+      </div>
+      <input className={inp} placeholder="What did you say / ask? (optional)" value={f.note} onChange={e => setF({ ...f, note: e.target.value })} />
+      <button onClick={() => onAdd(f, () => setF(blank))} className="w-full bg-gray-800 hover:bg-black text-white text-sm font-semibold rounded-lg py-2 flex items-center justify-center gap-1.5"><Plus size={14} /> Log outreach</button>
+    </div>
+    {d.touches.map(t => (
+      <TimelineRow key={t.id} onDelete={() => onDel(t.id)}>
+        <div className="font-semibold text-gray-800">{labelOf(CHANNELS, t.channel)}{t.by_name ? <span className="text-gray-400 font-normal"> · {t.by_name}</span> : null}</div>
+        <div className="text-[11px] text-gray-400">{fmtDate(t.occurred_on)}{t.note ? ` · ${t.note}` : ''}</div>
+      </TimelineRow>
+    ))}
+  </div>)
+}
+
+function NewBrandModal({ users, onClose, onCreated }) {
+  const [f, setF] = useState({ name: '', domain: '', category: 'other', contact_type: 'unknown', owner_user_id: '' })
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+  const save = async () => {
+    if (!f.name.trim()) return
+    setSaving(true); setErr('')
+    try { const b = await apiPost('/api/sponsors/brands', f); onCreated(b) } catch (e) { setErr(e?.message || 'Could not add brand'); setSaving(false) }
+  }
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-4 border-b border-gray-100"><h3 className="font-bold text-gray-900">Add a brand</h3><button onClick={onClose}><X size={18} className="text-gray-400" /></button></div>
+        <div className="p-4 space-y-3">
+          <div><label className={lbl}>Brand name *</label><input className={inp} value={f.name} onChange={e => setF({ ...f, name: e.target.value })} placeholder="Barebells" autoFocus /></div>
+          <div><label className={lbl}>Website domain</label><input className={inp} value={f.domain} onChange={e => setF({ ...f, domain: e.target.value })} placeholder="barebells.com" /></div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className={lbl}>Category</label><select className={inp} value={f.category} onChange={e => setF({ ...f, category: e.target.value })}>{CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select></div>
+            <div><label className={lbl}>Decision-maker</label><select className={inp} value={f.contact_type} onChange={e => setF({ ...f, contact_type: e.target.value })}>{CONTACT_TYPES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select></div>
+          </div>
+          <div><label className={lbl}>Owner</label><select className={inp} value={f.owner_user_id} onChange={e => setF({ ...f, owner_user_id: e.target.value })}><option value="">Unassigned</option>{users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
+          {err && <p className="text-sm text-red-600">{err}</p>}
+        </div>
+        <div className="p-4 border-t border-gray-100 flex justify-end gap-2">
+          <button onClick={onClose} className="text-sm font-semibold text-gray-500 px-3 py-2">Cancel</button>
+          <button onClick={save} disabled={!f.name.trim() || saving} className="bg-red-600 text-white text-sm font-bold rounded-lg px-4 py-2 disabled:opacity-40 flex items-center gap-1.5">{saving && <Loader2 size={14} className="animate-spin" />} Add brand</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default function SponsorDeskPage() {
+  const { currentStudio } = useStudio()
+  const { role } = useRole()
+  const [brands, setBrands] = useState([])
+  const [metrics, setMetrics] = useState(null)
+  const [users, setUsers] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [q, setQ] = useState('')
+  const [cat, setCat] = useState('')
+  const [buysOnly, setBuysOnly] = useState(false)
+  const [dueOnly, setDueOnly] = useState(false)
+  const [openId, setOpenId] = useState(null)
+  const [adding, setAdding] = useState(false)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const [res, ud] = await Promise.all([apiGet('/api/sponsors/brands'), apiGet('/api/users').catch(() => [])])
+      setBrands(res.brands || []); setMetrics(res.metrics || null)
+      setUsers((ud || []).filter(u => u.is_active !== false).map(u => ({ id: u.id, name: u.full_name || u.email })))
+    } catch { /* ignore */ } finally { setLoading(false) }
+  }, [currentStudio?.id])
+  useEffect(() => { load() }, [load])
+
+  const today = todayCA()
+  const filtered = brands.filter(b =>
+    (!cat || b.category === cat) &&
+    (!buysOnly || Number(b.total_spend) > 0) &&
+    (!dueOnly || (b.next_action_at && b.next_action_at <= today && b.stage !== 'passed')) &&
+    (!q || [b.name, b.contact_name, b.category].some(v => String(v || '').toLowerCase().includes(q.toLowerCase()))))
+  // Overdue first, then by name.
+  const sorted = [...filtered].sort((a, b) => (isOverdue(b) ? 1 : 0) - (isOverdue(a) ? 1 : 0) || (a.name || '').localeCompare(b.name || ''))
+
+  return (
+    <div className="max-w-6xl mx-auto pb-10">
+      <div className="flex items-center justify-between mb-4 gap-2">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2.5"><Gift size={24} className="text-red-600" /> Sample &amp; Sponsor Desk</h1>
+          <p className="text-sm text-gray-500 mt-0.5">Source free product from brands · {currentStudio?.name}</p>
+        </div>
+        <button onClick={() => setAdding(true)} className="flex items-center gap-2 px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-lg shadow-sm"><Plus size={16} /> Add Brand</button>
+      </div>
+
+      {/* Stat strip */}
+      {metrics && (
+        <div className="flex gap-2 flex-wrap mb-4">
+          <Stat label="Success rate" value={`${metrics.success_rate}%`} sub={`${metrics.success_num}/${metrics.success_denom} engaged`} accent="text-green-600" />
+          <Stat label="Product in" value={fmt$(metrics.product_in)} accent="text-emerald-600" />
+          <Stat label="We've spent" value={fmt$(metrics.we_spent)} accent="text-amber-600" />
+          <Stat label="Follow-ups due" value={metrics.followups_due} accent={metrics.followups_due ? 'text-red-600' : 'text-gray-900'} />
+          <Stat label="Give-backs owed" value={metrics.givebacks_owed} accent={metrics.givebacks_owed ? 'text-red-600' : 'text-gray-900'} />
+        </div>
+      )}
+
+      {/* Search + filters */}
+      <div className="flex gap-2 flex-wrap items-center mb-4">
+        <div className="relative">
+          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search brands…" className="text-sm border border-gray-300 rounded-lg pl-8 pr-3 py-1.5 w-52" />
+        </div>
+        <select className="text-sm border border-gray-300 rounded-lg px-2.5 py-1.5" value={cat} onChange={e => setCat(e.target.value)}>
+          <option value="">All categories</option>{CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+        </select>
+        <button onClick={() => setBuysOnly(v => !v)} className={`flex items-center gap-1.5 text-sm rounded-lg px-2.5 py-1.5 border font-medium ${buysOnly ? 'bg-amber-600 text-white border-amber-600' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}><DollarSign size={14} /> We buy from them</button>
+        <button onClick={() => setDueOnly(v => !v)} className={`flex items-center gap-1.5 text-sm rounded-lg px-2.5 py-1.5 border font-medium ${dueOnly ? 'bg-red-600 text-white border-red-600' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}><Clock size={14} /> Due now</button>
+        {(q || cat || buysOnly || dueOnly) && <span className="text-xs text-gray-400">{filtered.length} of {brands.length}</span>}
+      </div>
+
+      {loading ? <div className="flex justify-center py-20"><Loader2 className="animate-spin text-red-500" size={26} /></div>
+        : brands.length === 0 ? (
+          <div className="text-center py-20">
+            <Store className="mx-auto text-gray-300 mb-3" size={30} />
+            <p className="text-sm font-semibold text-gray-700">No brands yet.</p>
+            <p className="text-xs text-gray-400 mt-1">Add the consumer brands you want free product from — protein bars, drinks, snacks.</p>
+          </div>
+        ) : sorted.length === 0 ? <p className="text-center text-gray-400 py-16 text-sm">No brands match.</p>
+          : (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {sorted.map(b => <BrandCard key={b.id} b={b} onOpen={() => setOpenId(b.id)} />)}
+            </div>
+          )}
+
+      {openId && <BrandDrawer brandId={openId} users={users} onClose={() => setOpenId(null)} onChanged={load} />}
+      {adding && <NewBrandModal users={users} onClose={() => setAdding(false)} onCreated={(b) => { setAdding(false); load(); setOpenId(b.id) }} />}
+    </div>
+  )
+}
