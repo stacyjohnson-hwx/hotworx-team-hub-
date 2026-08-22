@@ -324,15 +324,20 @@ router.get('/coaching/history/:userId/:year/:month', ...GUARD, async (req, res) 
   const isOwner = req.studio.role === 'owner' || req.role === 'owner'
   const sb = supabase(), sid = req.studio.id
   const N = 6
+  // No usable data before this point studio-wide — including earlier months skews trends.
+  const DATA_START = { year: 2026, month: 5 }
+  const afterFloor = (y, m) => (y > DATA_START.year) || (y === DATA_START.year && m >= DATA_START.month)
   try {
-    // Month list ending at last month (the month before the one being planned).
+    // Month list ending at last month (the month before the one being planned),
+    // clipped to the data-start floor.
     let cur = prevMonth(year, month)
     const list = []
     for (let i = 0; i < N; i++) { list.unshift({ year: cur.year, month: cur.month }); cur = prevMonth(cur.year, cur.month) }
+    const clipped = list.filter(({ year: y, month: m }) => afterFloor(y, m))
     const team = await studioTeam(sb, sid)
     const me = team.find(t => t.id === userId)
     const num = (o, k) => Number(o?.[k]) || 0
-    const points = await Promise.all(list.map(async ({ year: y, month: m }) => {
+    const points = await Promise.all(clipped.map(async ({ year: y, month: m }) => {
       const [{ rows }, extras] = await Promise.all([
         computeRoiRows(sb, sid, m, y, { fullMonth: true }),
         gatherCoachingExtras(sb, sid, m, y, [userId]),
@@ -350,9 +355,15 @@ router.get('/coaching/history/:userId/:year/:month', ...GUARD, async (req, res) 
       if (isOwner && r.has_rate) { p.net = Math.round(r.net * 100) / 100; p.cost = Math.round((r.revenue - r.net) * 100) / 100 }
       return p
     }))
+    // Only show months the person was actually active — drop their pre-start (training)
+    // months at the front so a brand-new hire's empty months don't skew the trend.
+    const isActive = (p) => p.hours > 0 || p.revenue > 0 || p.members > 0 || p.retail > 0 || p.eft > 0 ||
+      p.member_touches > 0 || p.marketing > 0 || p.b2b > 0 || p.calls > 0 || p.texts > 0 || p.cleaning_per_shift != null
+    const firstActive = points.findIndex(isActive)
+    const months = firstActive === -1 ? [] : points.slice(firstActive)
     res.json({
       user: { id: userId, name: me?.name || 'Team Member', role: me?.role || '' },
-      is_owner: isOwner, months: points, insights: coachingInsights(points, isOwner),
+      is_owner: isOwner, months, insights: coachingInsights(months, isOwner),
     })
   } catch (err) {
     console.error('GET /monthly-planner/coaching/history', err)
