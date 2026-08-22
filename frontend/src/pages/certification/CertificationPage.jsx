@@ -868,13 +868,19 @@ function SkillHeatmap() {
       setD(prev => { const levels = { ...prev.levels }; const k = `${memberId}|${skillId}`; if (level) levels[k] = { level, note }; else delete levels[k]; return { ...prev, levels } })
     } catch { /* ignore */ }
   }
+  // Skill management (owner/manager) — right from the heatmap.
+  const addCategory = async () => { const name = prompt('New skill category:'); if (name?.trim()) { try { await apiPost('/api/certification/categories', { name: name.trim(), sort_order: (d?.categories.length || 0) + 1 }); load() } catch { /* ignore */ } } }
+  const addSkill = async (categoryId) => { const name = prompt('New skill name:'); if (name?.trim()) { try { await apiPost('/api/certification/skills', { category_id: categoryId, name: name.trim() }); load() } catch { /* ignore */ } } }
+  const renameSkill = async (sk) => { const name = prompt('Rename skill:', sk.name); if (name?.trim() && name.trim() !== sk.name) { try { await apiPut(`/api/certification/skills/${sk.id}`, { name: name.trim() }); load() } catch { /* ignore */ } } }
+  const delSkill = async (sk) => { if (!confirm(`Delete "${sk.name}"? This removes everyone's rating on it.`)) return; try { await apiDelete(`/api/certification/skills/${sk.id}`); load() } catch (e) { alert(e?.message || 'Could not delete.') } }
   if (!d) return <Spinner />
   if (!d.members.length) return <p className="text-sm text-gray-400">No active team members in this studio yet.</p>
   if (!d.skills.length) return <p className="text-sm text-gray-400">No skills yet — add them in the Library tab.</p>
 
   const skillsByCat = {}
   for (const sk of d.skills) (skillsByCat[sk.category_id] = skillsByCat[sk.category_id] || []).push(sk)
-  const groups = d.categories.map(c => ({ name: c.name, skills: skillsByCat[c.id] || [] })).filter(g => g.skills.length)
+  // Leads see every category (even empty) so they can add the first skill.
+  const groups = d.categories.map(c => ({ id: c.id, name: c.name, skills: skillsByCat[c.id] || [] })).filter(g => isOwnerOrManager || g.skills.length)
   const counts = { green: 0, yellow: 0, red: 0 }
   for (const v of Object.values(d.levels)) if (counts[v.level] != null) counts[v.level]++
 
@@ -898,6 +904,7 @@ function SkillHeatmap() {
         <span className="flex items-center gap-1.5"><span className="w-3.5 h-3.5 rounded bg-red-500" /> Needs training <b>{counts.red}</b></span>
         <span className="flex items-center gap-1.5 text-gray-400"><span className="w-3.5 h-3.5 rounded bg-gray-100 border border-gray-200" /> Not rated</span>
         <span className="ml-auto text-gray-400">{isOwnerOrManager ? 'Tap any square to rate.' : 'Tap your own column to self-rate.'}</span>
+        {isOwnerOrManager && <button onClick={addCategory} className="text-xs font-semibold flex items-center gap-1 px-2.5 py-1 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"><Plus size={12} /> Category</button>}
       </div>
       {counts.red > 0 && <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-[13px] text-red-700"><b>{counts.red}</b> training {counts.red === 1 ? 'opportunity' : 'opportunities'} flagged red — prioritize these in 1:1s.</div>}
       <div className="bg-white border border-gray-200 rounded-xl overflow-x-auto shadow-sm">
@@ -910,14 +917,33 @@ function SkillHeatmap() {
           </thead>
           <tbody>
             {groups.map(g => (
-              <Fragment key={g.name}>
-                <tr className="bg-gray-50/70"><td colSpan={d.members.length + 1} className="sticky left-0 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-gray-400">{g.name}</td></tr>
+              <Fragment key={g.id}>
+                <tr className="bg-gray-50/70">
+                  <td colSpan={d.members.length + 1} className="sticky left-0 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-gray-400">
+                    <span className="inline-flex items-center gap-2">{g.name}
+                      {isOwnerOrManager && <button onClick={() => addSkill(g.id)} className="normal-case tracking-normal font-semibold text-gray-400 hover:text-gray-700 inline-flex items-center gap-0.5"><Plus size={11} /> skill</button>}
+                    </span>
+                  </td>
+                </tr>
                 {g.skills.map(sk => (
-                  <tr key={sk.id} className="border-b border-gray-50">
-                    <td className="sticky left-0 bg-white px-3 py-1.5 font-medium text-gray-800 min-w-[170px] max-w-[280px] leading-tight">{sk.name}</td>
+                  <tr key={sk.id} className="border-b border-gray-50 group">
+                    <td className="sticky left-0 bg-white px-3 py-1.5 font-medium text-gray-800 min-w-[170px] max-w-[280px] leading-tight">
+                      <span className="inline-flex items-start gap-1.5">
+                        <span className="flex-1">{sk.name}</span>
+                        {isOwnerOrManager && (
+                          <span className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                            <button onClick={() => renameSkill(sk)} title="Rename skill" className="text-gray-300 hover:text-gray-600"><Pencil size={12} /></button>
+                            <button onClick={() => delSkill(sk)} title="Delete skill" className="text-gray-300 hover:text-red-500"><Trash2 size={12} /></button>
+                          </span>
+                        )}
+                      </span>
+                    </td>
                     {d.members.map(m => cell(m, sk))}
                   </tr>
                 ))}
+                {isOwnerOrManager && g.skills.length === 0 && (
+                  <tr><td colSpan={d.members.length + 1} className="sticky left-0 px-3 py-1.5 text-[11px] text-gray-300">No skills yet — tap “+ skill”.</td></tr>
+                )}
               </Fragment>
             ))}
           </tbody>
