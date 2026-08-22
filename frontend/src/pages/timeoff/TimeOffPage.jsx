@@ -161,13 +161,23 @@ export default function TimeOffPage() {
               </>
             )}
             {(tab === 'mine') && (
-              <RequestList
-                requests={mine}
-                showActions={false}
-                showName={false}
-                emptyMsg="You haven't submitted any requests."
-                onDelete={handleDelete}
-              />
+              <>
+                <div className="flex gap-2 mb-4">
+                  {[['upcoming', 'Upcoming', upcoming.length], ['past', 'Past', past.length]].map(([k, label, n]) => (
+                    <button key={k} onClick={() => setAllSub(k)}
+                      className={`text-sm font-semibold rounded-full px-3.5 py-1.5 border transition-colors ${allSub === k ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
+                      {label} <span className={allSub === k ? 'text-white/80' : 'text-gray-400'}>{n}</span>
+                    </button>
+                  ))}
+                </div>
+                <RequestList
+                  requests={allSub === 'upcoming' ? upcoming : past}
+                  showActions={false}
+                  showName={false}
+                  emptyMsg={allSub === 'upcoming' ? 'No upcoming time off.' : 'No past time off.'}
+                  onDelete={handleDelete}
+                />
+              </>
             )}
           </>
         )
