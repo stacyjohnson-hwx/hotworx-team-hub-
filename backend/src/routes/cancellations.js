@@ -382,22 +382,29 @@ router.post('/:id/log-touch', authenticate, requireStudio, async (req, res) => {
   }
 
   const resolve = req.body?.resolve
-  if (resolve === 'won' || resolve === 'lost') {
+  // Terminal actions take a member off the follow-up list. 'won' = saved; 'removed'
+  // (or legacy 'lost') = stopped pursuing, which counts as a lost save in reports.
+  if (resolve === 'won' || resolve === 'lost' || resolve === 'removed') {
     // Close out the win-back: mark any remaining open touches done and resolve.
     await sb.from('cancellation_followups')
       .update({ done: true, done_at: new Date().toISOString() })
       .eq('studio_id', req.studio.id).eq('cancellation_id', id).eq('done', false)
     await sb.from('cancellation_log').update({
-      win_back_step: resolve === 'won' ? 'reactivated' : 'lost_no_response',
-      ...(resolve === 'won' ? { outcome: 'saved' } : {}),
+      win_back_step: resolve === 'won' ? 'reactivated' : 'lost_declined',
+      outcome: resolve === 'won' ? 'saved' : 'cancelled',
       date_resolved: today,
     }).eq('id', id).eq('studio_id', req.studio.id)
   } else {
-    // Schedule the next touch to keep the loop going — default 1 month out so we
-    // don't follow up with a cancelled member more than once a month.
-    const days = Math.max(1, Math.min(90, Number(req.body?.next_in_days) || 30))
-    const d = new Date(today + 'T00:00:00'); d.setDate(d.getDate() + days)
-    const next = d.toISOString().split('T')[0]
+    // "Continue following up" — schedule the next touch so it drops off the due
+    // list until then. Default 1 month out; an explicit next_date wins if given.
+    let next
+    if (req.body?.next_date && /^\d{4}-\d{2}-\d{2}$/.test(req.body.next_date)) {
+      next = req.body.next_date
+    } else {
+      const days = Math.max(1, Math.min(365, Number(req.body?.next_in_days) || 30))
+      const d = new Date(today + 'T00:00:00'); d.setDate(d.getDate() + days)
+      next = d.toISOString().split('T')[0]
+    }
     await sb.from('cancellation_followups').insert({
       studio_id: req.studio.id, cancellation_id: id, due_date: next, created_by: req.user.id,
     })

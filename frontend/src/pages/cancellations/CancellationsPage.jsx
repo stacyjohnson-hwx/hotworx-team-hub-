@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRole } from '@/hooks/useRole'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
-import { UserMinus, Plus, X, Trash2, Edit2, Target, Loader2, Filter, Upload, Phone, MessageSquare, Mail, Dumbbell, Search, Check } from 'lucide-react'
+import { UserMinus, Plus, X, Trash2, Edit2, Target, Loader2, Filter, Upload, Phone, MessageSquare, Mail, Dumbbell, Search, Check, Calendar } from 'lucide-react'
 import * as XLSX from 'xlsx'
 
 // Parse a cancelled CSV/Excel to raw header-keyed rows (backend maps the columns).
@@ -70,9 +70,9 @@ const OFFER_ACCEPTED = [
   { value: 'free_month',  label: 'Free month' },
 ]
 export const OUTCOMES = [
-  { value: 'saved',     label: 'Saved',     cls: 'bg-green-100 text-green-700 border-green-200' },
-  { value: 'pending',   label: 'Pending',   cls: 'bg-yellow-100 text-yellow-800 border-yellow-200' },
-  { value: 'cancelled', label: 'Cancelled', cls: 'bg-red-100 text-red-700 border-red-200' },
+  { value: 'saved',     label: 'Won',            cls: 'bg-green-100 text-green-700 border-green-200' },
+  { value: 'pending',   label: 'Following up',   cls: 'bg-yellow-100 text-yellow-800 border-yellow-200' },
+  { value: 'cancelled', label: 'Removed',        cls: 'bg-red-100 text-red-700 border-red-200' },
 ]
 const WIN_BACK_STEPS = [
   { value: 'at_pos',            label: 'At-POS save attempted' },
@@ -503,6 +503,68 @@ function CancellationReport() {
   )
 }
 
+// ─── One row in the Follow-ups queue — score + info + Won / Continue / Remove ──
+function FollowupRow({ r, busy, onOpen, onScore, onWon, onContinue, onRemove }) {
+  const [showDate, setShowDate] = useState(false)
+  const [date, setDate] = useState('')
+  const today = new Date().toLocaleDateString('en-CA')
+  const overdue = r.follow_up_date && r.follow_up_date < today
+  const daysOver = overdue ? Math.round((new Date(today) - new Date(r.follow_up_date)) / 86400000) : 0
+  return (
+    <div className="bg-white border border-amber-200 rounded-lg px-3 py-2.5">
+      <div className="flex items-start gap-3">
+        <ScorePill r={r} onClick={(e) => { e.stopPropagation(); onScore(r) }} />
+        <button onClick={() => onOpen(r)} className="flex-1 min-w-0 text-left group">
+          <span className="font-semibold text-gray-900 text-sm group-hover:text-red-600 flex items-center gap-1.5 flex-wrap">
+            {r.member_name}
+            {r.source === 'sail_import' && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700">SAIL</span>}
+            {r.likely_to_return && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-green-100 text-green-700">LIKELY TO RETURN</span>}
+          </span>
+          <span className="block text-[11px] text-gray-500 mt-0.5">
+            {labelOf(REASONS, r.cancel_reason)}{r.cancel_reason === 'competitor' && r.competitor_name ? ` · ${r.competitor_name}` : ''}
+            {r.monthly_payment != null ? ` · $${r.monthly_payment}/mo` : ''}
+            <span className={`ml-1 font-semibold ${overdue ? 'text-red-600' : 'text-amber-700'}`}> · {overdue ? `${daysOver}d overdue` : 'due today'}</span>
+          </span>
+          {r.total_sessions != null && (
+            <span className="block text-[11px] text-gray-400 mt-0.5">
+              <Dumbbell size={11} className="inline align-[-1px] mr-1" />{r.total_sessions} session{r.total_sessions === 1 ? '' : 's'}
+              {r.workouts_tried != null ? ` · ${r.workouts_tried}/12 workouts` : ''}
+              {r.last_booking_date ? ` · last ${fmtDate(r.last_booking_date)}` : ''}
+            </span>
+          )}
+        </button>
+        {(r.phone || r.email) && (
+          <div className="flex items-center gap-2 flex-shrink-0 pt-0.5">
+            {r.phone && <a href={`tel:${r.phone}`} title={`Call ${r.phone}`} className="text-gray-400 hover:text-red-600"><Phone size={14} /></a>}
+            {r.phone && <a href={`sms:${r.phone}`} title={`Text ${r.phone}`} className="text-gray-400 hover:text-red-600"><MessageSquare size={14} /></a>}
+            {r.email && <a href={`mailto:${r.email}`} title={r.email} className="text-gray-400 hover:text-red-600"><Mail size={14} /></a>}
+          </div>
+        )}
+      </div>
+      <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+        {busy ? <Loader2 size={16} className="animate-spin text-amber-600" /> : (<>
+          <button onClick={() => onWon(r.id)}
+            className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-green-700 bg-green-50 hover:bg-green-100 border border-green-200 rounded-lg"><Check size={12} /> Won</button>
+          <button onClick={() => onContinue(r.id)} title="Log this follow-up and reschedule the next in 1 month"
+            className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-lg"><Phone size={12} /> Continue following up</button>
+          <button onClick={() => setShowDate(s => !s)} title="Pick a specific next follow-up date"
+            className="flex items-center gap-1 px-2 py-1.5 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg"><Calendar size={12} /></button>
+          <button onClick={() => onRemove(r.id)} title="Stop following up (counts as a lost save)"
+            className="px-2 py-1.5 text-xs font-semibold text-gray-500 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg">Remove</button>
+        </>)}
+      </div>
+      {showDate && !busy && (
+        <div className="flex items-center gap-2 mt-2">
+          <input type="date" value={date} onChange={e => setDate(e.target.value)} className="text-sm border border-gray-300 rounded-lg px-2 py-1.5" />
+          <button disabled={!date} onClick={() => { onContinue(r.id, date); setShowDate(false); setDate('') }}
+            className="px-3 py-1.5 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-lg disabled:opacity-40">Schedule</button>
+          <span className="text-[11px] text-gray-400">next follow-up date</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function CancellationsPage() {
   const { role } = useRole()
@@ -513,7 +575,7 @@ export default function CancellationsPage() {
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState(null)   // null | false(new) | entry
   const [error, setError] = useState('')
-  const [tab, setTab] = useState('log')   // 'log' | 'report'
+  const [tab, setTab] = useState('followups')   // 'followups' | 'all' | 'report'
   const [sort, setSort] = useState({ key: 'date_requested', dir: 'desc' })
   const [f, setF] = useState({ reason: '', outcome: '', win_back_step: '', handled_by: '' })
   const [activeOnly, setActiveOnly] = useState(false)  // only cancelled members who were actually working out (10+ sessions)
@@ -681,7 +743,7 @@ export default function CancellationsPage() {
 
       {/* Tabs */}
       <div className="flex gap-1 mb-5 border-b border-gray-200">
-        {[{ k: 'log', label: 'Log' }, { k: 'report', label: 'Reports' }].map(t => (
+        {[{ k: 'followups', label: 'Follow-ups' }, { k: 'all', label: 'All Cancellations' }, { k: 'report', label: 'Reports' }].map(t => (
           <button key={t.k} onClick={() => setTab(t.k)}
             className={`px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${tab === t.k ? 'border-red-600 text-red-600' : 'border-transparent text-gray-500 hover:text-gray-800'}`}>
             {t.label}
@@ -689,91 +751,34 @@ export default function CancellationsPage() {
         ))}
       </div>
 
-      {tab === 'report' ? <CancellationReport /> : (<>
+      {tab === 'report' && <CancellationReport />}
 
-      {/* Win-back queue — follow-ups due today or overdue, worked inline */}
-      {followUps.length > 0 && (
-        <div className="mb-5 bg-amber-50 border border-amber-300 rounded-xl p-4">
-          <div className="flex items-center gap-2 mb-1">
-            <Target size={16} className="text-amber-700" />
-            <h3 className="text-sm font-bold text-amber-900">
-              {followUps.length} win-back follow-up{followUps.length !== 1 ? 's' : ''} due
-            </h3>
-          </div>
-          <p className="text-xs text-amber-700/80 mb-3">
-            Tap the name for details. <b>Reached out</b> logs the touch and schedules the next in 1 month; <b>Won</b>/<b>Lost</b> closes it out.
+      {tab === 'followups' && (<>
+      <p className="text-xs text-gray-500 mb-3">
+        Only members <b>due for a follow-up</b> show here. Log one and they drop off until the next touch comes due.
+        <b> Won</b> saves them · <b>Continue following up</b> reschedules (1 month, or pick a date) · <b>Remove</b> takes them off follow-up.
+      </p>
+      {followUps.length > 0 ? (
+        <div className="space-y-1.5">
+          {followUps.map(r => (
+            <FollowupRow key={r.id} r={r} busy={touchBusyId === r.id}
+              onOpen={setModal} onScore={setScoreFor}
+              onWon={id => logTouch(id, { resolve: 'won' })}
+              onContinue={(id, nextDate) => logTouch(id, nextDate ? { next_date: nextDate } : {})}
+              onRemove={id => { if (confirm('Remove this member from follow-up? They drop off the list and count as a lost save.')) logTouch(id, { resolve: 'removed' }) }} />
+          ))}
+        </div>
+      ) : (
+        <div className="bg-white border border-gray-200 rounded-xl p-12 text-center">
+          <p className="text-base font-semibold text-gray-700">🎉 No follow-ups due right now.</p>
+          <p className="text-sm text-gray-400 mt-1 max-w-md mx-auto">
+            Members reappear here when their next touch comes due. Use <b>Schedule win-backs</b> up top to queue outreach dates, or open <b>All Cancellations</b> to work anyone.
           </p>
-          <div className="space-y-1.5 max-h-[26rem] overflow-y-auto">
-            {followUps.map(r => {
-              const overdue = r.follow_up_date < todayLocal
-              const busy = touchBusyId === r.id
-              return (
-                <div key={r.id}
-                  className="flex items-center gap-2 bg-white border border-amber-200 rounded-lg px-3 py-2">
-                  <button onClick={() => setModal(r)} className="flex-1 min-w-0 text-left group">
-                    <span className="font-semibold text-gray-900 text-sm truncate group-hover:text-red-600 block">{r.member_name}</span>
-                    <span className="text-[11px] text-gray-500">
-                      {labelOf(REASONS, r.cancel_reason)}
-                      <span className={`ml-1.5 font-semibold ${overdue ? 'text-red-600' : 'text-amber-700'}`}>
-                        · {overdue ? `${Math.round((new Date(todayLocal) - new Date(r.follow_up_date)) / 86400000)}d overdue` : 'due today'}
-                      </span>
-                    </span>
-                  </button>
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    {busy ? (
-                      <Loader2 size={16} className="animate-spin text-amber-600 mx-6" />
-                    ) : (
-                      <>
-                        <button onClick={() => logTouch(r.id)} title="Logged a follow-up — reschedule next touch in 1 month"
-                          className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-lg transition-colors">
-                          <Phone size={12} /> Reached out
-                        </button>
-                        <button onClick={() => logTouch(r.id, { resolve: 'won' })} title="Won back — mark saved &amp; resolved"
-                          className="flex items-center gap-1 px-2 py-1.5 text-xs font-semibold text-green-700 bg-green-50 hover:bg-green-100 border border-green-200 rounded-lg transition-colors">
-                          <Check size={12} /> Won
-                        </button>
-                        <button onClick={() => logTouch(r.id, { resolve: 'lost' })} title="Lost — close out this win-back"
-                          className="px-2 py-1.5 text-xs font-semibold text-gray-500 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg transition-colors">
-                          Lost
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
         </div>
       )}
+      </>)}
 
-      {/* 🔥 Hottest win-backs — the best calls to make right now */}
-      {hotList.length > 0 && (
-        <div className="mb-5 bg-gradient-to-br from-red-50 to-orange-50 border border-red-200 rounded-xl p-4">
-          <div className="flex items-center gap-2 mb-2.5">
-            <h3 className="text-sm font-bold text-red-900">🔥 Hottest win-backs</h3>
-            <span className="text-xs text-red-400">most likely to come back — call these first</span>
-          </div>
-          <div className="space-y-1.5">
-            {hotList.map(r => (
-              <button key={r.id} onClick={() => setModal(r)}
-                className="w-full flex items-center gap-3 text-left bg-white border border-red-100 hover:border-red-300 rounded-lg px-3 py-2 transition-colors">
-                <ScorePill r={r} onClick={(e) => { e.stopPropagation(); setScoreFor(r) }} />
-                <span className="font-semibold text-gray-900 text-sm flex-1 min-w-0 truncate">{r.member_name}</span>
-                <span className="text-xs text-gray-500 hidden sm:inline">{labelOf(REASONS, r.cancel_reason)}</span>
-                {r.monthly_payment != null && <span className="text-xs font-semibold text-gray-600 hidden md:inline">worth ${r.monthly_payment}/mo</span>}
-                {(r.phone || r.email) && (
-                  <span className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                    {r.phone && <a href={`tel:${r.phone}`} title={`Call ${r.phone}`} className="text-gray-400 hover:text-red-600"><Phone size={14} /></a>}
-                    {r.phone && <a href={`sms:${r.phone}`} title={`Text ${r.phone}`} className="text-gray-400 hover:text-red-600"><MessageSquare size={14} /></a>}
-                    {r.email && <a href={`mailto:${r.email}`} title={r.email} className="text-gray-400 hover:text-red-600"><Mail size={14} /></a>}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
+      {tab === 'all' && (<>
       {/* Search + filters */}
       <div className="flex gap-2 mb-4 flex-wrap items-center">
         <div className="relative">

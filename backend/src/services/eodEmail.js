@@ -276,10 +276,6 @@ function buildOpsSection(ops) {
     ? orders.map(o => opsItem(`📦 ${o.item_name}`, [o.quantity ? `Qty ${o.quantity}` : null, o.vendor].filter(Boolean).join(' · '))).join('')
     : opsEmpty('None pending ✅')
 
-  const callRows = cancelCalls.length
-    ? cancelCalls.map(c => opsItem(`📞 ${c.member_name}`, c.follow_up_date ? `due ${c.follow_up_date}` : 'due')).join('')
-    : opsEmpty('None due ✅')
-
   return `
   <div style="margin-bottom:24px;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
     <div style="background:#1A1A1A;padding:12px 16px;font-size:14px;font-weight:700;color:#fff;">Operations Watch</div>
@@ -291,8 +287,6 @@ function buildOpsSection(ops) {
         ${escRows}
         ${sectionHeader(`Pending Orders (${orders.length})`)}
         ${orderRows}
-        ${sectionHeader(`Post-Cancel Calls Due (${cancelCalls.length})`)}
-        ${callRows}
       </table>
     </div>
   </div>`
