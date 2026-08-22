@@ -913,7 +913,7 @@ function SkillHeatmap() {
                 <tr className="bg-gray-50/70"><td colSpan={d.members.length + 1} className="sticky left-0 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-gray-400">{g.name}</td></tr>
                 {g.skills.map(sk => (
                   <tr key={sk.id} className="border-b border-gray-50">
-                    <td className="sticky left-0 bg-white px-3 py-1.5 font-medium text-gray-800 whitespace-nowrap max-w-[220px] truncate">{sk.name}</td>
+                    <td className="sticky left-0 bg-white px-3 py-1.5 font-medium text-gray-800 min-w-[170px] max-w-[280px] leading-tight">{sk.name}</td>
                     {d.members.map(m => cell(m, sk))}
                   </tr>
                 ))}
