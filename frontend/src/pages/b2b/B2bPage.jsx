@@ -1695,6 +1695,31 @@ function ReportTab({ contacts, onOpenContact }) {
         )}
       </div>
 
+      {/* Outreach audit log — every logged touch */}
+      <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+        <h3 className="text-sm font-bold text-gray-900 mb-1">Outreach Audit Log <span className="text-gray-400 font-normal">— when · business · who · notes</span></h3>
+        {(data.audit || []).length === 0 ? (
+          <p className="text-sm text-gray-400 py-4">No outreach logged yet.</p>
+        ) : (
+          <div className="mt-2 divide-y divide-gray-100 max-h-[30rem] overflow-y-auto">
+            {data.audit.map(a => (
+              <div key={a.id} className="py-2.5 flex items-start gap-3">
+                <div className="w-28 flex-shrink-0 text-[11px] text-gray-400 leading-tight">{fmtDateTime(a.logged_at)}</div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm">
+                    <span className="font-semibold text-gray-900">{a.business}</span>
+                    <span className="text-gray-300"> · </span>
+                    <span className="capitalize text-gray-600">{(a.type || 'other').replace(/_/g, ' ')}</span>
+                    {a.by && <span className="text-gray-400"> · by {a.by}</span>}
+                  </div>
+                  {a.notes && <p className="text-[13px] text-gray-500 mt-0.5 whitespace-pre-line">{a.notes}</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {drill && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setDrill(null)}>
           <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl border border-gray-200 max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>

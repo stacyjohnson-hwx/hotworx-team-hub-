@@ -376,12 +376,26 @@ router.get('/report', authenticate, requireStudio, async (req, res) => {
       .map(([id, count]) => ({ id, name: nameMap[id] || 'Team Member', interactions: count, contactIds: [...(repContacts[id] || [])] }))
       .sort((a, b) => b.interactions - a.interactions)
 
+    // Audit log — the most recent outreach: when, which business, by whom, the notes.
+    const [{ data: auditRows }, { data: named }] = await Promise.all([
+      db.from('b2b_interactions').select('id, type, notes, logged_at, logged_by, contact_id').eq('studio_id', sid).order('logged_at', { ascending: false }).limit(200),
+      db.from('b2b_contacts').select('id, business_name').eq('studio_id', sid),
+    ])
+    const contactName = {}
+    for (const c of named || []) contactName[c.id] = c.business_name
+    const audit = (auditRows || []).map(i => ({
+      id: i.id, type: i.type, notes: i.notes || null, logged_at: i.logged_at,
+      by: i.logged_by ? (nameMap[i.logged_by] || 'Team Member') : null,
+      business: contactName[i.contact_id] || '—',
+    }))
+
     res.json({
       total: (contacts || []).length,
       byStage, addedThisMonth, partners, leadBoxes,
       interactions30: (inter || []).length,
       activityContactIds: [...activityContactIds],
       activityByRep,
+      audit,
     })
   } catch (err) {
     console.error('GET /b2b/report', err.message)
