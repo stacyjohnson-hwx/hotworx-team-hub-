@@ -172,7 +172,8 @@ router.delete('/channels/:id', authenticate, requireStudio, requireRole('owner',
 // dashboard work (and start building trend history) with zero platform setup.
 // Upserts the channel and today's snapshot; deltas compute automatically as more
 // days are entered.
-router.post('/manual-entry', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
+// Any team member can update the numbers by hand; only scraping (/sync-now) is lead-only.
+router.post('/manual-entry', authenticate, requireStudio, async (req, res) => {
   const db = supabase()
   const { platform, handle, followers, rating, review_count } = req.body
   if (!PLATFORMS.includes(platform)) return res.status(400).json({ error: 'valid platform is required' })

@@ -538,12 +538,10 @@ function DashboardTab() {
               {scraping ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} {scraping ? 'Scraping…' : 'Scrape now'}
             </button>
           )}
-          {isOwnerOrManager && (
-            <button onClick={() => setEditing(true)}
-              className="flex items-center gap-2 text-[13px] font-semibold text-gray-600 bg-white border border-gray-200 px-3.5 py-2 rounded-lg hover:bg-gray-50">
-              <Pencil size={13} /> Update numbers
-            </button>
-          )}
+          <button onClick={() => setEditing(true)}
+            className="flex items-center gap-2 text-[13px] font-semibold text-gray-600 bg-white border border-gray-200 px-3.5 py-2 rounded-lg hover:bg-gray-50">
+            <Pencil size={13} /> Update numbers
+          </button>
           <button onClick={load} disabled={loading}
             className="flex items-center gap-2 text-[13px] font-semibold text-gray-600 bg-white border border-gray-200 px-3.5 py-2 rounded-lg hover:bg-gray-50 disabled:opacity-50">
             <RefreshCw size={13} className={loading ? 'animate-spin' : ''} /> Sync
