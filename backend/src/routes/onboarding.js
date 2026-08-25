@@ -13,12 +13,16 @@ const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SER
 // >1000 members), so page through with .range() to read every row — otherwise
 // studio-wide joins silently drop members past the first 1000 (e.g. workout activity
 // not showing on a member's row).
-async function fetchAllStudio(sb, table, columns, studioId, order) {
+async function fetchAllStudio(sb, table, columns, studioId, order, tiebreak = 'id') {
   const PAGE = 1000
   let out = [], from = 0
   for (;;) {
+    // A stable tiebreaker (unique column) is REQUIRED: range-paginating on a
+    // non-unique order (e.g. join_date, null for reciprocals) overlaps pages and
+    // returns the same row on multiple pages → duplicate members in the UI.
     let q = sb.from(table).select(columns).eq('studio_id', studioId).range(from, from + PAGE - 1)
     if (order) q = q.order(order.col, { ascending: order.asc })
+    if (tiebreak) q = q.order(tiebreak, { ascending: true })
     const { data, error } = await q
     if (error || !data || !data.length) break  // degrade gracefully rather than hang a handler
     out = out.concat(data)
@@ -344,7 +348,7 @@ router.post('/import', authenticate, requireStudio, requireRole('owner', 'manage
     // re-engagement + the active count (e.g. Gabriela Castellanos, cancelled 7/10 but booked 7/13).
     {
       const cxlMembers = await fetchAllStudio(supabase, 'onboarding_members', 'id, cancelled_date, is_cancelled', studioId)
-      const actRows = await fetchAllStudio(supabase, 'onboarding_member_activity', 'member_id, last_booking_date', studioId)
+      const actRows = await fetchAllStudio(supabase, 'onboarding_member_activity', 'member_id, last_booking_date', studioId, null, 'member_id')
       const lastBkMap = new Map((actRows || []).map(a => [a.member_id, a.last_booking_date]))
       const reactivateIds = (cxlMembers || []).filter(m =>
         m.is_cancelled && m.cancelled_date && lastBkMap.get(m.id) && lastBkMap.get(m.id) > m.cancelled_date
@@ -416,7 +420,7 @@ router.get('/members', authenticate, requireStudio, async (req, res) => {
   try {
     [members, activity] = await Promise.all([
       fetchAllStudio(supabase, 'onboarding_members', '*', req.studio.id, { col: 'join_date', asc: false }),
-      fetchAllStudio(supabase, 'onboarding_member_activity', '*', req.studio.id),
+      fetchAllStudio(supabase, 'onboarding_member_activity', '*', req.studio.id, null, 'member_id'),
     ])
   } catch (e) { return res.status(500).json({ error: e.message }) }
   const actMap = new Map((activity || []).map(a => [a.member_id, a]))
@@ -1164,7 +1168,7 @@ router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
   const logWindow = new Date(Date.now() - 90 * 86400000).toISOString()
   const [allMembers, actAll] = await Promise.all([
     fetchAllStudio(supabase, 'onboarding_members', 'id, full_name, phone, status, is_cancelled, join_date, member_type, lead_status', studioId),
-    fetchAllStudio(supabase, 'onboarding_member_activity', 'member_id, last_booking_date, workouts_tried', studioId),
+    fetchAllStudio(supabase, 'onboarding_member_activity', 'member_id, last_booking_date, workouts_tried', studioId, null, 'member_id'),
   ])
   const [{ data: allJourneys }, { data: reengRows }, { data: upcoming }] = await Promise.all([
     supabase.from('onboarding_journeys').select('member_id, status, start_date').eq('studio_id', studioId),
