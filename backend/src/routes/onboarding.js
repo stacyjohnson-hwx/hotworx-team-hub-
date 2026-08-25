@@ -270,7 +270,8 @@ router.post('/import', authenticate, requireStudio, requireRole('owner', 'manage
           cancel_reason: mapCancelReason(sailReason),
           reason_notes: sailReason ? `SAIL reason: ${sailReason}` : 'Imported from SAIL cancelled export',
           package_name, monthly_payment, cancellation_type, subscription_date,
-          outcome: 'cancelled', win_back_step: 'call_scheduled',
+          // Imported cancels start in the follow-up loop ("Following up"), not written off.
+          outcome: 'pending', win_back_step: 'call_scheduled',
           offers_presented: [], offer_accepted: 'none', goal_recaptured: false,
           source: 'sail_import', import_key: `${customer_id}|${cancelled_date}`,
           created_by: req.user.id,
