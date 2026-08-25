@@ -1634,12 +1634,14 @@ function Bar({ label, value, max, barClass = 'bg-orange-400', onClick }) {
 }
 
 function ReportTab({ contacts, onOpenContact }) {
+  const { currentStudio } = useStudio()
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
   const [drill, setDrill] = useState(null)   // { title, items: contact[] }
   useEffect(() => {
+    setData(null); setError('')
     apiGet('/api/b2b/report').then(setData).catch(e => setError(e.message))
-  }, [])
+  }, [currentStudio?.id])
 
   if (error) return <div className="text-sm text-red-600 py-8">{error}</div>
   if (!data) return (
