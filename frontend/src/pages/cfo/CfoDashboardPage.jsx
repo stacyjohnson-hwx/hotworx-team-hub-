@@ -117,6 +117,40 @@ function PnlRow({ r, expanded, onToggle, indent }) {
   )
 }
 
+// A named line you top up each month (e.g. Square fees) until it lives in QuickBooks.
+// Upserts into monthly_pnl for the P&L month; remembers what's already there.
+function ManualEntry({ period, label, note, gl_account, category, current, onSaved }) {
+  const [v, setV] = useState(current == null ? '' : String(current))
+  const [saving, setSaving] = useState(false)
+  useEffect(() => { setV(current == null ? '' : String(current)) }, [current, period?.year, period?.month])
+  const dirty = v !== (current == null ? '' : String(current))
+  const save = async () => {
+    if (v === '' || !dirty) return
+    setSaving(true)
+    try {
+      await apiPost('/api/cfo/pnl', { period_year: period.year, period_month: period.month, gl_account, category, amount: Number(v) || 0, line_position: 'operating' })
+      onSaved()
+    } finally { setSaving(false) }
+  }
+  return (
+    <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 mb-2">
+      <div className="flex-1 min-w-0">
+        <div className="text-[13px] font-semibold text-gray-800">{label} <span className="font-normal text-gray-400">· {period.label}</span></div>
+        <div className="text-[11px] text-gray-400">{note}</div>
+      </div>
+      <div className="flex items-center gap-1">
+        <span className="text-gray-400 text-sm">$</span>
+        <input type="number" value={v} onChange={e => setV(e.target.value)} onKeyDown={e => e.key === 'Enter' && save()}
+          placeholder="0" className="w-24 border border-gray-300 rounded-lg px-2 py-1 text-sm text-right" />
+      </div>
+      <button onClick={save} disabled={!dirty || v === '' || saving}
+        className="text-[13px] font-bold text-white bg-red-600 rounded-lg px-3 py-1.5 disabled:opacity-40 flex items-center gap-1">
+        {saving && <Loader2 size={13} className="animate-spin" />}{current == null ? 'Add' : 'Update'}
+      </button>
+    </div>
+  )
+}
+
 export default function CfoDashboardPage() {
   const { currentStudio } = useStudio()
   const { isOwnerOrManager } = useRole()
@@ -231,6 +265,10 @@ export default function CfoDashboardPage() {
         {pnl && (
           <>
             <p className="text-[11px] text-gray-400 mb-1.5">Click any line to see the underlying QuickBooks accounts. Percentages are of {pnl.period?.label} revenue (from Studio Trends).</p>
+            <ManualEntry period={pnl.period} label="Square fees" note="Manual until it's in QuickBooks — counts under Merchant + bank fees."
+              gl_account="Square fees" category="merchant_fees"
+              current={pnl.operating?.find(r => r.category === 'merchant_fees')?.lines?.find(l => l.gl_account === 'Square fees')?.amount ?? null}
+              onSaved={load} />
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="text-[11px] uppercase tracking-wide text-gray-400"><tr>
