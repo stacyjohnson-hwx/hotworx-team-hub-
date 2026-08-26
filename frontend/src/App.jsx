@@ -26,6 +26,7 @@ import CertificationPage from '@/pages/certification/CertificationPage'
 import TodoPage from '@/pages/todo/TodoPage'
 import CoachingPage from '@/pages/coaching/CoachingPage'
 import CoachingTrackerPage from '@/pages/coaching-tracker/CoachingTrackerPage'
+import CfoDashboardPage from '@/pages/cfo/CfoDashboardPage'
 import LaborPage from '@/pages/labor/LaborPage'
 import UsersPage from '@/pages/users/UsersPage'
 import ProfilePage from '@/pages/profile/ProfilePage'
@@ -190,6 +191,14 @@ function AppRoutes() {
           element={
             <RoleGuard allowedRoles={['owner', 'manager']}>
               <CoachingTrackerPage />
+            </RoleGuard>
+          }
+        />
+        <Route
+          path="/cfo"
+          element={
+            <RoleGuard allowedRoles={['owner', 'manager']}>
+              <CfoDashboardPage />
             </RoleGuard>
           }
         />
