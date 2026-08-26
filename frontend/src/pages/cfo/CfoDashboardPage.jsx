@@ -3,7 +3,7 @@ import { apiGet, apiPost, apiDelete } from '@/hooks/useApi'
 import { useStudio } from '@/contexts/StudioContext'
 import { useRole } from '@/hooks/useRole'
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, ReferenceArea } from 'recharts'
-import { LineChart as LineIcon, Loader2, TrendingUp, Users, DollarSign, Percent, Lightbulb, Plus, X, Trash2, AlertTriangle } from 'lucide-react'
+import { LineChart as LineIcon, Loader2, TrendingUp, Users, Percent, Lightbulb, Plus, X, AlertTriangle, ChevronRight, ChevronDown, Wallet } from 'lucide-react'
 
 const $ = (n) => n == null ? '—' : `$${Math.round(n).toLocaleString()}`
 const pct = (n) => n == null ? '—' : `${n}%`
@@ -43,33 +43,42 @@ function Trend({ title, data, dataKey, fmt, band }) {
   )
 }
 
+// [category, label, line_position] — grouped by where the line lands in the waterfall.
+const ADD_CATS = [
+  ['payroll', 'Payroll + taxes', 'operating'], ['occupancy', 'Occupancy (rent + CAM)', 'operating'],
+  ['utilities', 'Utilities', 'operating'], ['marketing', 'Local marketing', 'operating'],
+  ['software_pos', 'POS / software', 'operating'], ['virtual_instructor', 'Virtual instructor fee', 'operating'],
+  ['insurance', 'Insurance', 'operating'], ['repairs_supplies', 'R&M + supplies', 'operating'],
+  ['admin_professional', 'Admin / legal / accounting', 'operating'], ['merchant_fees', 'Merchant + bank fees', 'operating'],
+  ['royalty', 'Royalty', 'operating'], ['taxes_licenses', 'Taxes & licenses', 'operating'], ['retail_cogs', 'Retail COGS', 'operating'],
+  ['interest_expense', 'Interest — below EBITDA', 'below_ebitda'], ['depreciation', 'Depreciation — below EBITDA', 'below_ebitda'],
+  ['loan_principal', 'Loan principal — cash only, not P&L', 'non_pnl'], ['owner_draw', 'Owner draws — cash only, not P&L', 'non_pnl'],
+  ['startup_equipment', 'Startup / equipment — cash only, not P&L', 'non_pnl'], ['other', 'Other', 'operating'],
+]
+
 function AddLineModal({ period, onClose, onSaved }) {
-  const CATS = [
-    ['payroll', 'Payroll + taxes'], ['occupancy', 'Occupancy (rent + CAM)'], ['utilities', 'Utilities'],
-    ['royalty', 'Royalty'], ['virtual_instructor', 'Virtual instructor fee'], ['marketing', 'Local marketing'],
-    ['merchant_fees', 'Merchant + bank fees'], ['software_pos', 'POS / software'], ['insurance', 'Insurance'],
-    ['repairs_supplies', 'R&M + supplies'], ['admin_professional', 'Admin / legal / accounting'], ['retail_cogs', 'Retail COGS'],
-    ['interest_expense', 'Interest expense'], ['depreciation', 'Depreciation'], ['other', 'Other'],
-  ]
   const [f, setF] = useState({ gl_account: '', category: 'payroll', amount: '' })
   const [saving, setSaving] = useState(false)
+  const lp = (ADD_CATS.find(c => c[0] === f.category) || [])[2] || 'operating'
   const save = async () => {
     if (!f.gl_account.trim() || !f.amount) return
     setSaving(true)
     try {
-      const below = ['interest_expense', 'depreciation'].includes(f.category)
-      await apiPost('/api/cfo/pnl', { period_year: period.year, period_month: period.month, gl_account: f.gl_account.trim(), category: f.category, amount: Number(f.amount) || 0, line_position: below ? 'below_ebitda' : 'operating' })
+      await apiPost('/api/cfo/pnl', { period_year: period.year, period_month: period.month, gl_account: f.gl_account.trim(), category: f.category, amount: Number(f.amount) || 0, line_position: lp })
       onSaved()
     } catch { setSaving(false) }
   }
+  const hint = lp === 'non_pnl' ? 'Tracked for cash coverage only — excluded from EBITDA and net income.'
+    : lp === 'below_ebitda' ? 'Sits below EBITDA — reduces net income but not EBITDA.' : 'Operating expense — inside EBITDA.'
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between p-4 border-b border-gray-100"><h3 className="font-bold text-gray-900">Add expense line · {period.label}</h3><button onClick={onClose}><X size={18} className="text-gray-400" /></button></div>
+        <div className="flex items-center justify-between p-4 border-b border-gray-100"><h3 className="font-bold text-gray-900">Add line · {period.label}</h3><button onClick={onClose}><X size={18} className="text-gray-400" /></button></div>
         <div className="p-4 space-y-3">
-          <div><label className="text-[11px] font-semibold text-gray-500">Category</label><select className={inp} value={f.category} onChange={e => setF({ ...f, category: e.target.value })}>{CATS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
-          <div><label className="text-[11px] font-semibold text-gray-500">GL account (QuickBooks name)</label><input className={inp} value={f.gl_account} onChange={e => setF({ ...f, gl_account: e.target.value })} placeholder="Payroll – Wages" /></div>
+          <div><label className="text-[11px] font-semibold text-gray-500">Category</label><select className={inp} value={f.category} onChange={e => setF({ ...f, category: e.target.value })}>{ADD_CATS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
+          <div><label className="text-[11px] font-semibold text-gray-500">Account name</label><input className={inp} value={f.gl_account} onChange={e => setF({ ...f, gl_account: e.target.value })} placeholder="e.g. SBA loan principal" /></div>
           <div><label className="text-[11px] font-semibold text-gray-500">Amount ($)</label><input type="number" className={inp} value={f.amount} onChange={e => setF({ ...f, amount: e.target.value })} /></div>
+          <p className="text-[11px] text-gray-400">{hint}</p>
         </div>
         <div className="p-4 border-t border-gray-100 flex justify-end gap-2">
           <button onClick={onClose} className="text-sm font-semibold text-gray-500 px-3 py-2">Cancel</button>
@@ -80,6 +89,34 @@ function AddLineModal({ period, onClose, onSaved }) {
   )
 }
 
+// One expandable P&L row: category total + band chip; click to reveal its accounts.
+function PnlRow({ r, expanded, onToggle, indent }) {
+  const canExpand = r.lines && r.lines.length > 0
+  const pctCls = r.status === 'out' ? 'text-red-600' : r.status === 'good' ? 'text-green-600' : 'text-gray-700'
+  return (
+    <>
+      <tr className={canExpand ? 'cursor-pointer hover:bg-gray-50' : ''} onClick={canExpand ? onToggle : undefined}>
+        <td className="py-1.5 font-medium text-gray-800" style={{ paddingLeft: indent }}>
+          <span className="inline-flex items-center gap-1">
+            {canExpand ? (expanded ? <ChevronDown size={13} className="text-gray-400" /> : <ChevronRight size={13} className="text-gray-400" />) : <span className="w-[13px] inline-block" />}
+            {r.label}
+          </span>
+        </td>
+        <td className="py-1.5 text-right text-gray-700">{r.amount == null ? '—' : $(r.amount)}</td>
+        <td className={`py-1.5 text-right font-semibold ${pctCls}`}>{r.actual_pct == null ? '' : pct(r.actual_pct)}</td>
+        <td className="py-1.5 pl-3 text-gray-400 text-xs">{r.low != null ? `${r.low}–${r.high}%${r.denom === 'retail_revenue' ? ' of retail' : ''}` : ''}</td>
+        <td className="py-1.5 text-right pr-1">{r.status === 'out' && <span className="text-[10px] font-bold text-red-600 bg-red-50 rounded px-1.5 py-0.5">OUT</span>}{r.status === 'good' && <span className="text-[10px] font-bold text-green-600 bg-green-50 rounded px-1.5 py-0.5">GOOD</span>}</td>
+      </tr>
+      {expanded && canExpand && r.lines.map((l, i) => (
+        <tr key={i} className="text-[13px] text-gray-500">
+          <td className="py-1" style={{ paddingLeft: indent + 22 }}>{l.gl_account}</td>
+          <td className="py-1 text-right">{$(l.amount)}</td><td /><td /><td />
+        </tr>
+      ))}
+    </>
+  )
+}
+
 export default function CfoDashboardPage() {
   const { currentStudio } = useStudio()
   const { isOwnerOrManager } = useRole()
@@ -87,6 +124,7 @@ export default function CfoDashboardPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [adding, setAdding] = useState(false)
+  const [exp, setExp] = useState({})
   const load = useCallback(() => {
     setLoading(true); setError('')
     apiGet('/api/cfo/overview').then(setD).catch(e => setError(e?.message || 'Failed')).finally(() => setLoading(false))
@@ -97,7 +135,9 @@ export default function CfoDashboardPage() {
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="animate-spin text-red-600" size={26} /></div>
   if (error) return <div className="max-w-3xl mx-auto bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">{error}</div>
   if (!d) return null
-  const { ttm, latest, unit, series, callouts, pnl, has_expense_detail } = d
+  const { ttm, latest, unit, series, callouts, pnl } = d
+  const toggle = (k) => setExp(e => ({ ...e, [k]: !e[k] }))
+  const chipCls = (s) => s === 'out' ? 'text-red-600 bg-red-50' : s === 'good' ? 'text-green-600 bg-green-50' : 'text-gray-500 bg-gray-100'
 
   return (
     <div className="max-w-6xl mx-auto pb-12">
@@ -157,7 +197,7 @@ export default function CfoDashboardPage() {
               <div><div className="text-gray-400 text-[11px]">Member life</div><div className="font-bold text-gray-900">{unit.member_life_months ? `${unit.member_life_months} mo` : '—'}</div></div>
               <div><div className="text-gray-400 text-[11px]">ARPU</div><div className="font-bold text-gray-900">{$(unit.arpu)}</div></div>
             </div>
-            <p className="text-[11px] text-gray-400 mt-2">Break-even is approximated from this month's total expenses ÷ ARPU. It sharpens once expense line detail is entered below.</p>
+            <p className="text-[11px] text-gray-400 mt-2">{unit.from_detail ? `Break-even = ${unit.period_label} operating + interest cost ÷ ARPU.` : 'Break-even is approximated from expenses ÷ ARPU until line detail lands.'}</p>
           </div>
         )}
         {latest && (
@@ -176,38 +216,74 @@ export default function CfoDashboardPage() {
         )}
       </div>
 
-      {/* P&L bands */}
+      {/* P&L waterfall */}
       <div className="bg-white border border-gray-200 rounded-xl p-4">
         <div className="flex items-center justify-between mb-2">
-          <div className="text-sm font-bold text-gray-800 flex items-center gap-1.5"><Percent size={15} className="text-red-600" /> P&amp;L vs benchmark bands {latest ? `· ${latest.label}` : ''}</div>
-          {latest && <button onClick={() => setAdding(true)} className="flex items-center gap-1 text-[13px] font-semibold text-red-600 border border-red-200 rounded-lg px-2.5 py-1 hover:bg-red-50"><Plus size={13} /> Add expense line</button>}
+          <div className="text-sm font-bold text-gray-800 flex items-center gap-1.5"><Percent size={15} className="text-red-600" /> P&amp;L vs benchmark bands {pnl?.period ? `· ${pnl.period.label}` : ''}</div>
+          {pnl?.period && <button onClick={() => setAdding(true)} className="flex items-center gap-1 text-[13px] font-semibold text-red-600 border border-red-200 rounded-lg px-2.5 py-1 hover:bg-red-50"><Plus size={13} /> Add line</button>}
         </div>
-        {!has_expense_detail && (
+        {!pnl && <div className="text-sm text-gray-400 py-4">No P&amp;L data yet.</div>}
+        {pnl && !pnl.has_detail && (
           <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-[13px] text-amber-800 mb-2 flex items-start gap-2">
-            <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" /> No expense line detail yet for {latest?.label}. Add your QuickBooks lines to light up the bands and see exactly where the money goes.
+            <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" /> No expense line detail yet for {pnl.period?.label}. Add lines to light up the bands.
           </div>
         )}
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="text-[11px] uppercase tracking-wide text-gray-400"><tr>
-              <th className="text-left py-1.5">Line</th><th className="text-right py-1.5">Actual</th><th className="text-right py-1.5">% rev</th><th className="text-left py-1.5 pl-3">Band</th><th className="py-1.5"></th>
-            </tr></thead>
-            <tbody className="divide-y divide-gray-50">
-              {pnl.map(p => (
-                <tr key={p.category}>
-                  <td className="py-1.5 font-medium text-gray-800">{p.label}</td>
-                  <td className="py-1.5 text-right text-gray-700">{p.amount == null ? '—' : $(p.amount)}</td>
-                  <td className={`py-1.5 text-right font-semibold ${p.status === 'out' ? 'text-red-600' : p.status === 'good' ? 'text-green-600' : 'text-gray-700'}`}>{p.actual_pct == null ? '—' : pct(p.actual_pct)}</td>
-                  <td className="py-1.5 pl-3 text-gray-400 text-xs">{p.low}–{p.high}%{p.denom === 'retail_revenue' ? ' of retail' : ''}</td>
-                  <td className="py-1.5 text-right">{p.status === 'out' && <span className="text-[10px] font-bold text-red-600 bg-red-50 rounded px-1.5 py-0.5">OUT</span>}{p.status === 'good' && <span className="text-[10px] font-bold text-green-600 bg-green-50 rounded px-1.5 py-0.5">GOOD</span>}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        {pnl && (
+          <>
+            <p className="text-[11px] text-gray-400 mb-1.5">Click any line to see the underlying QuickBooks accounts. Percentages are of {pnl.period?.label} revenue (from Studio Trends).</p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="text-[11px] uppercase tracking-wide text-gray-400"><tr>
+                  <th className="text-left py-1.5">Line</th><th className="text-right py-1.5">Actual</th><th className="text-right py-1.5">% rev</th><th className="text-left py-1.5 pl-3">Band</th><th className="py-1.5"></th>
+                </tr></thead>
+                <tbody>
+                  {/* Revenue */}
+                  <tr className="border-b border-gray-100"><td className="py-1.5 font-bold text-gray-900">Revenue <span className="text-gray-400 font-normal text-xs">· Studio Trends</span></td><td className="py-1.5 text-right font-bold text-gray-900">{$(pnl.revenue)}</td><td /><td /><td /></tr>
+                  {pnl.revenue_mix.map(r => <PnlRow key={r.category} r={r} expanded={exp[r.category]} onToggle={() => toggle(r.category)} indent={14} />)}
+
+                  {/* Operating */}
+                  <tr className="border-t border-gray-100"><td className="pt-2.5 pb-1 text-[11px] font-bold uppercase tracking-wide text-gray-400" colSpan={5}>Operating expenses</td></tr>
+                  {pnl.operating.map(r => <PnlRow key={r.category} r={r} expanded={exp[r.category]} onToggle={() => toggle(r.category)} indent={14} />)}
+                  <tr className="border-t border-gray-200"><td className="py-1.5 font-semibold text-gray-700 pl-3.5">Total operating expenses</td><td className="py-1.5 text-right font-semibold text-gray-800">{$(pnl.operating_total)}</td><td className="py-1.5 text-right text-gray-400 text-xs">{pnl.revenue > 0 ? pct(Math.round(pnl.operating_total / pnl.revenue * 1000) / 10) : ''}</td><td /><td /></tr>
+
+                  {/* EBITDA */}
+                  <tr className="border-t-2 border-gray-300 bg-gray-50">
+                    <td className="py-2 font-black text-gray-900 pl-3.5">EBITDA</td>
+                    <td className="py-2 text-right font-black text-gray-900">{$(pnl.ebitda)}</td>
+                    <td className={`py-2 text-right font-black ${pnl.ebitda_status === 'out' ? 'text-red-600' : pnl.ebitda_status === 'good' ? 'text-green-600' : 'text-gray-800'}`}>{pct(pnl.ebitda_pct)}</td>
+                    <td className="py-2 pl-3 text-gray-400 text-xs">{pnl.ebitda_band[0]}–{pnl.ebitda_band[1]}%</td>
+                    <td className="py-2 text-right pr-1">{pnl.ebitda_status !== 'in' && pnl.ebitda_status !== 'na' && <span className={`text-[10px] font-bold rounded px-1.5 py-0.5 ${chipCls(pnl.ebitda_status)}`}>{pnl.ebitda_status === 'out' ? 'LOW' : 'GOOD'}</span>}</td>
+                  </tr>
+
+                  {/* Below EBITDA → Net income */}
+                  {pnl.below.length > 0 && <>
+                    <tr><td className="pt-2.5 pb-1 text-[11px] font-bold uppercase tracking-wide text-gray-400" colSpan={5}>Below EBITDA</td></tr>
+                    {pnl.below.map(r => <PnlRow key={r.category} r={r} expanded={exp[r.category]} onToggle={() => toggle(r.category)} indent={14} />)}
+                  </>}
+                  <tr className="border-t border-gray-200">
+                    <td className="py-1.5 font-bold text-gray-900 pl-3.5">Net income</td>
+                    <td className={`py-1.5 text-right font-bold ${pnl.net_income < 0 ? 'text-red-600' : 'text-gray-900'}`}>{$(pnl.net_income)}</td>
+                    <td className={`py-1.5 text-right font-semibold ${pnl.net_income < 0 ? 'text-red-600' : 'text-gray-700'}`}>{pct(pnl.net_margin_pct)}</td><td /><td />
+                  </tr>
+
+                  {/* Cash coverage (not P&L) */}
+                  <tr><td className="pt-3 pb-1 text-[11px] font-bold uppercase tracking-wide text-gray-400 flex items-center gap-1" colSpan={5}><Wallet size={12} /> Cash coverage · not EBITDA, not P&amp;L</td></tr>
+                  {pnl.non_pnl.length === 0 && <tr><td className="py-1 text-[12px] text-gray-400 italic" style={{ paddingLeft: 14 }} colSpan={5}>Add loan principal & owner draws with “Add line” to see true cash coverage.</td></tr>}
+                  {pnl.non_pnl.map(r => <PnlRow key={r.category} r={r} expanded={exp[r.category]} onToggle={() => toggle(r.category)} indent={14} />)}
+                  {pnl.non_pnl.length > 0 && (
+                    <tr className="border-t border-gray-200">
+                      <td className="py-1.5 font-bold text-gray-900 pl-3.5">Cash left after everything</td>
+                      <td className={`py-1.5 text-right font-black ${pnl.cash_after_all < 0 ? 'text-red-600' : 'text-green-600'}`}>{$(pnl.cash_after_all)}</td><td /><td /><td />
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </div>
 
-      {adding && latest && <AddLineModal period={latest} onClose={() => setAdding(false)} onSaved={() => { setAdding(false); load() }} />}
+      {adding && pnl?.period && <AddLineModal period={pnl.period} onClose={() => setAdding(false)} onSaved={() => { setAdding(false); load() }} />}
     </div>
   )
 }

@@ -11,6 +11,20 @@ const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SER
 router.use(authenticate, requireStudio, requireRole('owner', 'manager'))
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+// Friendly labels for every category we store (bands supply their own labels too).
+const CAT_LABEL = {
+  membership_eft: 'Membership EFT', retail: 'Retail + upgrades', retail_cogs: 'Retail COGS',
+  payroll: 'Payroll + taxes', occupancy: 'Occupancy (rent + CAM)', utilities: 'Utilities',
+  virtual_instructor: 'Virtual instructor fee', marketing: 'Local marketing', merchant_fees: 'Merchant + bank fees',
+  software_pos: 'POS / software', insurance: 'Insurance', repairs_supplies: 'R&M + supplies',
+  admin_professional: 'Admin / legal / accounting', royalty: 'Royalty', taxes_licenses: 'Taxes & licenses',
+  interest_expense: 'Interest', depreciation: 'Depreciation', startup_equipment: 'Startup / equipment (capital)',
+  loan_principal: 'Loan principal', owner_draw: 'Owner draws', other: 'Other',
+}
+// Operating expense categories that carry a benchmark band (always shown, even if $0).
+const OP_BAND_CATS = ['retail_cogs', 'payroll', 'occupancy', 'utilities', 'virtual_instructor', 'marketing', 'merchant_fees', 'software_pos', 'insurance', 'repairs_supplies', 'admin_professional']
+
 const num = (v) => Number(v) || 0
 const r1 = (n) => Math.round(n * 10) / 10
 const r2 = (n) => Math.round(n * 100) / 100
@@ -112,45 +126,102 @@ router.get('/overview', async (req, res) => {
       avg_monthly_revenue: ttmSeries.length ? r2(sum('revenue') / ttmSeries.length) : 0,
     }
     const latest = series[series.length - 1] || null
-    // Unit economics (approximation until expense detail lands): break-even members ≈
-    // monthly expenses ÷ ARPU; contribution/member ≈ ARPU (no per-member variable cost yet).
-    const be = latest && latest.arpu > 0 ? Math.round(latest.expenses / latest.arpu) : null
-    const unit = latest ? {
-      arpu: latest.arpu, churn_pct: latest.churn_pct, member_life_months: latest.member_life_months,
-      members: latest.members, break_even_members: be,
-      members_over_breakeven: be != null ? latest.members - be : null,
-      retail_pct: latest.retail_pct,
-    } : null
-    // P&L lines with bands for the latest month (empty until entered).
-    let pnl = []
-    if (latest) {
-      const [{ data: lines }, { data: bands }] = await Promise.all([
-        sb.from('monthly_pnl').select('*').eq('studio_id', sid).eq('period_year', latest.year).eq('period_month', latest.month),
-        sb.from('benchmark_targets').select('*').or(`studio_id.is.null,studio_id.eq.${sid}`).order('sort_order'),
-      ])
-      const rev = latest.revenue, retailRev = latest.retail
-      const byCat = {}
-      for (const l of lines || []) { byCat[l.category] = (byCat[l.category] || 0) + num(l.amount) }
-      pnl = (bands || []).map(b => {
-        const amount = b.category === 'ebitda' ? null : (byCat[b.category] ?? null)
+
+    // ── P&L period = latest CLOSED month with expense detail (skip the in-progress
+    //    calendar month, which is only partially booked in QuickBooks). ───────────
+    const [{ data: pnlAll }, { data: bands }] = await Promise.all([
+      sb.from('monthly_pnl').select('*').eq('studio_id', sid),
+      sb.from('benchmark_targets').select('*').or(`studio_id.is.null,studio_id.eq.${sid}`).order('sort_order'),
+    ])
+    const now = new Date()
+    const curYM = now.getFullYear() * 12 + now.getMonth()   // index of the current, still-open month
+    const monthsWithData = [...new Set((pnlAll || []).map(l => l.period_year * 12 + (l.period_month - 1)))]
+      .filter(ym => ym < curYM).sort((a, b) => b - a)
+    let period = null
+    if (monthsWithData.length) {
+      const ym = monthsWithData[0]
+      period = series.find(s => s.year === Math.floor(ym / 12) && s.month === (ym % 12) + 1) || null
+    }
+    if (!period) period = latest
+
+    // Build the P&L waterfall for `period`, keeping leaf-account detail for drill-down.
+    const bandByCat = {}; for (const b of bands || []) bandByCat[b.category] = b
+    let pnl = null
+    if (period) {
+      const lines = (pnlAll || []).filter(l => l.period_year === period.year && l.period_month === period.month)
+      const rev = period.revenue, retailRev = period.retail
+      const groups = {}
+      for (const l of lines) {
+        const g = groups[l.category] || (groups[l.category] = { amount: 0, lines: [], line_position: l.line_position })
+        g.amount += num(l.amount); g.lines.push({ gl_account: l.gl_account, amount: r2(num(l.amount)) })
+      }
+      const bandInfo = (cat, amount) => {
+        const b = bandByCat[cat]
+        if (!b || amount == null) return { low: null, high: null, actual_pct: null, status: 'na', denom: null, direction: null }
         const denom = b.denominator === 'retail_revenue' ? retailRev : rev
-        const actual_pct = amount != null && denom > 0 ? r1((amount / denom) * 100) : null
+        const actual_pct = denom > 0 ? r1((amount / denom) * 100) : null
         let status = 'na'
         if (actual_pct != null) {
           const above = actual_pct > b.target_high_pct, below = actual_pct < b.target_low_pct
           status = (above && b.direction === 'lower_is_better') || (below && b.direction === 'higher_is_better') ? 'out'
             : (below && b.direction === 'lower_is_better') || (above && b.direction === 'higher_is_better') ? 'good' : 'in'
         }
-        return { category: b.category, label: b.label, low: b.target_low_pct, high: b.target_high_pct, denom: b.denominator, direction: b.direction, amount, actual_pct, status }
-      })
+        return { low: b.target_low_pct, high: b.target_high_pct, actual_pct, status, denom: b.denominator, direction: b.direction }
+      }
+      const row = (cat) => {
+        const g = groups[cat]; const amount = g ? r2(g.amount) : null
+        return { category: cat, label: CAT_LABEL[cat] || cat, amount, lines: g ? g.lines.sort((a, b) => b.amount - a.amount) : [], ...bandInfo(cat, amount) }
+      }
+      // Operating = band categories ∪ any operating categories actually present.
+      const opCats = new Set(OP_BAND_CATS)
+      for (const l of lines) if (l.line_position === 'operating') opCats.add(l.category)
+      const ord = (c) => bandByCat[c]?.sort_order ?? 90
+      const operating = [...opCats].map(row).sort((a, b) => ord(a.category) - ord(b.category) || (b.amount || 0) - (a.amount || 0))
+      const operating_total = r2(operating.reduce((s, r) => s + (r.amount || 0), 0))
+      // Revenue mix rows (from studio_trends — source of truth), for band context.
+      const revenue_mix = [['membership_eft', period.eft], ['retail', period.retail]].map(([cat, amt]) => ({
+        category: cat, label: CAT_LABEL[cat], amount: r2(amt), lines: [], ...bandInfo(cat, amt),
+      }))
+      const eb = bandByCat['ebitda'] || { target_low_pct: 20, target_high_pct: 30 }
+      const ebitda = r2(rev - operating_total)
+      const ebitda_pct = rev > 0 ? r1((ebitda / rev) * 100) : null
+      const ebitda_status = ebitda_pct == null ? 'na' : (ebitda_pct < eb.target_low_pct ? 'out' : ebitda_pct > eb.target_high_pct ? 'good' : 'in')
+      const belowCats = [...new Set(lines.filter(l => l.line_position === 'below_ebitda').map(l => l.category))]
+      const below = belowCats.map(row)
+      const below_total = r2(below.reduce((s, r) => s + (r.amount || 0), 0))
+      const net_income = r2(ebitda - below_total)
+      const net_margin_pct = rev > 0 ? r1((net_income / rev) * 100) : null
+      const nonCats = [...new Set(lines.filter(l => l.line_position === 'non_pnl').map(l => l.category))]
+      const non_pnl = nonCats.map(row)
+      const non_pnl_total = r2(non_pnl.reduce((s, r) => s + (r.amount || 0), 0))
+      pnl = {
+        period: { year: period.year, month: period.month, label: period.label },
+        revenue: rev, revenue_mix, operating, operating_total,
+        ebitda, ebitda_pct, ebitda_band: [eb.target_low_pct, eb.target_high_pct], ebitda_status,
+        below, below_total, net_income, net_margin_pct,
+        non_pnl, non_pnl_total, cash_after_all: r2(net_income - non_pnl_total),
+        has_detail: operating.some(r => r.amount != null),
+      }
     }
+
+    // Unit economics — break-even from real P&L cost (operating + below) ÷ ARPU.
+    const beExp = pnl && pnl.has_detail ? pnl.operating_total + pnl.below_total : (period ? period.expenses : 0)
+    const beArpu = period ? period.arpu : null
+    const be = beArpu > 0 && beExp > 0 ? Math.round(beExp / beArpu) : null
+    const unit = period ? {
+      arpu: period.arpu, churn_pct: period.churn_pct, member_life_months: period.member_life_months,
+      members: period.members, break_even_members: be,
+      members_over_breakeven: be != null ? period.members - be : null,
+      retail_pct: period.retail_pct, period_label: period.label, from_detail: !!(pnl && pnl.has_detail),
+    } : null
+
     res.json({
       studio: { id: sid, name: req.studio.name, code: req.studio.code },
       ttm, latest, unit,
       series: withRev.slice(-24),
       callouts: callouts(withRev),
       pnl,
-      has_expense_detail: pnl.some(p => p.amount != null),
+      has_expense_detail: !!(pnl && pnl.has_detail),
     })
   } catch (err) { console.error('GET /cfo/overview', err.message); res.status(500).json({ error: err.message }) }
 })
