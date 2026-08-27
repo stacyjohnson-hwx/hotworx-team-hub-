@@ -52,6 +52,7 @@ function derive(row, prev) {
     retail: r2(num(row.retail)), retail_pct: pct(num(row.retail)) == null ? null : r1(pct(num(row.retail))),
     eft: r2(num(row.net_eft)), eft_pct: pct(num(row.net_eft)) == null ? null : r1(pct(num(row.net_eft))),
     membership_cash: r2(num(row.membership_cash)), vending: r2(num(row.vending)), rewards: r2(num(row.rewards)), refunds: r2(num(row.refunds)),
+    rewards_pct: pct(num(row.rewards)) == null ? null : r1(pct(num(row.rewards))),
     // Funnel
     leads: num(row.leads), booked: num(row.red_appts_booked), held: num(row.red_appts_held),
     lead_booked_pct: num(row.leads) > 0 ? r1((num(row.red_appts_booked) / num(row.leads)) * 100) : null,
@@ -214,9 +215,12 @@ router.get('/overview', async (req, res) => {
       const revenue_mix = [
         ['membership_eft', period.eft], ['membership_cash', period.membership_cash], ['retail', period.retail],
         ['vending', period.vending], ['rewards', period.rewards], ['refunds', -period.refunds],
-      ].filter(([, amt]) => amt).map(([cat, amt]) => ({
-        category: cat, label: CAT_LABEL[cat], amount: r2(amt), lines: [], ...bandInfo(cat, amt),
-      }))
+      ].filter(([, amt]) => amt).map(([cat, amt]) => {
+        const info = bandInfo(cat, amt)
+        // Every revenue line shows its % of revenue, band or not (e.g. rewards, vending).
+        const actual_pct = info.actual_pct != null ? info.actual_pct : (rev > 0 ? r1((r2(amt) / rev) * 100) : null)
+        return { category: cat, label: CAT_LABEL[cat], amount: r2(amt), lines: [], ...info, actual_pct }
+      })
       const eb = bandByCat['ebitda'] || { target_low_pct: 20, target_high_pct: 30 }
       const ebitda = r2(rev - operating_total)
       const ebitda_pct = rev > 0 ? r1((ebitda / rev) * 100) : null

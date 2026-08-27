@@ -244,6 +244,7 @@ export default function CfoDashboardPage() {
         <Trend title="Churn %" data={series} dataKey="churn_pct" fmt={pct} band={[0, 4.5]} />
         <Trend title="ARPU" data={series} dataKey="arpu" fmt={$} />
         <Trend title="Retail % of revenue" data={series} dataKey="retail_pct" fmt={pct} band={[10, 16]} />
+        <Trend title="Rewards % of revenue" data={series} dataKey="rewards_pct" fmt={pct} />
         <Trend title="Net margin %" data={series} dataKey="net_margin_pct" fmt={pct} band={[20, 30]} />
       </div>
 
