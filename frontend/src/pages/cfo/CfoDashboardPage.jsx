@@ -336,14 +336,16 @@ export default function CfoDashboardPage() {
               current={pnl.operating?.find(r => r.category === 'merchant_fees')?.lines?.find(l => l.gl_account === 'Square fees')?.amount ?? null}
               onSaved={reload} />
             {pnl.recon && (() => {
-              const off = Math.abs(pnl.recon.delta_pct ?? 0) > 3
+              const r = pnl.recon, off = r.delta_pct != null && Math.abs(r.delta_pct) > 3
               return (
-                <div className={`rounded-lg px-3 py-2 mb-2 text-[13px] flex items-start gap-2 border ${off ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-gray-50 border-gray-200 text-gray-600'}`}>
-                  <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
-                  <div>
-                    <span className="font-semibold">Revenue check · SAIL vs QuickBooks:</span> SAIL {$(pnl.recon.sail_revenue)} vs QuickBooks {$(pnl.recon.qb_income)} — {pnl.recon.delta >= 0 ? '+' : ''}{$(pnl.recon.delta)} ({pnl.recon.delta_pct}%).{' '}
-                    {off ? 'QuickBooks books less than SAIL collected — usually rewards redemptions or a timing/category difference. Worth a look with your bookkeeper.' : 'Within tolerance — accrual vs cash timing.'}
+                <div className={`rounded-lg px-3 py-2 mb-2 text-[13px] border ${off ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-gray-50 border-gray-200 text-gray-600'}`}>
+                  <div className="flex items-center gap-1.5 font-semibold mb-1"><AlertTriangle size={14} /> Revenue reconciliation · {pnl.period.label}</div>
+                  <div className="flex flex-wrap gap-x-5 gap-y-0.5">
+                    <span>SAIL billed <b>{$(r.sail_revenue)}</b></span>
+                    {r.square_net != null && <span>Square deposited (net) <b>{$(r.square_net)}</b></span>}
+                    {r.qb_income != null && <span>QuickBooks booked <b>{$(r.qb_income)}</b>{r.delta != null && <span className="opacity-70"> ({r.delta >= 0 ? '+' : ''}{$(r.delta)}, {r.delta_pct}%)</span>}</span>}
                   </div>
+                  <div className="text-[11px] opacity-80 mt-1">{off ? 'SAIL runs higher than what QuickBooks booked / Square deposited — largely rewards redemptions (counted in SAIL, not cash) plus timing. Worth a periodic check with your bookkeeper.' : 'Sources are within tolerance — differences are accrual vs cash timing.'}</div>
                 </div>
               )
             })()}

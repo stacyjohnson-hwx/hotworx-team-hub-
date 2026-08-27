@@ -230,15 +230,19 @@ router.get('/overview', async (req, res) => {
       const below_total = r2(below.reduce((s, r) => s + (r.amount || 0), 0))
       const net_income = r2(ebitda - below_total)
       const net_margin_pct = rev > 0 ? r1((net_income / rev) * 100) : null
-      const nonCats = [...new Set(lines.filter(l => l.line_position === 'non_pnl' && l.category !== 'qb_income').map(l => l.category))]
+      const REF_CATS = ['qb_income', 'square_net']   // reference figures, not part of the waterfall
+      const nonCats = [...new Set(lines.filter(l => l.line_position === 'non_pnl' && !REF_CATS.includes(l.category)).map(l => l.category))]
       const non_pnl = nonCats.map(row)
       const non_pnl_total = r2(non_pnl.reduce((s, r) => s + (r.amount || 0), 0))
-      // SAIL (studio_trends) vs QuickBooks-booked income reconciliation for the month.
+      // Three-way reconciliation: SAIL billed (studio_trends) vs QuickBooks booked vs Square deposited.
       const qbRow = lines.find(l => l.category === 'qb_income')
-      const recon = qbRow ? {
-        sail_revenue: r2(rev), qb_income: r2(num(qbRow.amount)),
-        delta: r2(rev - num(qbRow.amount)),
-        delta_pct: rev > 0 ? r1(((rev - num(qbRow.amount)) / rev) * 100) : null,
+      const sqRow = lines.find(l => l.category === 'square_net')
+      const recon = (qbRow || sqRow) ? {
+        sail_revenue: r2(rev),
+        qb_income: qbRow ? r2(num(qbRow.amount)) : null,
+        square_net: sqRow ? r2(num(sqRow.amount)) : null,
+        delta: qbRow ? r2(rev - num(qbRow.amount)) : null,
+        delta_pct: qbRow && rev > 0 ? r1(((rev - num(qbRow.amount)) / rev) * 100) : null,
       } : null
       // Debt Service Coverage = EBITDA ÷ (interest + loan principal). Banks want ≥ 1.25.
       const principal = num((non_pnl.find(r => r.category === 'loan_principal') || {}).amount)
