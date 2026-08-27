@@ -197,7 +197,7 @@ function AppRoutes() {
         <Route
           path="/cfo"
           element={
-            <RoleGuard allowedRoles={['owner', 'manager']}>
+            <RoleGuard allowedRoles={['owner']}>
               <CfoDashboardPage />
             </RoleGuard>
           }

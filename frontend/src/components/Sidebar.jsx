@@ -123,7 +123,7 @@ const NAV_SECTIONS = [
       { to: '/scorecard',     label: 'Scorecard',     icon: Gauge,     roles: ['owner', 'manager'] },
       { to: '/studio-trends', label: 'Studio Trends', icon: BarChart2, roles: ['owner', 'manager'] },
       { to: '/team-roi',      label: 'Team ROI',      icon: Scale,     roles: ['owner'] },
-      { to: '/cfo',           label: 'CFO Dashboard', icon: LineChart, roles: ['owner', 'manager'] },
+      { to: '/cfo',           label: 'CFO Dashboard', icon: LineChart, roles: ['owner'] },
       { to: '/advisor',       label: 'AI Advisor',    icon: Sparkles,  roles: ['owner', 'manager'] },
     ],
   },

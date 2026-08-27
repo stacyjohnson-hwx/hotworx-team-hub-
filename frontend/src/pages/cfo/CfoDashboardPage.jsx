@@ -153,7 +153,7 @@ function ManualEntry({ period, label, note, gl_account, category, current, onSav
 
 export default function CfoDashboardPage() {
   const { currentStudio } = useStudio()
-  const { isOwnerOrManager } = useRole()
+  const { isOwner } = useRole()
   const [d, setD] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -165,7 +165,7 @@ export default function CfoDashboardPage() {
   }, [currentStudio?.id])
   useEffect(() => { load() }, [load])
 
-  if (!isOwnerOrManager) return <div className="max-w-3xl mx-auto py-20 text-center text-sm text-gray-500">The CFO dashboard is for owners and managers.</div>
+  if (!isOwner) return <div className="max-w-3xl mx-auto py-20 text-center text-sm text-gray-500">The CFO dashboard is owner-only.</div>
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="animate-spin text-red-600" size={26} /></div>
   if (error) return <div className="max-w-3xl mx-auto bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">{error}</div>
   if (!d) return null

@@ -1,4 +1,4 @@
-// CFO Dashboard (PRD). Owner/GM view: metrics from studio_trends + benchmark bands
+// CFO Dashboard (PRD). Owner-only: metrics from studio_trends + benchmark bands
 // (from monthly_pnl once expense detail is entered) + coaching callouts.
 const express = require('express')
 const router = express.Router()
@@ -8,7 +8,7 @@ const { requireStudio } = require('../middleware/studioMiddleware')
 const { requireRole } = require('../middleware/roleGuard')
 
 const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
-router.use(authenticate, requireStudio, requireRole('owner', 'manager'))
+router.use(authenticate, requireStudio, requireRole('owner'))
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
@@ -227,7 +227,7 @@ router.get('/overview', async (req, res) => {
 })
 
 // ─── POST /api/cfo/pnl — add/update one expense line (manual, owner only) ──────
-router.post('/pnl', requireRole('owner', 'manager'), async (req, res) => {
+router.post('/pnl', requireRole('owner'), async (req, res) => {
   const sb = db(); const sid = req.studio.id
   const { period_year, period_month, gl_account, category, amount, cost_behavior, line_position } = req.body || {}
   if (!period_year || !period_month || !gl_account) return res.status(400).json({ error: 'period, gl_account required' })
@@ -241,7 +241,7 @@ router.post('/pnl', requireRole('owner', 'manager'), async (req, res) => {
   res.status(201).json(data)
 })
 
-router.delete('/pnl/:id', requireRole('owner', 'manager'), async (req, res) => {
+router.delete('/pnl/:id', requireRole('owner'), async (req, res) => {
   const { error } = await db().from('monthly_pnl').delete().eq('id', req.params.id).eq('studio_id', req.studio.id)
   if (error) return res.status(500).json({ error: error.message })
   res.status(204).end()
