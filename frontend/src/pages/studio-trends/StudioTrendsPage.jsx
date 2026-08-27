@@ -94,7 +94,7 @@ const CHART_COLORS = {
 // ── Default row shape ─────────────────────────────────────────────────────────
 
 const DEFAULTS = {
-  vending: 0, retail: 0, rewards: 0, refunds: 0,
+  vending: 0, retail: 0, rewards: 0, refunds: 0, sales_tax: 0,
   membership_cash: 0, net_eft: 0, eft_increase: 0, eft_decrease: 0,
   net_eft_increase: 0, in_the_bank: 0, itb_goal: 0, expenses: 0, net_income: 0,
   leads: 0, red_appts_booked: 0, red_appts_held: 0,
@@ -219,6 +219,7 @@ function DataEntryTab({ month: initialMonth, year: initialYear }) {
           <NumInput label="Retail"           value={data.retail}           onChange={v => set('retail', v)}           isCurrency />
           <NumInput label="Rewards"          value={data.rewards}          onChange={v => set('rewards', v)}          isCurrency />
           <NumInput label="Refunds"          value={data.refunds}          onChange={v => set('refunds', v)}          isCurrency />
+          <NumInput label="Sales Tax"        value={data.sales_tax}        onChange={v => set('sales_tax', v)}        isCurrency />
           <NumInput label="Membership Cash"  value={data.membership_cash}  onChange={v => set('membership_cash', v)}  isCurrency />
           <NumInput label="EFT Increase"     value={data.eft_increase}     onChange={v => set('eft_increase', v)}     isCurrency />
           <NumInput label="EFT Decrease"     value={data.eft_decrease}     onChange={v => set('eft_decrease', v)}     isCurrency />
@@ -402,7 +403,7 @@ function TableTab() {
               </tr>
               <tr className="bg-gray-50 border-b border-gray-200">
                 <th className="sticky left-0 bg-gray-50 text-left px-3 py-2.5 text-gray-700 font-semibold whitespace-nowrap">Month</th>
-                {['Vending','Retail','Rewards','Refunds','Memb. Cash','EFT Inc.','EFT Dec.','Monthly EFT','EFT Change','In The Bank','Expenses','Net Income'].map((h,i) => (
+                {['Vending','Retail','Rewards','Refunds','Sales Tax','Memb. Cash','EFT Inc.','EFT Dec.','Monthly EFT','EFT Change','In The Bank','Expenses','Net Income'].map((h,i) => (
                   <th key={h} className={`text-right px-3 py-2.5 text-gray-600 font-semibold whitespace-nowrap ${i===0?'border-l border-gray-200':''}`}>{h}</th>
                 ))}
                 {['Leads','Red Bkd','Red Held','New Mbrs','Cancels','Total Mbrs','Elite %','Net Mbr Chg'].map((h,i) => (
@@ -444,6 +445,7 @@ function TableTab() {
                     <td className={td}>{fmt$(r.retail)}</td>
                     <td className={td}>{fmt$(r.rewards)}</td>
                     <td className={td}>{fmt$(r.refunds)}</td>
+                    <td className={td}>{fmt$(r.sales_tax)}</td>
                     <td className={td}>{fmt$(r.membership_cash)}</td>
                     <td className={td}>{fmt$(r.eft_increase)}</td>
                     <td className={td}>{fmt$(r.eft_decrease)}</td>

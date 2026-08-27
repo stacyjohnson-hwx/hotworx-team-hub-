@@ -8,7 +8,7 @@ const { requireStudio } = require('../middleware/studioMiddleware')
 const db = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 
 const DEFAULTS = {
-  vending: 0, retail: 0, rewards: 0, refunds: 0,
+  vending: 0, retail: 0, rewards: 0, refunds: 0, sales_tax: 0,
   membership_cash: 0, net_eft: 0, eft_increase: 0, eft_decrease: 0,
   net_eft_increase: 0, in_the_bank: 0, itb_goal: 0, expenses: 0, net_income: 0,
   leads: 0, red_appts_booked: 0, red_appts_held: 0,
