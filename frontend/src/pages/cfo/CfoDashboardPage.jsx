@@ -3,7 +3,7 @@ import { apiGet, apiPost, apiDelete } from '@/hooks/useApi'
 import { useStudio } from '@/contexts/StudioContext'
 import { useRole } from '@/hooks/useRole'
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, ReferenceArea } from 'recharts'
-import { LineChart as LineIcon, Loader2, TrendingUp, Users, Percent, Lightbulb, Plus, X, AlertTriangle, ChevronRight, ChevronDown, Wallet } from 'lucide-react'
+import { LineChart as LineIcon, Loader2, TrendingUp, Users, Percent, Lightbulb, Plus, X, AlertTriangle, ChevronRight, ChevronDown, Wallet, Target, Table2, Landmark } from 'lucide-react'
 
 const $ = (n) => n == null ? '—' : `$${Math.round(n).toLocaleString()}`
 const pct = (n) => n == null ? '—' : `${n}%`
@@ -52,7 +52,8 @@ const ADD_CATS = [
   ['admin_professional', 'Admin / legal / accounting', 'operating'], ['merchant_fees', 'Merchant + bank fees', 'operating'],
   ['royalty', 'Royalty', 'operating'], ['taxes_licenses', 'Taxes & licenses', 'operating'], ['retail_cogs', 'Retail COGS', 'operating'],
   ['interest_expense', 'Interest — below EBITDA', 'below_ebitda'], ['depreciation', 'Depreciation — below EBITDA', 'below_ebitda'],
-  ['loan_principal', 'Loan principal — cash only, not P&L', 'non_pnl'], ['owner_draw', 'Owner draws — cash only, not P&L', 'non_pnl'],
+  ['loan_principal', 'Loan principal — cash only, not P&L', 'non_pnl'], ['credit_card', 'Credit card payment — cash only, not P&L', 'non_pnl'],
+  ['owner_draw', 'Owner draws — cash only, not P&L', 'non_pnl'],
   ['startup_equipment', 'Startup / equipment — cash only, not P&L', 'non_pnl'], ['other', 'Other', 'operating'],
 ]
 
@@ -119,7 +120,7 @@ function PnlRow({ r, expanded, onToggle, indent }) {
 
 // A named line you top up each month (e.g. Square fees) until it lives in QuickBooks.
 // Upserts into monthly_pnl for the P&L month; remembers what's already there.
-function ManualEntry({ period, label, note, gl_account, category, current, onSaved }) {
+function ManualEntry({ period, label, note, gl_account, category, current, onSaved, line_position = 'operating' }) {
   const [v, setV] = useState(current == null ? '' : String(current))
   const [saving, setSaving] = useState(false)
   useEffect(() => { setV(current == null ? '' : String(current)) }, [current, period?.year, period?.month])
@@ -128,7 +129,7 @@ function ManualEntry({ period, label, note, gl_account, category, current, onSav
     if (v === '' || !dirty) return
     setSaving(true)
     try {
-      await apiPost('/api/cfo/pnl', { period_year: period.year, period_month: period.month, gl_account, category, amount: Number(v) || 0, line_position: 'operating' })
+      await apiPost('/api/cfo/pnl', { period_year: period.year, period_month: period.month, gl_account, category, amount: Number(v) || 0, line_position })
       onSaved()
     } finally { setSaving(false) }
   }
@@ -159,18 +160,22 @@ export default function CfoDashboardPage() {
   const [error, setError] = useState('')
   const [adding, setAdding] = useState(false)
   const [exp, setExp] = useState({})
-  const load = useCallback(() => {
+  const [selMonth, setSelMonth] = useState(null)   // 'YYYY-M' or null = latest closed
+  const load = useCallback((month) => {
     setLoading(true); setError('')
-    apiGet('/api/cfo/overview').then(setD).catch(e => setError(e?.message || 'Failed')).finally(() => setLoading(false))
+    apiGet('/api/cfo/overview' + (month ? `?month=${month}` : '')).then(setD).catch(e => setError(e?.message || 'Failed')).finally(() => setLoading(false))
   }, [currentStudio?.id])
-  useEffect(() => { load() }, [load])
+  useEffect(() => { setSelMonth(null) }, [currentStudio?.id])
+  useEffect(() => { load(selMonth) }, [currentStudio?.id, selMonth])
 
   if (!isOwner) return <div className="max-w-3xl mx-auto py-20 text-center text-sm text-gray-500">The CFO dashboard is owner-only.</div>
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="animate-spin text-red-600" size={26} /></div>
   if (error) return <div className="max-w-3xl mx-auto bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">{error}</div>
   if (!d) return null
-  const { ttm, latest, unit, series, callouts, pnl } = d
+  const { ttm, latest, unit, series, monthly, pnl_months, callouts, pnl } = d
+  const reload = () => load(selMonth)
   const toggle = (k) => setExp(e => ({ ...e, [k]: !e[k] }))
+  const ebGoalPct = ttm?.ebitda != null && ttm.ebitda_goal ? Math.max(0, Math.min(100, Math.round(ttm.ebitda / ttm.ebitda_goal * 100))) : 0
   const chipCls = (s) => s === 'out' ? 'text-red-600 bg-red-50' : s === 'good' ? 'text-green-600 bg-green-50' : 'text-gray-500 bg-gray-100'
 
   return (
@@ -189,6 +194,26 @@ export default function CfoDashboardPage() {
         <Kpi label="ARPU" value={$(latest?.arpu)} sub="per member / mo" />
         <Kpi label="Retail" value={pct(latest?.retail_pct)} sub="of revenue" accent="text-emerald-600" />
       </div>
+
+      {/* Path to refinance — TTM EBITDA vs $100k */}
+      {ttm?.ebitda != null && (
+        <div className="bg-white border border-gray-200 rounded-xl p-4 mb-5">
+          <div className="flex items-end justify-between flex-wrap gap-2 mb-2">
+            <div>
+              <div className="text-[11px] font-bold uppercase tracking-wide text-gray-500 flex items-center gap-1.5"><Target size={13} className="text-red-600" /> Path to refinance · trailing EBITDA</div>
+              <div className="text-3xl font-black text-gray-900 mt-0.5">{$(ttm.ebitda)} <span className="text-lg font-bold text-gray-400">/ {$(ttm.ebitda_goal)}</span></div>
+            </div>
+            <div className="text-right">
+              <div className={`text-sm font-bold ${ttm.ebitda >= ttm.ebitda_goal ? 'text-green-600' : 'text-gray-700'}`}>{ttm.ebitda >= ttm.ebitda_goal ? '🎉 Goal met' : `${$(ttm.ebitda_goal - ttm.ebitda)} to go`}</div>
+              <div className="text-[11px] text-gray-400">{ttm.ebitda_months} mo of detail{ttm.ebitda_runrate != null ? ` · ~${$(ttm.ebitda_runrate)}/yr run-rate` : ''}</div>
+            </div>
+          </div>
+          <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
+            <div className={`h-full rounded-full ${ebGoalPct >= 100 ? 'bg-green-500' : 'bg-gradient-to-r from-orange-400 to-red-500'}`} style={{ width: `${ebGoalPct}%` }} />
+          </div>
+          <div className="text-[11px] text-gray-400 mt-1.5">{ebGoalPct}% of the $100k trailing-EBITDA target lenders look for. {ttm.ebitda_months < 12 ? `Based on ${ttm.ebitda_months} months so far — fills to a full 12-month trailing figure as more months close.` : ''}</div>
+        </div>
+      )}
 
       {/* Coaching rail */}
       {callouts.length > 0 && (
@@ -213,12 +238,44 @@ export default function CfoDashboardPage() {
       {/* Trends */}
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3 mb-5">
         <Trend title="Revenue / mo" data={series} dataKey="revenue" fmt={$} />
-        <Trend title="Net margin %" data={series} dataKey="net_margin_pct" fmt={pct} band={[20, 30]} />
+        {monthly?.length > 0 && <Trend title="EBITDA / mo" data={monthly} dataKey="ebitda" fmt={$} />}
+        {monthly?.length > 0 && <Trend title="EBITDA %" data={monthly} dataKey="ebitda_pct" fmt={pct} band={[20, 30]} />}
         <Trend title="Active members" data={series} dataKey="members" />
         <Trend title="Churn %" data={series} dataKey="churn_pct" fmt={pct} band={[0, 4.5]} />
         <Trend title="ARPU" data={series} dataKey="arpu" fmt={$} />
         <Trend title="Retail % of revenue" data={series} dataKey="retail_pct" fmt={pct} band={[10, 16]} />
+        <Trend title="Net margin %" data={series} dataKey="net_margin_pct" fmt={pct} band={[20, 30]} />
       </div>
+
+      {/* Monthly P&L — MoM table; click a month to load its full breakdown below */}
+      {monthly?.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-xl p-4 mb-5">
+          <div className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-1.5"><Table2 size={15} className="text-red-600" /> Month by month <span className="text-[11px] font-normal text-gray-400">· click a month to see its full P&amp;L below</span></div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm whitespace-nowrap">
+              <thead className="text-[11px] uppercase tracking-wide text-gray-400"><tr>
+                <th className="text-left py-1.5">Month</th><th className="text-right py-1.5">Revenue</th><th className="text-right py-1.5">Op. exp</th><th className="text-right py-1.5">EBITDA</th><th className="text-right py-1.5">EBITDA %</th><th className="text-right py-1.5">Net income</th>
+              </tr></thead>
+              <tbody className="divide-y divide-gray-50">
+                {[...monthly].reverse().map(m => {
+                  const key = `${m.year}-${m.month}`
+                  const active = pnl?.period && pnl.period.year === m.year && pnl.period.month === m.month
+                  return (
+                    <tr key={key} onClick={() => setSelMonth(key)} className={`cursor-pointer ${active ? 'bg-red-50' : 'hover:bg-gray-50'}`}>
+                      <td className={`py-1.5 font-medium ${active ? 'text-red-700' : 'text-gray-800'}`}>{m.label}</td>
+                      <td className="py-1.5 text-right text-gray-700">{$(m.revenue)}</td>
+                      <td className="py-1.5 text-right text-gray-500">{$(m.operating_total)}</td>
+                      <td className="py-1.5 text-right font-semibold text-gray-900">{$(m.ebitda)}</td>
+                      <td className={`py-1.5 text-right font-semibold ${m.ebitda_pct < 20 ? 'text-red-600' : m.ebitda_pct > 30 ? 'text-green-600' : 'text-gray-700'}`}>{pct(m.ebitda_pct)}</td>
+                      <td className={`py-1.5 text-right ${m.net_income < 0 ? 'text-red-600' : 'text-gray-700'}`}>{$(m.net_income)}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Unit economics + Funnel */}
       <div className="grid md:grid-cols-2 gap-3 mb-5">
@@ -252,9 +309,17 @@ export default function CfoDashboardPage() {
 
       {/* P&L waterfall */}
       <div className="bg-white border border-gray-200 rounded-xl p-4">
-        <div className="flex items-center justify-between mb-2">
-          <div className="text-sm font-bold text-gray-800 flex items-center gap-1.5"><Percent size={15} className="text-red-600" /> P&amp;L vs benchmark bands {pnl?.period ? `· ${pnl.period.label}` : ''}</div>
-          {pnl?.period && <button onClick={() => setAdding(true)} className="flex items-center gap-1 text-[13px] font-semibold text-red-600 border border-red-200 rounded-lg px-2.5 py-1 hover:bg-red-50"><Plus size={13} /> Add line</button>}
+        <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+          <div className="text-sm font-bold text-gray-800 flex items-center gap-1.5"><Percent size={15} className="text-red-600" /> P&amp;L vs benchmark bands</div>
+          <div className="flex items-center gap-2">
+            {pnl_months?.length > 0 && (
+              <select value={pnl?.period ? `${pnl.period.year}-${pnl.period.month}` : ''} onChange={e => setSelMonth(e.target.value)}
+                className="border border-gray-300 rounded-lg px-2 py-1 text-[13px] font-semibold text-gray-700">
+                {pnl_months.map(m => <option key={`${m.year}-${m.month}`} value={`${m.year}-${m.month}`}>{m.label}</option>)}
+              </select>
+            )}
+            {pnl?.period && <button onClick={() => setAdding(true)} className="flex items-center gap-1 text-[13px] font-semibold text-red-600 border border-red-200 rounded-lg px-2.5 py-1 hover:bg-red-50"><Plus size={13} /> Add line</button>}
+          </div>
         </div>
         {!pnl && <div className="text-sm text-gray-400 py-4">No P&amp;L data yet.</div>}
         {pnl && !pnl.has_detail && (
@@ -268,7 +333,7 @@ export default function CfoDashboardPage() {
             <ManualEntry period={pnl.period} label="Square fees" note="Manual until it's in QuickBooks — counts under Merchant + bank fees."
               gl_account="Square fees" category="merchant_fees"
               current={pnl.operating?.find(r => r.category === 'merchant_fees')?.lines?.find(l => l.gl_account === 'Square fees')?.amount ?? null}
-              onSaved={load} />
+              onSaved={reload} />
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="text-[11px] uppercase tracking-wide text-gray-400"><tr>
@@ -306,7 +371,7 @@ export default function CfoDashboardPage() {
 
                   {/* Cash coverage (not P&L) */}
                   <tr><td className="pt-3 pb-1 text-[11px] font-bold uppercase tracking-wide text-gray-400 flex items-center gap-1" colSpan={5}><Wallet size={12} /> Cash coverage · not EBITDA, not P&amp;L</td></tr>
-                  {pnl.non_pnl.length === 0 && <tr><td className="py-1 text-[12px] text-gray-400 italic" style={{ paddingLeft: 14 }} colSpan={5}>Add loan principal & owner draws with “Add line” to see true cash coverage.</td></tr>}
+                  {pnl.non_pnl.length === 0 && <tr><td className="py-1 text-[12px] text-gray-400 italic" style={{ paddingLeft: 14 }} colSpan={5}>Enter loan principal & credit-card payment below to see true cash coverage.</td></tr>}
                   {pnl.non_pnl.map(r => <PnlRow key={r.category} r={r} expanded={exp[r.category]} onToggle={() => toggle(r.category)} indent={14} />)}
                   {pnl.non_pnl.length > 0 && (
                     <tr className="border-t border-gray-200">
@@ -317,11 +382,33 @@ export default function CfoDashboardPage() {
                 </tbody>
               </table>
             </div>
+
+            {/* Manual debt entries + DSCR (outside the table) */}
+            <div className="mt-3 pt-3 border-t border-gray-100">
+              <div className="text-[11px] font-bold uppercase tracking-wide text-gray-400 mb-1.5 flex items-center gap-1"><Landmark size={12} /> Debt — enter each month (cash only, not P&amp;L)</div>
+              <ManualEntry period={pnl.period} label="Loan principal" note="Principal portion of your loan payment (interest is already above, in EBITDA)."
+                gl_account="Loan principal" category="loan_principal" line_position="non_pnl"
+                current={pnl.non_pnl?.find(r => r.category === 'loan_principal')?.lines?.find(l => l.gl_account === 'Loan principal')?.amount ?? null} onSaved={reload} />
+              <ManualEntry period={pnl.period} label="Credit card payment" note="What you pay the card this month — the purchases are already in operating expenses."
+                gl_account="Credit card payment" category="credit_card" line_position="non_pnl"
+                current={pnl.non_pnl?.find(r => r.category === 'credit_card')?.lines?.find(l => l.gl_account === 'Credit card payment')?.amount ?? null} onSaved={reload} />
+              <div className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 mt-1">
+                <div>
+                  <div className="text-[13px] font-semibold text-gray-800">Debt Service Coverage (DSCR)</div>
+                  <div className="text-[11px] text-gray-400">EBITDA ÷ (interest + principal) · lenders want ≥ 1.25×</div>
+                </div>
+                <div className="text-right">
+                  <div className={`text-xl font-black ${pnl.dscr == null ? 'text-gray-300' : pnl.dscr >= 1.25 ? 'text-green-600' : pnl.dscr >= 1 ? 'text-amber-600' : 'text-red-600'}`}>{pnl.dscr == null ? '—' : `${pnl.dscr.toFixed(2)}×`}</div>
+                  {pnl.debt_service > 0 && <div className="text-[11px] text-gray-400">{$(pnl.debt_service)}/mo debt service</div>}
+                </div>
+              </div>
+              {pnl.dscr == null && <div className="text-[11px] text-gray-400 mt-1">Enter loan principal above to calculate DSCR.</div>}
+            </div>
           </>
         )}
       </div>
 
-      {adding && pnl?.period && <AddLineModal period={pnl.period} onClose={() => setAdding(false)} onSaved={() => { setAdding(false); load() }} />}
+      {adding && pnl?.period && <AddLineModal period={pnl.period} onClose={() => setAdding(false)} onSaved={() => { setAdding(false); reload() }} />}
     </div>
   )
 }

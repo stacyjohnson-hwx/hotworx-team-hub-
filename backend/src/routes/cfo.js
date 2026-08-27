@@ -20,7 +20,7 @@ const CAT_LABEL = {
   software_pos: 'POS / software', insurance: 'Insurance', repairs_supplies: 'R&M + supplies',
   admin_professional: 'Admin / legal / accounting', royalty: 'Royalty', taxes_licenses: 'Taxes & licenses',
   interest_expense: 'Interest', depreciation: 'Depreciation', startup_equipment: 'Startup / equipment (capital)',
-  loan_principal: 'Loan principal', owner_draw: 'Owner draws', other: 'Other',
+  loan_principal: 'Loan principal', credit_card: 'Credit card payment', owner_draw: 'Owner draws', other: 'Other',
 }
 // Operating expense categories that carry a benchmark band (always shown, even if $0).
 const OP_BAND_CATS = ['retail_cogs', 'payroll', 'occupancy', 'utilities', 'virtual_instructor', 'marketing', 'merchant_fees', 'software_pos', 'insurance', 'repairs_supplies', 'admin_professional']
@@ -133,16 +133,46 @@ router.get('/overview', async (req, res) => {
       sb.from('monthly_pnl').select('*').eq('studio_id', sid),
       sb.from('benchmark_targets').select('*').or(`studio_id.is.null,studio_id.eq.${sid}`).order('sort_order'),
     ])
+    // Per-month EBITDA & net income (needs expense detail): EBITDA_m = revenue_m − operating opex_m.
+    // Powers the MoM trends, the monthly table, and the refinance goal ($100k trailing EBITDA).
+    const opexByYM = {}, belowByYM = {}
+    for (const l of pnlAll || []) {
+      const k = l.period_year * 12 + (l.period_month - 1)
+      if (l.line_position === 'operating') opexByYM[k] = (opexByYM[k] || 0) + num(l.amount)
+      else if (l.line_position === 'below_ebitda') belowByYM[k] = (belowByYM[k] || 0) + num(l.amount)
+    }
+    const monthly = []
+    for (const s of series) {
+      const k = s.year * 12 + (s.month - 1)
+      if (opexByYM[k] == null || !(s.revenue > 0)) continue
+      const opex = r2(opexByYM[k]), ebitda = r2(s.revenue - opex), below = r2(belowByYM[k] || 0)
+      monthly.push({
+        year: s.year, month: s.month, label: s.label, revenue: s.revenue,
+        operating_total: opex, ebitda, ebitda_pct: s.revenue > 0 ? r1((ebitda / s.revenue) * 100) : null,
+        below_total: below, net_income: r2(ebitda - below),
+        net_margin_pct: s.revenue > 0 ? r1(((ebitda - below) / s.revenue) * 100) : null,
+      })
+    }
+    const ttmEb = monthly.slice(-12)
+    ttm.ebitda = ttmEb.length ? r2(ttmEb.reduce((a, e) => a + e.ebitda, 0)) : null
+    ttm.ebitda_months = ttmEb.length
+    ttm.ebitda_runrate = ttmEb.length ? r2(ttm.ebitda / ttmEb.length * 12) : null
+    ttm.ebitda_goal = 100000
+
     const now = new Date()
     const curYM = now.getFullYear() * 12 + now.getMonth()   // index of the current, still-open month
     const monthsWithData = [...new Set((pnlAll || []).map(l => l.period_year * 12 + (l.period_month - 1)))]
       .filter(ym => ym < curYM).sort((a, b) => b - a)
+    // Explicit month pick (?month=YYYY-M) shows any month; otherwise default to latest closed.
     let period = null
-    if (monthsWithData.length) {
+    const mm = String(req.query.month || '').match(/^(\d{4})-(\d{1,2})$/)
+    if (mm) { const selYM = parseInt(mm[1]) * 12 + (parseInt(mm[2]) - 1); period = series.find(s => (s.year * 12 + (s.month - 1)) === selYM) || null }
+    if (!period && monthsWithData.length) {
       const ym = monthsWithData[0]
       period = series.find(s => s.year === Math.floor(ym / 12) && s.month === (ym % 12) + 1) || null
     }
     if (!period) period = latest
+    const pnl_months = monthly.map(m => ({ year: m.year, month: m.month, label: m.label })).reverse()
 
     // Build the P&L waterfall for `period`, keeping leaf-account detail for drill-down.
     const bandByCat = {}; for (const b of bands || []) bandByCat[b.category] = b
@@ -194,12 +224,17 @@ router.get('/overview', async (req, res) => {
       const nonCats = [...new Set(lines.filter(l => l.line_position === 'non_pnl').map(l => l.category))]
       const non_pnl = nonCats.map(row)
       const non_pnl_total = r2(non_pnl.reduce((s, r) => s + (r.amount || 0), 0))
+      // Debt Service Coverage = EBITDA ÷ (interest + loan principal). Banks want ≥ 1.25.
+      const principal = num((non_pnl.find(r => r.category === 'loan_principal') || {}).amount)
+      const debt_service = r2(below_total + principal)
+      const dscr = debt_service > 0 ? Math.round((ebitda / debt_service) * 100) / 100 : null
       pnl = {
         period: { year: period.year, month: period.month, label: period.label },
         revenue: rev, revenue_mix, operating, operating_total,
         ebitda, ebitda_pct, ebitda_band: [eb.target_low_pct, eb.target_high_pct], ebitda_status,
         below, below_total, net_income, net_margin_pct,
         non_pnl, non_pnl_total, cash_after_all: r2(net_income - non_pnl_total),
+        debt_service, dscr,
         has_detail: operating.some(r => r.amount != null),
       }
     }
@@ -219,6 +254,8 @@ router.get('/overview', async (req, res) => {
       studio: { id: sid, name: req.studio.name, code: req.studio.code },
       ttm, latest, unit,
       series: withRev.slice(-24),
+      monthly: monthly.slice(-24),
+      pnl_months,
       callouts: callouts(withRev),
       pnl,
       has_expense_detail: !!(pnl && pnl.has_detail),
