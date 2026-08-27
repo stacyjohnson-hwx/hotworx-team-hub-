@@ -14,7 +14,8 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 
 // Friendly labels for every category we store (bands supply their own labels too).
 const CAT_LABEL = {
-  membership_eft: 'Membership EFT', retail: 'Retail + upgrades', retail_cogs: 'Retail COGS',
+  membership_eft: 'Membership EFT', membership_cash: 'Membership cash', vending: 'Vending revenue',
+  rewards: 'Rewards redeemed', refunds: 'Refunds', retail: 'Retail + upgrades', retail_cogs: 'Retail COGS',
   payroll: 'Payroll + taxes', occupancy: 'Occupancy (rent + CAM)', utilities: 'Utilities',
   virtual_instructor: 'Virtual instructor fee', marketing: 'Local marketing', merchant_fees: 'Merchant + bank fees',
   software_pos: 'POS / software', insurance: 'Insurance', repairs_supplies: 'R&M + supplies',
@@ -50,6 +51,7 @@ function derive(row, prev) {
     arpu: arpu == null ? null : r2(arpu),
     retail: r2(num(row.retail)), retail_pct: pct(num(row.retail)) == null ? null : r1(pct(num(row.retail))),
     eft: r2(num(row.net_eft)), eft_pct: pct(num(row.net_eft)) == null ? null : r1(pct(num(row.net_eft))),
+    membership_cash: r2(num(row.membership_cash)), vending: r2(num(row.vending)), rewards: r2(num(row.rewards)), refunds: r2(num(row.refunds)),
     // Funnel
     leads: num(row.leads), booked: num(row.red_appts_booked), held: num(row.red_appts_held),
     lead_booked_pct: num(row.leads) > 0 ? r1((num(row.red_appts_booked) / num(row.leads)) * 100) : null,
@@ -208,8 +210,11 @@ router.get('/overview', async (req, res) => {
       const ord = (c) => bandByCat[c]?.sort_order ?? 90
       const operating = [...opCats].map(row).sort((a, b) => ord(a.category) - ord(b.category) || (b.amount || 0) - (a.amount || 0))
       const operating_total = r2(operating.reduce((s, r) => s + (r.amount || 0), 0))
-      // Revenue mix rows (from studio_trends — source of truth), for band context.
-      const revenue_mix = [['membership_eft', period.eft], ['retail', period.retail]].map(([cat, amt]) => ({
+      // Revenue mix rows (from studio_trends / SAIL — source of truth). Refunds are contra (negative).
+      const revenue_mix = [
+        ['membership_eft', period.eft], ['membership_cash', period.membership_cash], ['retail', period.retail],
+        ['vending', period.vending], ['rewards', period.rewards], ['refunds', -period.refunds],
+      ].filter(([, amt]) => amt).map(([cat, amt]) => ({
         category: cat, label: CAT_LABEL[cat], amount: r2(amt), lines: [], ...bandInfo(cat, amt),
       }))
       const eb = bandByCat['ebitda'] || { target_low_pct: 20, target_high_pct: 30 }
@@ -221,9 +226,16 @@ router.get('/overview', async (req, res) => {
       const below_total = r2(below.reduce((s, r) => s + (r.amount || 0), 0))
       const net_income = r2(ebitda - below_total)
       const net_margin_pct = rev > 0 ? r1((net_income / rev) * 100) : null
-      const nonCats = [...new Set(lines.filter(l => l.line_position === 'non_pnl').map(l => l.category))]
+      const nonCats = [...new Set(lines.filter(l => l.line_position === 'non_pnl' && l.category !== 'qb_income').map(l => l.category))]
       const non_pnl = nonCats.map(row)
       const non_pnl_total = r2(non_pnl.reduce((s, r) => s + (r.amount || 0), 0))
+      // SAIL (studio_trends) vs QuickBooks-booked income reconciliation for the month.
+      const qbRow = lines.find(l => l.category === 'qb_income')
+      const recon = qbRow ? {
+        sail_revenue: r2(rev), qb_income: r2(num(qbRow.amount)),
+        delta: r2(rev - num(qbRow.amount)),
+        delta_pct: rev > 0 ? r1(((rev - num(qbRow.amount)) / rev) * 100) : null,
+      } : null
       // Debt Service Coverage = EBITDA ÷ (interest + loan principal). Banks want ≥ 1.25.
       const principal = num((non_pnl.find(r => r.category === 'loan_principal') || {}).amount)
       const debt_service = r2(below_total + principal)
@@ -234,7 +246,7 @@ router.get('/overview', async (req, res) => {
         ebitda, ebitda_pct, ebitda_band: [eb.target_low_pct, eb.target_high_pct], ebitda_status,
         below, below_total, net_income, net_margin_pct,
         non_pnl, non_pnl_total, cash_after_all: r2(net_income - non_pnl_total),
-        debt_service, dscr,
+        debt_service, dscr, recon,
         has_detail: operating.some(r => r.amount != null),
       }
     }
