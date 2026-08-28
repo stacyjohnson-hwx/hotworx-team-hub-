@@ -331,10 +331,6 @@ export default function CfoDashboardPage() {
         {pnl && (
           <>
             <p className="text-[11px] text-gray-400 mb-1.5">Click any line to see the underlying QuickBooks accounts. Percentages are of {pnl.period?.label} revenue (from Studio Trends).</p>
-            <ManualEntry period={pnl.period} label="Square fees" note="Manual until it's in QuickBooks — counts under Merchant + bank fees."
-              gl_account="Square fees" category="merchant_fees"
-              current={pnl.operating?.find(r => r.category === 'merchant_fees')?.lines?.find(l => l.gl_account === 'Square fees')?.amount ?? null}
-              onSaved={reload} />
             {pnl.recon && (() => {
               const r = pnl.recon, off = r.delta_pct != null && Math.abs(r.delta_pct) > 3
               return (
