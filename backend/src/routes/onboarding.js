@@ -451,7 +451,7 @@ router.get('/members/lookup', authenticate, requireStudio, async (req, res) => {
 // Manually add a non-roster person (employee, comp, PIF, reciprocal, guest) so
 // their bookings reconcile — without counting toward the active-member number or
 // triggering onboarding/re-engagement (is_new_member=false, non-'member' type).
-const MEMBER_TYPES = ['member', 'employee', 'comp', 'pif', 'reciprocal', 'guest', 'lead', 'missed_guest']
+const MEMBER_TYPES = ['member', 'employee', 'comp', 'pif', 'reciprocal', 'guest', 'lead', 'missed_guest', 'no_show']
 router.post('/members', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
   const { email, full_name, member_type, phone, origin_studio, expiration_date, is_cancelled, cancelled_date } = req.body
   if (!email) return res.status(400).json({ error: 'email required' })
@@ -572,12 +572,13 @@ router.get('/members/:id/detail', authenticate, requireStudio, async (req, res) 
 // Contact + the sessions they tried + notes + next follow-up + interaction history.
 router.get('/missed-guest/:memberId', authenticate, requireStudio, async (req, res) => {
   const supabase = db(); const sid = req.studio.id, mid = req.params.memberId
-  const [{ data: member }, { data: sessions }, { data: log }, { data: reeng }] = await Promise.all([
+  const [{ data: member }, { data: sessions }, { data: logs }, { data: reeng }] = await Promise.all([
     supabase.from('onboarding_members').select('id, full_name, email, phone, join_date, lead_status, sub_status').eq('studio_id', sid).eq('id', mid).maybeSingle(),
     supabase.from('onboarding_bookings').select('booking_date, time_slot, session_type, home_studio').eq('studio_id', sid).eq('member_id', mid).order('booking_date', { ascending: false }).limit(200),
-    supabase.from('onboarding_touchpoint_log').select('notes, follow_up_date, done, completed_by, completed_at, updated_at').eq('studio_id', sid).eq('member_id', mid).eq('touchpoint_key', 'missed_guest').maybeSingle(),
+    supabase.from('onboarding_touchpoint_log').select('notes, follow_up_date, done, completed_by, completed_at, updated_at').eq('studio_id', sid).eq('member_id', mid).in('touchpoint_key', ['missed_guest', 'no_show']),
     supabase.from('onboarding_reengage_log').select('contacted_at, contacted_by').eq('studio_id', sid).eq('member_id', mid).order('contacted_at', { ascending: false }),
   ])
+  const log = (logs || [])[0] || null
   if (!member) return res.status(404).json({ error: 'not found' })
   // Interaction history from the contact log (real outreach / snoozed / dismissed).
   const interactions = (reeng || []).map(r => {
@@ -1275,13 +1276,35 @@ router.get('/daily-list', authenticate, requireStudio, async (req, res) => {
     if (applyLog(item, 'missed_guest')) items.push(item)
   }
 
+  // No shows (booked a Red but didn't come in): same be-back follow-up as missed guests.
+  const nsTpl = tplMap.get('no_show') || {}
+  for (const mm of (allMembers || [])) {
+    if (mm.member_type !== 'no_show') continue
+    if (/do\s*not\s*call/i.test(mm.lead_status || '')) continue
+    if (dismissedSet.has(mm.id)) continue
+    const lastContact = lastContactMap.get(mm.id)
+    if (lastContact && Math.floor((Date.now() - new Date(lastContact).getTime()) / 86400000) < MISSED_COOLDOWN) continue
+    const ctx = { first_name: firstName(mm.full_name), event_name: eventName }
+    const item = {
+      id: `noshow:${mm.id}`, kind: 'no_show', member_id: mm.id,
+      member_name: mm.full_name || ctx.first_name, phone: mm.phone || null,
+      channel: nsTpl.channel || 'text', label: nsTpl.label || 'No show — reschedule their Red',
+      trigger_kind: 'lead', trigger_ref: 'no_show', priority: 9, reward_key: null,
+      script: renderTemplate(nsTpl.body || "Hi {first_name}! We missed you at HOTWORX — let's get your free workout rescheduled this week! 🔥", ctx),
+      due_date: mm.join_date || today,
+      last_booking_date: lastBookMap.get(mm.id) || null, days_lapsed: null,
+      last_contacted_at: lastContact || null, attempts: attemptsMap.get(mm.id) || 0,
+    }
+    if (applyLog(item, 'no_show')) items.push(item)
+  }
+
   // (Day-based next-step collapse already ran above; no blanket day_based exclusion here.)
 
   // Order by category — Onboarding first, then Milestones, then Re-engagement —
   // and within each by priority (re-engagement 14→30→60) then due date.
   const catRank = (it) => {
     const r = it.trigger_ref || ''
-    if (r === 'missed_guest') return 3
+    if (r === 'missed_guest' || r === 'no_show') return 3
     if (r.startsWith('reengage')) return 2
     if (r.startsWith('milestone') || r === 'passport_sticker') return 1
     return 0

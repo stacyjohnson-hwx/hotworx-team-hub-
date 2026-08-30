@@ -182,6 +182,8 @@ function MembersTab() {
   const filtered = rows.filter(r => {
     if (filter === 'new' && !r.is_new_member) return false
     if (filter === 'cancelled' && !r.is_cancelled) return false
+    if (filter === 'missed_guest' && r.member_type !== 'missed_guest') return false
+    if (filter === 'no_show' && r.member_type !== 'no_show') return false
     if (q && !`${r.full_name} ${r.email} ${r.customer_id}`.toLowerCase().includes(q.toLowerCase())) return false
     return true
   })
@@ -203,10 +205,10 @@ function MembersTab() {
       <div className="flex flex-wrap items-center gap-2 mb-3">
         <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search name, email, id…"
           className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-red-600/40" />
-        {['all', 'new', 'cancelled'].map(f => (
+        {[['all', 'All'], ['new', 'New members'], ['cancelled', 'Cancelled'], ['missed_guest', 'Missed Guests'], ['no_show', 'No Shows']].map(([f, lbl]) => (
           <button key={f} onClick={() => setFilter(f)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize border ${filter === f ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-600 border-gray-300'}`}>
-            {f === 'new' ? 'New members' : f}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${filter === f ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-600 border-gray-300'}`}>
+            {lbl}
           </button>
         ))}
         <span className="ml-auto text-xs text-gray-400">{sorted.length} members</span>
@@ -1608,6 +1610,7 @@ const FILTERS = [
   // Quiet / at-risk members (incl. first-90 "save fork") live here, not in Onboarding.
   { k: 'reengage', label: 'Re-engagement', match: r => r.trigger_ref?.startsWith('reengage') || r.trigger_ref?.startsWith('save') },
   { k: 'missed_guest', label: 'Missed Guests', match: r => r.trigger_ref === 'missed_guest' },
+  { k: 'no_show', label: 'No Shows', match: r => r.trigger_ref === 'no_show' },
 ]
 
 // Sub-filters within each core area (shown when that area is selected).
@@ -1677,8 +1680,8 @@ const dlToday = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Americ
 const addDaysToStr = (s, n) => { const d = new Date(s + 'T00:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10) }
 const fmtDay = (s) => s ? new Date(s + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''
 // Stable per-task key for the shared onboarding_touchpoint_log (matches the backend).
-const taskKeyOf = (r) => r.kind === 'reengage' ? 'reengage' : r.kind === 'missed_guest' ? 'missed_guest' : r.trigger_ref === 'passport_sticker' ? 'passport_sticker' : r.trigger_ref
-const defaultFollowUp = (r) => r.kind === 'reengage' ? addDaysToStr(dlToday(), 14) : r.kind === 'missed_guest' ? addDaysToStr(dlToday(), 21) : ''
+const taskKeyOf = (r) => r.kind === 'reengage' ? 'reengage' : (r.kind === 'missed_guest' || r.kind === 'no_show') ? r.kind : r.trigger_ref === 'passport_sticker' ? 'passport_sticker' : r.trigger_ref
+const defaultFollowUp = (r) => r.kind === 'reengage' ? addDaysToStr(dlToday(), 14) : (r.kind === 'missed_guest' || r.kind === 'no_show') ? addDaysToStr(dlToday(), 21) : ''
 
 function DueChip({ r }) {
   const today = dlToday()
@@ -1734,7 +1737,7 @@ function LogOutreachModal({ item, onNeedDay2, onClose, onSaved }) {
           <p className="text-[11px] text-gray-400">A future date snoozes this task until then.</p>
           <label className="flex items-center gap-2 text-sm text-gray-700">
             <input type="checkbox" checked={done} onChange={e => setDone(e.target.checked)} />
-            Mark complete{item.kind === 'reengage' || item.kind === 'missed_guest' ? ' (contacted / resolved)' : ''}
+            Mark complete{item.kind === 'reengage' || item.kind === 'missed_guest' || item.kind === 'no_show' ? ' (contacted / resolved)' : ''}
           </label>
         </div>
         <div className="px-5 py-3 border-t border-gray-100 flex justify-end gap-2">
@@ -1761,7 +1764,7 @@ function MissedGuestModal({ item, onClose, onLog }) {
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 sticky top-0 bg-white z-10">
           <div className="flex items-center gap-2">
             <h2 className="font-bold text-lg text-gray-900">{item.member_name}</h2>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">MISSED GUEST</span>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">{item.kind === 'no_show' ? 'NO SHOW' : 'MISSED GUEST'}</span>
           </div>
           <button onClick={onClose} className="text-gray-300 hover:text-gray-600"><X size={20} /></button>
         </div>
@@ -1846,12 +1849,12 @@ function DailyListTab() {
   const complete = async (r) => {
     drop(r.id)
     try {
-      if (r.kind === 'missed_guest') {
-        // Checking off a missed guest: log "sent follow up" as done today and bring
-        // it back in 1 month (we don't follow up more than once a month).
+      if (r.kind === 'missed_guest' || r.kind === 'no_show') {
+        // Checking off a missed guest / no show: log "sent follow up" as done today and
+        // bring it back in 1 month (we don't follow up more than once a month).
         const d = new Date(dlToday() + 'T00:00:00'); d.setMonth(d.getMonth() + 1)
         await apiPost(`${BASE}/daily-list/log`, {
-          member_id: r.member_id, task_key: 'missed_guest', kind: 'missed_guest',
+          member_id: r.member_id, task_key: r.kind, kind: r.kind,
           note: 'sent follow up', follow_up_date: d.toISOString().slice(0, 10), done: true,
         })
       } else if (r.kind === 'reengage') await apiPost(`${BASE}/reengage/${r.member_id}/complete`, {})
@@ -1861,7 +1864,7 @@ function DailyListTab() {
   }
   const skip = async (r) => {
     try {
-      if (r.kind === 'reengage' || r.kind === 'missed_guest') await apiPost(`${BASE}/reengage/${r.member_id}/snooze`, {})  // "not now" — snooze the cooldown
+      if (r.kind === 'reengage' || r.kind === 'missed_guest' || r.kind === 'no_show') await apiPost(`${BASE}/reengage/${r.member_id}/snooze`, {})  // "not now" — snooze the cooldown
       else if (r.kind === 'passport') await apiPost(`${BASE}/passport/${r.member_id}/complete`, { fulfilled: false })
       else await apiPost(`${BASE}/daily-list/${r.id}/skip`, {})
     } catch { /* ignore */ }
@@ -1872,7 +1875,7 @@ function DailyListTab() {
     if (!window.confirm("Delete this task? It won't come back.")) return
     setRows(rs => rs.filter(x => x.id !== r.id))
     try {
-      if (r.kind === 'reengage' || r.kind === 'missed_guest') await apiPost(`${BASE}/reengage/${r.member_id}/dismiss`, {})
+      if (r.kind === 'reengage' || r.kind === 'missed_guest' || r.kind === 'no_show') await apiPost(`${BASE}/reengage/${r.member_id}/dismiss`, {})
       else if (r.kind === 'passport') await apiPost(`${BASE}/passport/${r.member_id}/complete`, { fulfilled: false })
       else await apiPost(`${BASE}/daily-list/${r.id}/skip`, {})
     } catch { /* ignore */ }
@@ -1945,7 +1948,7 @@ function DailyListTab() {
                   </button>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <button onClick={() => r.kind === 'missed_guest' ? setMissedFor(r) : setDetailFor(r.member_id)} className="font-bold text-gray-900 hover:text-red-600 hover:underline">{r.member_name}</button>
+                      <button onClick={() => (r.kind === 'missed_guest' || r.kind === 'no_show') ? setMissedFor(r) : setDetailFor(r.member_id)} className="font-bold text-gray-900 hover:text-red-600 hover:underline">{r.member_name}</button>
                       <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full flex items-center gap-1 ${isStudio ? 'bg-green-100 text-green-700' : isCall ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
                         {isStudio ? <Building2 size={9} /> : isCall ? <Phone size={9} /> : <MessageSquare size={9} />}{isStudio ? 'In studio' : isCall ? 'Call' : 'Text'}
                       </span>
