@@ -414,4 +414,184 @@ router.get('/velocity', authenticate, requireStudio, async (req, res) => {
   res.json(velocity)
 })
 
+// ─── Shared helpers for the analytics endpoints below ────────────────────────
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const num = (v) => Number(v) || 0
+const r1 = (n) => Math.round(n * 10) / 10
+const r2 = (n) => Math.round(n * 100) / 100
+const moLabel = (ym) => `${MONTHS[parseInt(ym.slice(5, 7)) - 1]} '${ym.slice(2, 4)}`
+const monthStart = (monthsBack) => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - monthsBack); return d.toISOString().slice(0, 10) }
+const SALE_SELECT = 'sale_date, quantity, unit_price, total_price, size_quantities, sku_id, sku:sku_master(id, sku_code, product_name, retail_price, wholesale_cost, active, par_level, reorder_quantity, category:product_categories(name))'
+const lineRevenue = (s) => s.total_price != null ? num(s.total_price) : num(s.quantity) * num(s.unit_price)
+async function loadSales(sb, sid, start, end) {
+  let q = sb.from('retail_sales').select(SALE_SELECT).eq('studio_id', sid)
+  if (start) q = q.gte('sale_date', start)
+  if (end) q = q.lte('sale_date', end)
+  const { data } = await q
+  return data || []
+}
+async function loadInventory(sb, sid) {
+  const { data } = await sb.from('inventory_levels')
+    .select('quantity_on_hand, size_quantities, sku:sku_master(id, sku_code, product_name, retail_price, wholesale_cost, active, par_level, reorder_quantity, category:product_categories(name))')
+    .eq('studio_id', sid)
+  return (data || []).filter(r => r.sku && r.sku.active)
+}
+
+// ─── GET /trends?months=12 — monthly revenue / units / gross-profit series ────
+router.get('/trends', authenticate, requireStudio, async (req, res) => {
+  const months = Math.min(Math.max(parseInt(req.query.months) || 12, 1), 36)
+  const sales = await loadSales(db(), req.studio.id, monthStart(months - 1), null)
+  const by = {}; let unmatched = 0
+  for (const s of sales) {
+    const ym = String(s.sale_date).slice(0, 7)
+    const b = by[ym] || (by[ym] = { revenue: 0, units: 0, cogs: 0 })
+    b.revenue += lineRevenue(s); b.units += num(s.quantity); b.cogs += num(s.quantity) * num(s.sku && s.sku.wholesale_cost)
+    if (!s.sku) unmatched += num(s.quantity)
+  }
+  const series = Object.keys(by).sort().map(ym => {
+    const b = by[ym], gp = b.revenue - b.cogs
+    return { month: ym, label: moLabel(ym), revenue: r2(b.revenue), units: b.units, cogs: r2(b.cogs), gross_profit: r2(gp), margin_pct: b.revenue > 0 ? r1(gp / b.revenue * 100) : null }
+  })
+  const T = series.reduce((a, s) => ({ revenue: a.revenue + s.revenue, units: a.units + s.units, gross_profit: a.gross_profit + s.gross_profit }), { revenue: 0, units: 0, gross_profit: 0 })
+  res.json({ series, totals: { revenue: r2(T.revenue), units: T.units, gross_profit: r2(T.gross_profit), margin_pct: T.revenue > 0 ? r1(T.gross_profit / T.revenue * 100) : null, months: series.length }, unmatched_units: unmatched })
+})
+
+// ─── GET /top-sellers?start&end&by=revenue|units&limit=20 ─────────────────────
+router.get('/top-sellers', authenticate, requireStudio, async (req, res) => {
+  const by = req.query.by === 'units' ? 'units' : 'revenue'
+  const limit = Math.min(parseInt(req.query.limit) || 20, 100)
+  const sales = await loadSales(db(), req.studio.id, req.query.start || monthStart(11), req.query.end || null)
+  const bySku = {}
+  for (const s of sales) {
+    if (!s.sku) continue
+    const k = s.sku.id
+    const g = bySku[k] || (bySku[k] = { sku_code: s.sku.sku_code, product_name: s.sku.product_name, category: s.sku.category && s.sku.category.name, units: 0, revenue: 0, margin: 0 })
+    const rev = lineRevenue(s)
+    g.units += num(s.quantity); g.revenue += rev; g.margin += rev - num(s.quantity) * num(s.sku.wholesale_cost)
+  }
+  const rows = Object.values(bySku).map(g => ({ ...g, revenue: r2(g.revenue), margin: r2(g.margin) })).sort((a, b) => b[by] - a[by])
+  res.json({ by, top: rows.slice(0, limit), bottom: rows.slice(-limit).reverse(), total_products_sold: rows.length })
+})
+
+// ─── GET /by-category?start&end — revenue/units/margin per category ───────────
+router.get('/by-category', authenticate, requireStudio, async (req, res) => {
+  const sales = await loadSales(db(), req.studio.id, req.query.start || monthStart(11), req.query.end || null)
+  const byCat = {}
+  for (const s of sales) {
+    const cat = (s.sku && s.sku.category && s.sku.category.name) || 'Uncategorized'
+    const g = byCat[cat] || (byCat[cat] = { category: cat, units: 0, revenue: 0, cogs: 0 })
+    g.units += num(s.quantity); g.revenue += lineRevenue(s); g.cogs += num(s.quantity) * num(s.sku && s.sku.wholesale_cost)
+  }
+  const rows = Object.values(byCat).map(g => ({ category: g.category, units: g.units, revenue: r2(g.revenue), gross_profit: r2(g.revenue - g.cogs), margin_pct: g.revenue > 0 ? r1((g.revenue - g.cogs) / g.revenue * 100) : null })).sort((a, b) => b.revenue - a.revenue)
+  res.json(rows)
+})
+
+// ─── GET /forecast — velocity-based demand, days-of-supply, reorder list ──────
+router.get('/forecast', authenticate, requireStudio, async (req, res) => {
+  const WINDOW = 90, LEAD = 21, BUFFER = 14   // trailing window; reorder lead + safety buffer (days)
+  const sb = db(), sid = req.studio.id
+  const [sales, inventory] = await Promise.all([loadSales(sb, sid, monthStart(3), null), loadInventory(sb, sid)])
+  const unitsBySku = {}
+  for (const s of sales) if (s.sku) unitsBySku[s.sku.id] = (unitsBySku[s.sku.id] || 0) + num(s.quantity)
+  const items = inventory.map(inv => {
+    const sku = inv.sku, onHand = num(inv.quantity_on_hand)
+    const velocity = (unitsBySku[sku.id] || 0) / WINDOW           // units/day
+    const dos = velocity > 0 ? r1(onHand / velocity) : null       // days of supply
+    const projected30 = r1(velocity * 30)
+    const cover = LEAD + BUFFER
+    const target = Math.ceil(velocity * cover)
+    let suggested = velocity > 0 ? Math.max(0, target - onHand) : 0
+    if (num(sku.par_level) > 0) suggested = Math.max(suggested, num(sku.par_level) - onHand)
+    if (num(sku.reorder_quantity) > 0 && suggested > 0) suggested = Math.max(suggested, num(sku.reorder_quantity))
+    const risk = velocity === 0 ? (onHand > 0 ? 'no_sales' : 'out_no_sales') : dos < 14 ? 'out_soon' : dos < 30 ? 'low' : 'ok'
+    return {
+      sku_id: sku.id, sku_code: sku.sku_code, product_name: sku.product_name, category: sku.category && sku.category.name,
+      on_hand: onHand, velocity_per_day: r2(velocity), monthly_run_rate: projected30, days_of_supply: dos,
+      risk, reorder: velocity > 0 && dos != null && dos < cover, suggested_qty: Math.max(0, suggested),
+      suggested_par: velocity > 0 ? Math.ceil(velocity * cover) : null, retail_price: num(sku.retail_price),
+    }
+  })
+  const rank = { out_soon: 0, low: 1, ok: 2, no_sales: 3, out_no_sales: 4 }
+  items.sort((a, b) => (rank[a.risk] - rank[b.risk]) || ((a.days_of_supply ?? 1e9) - (b.days_of_supply ?? 1e9)))
+  res.json({ items, reorder_count: items.filter(i => i.reorder).length, window_days: WINDOW, lead_days: LEAD, buffer_days: BUFFER })
+})
+
+// ─── GET /margin — profitability per product + category, markdown candidates ──
+router.get('/margin', authenticate, requireStudio, async (req, res) => {
+  const sb = db(), sid = req.studio.id
+  const [sales, inventory] = await Promise.all([loadSales(sb, sid, monthStart(11), null), loadInventory(sb, sid)])
+  const soldBySku = {}, revBySku = {}
+  for (const s of sales) if (s.sku) { soldBySku[s.sku.id] = (soldBySku[s.sku.id] || 0) + num(s.quantity); revBySku[s.sku.id] = (revBySku[s.sku.id] || 0) + lineRevenue(s) }
+  const products = inventory.map(inv => {
+    const sku = inv.sku, onHand = num(inv.quantity_on_hand)
+    const retail = num(sku.retail_price), wholesale = num(sku.wholesale_cost)
+    const marginPct = retail > 0 ? r1((retail - wholesale) / retail * 100) : null
+    const sold = soldBySku[sku.id] || 0, rev = revBySku[sku.id] || 0
+    return {
+      sku_id: sku.id, sku_code: sku.sku_code, product_name: sku.product_name, category: sku.category && sku.category.name,
+      retail_price: retail, wholesale_cost: wholesale, margin_dollars: r2(retail - wholesale), margin_pct: marginPct,
+      units_sold: sold, revenue: r2(rev), gross_profit: r2(rev - sold * wholesale),
+      on_hand: onHand, on_hand_value: r2(onHand * retail),
+      markdown_candidate: onHand > 0 && sold === 0 && onHand * retail >= 50,
+    }
+  })
+  const catAgg = {}
+  for (const p of products) {
+    const c = p.category || 'Uncategorized'
+    const g = catAgg[c] || (catAgg[c] = { category: c, gross_profit: 0, revenue: 0, on_hand_value: 0 })
+    g.gross_profit += p.gross_profit; g.revenue += p.revenue; g.on_hand_value += p.on_hand_value
+  }
+  const by_category = Object.values(catAgg).map(g => ({ category: g.category, revenue: r2(g.revenue), gross_profit: r2(g.gross_profit), on_hand_value: r2(g.on_hand_value), margin_pct: g.revenue > 0 ? r1(g.gross_profit / g.revenue * 100) : null })).sort((a, b) => b.gross_profit - a.gross_profit)
+  const byProfit = [...products].sort((a, b) => b.gross_profit - a.gross_profit)
+  res.json({
+    by_category,
+    most_profitable: byProfit.slice(0, 15),
+    markdown_candidates: products.filter(p => p.markdown_candidate).sort((a, b) => b.on_hand_value - a.on_hand_value),
+    tied_up_value: r2(products.reduce((a, p) => a + p.on_hand_value, 0)),
+  })
+})
+
+// ─── GET /sell-through?start&end — sell-through, ABC 80/20, turns, sizes ──────
+router.get('/sell-through', authenticate, requireStudio, async (req, res) => {
+  const sb = db(), sid = req.studio.id
+  const [sales, inventory] = await Promise.all([loadSales(sb, sid, req.query.start || monthStart(11), req.query.end || null), loadInventory(sb, sid)])
+  const soldBySku = {}, revBySku = {}, cogs12 = { v: 0 }, sizesSold = {}
+  for (const s of sales) {
+    if (!s.sku) continue
+    soldBySku[s.sku.id] = (soldBySku[s.sku.id] || 0) + num(s.quantity)
+    revBySku[s.sku.id] = (revBySku[s.sku.id] || 0) + lineRevenue(s)
+    cogs12.v += num(s.quantity) * num(s.sku.wholesale_cost)
+    if (s.size_quantities) { const m = sizesSold[s.sku.id] || (sizesSold[s.sku.id] = {}); for (const [sz, q] of Object.entries(s.size_quantities)) m[sz] = (m[sz] || 0) + num(q) }
+  }
+  const rows = inventory.map(inv => {
+    const sku = inv.sku, onHand = num(inv.quantity_on_hand), sold = soldBySku[sku.id] || 0
+    return { sku_id: sku.id, sku_code: sku.sku_code, product_name: sku.product_name, category: sku.category && sku.category.name, sold, on_hand: onHand, revenue: r2(revBySku[sku.id] || 0), sell_through_pct: (sold + onHand) > 0 ? r1(sold / (sold + onHand) * 100) : null }
+  })
+  // ABC by revenue (cumulative share)
+  const byRev = [...rows].sort((a, b) => b.revenue - a.revenue)
+  const totalRev = byRev.reduce((a, r) => a + r.revenue, 0) || 1
+  let cum = 0; const abc = { A: 0, B: 0, C: 0 }
+  for (const r of byRev) { cum += r.revenue; const share = cum / totalRev; r.abc = share <= 0.8 ? 'A' : share <= 0.95 ? 'B' : 'C'; abc[r.abc]++ }
+  // Inventory turns (annualized): trailing-12-mo COGS ÷ current inventory cost value
+  const invCostValue = inventory.reduce((a, inv) => a + num(inv.quantity_on_hand) * num(inv.sku.wholesale_cost), 0)
+  const turns = invCostValue > 0 ? r1(cogs12.v / invCostValue) : null
+  // Size intelligence: sold vs on-hand per size, flag stockouts / overstock
+  const sizeIntel = []
+  for (const inv of inventory) {
+    const onHandSizes = inv.size_quantities; if (!onHandSizes) continue
+    const sold = sizesSold[inv.sku.id] || {}
+    for (const [sz, oh] of Object.entries(onHandSizes)) {
+      const sQty = num(sold[sz])
+      if (sQty === 0 && num(oh) === 0) continue
+      sizeIntel.push({ product_name: inv.sku.product_name, size: sz, sold: sQty, on_hand: num(oh), flag: num(oh) === 0 && sQty > 0 ? 'stockout' : sQty === 0 && num(oh) >= 3 ? 'overstock' : null })
+    }
+  }
+  res.json({
+    sell_through: byRev,
+    abc_counts: abc,
+    inventory_turns: turns, inventory_cost_value: r2(invCostValue), trailing_cogs: r2(cogs12.v),
+    size_intel: { stockouts: sizeIntel.filter(s => s.flag === 'stockout'), overstock: sizeIntel.filter(s => s.flag === 'overstock') },
+  })
+})
+
 module.exports = router

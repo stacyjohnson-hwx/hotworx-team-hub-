@@ -1,14 +1,20 @@
 import { useState, useEffect } from 'react'
 import { useStudio } from '@/contexts/StudioContext'
 import { apiGet, apiPost } from '@/hooks/useApi'
+import { ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, Tooltip } from 'recharts'
 import {
-  Upload, TrendingDown, AlertTriangle, Package, DollarSign,
-  Calendar, CheckCircle, XCircle, BarChart3, Activity,
+  Upload, TrendingDown, TrendingUp, AlertTriangle, Package, DollarSign, Percent,
+  Calendar, CheckCircle, XCircle, BarChart3, Activity, LineChart as LineIcon,
+  Boxes, Tags, RefreshCw, Loader2,
 } from 'lucide-react'
+
+const $ = (n) => n == null ? '—' : `$${Math.round(n).toLocaleString()}`
+const pct = (n) => n == null ? '—' : `${n}%`
 
 export function AnalyticsTab() {
   const { currentStudio } = useStudio()
-  const [view, setView] = useState('sales')
+  const [view, setView] = useState('overview')
+  const [months, setMonths] = useState(12)
   const [loading, setLoading] = useState(false)
   const [shrinkageData, setShrinkageData] = useState([])
   const [deadStockData, setDeadStockData] = useState([])
@@ -160,7 +166,8 @@ export function AnalyticsTab() {
 
   return (
     <div>
-      {/* Header with Actions */}
+      {/* Header with Actions — only for the import/calc-driven legacy views */}
+      {['sales', 'shrinkage', 'dead-stock'].includes(view) && (
       <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4">
         <div className="flex flex-col md:flex-row gap-3">
           {/* CSV Import */}
@@ -208,22 +215,37 @@ export function AnalyticsTab() {
           </div>
         )}
       </div>
+      )}
 
       {/* View Selector */}
-      <div className="flex gap-2 mb-4 border-b border-gray-200">
+      <div className="flex gap-1 mb-4 border-b border-gray-200 overflow-x-auto">
+        <ViewButton active={view === 'overview'} onClick={() => setView('overview')}>
+          <LineIcon size={16} /> Trends
+        </ViewButton>
+        <ViewButton active={view === 'forecast'} onClick={() => setView('forecast')}>
+          <Activity size={16} /> Forecast &amp; Reorder
+        </ViewButton>
+        <ViewButton active={view === 'profit'} onClick={() => setView('profit')}>
+          <Percent size={16} /> Profit &amp; Margin
+        </ViewButton>
+        <ViewButton active={view === 'inventory-intel'} onClick={() => setView('inventory-intel')}>
+          <Boxes size={16} /> Inventory Intel
+        </ViewButton>
         <ViewButton active={view === 'sales'} onClick={() => setView('sales')}>
           <BarChart3 size={16} /> Sales Data
         </ViewButton>
         <ViewButton active={view === 'shrinkage'} onClick={() => setView('shrinkage')}>
-          <TrendingDown size={16} /> Shrinkage Analysis
+          <TrendingDown size={16} /> Shrinkage
         </ViewButton>
         <ViewButton active={view === 'dead-stock'} onClick={() => setView('dead-stock')}>
           <AlertTriangle size={16} /> Dead Stock
         </ViewButton>
-        <ViewButton active={view === 'velocity'} onClick={() => setView('velocity')}>
-          <Activity size={16} /> Velocity
-        </ViewButton>
       </div>
+
+      {view === 'overview' && <OverviewView studioId={currentStudio?.id} months={months} setMonths={setMonths} />}
+      {view === 'forecast' && <ForecastView studioId={currentStudio?.id} />}
+      {view === 'profit' && <ProfitView studioId={currentStudio?.id} />}
+      {view === 'inventory-intel' && <InventoryIntelView studioId={currentStudio?.id} />}
 
       {/* Sales Data View */}
       {view === 'sales' && (
@@ -475,14 +497,6 @@ export function AnalyticsTab() {
         </div>
       )}
 
-      {/* Velocity View */}
-      {view === 'velocity' && (
-        <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
-          <Activity size={48} className="mx-auto text-gray-300 mb-3" />
-          <p className="text-gray-500">Sales velocity analysis coming soon</p>
-          <p className="text-sm text-gray-400 mt-2">Units sold per day, days to sell, trending items</p>
-        </div>
-      )}
     </div>
   )
 }
@@ -629,6 +643,257 @@ function DeadStockCard({ item }) {
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ─── Sales analytics views (Trends / Forecast / Profit / Inventory Intel) ─────
+
+function useApiData(path, studioId, dep) {
+  const [d, setD] = useState(null)
+  const [loading, setLoading] = useState(true)
+  useEffect(() => {
+    if (!studioId) return
+    let on = true; setLoading(true)
+    apiGet(path, studioId).then(r => { if (on) setD(r) }).catch(() => { if (on) setD(null) }).finally(() => { if (on) setLoading(false) })
+    return () => { on = false }
+  }, [path, studioId, dep])
+  return { d, loading }
+}
+const startISO = (m) => { if (m >= 36) return ''; const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - (m - 1)); return d.toISOString().slice(0, 10) }
+const Spin = () => <div className="flex justify-center py-16"><Loader2 className="animate-spin text-red-600" size={26} /></div>
+
+function PeriodPicker({ months, setMonths }) {
+  return (
+    <select value={months} onChange={e => setMonths(Number(e.target.value))} className="border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm font-medium">
+      <option value={3}>Last 3 months</option>
+      <option value={6}>Last 6 months</option>
+      <option value={12}>Last 12 months</option>
+      <option value={36}>All time</option>
+    </select>
+  )
+}
+function Card({ title, children, right }) {
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 p-4">
+      {(title || right) && <div className="flex items-center justify-between mb-2"><h3 className="text-sm font-semibold text-gray-700">{title}</h3>{right}</div>}
+      {children}
+    </div>
+  )
+}
+
+function OverviewView({ studioId, months, setMonths }) {
+  const start = startISO(months)
+  const { d: trends, loading } = useApiData(`/api/retail/analytics/trends?months=${months}`, studioId, months)
+  const { d: top } = useApiData(`/api/retail/analytics/top-sellers?by=revenue&limit=5&start=${start}`, studioId, months)
+  const { d: cats } = useApiData(`/api/retail/analytics/by-category?start=${start}`, studioId, months)
+  if (loading) return <Spin />
+  const t = trends?.totals || {}
+  const series = trends?.series || []
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="text-xs text-gray-400">{trends?.unmatched_units ? `${trends.unmatched_units} units of sales aren't matched to a product` : 'All sales matched to products'}</div>
+        <PeriodPicker months={months} setMonths={setMonths} />
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <StatCard label="Revenue" value={$(t.revenue)} icon={DollarSign} color="green" />
+        <StatCard label="Units sold" value={(t.units ?? 0).toLocaleString()} icon={Package} color="gray" />
+        <StatCard label="Gross profit" value={$(t.gross_profit)} icon={TrendingUp} color="green" />
+        <StatCard label="Margin" value={pct(t.margin_pct)} icon={Percent} color="amber" />
+      </div>
+      <Card title="Revenue & units by month">
+        {series.length === 0 ? <p className="text-sm text-gray-400 py-6 text-center">No sales in this period.</p> : (
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={series} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+                <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                <YAxis yAxisId="l" hide /><YAxis yAxisId="r" orientation="right" hide />
+                <Tooltip formatter={(v, n) => n === 'revenue' ? [`$${Math.round(v).toLocaleString()}`, 'Revenue'] : [v, 'Units']} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+                <Bar yAxisId="l" dataKey="revenue" fill="#6366f1" radius={[4, 4, 0, 0]} maxBarSize={46} />
+                <Line yAxisId="r" dataKey="units" stroke="#f59e0b" strokeWidth={2} dot={false} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </Card>
+      <div className="grid md:grid-cols-2 gap-4">
+        <Card title="Top sellers (by revenue)">
+          <div className="divide-y divide-gray-50">
+            {(top?.top || []).map((r, i) => (
+              <div key={r.sku_code} className="flex items-center justify-between py-1.5 text-sm">
+                <span className="text-gray-700 truncate pr-2"><span className="text-gray-300 mr-1.5">{i + 1}.</span>{r.product_name}</span>
+                <span className="font-semibold text-gray-900 whitespace-nowrap">{$(r.revenue)} <span className="text-gray-400 font-normal">· {r.units}u</span></span>
+              </div>
+            ))}
+            {!(top?.top || []).length && <p className="text-sm text-gray-400 py-4">No sales yet.</p>}
+          </div>
+        </Card>
+        <Card title="Sales by category">
+          <div className="space-y-1.5">
+            {(cats || []).slice(0, 8).map(c => {
+              const max = Math.max(...(cats || []).map(x => x.revenue), 1)
+              return (
+                <div key={c.category}>
+                  <div className="flex justify-between text-xs mb-0.5"><span className="text-gray-600 truncate">{c.category}</span><span className="font-semibold text-gray-800">{$(c.revenue)}</span></div>
+                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden"><div className="h-full bg-indigo-500 rounded-full" style={{ width: `${c.revenue / max * 100}%` }} /></div>
+                </div>
+              )
+            })}
+            {!(cats || []).length && <p className="text-sm text-gray-400 py-4">No category sales yet.</p>}
+          </div>
+        </Card>
+      </div>
+    </div>
+  )
+}
+
+const RISK = {
+  out_soon: { cls: 'bg-red-100 text-red-700', label: 'Out <2wk' },
+  low: { cls: 'bg-amber-100 text-amber-700', label: 'Low' },
+  ok: { cls: 'bg-green-100 text-green-700', label: 'OK' },
+  no_sales: { cls: 'bg-gray-100 text-gray-500', label: 'No recent sales' },
+  out_no_sales: { cls: 'bg-gray-100 text-gray-400', label: 'Out · no sales' },
+}
+function ForecastView({ studioId }) {
+  const { d, loading } = useApiData('/api/retail/analytics/forecast', studioId, 0)
+  if (loading) return <Spin />
+  const items = d?.items || []
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        <StatCard label="Need reorder" value={d?.reorder_count ?? 0} icon={RefreshCw} color="red" />
+        <StatCard label="Products tracked" value={items.length} icon={Package} color="gray" />
+        <StatCard label="Forecast window" value={`${d?.window_days || 90} days`} icon={Calendar} color="gray" />
+      </div>
+      <p className="text-xs text-gray-400">Run-rate estimate from the last {d?.window_days || 90} days of sales (not seasonal). Reorder = will dip below a {d?.lead_days || 21}+{d?.buffer_days || 14}-day cover before restock.</p>
+      <Card>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm whitespace-nowrap">
+            <thead className="text-[11px] uppercase tracking-wide text-gray-400 border-b border-gray-100"><tr>
+              <th className="text-left py-2">Product</th><th className="text-right py-2">On hand</th><th className="text-right py-2">Units/day</th><th className="text-right py-2">~Monthly</th><th className="text-right py-2">Days left</th><th className="text-right py-2">Reorder</th><th className="text-right py-2 pr-1">Status</th>
+            </tr></thead>
+            <tbody className="divide-y divide-gray-50">
+              {items.map(it => (
+                <tr key={it.sku_id} className={it.reorder ? 'bg-red-50/40' : ''}>
+                  <td className="py-1.5 text-gray-800">{it.product_name}</td>
+                  <td className="py-1.5 text-right text-gray-700">{it.on_hand}</td>
+                  <td className="py-1.5 text-right text-gray-500">{it.velocity_per_day}</td>
+                  <td className="py-1.5 text-right text-gray-500">{it.monthly_run_rate}</td>
+                  <td className="py-1.5 text-right font-semibold text-gray-800">{it.days_of_supply == null ? '—' : Math.round(it.days_of_supply)}</td>
+                  <td className="py-1.5 text-right font-bold text-red-600">{it.suggested_qty > 0 ? `+${it.suggested_qty}` : '—'}</td>
+                  <td className="py-1.5 text-right pr-1"><span className={`text-[10px] font-bold rounded px-1.5 py-0.5 ${RISK[it.risk]?.cls}`}>{RISK[it.risk]?.label}</span></td>
+                </tr>
+              ))}
+              {!items.length && <tr><td colSpan={7} className="py-6 text-center text-gray-400">No in-stock products with a forecast yet.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </div>
+  )
+}
+
+function ProfitView({ studioId }) {
+  const { d, loading } = useApiData('/api/retail/analytics/margin', studioId, 0)
+  if (loading) return <Spin />
+  const cats = d?.by_category || [], best = d?.most_profitable || [], md = d?.markdown_candidates || []
+  const max = Math.max(...cats.map(c => c.gross_profit), 1)
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        <StatCard label="$ tied up in stock" value={$(d?.tied_up_value)} icon={Boxes} color="amber" />
+        <StatCard label="Markdown candidates" value={md.length} icon={Tags} color="red" />
+        <StatCard label="Categories" value={cats.length} icon={Package} color="gray" />
+      </div>
+      <Card title="Gross profit by category (trailing 12 mo)">
+        <div className="space-y-1.5">
+          {cats.map(c => (
+            <div key={c.category}>
+              <div className="flex justify-between text-xs mb-0.5"><span className="text-gray-600 truncate">{c.category} <span className="text-gray-400">· {pct(c.margin_pct)}</span></span><span className="font-semibold text-gray-800">{$(c.gross_profit)}</span></div>
+              <div className="h-2 bg-gray-100 rounded-full overflow-hidden"><div className="h-full bg-green-500 rounded-full" style={{ width: `${Math.max(0, c.gross_profit) / max * 100}%` }} /></div>
+            </div>
+          ))}
+          {!cats.length && <p className="text-sm text-gray-400 py-4">No sales to compute margin yet.</p>}
+        </div>
+      </Card>
+      <div className="grid md:grid-cols-2 gap-4">
+        <Card title="Most profitable products">
+          <div className="divide-y divide-gray-50">
+            {best.map(p => (
+              <div key={p.sku_code} className="flex items-center justify-between py-1.5 text-sm">
+                <span className="text-gray-700 truncate pr-2">{p.product_name} <span className="text-gray-400">· {pct(p.margin_pct)}</span></span>
+                <span className="font-semibold text-green-700 whitespace-nowrap">{$(p.gross_profit)}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+        <Card title="Markdown candidates" right={<span className="text-[11px] text-gray-400">stock not selling</span>}>
+          <div className="divide-y divide-gray-50">
+            {md.slice(0, 12).map(p => (
+              <div key={p.sku_code} className="flex items-center justify-between py-1.5 text-sm">
+                <span className="text-gray-700 truncate pr-2">{p.product_name} <span className="text-gray-400">· {p.on_hand} on hand</span></span>
+                <span className="font-semibold text-amber-600 whitespace-nowrap">{$(p.on_hand_value)}</span>
+              </div>
+            ))}
+            {!md.length && <p className="text-sm text-gray-400 py-4">Nothing flagged — stock is moving.</p>}
+          </div>
+        </Card>
+      </div>
+    </div>
+  )
+}
+
+function InventoryIntelView({ studioId }) {
+  const { d, loading } = useApiData('/api/retail/analytics/sell-through', studioId, 0)
+  if (loading) return <Spin />
+  const rows = d?.sell_through || [], abc = d?.abc_counts || {}, si = d?.size_intel || {}
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <StatCard label="Inventory turns/yr" value={d?.inventory_turns ?? '—'} icon={RefreshCw} color="gray" />
+        <StatCard label="A items (80% of rev)" value={abc.A ?? 0} icon={TrendingUp} color="green" />
+        <StatCard label="C items (tail)" value={abc.C ?? 0} icon={TrendingDown} color="amber" />
+        <StatCard label="Stock cost value" value={$(d?.inventory_cost_value)} icon={Boxes} color="gray" />
+      </div>
+      <div className="grid md:grid-cols-2 gap-4">
+        <Card title="Size stockouts" right={<span className="text-[11px] text-gray-400">sold, none left</span>}>
+          <div className="divide-y divide-gray-50">
+            {(si.stockouts || []).slice(0, 12).map((s, i) => (
+              <div key={i} className="flex justify-between py-1.5 text-sm"><span className="text-gray-700 truncate pr-2">{s.product_name} <b>{s.size}</b></span><span className="text-red-600 font-semibold">{s.sold} sold</span></div>
+            ))}
+            {!(si.stockouts || []).length && <p className="text-sm text-gray-400 py-4">No size stockouts.</p>}
+          </div>
+        </Card>
+        <Card title="Overstocked sizes" right={<span className="text-[11px] text-gray-400">on hand, not selling</span>}>
+          <div className="divide-y divide-gray-50">
+            {(si.overstock || []).slice(0, 12).map((s, i) => (
+              <div key={i} className="flex justify-between py-1.5 text-sm"><span className="text-gray-700 truncate pr-2">{s.product_name} <b>{s.size}</b></span><span className="text-amber-600 font-semibold">{s.on_hand} on hand</span></div>
+            ))}
+            {!(si.overstock || []).length && <p className="text-sm text-gray-400 py-4">No overstocked sizes.</p>}
+          </div>
+        </Card>
+      </div>
+      <Card title="Sell-through by product">
+        <div className="overflow-x-auto max-h-96 overflow-y-auto">
+          <table className="w-full text-sm">
+            <thead className="text-[11px] uppercase tracking-wide text-gray-400 border-b border-gray-100 sticky top-0 bg-white"><tr>
+              <th className="text-left py-2">Product</th><th className="text-center py-2">ABC</th><th className="text-right py-2">Sold</th><th className="text-right py-2">On hand</th><th className="text-right py-2 pr-1">Sell-through</th>
+            </tr></thead>
+            <tbody className="divide-y divide-gray-50">
+              {rows.map(r => (
+                <tr key={r.sku_id}>
+                  <td className="py-1.5 text-gray-800 truncate max-w-xs">{r.product_name}</td>
+                  <td className="py-1.5 text-center"><span className={`text-[10px] font-bold rounded px-1.5 py-0.5 ${r.abc === 'A' ? 'bg-green-100 text-green-700' : r.abc === 'B' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500'}`}>{r.abc}</span></td>
+                  <td className="py-1.5 text-right text-gray-600">{r.sold}</td>
+                  <td className="py-1.5 text-right text-gray-600">{r.on_hand}</td>
+                  <td className="py-1.5 text-right font-semibold text-gray-800 pr-1">{pct(r.sell_through_pct)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
     </div>
   )
 }
