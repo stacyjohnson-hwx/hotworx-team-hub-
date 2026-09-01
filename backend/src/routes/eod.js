@@ -99,6 +99,61 @@ router.get('/', async (req, res) => {
   }))
 })
 
+// ─── GET /api/eod/activity?from=YYYY-MM-DD&to=YYYY-MM-DD ──────────────────────
+// Studio-wide marketing & member-activation work logged per day, so the EOD
+// "View Submissions" tab shows what the team actually did that day (B2B
+// follow-ups, sample/sponsor touches, birthday texts, thank-you cards, missed-
+// guest follow-ups, cancellations worked, engagement follow-ups). Auto-derived
+// from each module's own logs — no manual entry. Counts are bucketed by the
+// Chicago calendar day the work was completed.
+router.get('/activity', async (req, res) => {
+  const today = todayInChicago()
+  const from = req.query.from || req.query.date || today
+  const to   = req.query.to   || req.query.date || today
+  const sid  = req.studio.id
+
+  // Chicago day string for a timestamp; wide UTC bounds so late-evening
+  // (post-7pm Chicago = next-day UTC) rows are captured, then bucketed in JS.
+  const chiDate = (ts) => ts ? new Date(ts).toLocaleDateString('en-CA', { timeZone: 'America/Chicago' }) : null
+  const loUtc = `${from}T00:00:00-06:00`
+  const hiUtc = `${to}T23:59:59-05:00`
+
+  const out = {} // { [date]: { b2b, sponsor, birthday, thank_you, missed_guest, cancellations, engagement } }
+  const bump = (date, key, n = 1) => {
+    if (!date || date < from || date > to) return
+    if (!out[date]) out[date] = { b2b: 0, sponsor: 0, birthday: 0, thank_you: 0, missed_guest: 0, cancellations: 0, engagement: 0 }
+    out[date][key] += n
+  }
+
+  try {
+    // Sponsor brands for this studio (sponsor_touches keys on brand, not studio)
+    const { data: brands } = await db().from('sponsor_brands').select('id').eq('studio_id', sid)
+    const brandIds = (brands || []).map(b => b.id)
+
+    const [b2b, sponsor, recog, touch, cancels, reeng] = await Promise.all([
+      db().from('b2b_interactions').select('logged_at').eq('studio_id', sid).gte('logged_at', loUtc).lte('logged_at', hiUtc),
+      brandIds.length
+        ? db().from('sponsor_touches').select('occurred_on').in('brand_id', brandIds).gte('occurred_on', from).lte('occurred_on', to)
+        : Promise.resolve({ data: [] }),
+      db().from('onboarding_recognition_tasks').select('type, completed_at').eq('studio_id', sid).eq('status', 'completed').in('type', ['birthday', 'thank_you_card']).gte('completed_at', loUtc).lte('completed_at', hiUtc),
+      db().from('onboarding_touchpoint_log').select('completed_at').eq('studio_id', sid).eq('done', true).in('touchpoint_key', ['missed_guest', 'no_show']).gte('completed_at', loUtc).lte('completed_at', hiUtc),
+      db().from('cancellation_followups').select('done_at').eq('studio_id', sid).eq('done', true).gte('done_at', loUtc).lte('done_at', hiUtc),
+      db().from('onboarding_reengage_log').select('contacted_at').eq('studio_id', sid).gte('contacted_at', loUtc).lte('contacted_at', hiUtc),
+    ])
+
+    for (const r of b2b.data || []) bump(chiDate(r.logged_at), 'b2b')
+    for (const r of sponsor.data || []) bump(r.occurred_on, 'sponsor') // plain date, already Chicago-local
+    for (const r of recog.data || []) bump(chiDate(r.completed_at), r.type === 'birthday' ? 'birthday' : 'thank_you')
+    for (const r of touch.data || []) bump(chiDate(r.completed_at), 'missed_guest')
+    for (const r of cancels.data || []) bump(chiDate(r.done_at), 'cancellations')
+    for (const r of reeng.data || []) bump(chiDate(r.contacted_at), 'engagement')
+
+    res.json(out)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 // ─── GET /api/eod/mine ────────────────────────────────────────────────────────
 // Returns today's submissions by the current user (for the TSA form to show already-submitted shifts)
 router.get('/mine', async (req, res) => {

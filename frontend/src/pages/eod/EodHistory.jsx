@@ -4,6 +4,17 @@ import { apiGet, apiDelete, apiPost } from '@/hooks/useApi'
 
 const VARIANCE_THRESHOLD = 5
 
+// Marketing & member-activation work auto-pulled from each module's own logs
+const ACTIVITY_METRICS = [
+  { key: 'b2b', label: 'B2B follow-ups', emoji: '🤝' },
+  { key: 'sponsor', label: 'Sample / sponsor follow-ups', emoji: '🎁' },
+  { key: 'birthday', label: 'Birthday messages', emoji: '🎂' },
+  { key: 'thank_you', label: 'Thank-you cards', emoji: '💌' },
+  { key: 'missed_guest', label: 'Missed-guest follow-ups', emoji: '📞' },
+  { key: 'cancellations', label: 'Cancellations worked', emoji: '🔄' },
+  { key: 'engagement', label: 'Engagement follow-ups', emoji: '✨' },
+]
+
 function variance(row) {
   return parseFloat(row.drawer_end) - parseFloat(row.drawer_start) - parseFloat(row.cash_collected)
 }
@@ -75,6 +86,7 @@ export default function EodHistory() {
   const isCurrentWeek = weekStart === mondayOfWeek(today)
 
   const [submissions, setSubmissions] = useState([])
+  const [activity, setActivity] = useState({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [sending, setSending] = useState(false)
@@ -87,8 +99,12 @@ export default function EodHistory() {
     try {
       // Use full Mon–Sun range so any day's submissions are visible.
       // Future days simply have no data and won't render.
-      const data = await apiGet(`/api/eod?from=${weekStart}&to=${weekEnd}`)
+      const [data, act] = await Promise.all([
+        apiGet(`/api/eod?from=${weekStart}&to=${weekEnd}`),
+        apiGet(`/api/eod/activity?from=${weekStart}&to=${weekEnd}`).catch(() => ({})),
+      ])
       setSubmissions(data)
+      setActivity(act || {})
     } catch (e) {
       setError(e.message)
     } finally {
@@ -223,6 +239,33 @@ export default function EodHistory() {
               <span className="text-xs bg-red-100 text-red-700 font-semibold px-2 py-0.5 rounded-full">Today</span>
             )}
           </div>
+
+          {/* Marketing & Member Activation — studio-wide work logged that day */}
+          {(() => {
+            const a = activity[date]
+            const total = a ? ACTIVITY_METRICS.reduce((n, m) => n + (a[m.key] || 0), 0) : 0
+            if (!total) return null
+            return (
+              <div className="bg-white rounded-xl border border-gray-200 mb-4 overflow-hidden">
+                <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+                  <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Marketing &amp; Member Activation</p>
+                  <span className="text-[11px] text-gray-400">{total} touch{total === 1 ? '' : 'es'} logged</span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 divide-x divide-y sm:divide-y-0 divide-gray-100">
+                  {ACTIVITY_METRICS.map(m => {
+                    const c = a[m.key] || 0
+                    return (
+                      <div key={m.key} className={`p-3 text-center ${c ? '' : 'opacity-40'}`}>
+                        <div className="text-lg leading-none mb-1">{m.emoji}</div>
+                        <div className={`text-xl font-bold ${c ? 'text-gray-900' : 'text-gray-400'}`}>{c}</div>
+                        <div className="text-[10px] text-gray-500 leading-tight mt-0.5">{m.label}</div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })()}
 
           <div className="space-y-4">
             {byDate[date].map(sub => {
