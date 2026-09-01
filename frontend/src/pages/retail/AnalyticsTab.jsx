@@ -860,7 +860,7 @@ function OverviewView({ studioId, months, setMonths }) {
 
 // Click a category to drill into its products; reassign a category inline —
 // built so the owner can find & fix "Uncategorized" items right here.
-function CategoryBreakdown({ studioId, months }) {
+function CategoryBreakdown({ studioId, months, metric = 'revenue', title = 'Sales by category' }) {
   const [data, setData] = useState(null)
   const [cats, setCats] = useState([])
   const [open, setOpen] = useState({})
@@ -877,8 +877,9 @@ function CategoryBreakdown({ studioId, months }) {
   }, [studioId])
 
   // Backend sorts by revenue; float Uncategorized to the top so it's easy to fix.
+  const val = c => metric === 'gross_profit' ? c.gross_profit : c.revenue
   const rows = [...(data?.categories || [])].sort((a, b) => (a.category_id ? 1 : 0) - (b.category_id ? 1 : 0))
-  const max = Math.max(...rows.map(r => r.revenue), 1)
+  const max = Math.max(...rows.map(r => val(r)), 1)
   const toggle = k => setOpen(o => ({ ...o, [k]: !o[k] }))
 
   async function reassign(sku_id, category_id) {
@@ -894,7 +895,7 @@ function CategoryBreakdown({ studioId, months }) {
   }
 
   return (
-    <Card title="Sales by category" right={<span className="text-[11px] text-gray-400">click to drill in</span>}>
+    <Card title={title} right={<span className="text-[11px] text-gray-400">click to drill in</span>}>
       {!data ? (
         <p className="text-sm text-gray-400 py-4">Loading…</p>
       ) : !rows.length ? (
@@ -912,9 +913,9 @@ function CategoryBreakdown({ studioId, months }) {
                     {isOpen ? <ChevronDown size={14} className="text-gray-400 shrink-0" /> : <ChevronRight size={14} className="text-gray-400 shrink-0" />}
                     <span className={`text-xs truncate ${isUncat ? 'font-semibold text-amber-700' : 'text-gray-600'}`}>{c.category}</span>
                     <span className="text-[11px] text-gray-400">· {c.product_count} item{c.product_count === 1 ? '' : 's'}</span>
-                    <span className="ml-auto text-xs font-semibold text-gray-800 shrink-0">{$(c.revenue)}</span>
+                    <span className="ml-auto text-xs font-semibold text-gray-800 shrink-0">{$(val(c))}</span>
                   </div>
-                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden mt-1 ml-5"><div className={`h-full rounded-full ${isUncat ? 'bg-amber-400' : 'bg-indigo-500'}`} style={{ width: `${Math.max(2, c.revenue / max * 100)}%` }} /></div>
+                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden mt-1 ml-5"><div className={`h-full rounded-full ${isUncat ? 'bg-amber-400' : metric === 'gross_profit' ? 'bg-green-500' : 'bg-indigo-500'}`} style={{ width: `${Math.max(2, val(c) / max * 100)}%` }} /></div>
                 </button>
                 {isOpen && (
                   <div className="ml-5 mr-1.5 mb-1.5 border-l-2 border-gray-100 pl-2">
@@ -999,8 +1000,7 @@ function ForecastView({ studioId }) {
 function ProfitView({ studioId }) {
   const { d, loading } = useApiData('/api/retail/analytics/margin', studioId, 0)
   if (loading) return <Spin />
-  const cats = d?.by_category || [], best = d?.most_profitable || [], md = d?.markdown_candidates || []
-  const max = Math.max(...cats.map(c => c.gross_profit), 1)
+  const best = d?.most_profitable || [], md = d?.markdown_candidates || []
   const rm = d?.real_margin
   return (
     <div className="space-y-4">
@@ -1025,17 +1025,7 @@ function ProfitView({ studioId }) {
           <p className="text-[11px] text-gray-400 mt-2">Net revenue is already after discounts &amp; rewards and excludes sales tax (a pass-through). Real profit = net revenue − wholesale cost of goods sold − retail commission paid to staff.</p>
         </Card>
       )}
-      <Card title="Gross profit by category (trailing 12 mo)">
-        <div className="space-y-1.5">
-          {cats.map(c => (
-            <div key={c.category}>
-              <div className="flex justify-between text-xs mb-0.5"><span className="text-gray-600 truncate">{c.category} <span className="text-gray-400">· {pct(c.margin_pct)}</span></span><span className="font-semibold text-gray-800">{$(c.gross_profit)}</span></div>
-              <div className="h-2 bg-gray-100 rounded-full overflow-hidden"><div className="h-full bg-green-500 rounded-full" style={{ width: `${Math.max(0, c.gross_profit) / max * 100}%` }} /></div>
-            </div>
-          ))}
-          {!cats.length && <p className="text-sm text-gray-400 py-4">No sales to compute margin yet.</p>}
-        </div>
-      </Card>
+      <CategoryBreakdown studioId={studioId} metric="gross_profit" title="Gross profit by category (trailing 12 mo)" />
       <div className="grid md:grid-cols-2 gap-4">
         <Card title="Most profitable products">
           <div className="divide-y divide-gray-50">
