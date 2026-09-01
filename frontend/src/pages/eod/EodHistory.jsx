@@ -322,7 +322,7 @@ export default function EodHistory() {
                     {/* Completed Growth Missions */}
                     {(sub.completed_missions?.length > 0) && (
                       <div>
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Missions Completed</p>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Marketing Tasks Completed</p>
                         <div className="flex flex-wrap gap-1.5">
                           {sub.completed_missions.map((t, i) => (
                             <span key={i} className="inline-flex items-center gap-1 bg-orange-50 text-orange-700 text-xs font-medium px-2 py-0.5 rounded-full border border-orange-200">

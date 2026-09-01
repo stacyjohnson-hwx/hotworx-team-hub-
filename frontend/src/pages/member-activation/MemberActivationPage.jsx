@@ -184,6 +184,8 @@ function MembersTab() {
     if (filter === 'cancelled' && !r.is_cancelled) return false
     if (filter === 'missed_guest' && r.member_type !== 'missed_guest') return false
     if (filter === 'no_show' && r.member_type !== 'no_show') return false
+    if (filter === 'lead' && r.member_type !== 'lead') return false
+    if (filter === 'employee' && r.member_type !== 'employee') return false
     if (q && !`${r.full_name} ${r.email} ${r.customer_id}`.toLowerCase().includes(q.toLowerCase())) return false
     return true
   })
@@ -205,7 +207,7 @@ function MembersTab() {
       <div className="flex flex-wrap items-center gap-2 mb-3">
         <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search name, email, id…"
           className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-red-600/40" />
-        {[['all', 'All'], ['new', 'New members'], ['cancelled', 'Cancelled'], ['missed_guest', 'Missed Guests'], ['no_show', 'No Shows']].map(([f, lbl]) => (
+        {[['all', 'All'], ['new', 'New members'], ['cancelled', 'Cancelled'], ['missed_guest', 'Missed Guests'], ['no_show', 'No Shows'], ['lead', 'Leads'], ['employee', 'Employees']].map(([f, lbl]) => (
           <button key={f} onClick={() => setFilter(f)}
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${filter === f ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-600 border-gray-300'}`}>
             {lbl}
@@ -1144,6 +1146,7 @@ const MEMBER_TYPE_OPTS = [
   { v: 'guest',      label: 'Guest / other' },
   { v: 'no_show',    label: 'No Show' },
   { v: 'missed_guest', label: 'Missed Guest' },
+  { v: 'lead',       label: 'Lead' },
   { v: 'member',     label: 'Regular member' },
 ]
 

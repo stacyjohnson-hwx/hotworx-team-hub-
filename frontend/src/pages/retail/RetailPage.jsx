@@ -4,6 +4,7 @@ import { useRole } from '@/hooks/useRole'
 import { useStudio } from '@/contexts/StudioContext'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
 import { AnalyticsTab } from './AnalyticsTab'
+import { PurchaseOrdersTab } from './PurchaseOrdersTab'
 import { InventoryImportModal } from './InventoryImportModal'
 import * as XLSX from 'xlsx'
 import {
@@ -236,6 +237,9 @@ export default function RetailPage() {
         </TabButton>
         <TabButton active={tab === 'inventory'} onClick={() => handleTabChange('inventory')}>
           <ClipboardList size={16} /> Inventory
+        </TabButton>
+        <TabButton active={tab === 'purchasing'} onClick={() => handleTabChange('purchasing')}>
+          <ShoppingCart size={16} /> Purchasing
         </TabButton>
         <TabButton active={tab === 'analytics'} onClick={() => handleTabChange('analytics')}>
           <BarChart3 size={16} /> Analytics
@@ -550,6 +554,9 @@ export default function RetailPage() {
           </div>
         </div>
       )}
+
+      {/* Purchasing Tab */}
+      {tab === 'purchasing' && <PurchaseOrdersTab skus={skus} vendors={vendors} />}
 
       {/* Analytics Tab */}
       {tab === 'analytics' && <AnalyticsTab />}
