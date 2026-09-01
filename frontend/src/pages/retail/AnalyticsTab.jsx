@@ -92,12 +92,19 @@ export function AnalyticsTab() {
         obj[header] = values[idx]
       })
 
-      // Map columns flexibly
+      // Revenue is NET — actual dollars collected = Price*Qty minus discounts minus
+      // rewards redeemed (rewards are tracked separately in Studio Trends, so excluding
+      // them here avoids double-counting). unit_price is set so qty*unit_price = net line.
+      const qty = parseFloat(obj.Qty || obj.quantity || 1) || 1
+      const price = parseFloat(obj.Price || obj.unit_price || 0) || 0
+      const discount = parseFloat(obj.Discount || 0) || 0
+      const rewards = parseFloat(obj['Rewards Redeemed'] || 0) || 0
+      const netLine = Math.max(0, price * qty - discount - rewards)
       return {
         product_name: obj['Product Name'] || obj.product_name,
         date: obj['Order Date'] || obj.date,
-        quantity: parseFloat(obj.Qty || obj.quantity || 1),
-        unit_price: parseFloat(obj.Price || obj.unit_price || 0),
+        quantity: qty,
+        unit_price: qty > 0 ? netLine / qty : netLine,
       }
     }).filter(s => s.product_name && s.date)
 
