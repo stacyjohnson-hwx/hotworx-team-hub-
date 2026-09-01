@@ -27,20 +27,22 @@ router.post('/import-sales', authenticate, requireStudio, requireRole('owner', '
   const minDate = new Date(Math.min(...dates)).toISOString().split('T')[0]
   const maxDate = new Date(Math.max(...dates)).toISOString().split('T')[0]
 
-  // Check if this date range overlaps with any existing imports
+  // Reject only an EXACT re-upload of the same file (same name, range, and row count)
+  // — so two different files for one month (e.g. current + new members) both import,
+  // while an accidental double-upload of the identical file is still blocked.
   const { data: existingBatch } = await db()
     .from('sales_import_batches')
-    .select('id, file_name, date_range_start, date_range_end, created_at')
+    .select('id, file_name, date_range_start, date_range_end, total_rows')
     .eq('studio_id', req.studio.id)
-    .or(`date_range_start.lte.${maxDate},date_range_end.gte.${minDate}`)
-    .order('created_at', { ascending: false })
-    .limit(1)
+    .eq('file_name', file_name || '')
+    .eq('date_range_start', minDate)
+    .eq('date_range_end', maxDate)
     .maybeSingle()
 
-  if (existingBatch) {
+  if (existingBatch && Number(existingBatch.total_rows) === sales.length) {
     return res.status(400).json({
       error: 'Duplicate sales import detected',
-      message: `Sales data for ${minDate} to ${maxDate} overlaps with existing import "${existingBatch.file_name}" (${existingBatch.date_range_start} to ${existingBatch.date_range_end})`,
+      message: `This exact file ("${file_name}", ${minDate} to ${maxDate}, ${sales.length} rows) was already imported. Upload a different file, or delete the previous import first.`,
       existing_batch: existingBatch,
     })
   }
@@ -77,19 +79,22 @@ router.post('/import-sales', authenticate, requireStudio, requireRole('owner', '
         continue
       }
 
-      // Find SKU by product name (case-insensitive)
-      const { data: sku } = await db()
-        .from('sku_master')
-        .select('id')
-        .ilike('product_name', productName.trim())
-        .limit(1)
-        .maybeSingle()
+      // Match SKU by name: try the full name, then the name with a trailing size
+      // stripped (the catalog stores clean parent names like "… TEE BLACK" while sales
+      // rows read "… TEE BLACK - S"). Capture the size so size analytics work.
+      const raw = String(productName).trim()
+      const sizeMatch = raw.match(/[-/]\s*(XS|S|M|L|XL|XXL|XXXL|2X|3X|4X|5X|2XL|3XL|LXL|OS)\s*$/i)
+      const size = sizeMatch ? sizeMatch[1].toUpperCase() : null
+      const baseName = size ? raw.replace(/[-/]\s*[A-Za-z0-9]+\s*$/, '').trim() : raw
+      let sku = (await db().from('sku_master').select('id').ilike('product_name', raw).limit(1).maybeSingle()).data
+      if (!sku && size) sku = (await db().from('sku_master').select('id').ilike('product_name', baseName).limit(1).maybeSingle()).data
 
       if (!sku) {
         errors.push({ row: sale, error: `Product "${productName}" not found in catalog` })
         failed++
         continue
       }
+      const sizeQty = size ? { [size]: quantity } : (sale.size_quantities || null)
 
       // Insert sale
       await db()
@@ -100,7 +105,7 @@ router.post('/import-sales', authenticate, requireStudio, requireRole('owner', '
           sale_date: saleDate,
           quantity: quantity,
           unit_price: unitPrice,
-          size_quantities: sale.size_quantities || null,
+          size_quantities: sizeQty,
           imported_by: req.user.id,
           import_batch_id: batch.id,
           raw_data: sale,
