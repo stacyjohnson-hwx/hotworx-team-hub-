@@ -10,7 +10,7 @@ import * as XLSX from 'xlsx'
 import {
   Package, Plus, Search, Filter, Edit2, Trash2, DollarSign,
   AlertCircle, BarChart3, ShoppingCart, CheckCircle, X, ClipboardList,
-  Calendar, PlayCircle, Upload, Grid3x3, List, Download, Eye,
+  Calendar, PlayCircle, Upload, Grid3x3, List, Download, Eye, RotateCcw,
 } from 'lucide-react'
 
 // Clothing size grouping (mirrors the count page) so single-size SKUs
@@ -41,6 +41,8 @@ export default function RetailPage() {
   const [filterCategory, setFilterCategory] = useState('')
   const [filterTopSellers, setFilterTopSellers] = useState(false)
   const [hideZeroInventory, setHideZeroInventory] = useState(false)
+  const [catalogStatus, setCatalogStatus] = useState('active') // 'active' | 'inactive' | 'all'
+  const [inactiveSkus, setInactiveSkus] = useState([])
   const [sortKey, setSortKey] = useState(null)
   const [sortDir, setSortDir] = useState('asc')
   const [showModal, setShowModal] = useState(false)
@@ -72,13 +74,17 @@ export default function RetailPage() {
 
       if (tab === 'inventory') {
         promises.push(apiGet('/api/retail/counts', currentStudio.id))
+      } else if (tab === 'catalog') {
+        // Deactivated SKUs so the catalog can show & reactivate them
+        promises.push(apiGet('/api/retail/skus?active=false', currentStudio.id))
       }
 
       const results = await Promise.all(promises)
       setSkus(results[0])
       setCategories(results[1])
       setVendors(results[2])
-      if (results[3]) setCountSessions(results[3])
+      if (tab === 'inventory' && results[3]) setCountSessions(results[3])
+      if (tab === 'catalog') setInactiveSkus(results[3] || [])
     } catch (err) {
       console.error('Failed to load retail data:', err)
     } finally {
@@ -157,6 +163,15 @@ export default function RetailPage() {
     }
   }
 
+  const handleReactivate = async (id) => {
+    try {
+      await apiPut(`/api/retail/skus/${id}`, { active: true }, currentStudio.id)
+      loadData() // moves it back into the active catalog
+    } catch (err) {
+      alert('Failed to reactivate: ' + err.message)
+    }
+  }
+
   const qtyOf = (s) => s?.inventory?.[0]?.quantity_on_hand ?? 0
   // Optimistically update on-hand in local state while typing.
   const setLocalQty = (id, val) => setSkus(prev => prev.map(s =>
@@ -174,7 +189,10 @@ export default function RetailPage() {
     }
   }
 
-  const filteredSkus = skus.filter(s => {
+  const catalogSource = catalogStatus === 'inactive' ? inactiveSkus
+    : catalogStatus === 'all' ? [...skus, ...inactiveSkus]
+    : skus
+  const filteredSkus = catalogSource.filter(s => {
     const matchesSearch = !search ||
       s.sku_code?.toLowerCase().includes(search.toLowerCase()) ||
       s.product_name?.toLowerCase().includes(search.toLowerCase())
@@ -278,6 +296,18 @@ export default function RetailPage() {
                 ))}
               </select>
 
+              {/* Active / Inactive Filter */}
+              <select
+                value={catalogStatus}
+                onChange={e => setCatalogStatus(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-600/30"
+                title="Show active products, deactivated ones, or both"
+              >
+                <option value="active">Active only</option>
+                <option value="inactive">Deactivated{inactiveSkus.length ? ` (${inactiveSkus.length})` : ''}</option>
+                <option value="all">All statuses</option>
+              </select>
+
               {/* Top Sellers Filter */}
               <label className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50">
                 <input
@@ -377,6 +407,7 @@ export default function RetailPage() {
                     sku={sku}
                     onEdit={() => { setEditingSku(sku); setShowModal(true) }}
                     onDelete={() => handleDelete(sku.id)}
+                    onReactivate={() => handleReactivate(sku.id)}
                     isOwnerOrManager={isOwnerOrManager}
                   />
                 ))}
@@ -413,6 +444,9 @@ export default function RetailPage() {
                             {sku.product_name}
                             {sku.top_seller && (
                               <span className="text-xs bg-amber-500 text-white px-1.5 py-0.5 rounded-full font-bold">⭐</span>
+                            )}
+                            {!sku.active && (
+                              <span className="text-[10px] bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full font-semibold uppercase">Inactive</span>
                             )}
                           </div>
                         </td>
@@ -460,13 +494,23 @@ export default function RetailPage() {
                               >
                                 <Edit2 size={16} />
                               </button>
-                              <button
-                                onClick={() => handleDelete(sku.id)}
-                                className="p-1.5 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                                title="Delete"
-                              >
-                                <Trash2 size={16} />
-                              </button>
+                              {sku.active ? (
+                                <button
+                                  onClick={() => handleDelete(sku.id)}
+                                  className="p-1.5 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                  title="Deactivate"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => handleReactivate(sku.id)}
+                                  className="p-1.5 text-green-600 hover:text-green-700 hover:bg-green-50 rounded transition-colors"
+                                  title="Reactivate"
+                                >
+                                  <RotateCcw size={16} />
+                                </button>
+                              )}
                             </div>
                           </td>
                         )}
@@ -783,7 +827,7 @@ function GarmentCard({ group, isOwnerOrManager, onManage }) {
   )
 }
 
-function ProductCard({ sku, onEdit, onDelete, isOwnerOrManager }) {
+function ProductCard({ sku, onEdit, onDelete, onReactivate, isOwnerOrManager }) {
   const inventory = sku.inventory?.[0]
   const inStock = inventory?.quantity_on_hand || 0
   const margin = sku.retail_price && sku.wholesale_cost
@@ -825,9 +869,15 @@ function ProductCard({ sku, onEdit, onDelete, isOwnerOrManager }) {
               <button onClick={onEdit} className="p-1 text-gray-400 hover:text-gray-600">
                 <Edit2 size={14} />
               </button>
-              <button onClick={onDelete} className="p-1 text-gray-400 hover:text-red-500">
-                <Trash2 size={14} />
-              </button>
+              {sku.active ? (
+                <button onClick={onDelete} className="p-1 text-gray-400 hover:text-red-500" title="Deactivate">
+                  <Trash2 size={14} />
+                </button>
+              ) : (
+                <button onClick={onReactivate} className="p-1 text-green-600 hover:text-green-700" title="Reactivate">
+                  <RotateCcw size={14} />
+                </button>
+              )}
             </div>
           )}
         </div>
