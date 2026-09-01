@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo } from 'react'
-import { apiGet, apiPost, apiDelete } from '@/hooks/useApi'
+import { apiGet, apiPost, apiPut, apiDelete } from '@/hooks/useApi'
 import { useStudio } from '@/contexts/StudioContext'
 import { useRole } from '@/hooks/useRole'
 import {
-  Plus, X, Trash2, Truck, CheckCircle, Package, DollarSign, Search,
+  Plus, X, Trash2, Truck, CheckCircle, Package, DollarSign, Search, Edit2,
 } from 'lucide-react'
 
+const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0)
 const money = (n) => `$${(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '')
 const moLabel = (ym) => {
@@ -20,7 +21,11 @@ export function PurchaseOrdersTab({ skus = [], vendors = [] }) {
   const [spend, setSpend] = useState(null)
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
+  const [editingPo, setEditingPo] = useState(null)
   const [busyId, setBusyId] = useState(null)
+
+  const openNew = () => { setEditingPo(null); setShowModal(true) }
+  const openEdit = (po) => { setEditingPo(po); setShowModal(true) }
 
   const load = async () => {
     if (!currentStudio?.id) return
@@ -82,7 +87,7 @@ export function PurchaseOrdersTab({ skus = [], vendors = [] }) {
         </div>
         {isOwnerOrManager && (
           <button
-            onClick={() => setShowModal(true)}
+            onClick={openNew}
             className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-700"
           >
             <Plus size={16} /> New Order
@@ -170,6 +175,15 @@ export function PurchaseOrdersTab({ skus = [], vendors = [] }) {
                     <td className="px-4 py-3 text-right whitespace-nowrap">
                       {isOwnerOrManager && po.status === 'ordered' && (
                         <button
+                          onClick={() => openEdit(po)}
+                          disabled={busyId === po.id}
+                          className="inline-flex items-center gap-1 text-xs border border-gray-300 text-gray-700 px-2.5 py-1.5 rounded hover:bg-gray-50 disabled:opacity-50 mr-2"
+                        >
+                          <Edit2 size={13} /> Edit
+                        </button>
+                      )}
+                      {isOwnerOrManager && po.status === 'ordered' && (
+                        <button
                           onClick={() => receive(po)}
                           disabled={busyId === po.id}
                           className="inline-flex items-center gap-1 text-xs bg-green-600 text-white px-2.5 py-1.5 rounded hover:bg-green-700 disabled:opacity-50 mr-2"
@@ -200,8 +214,9 @@ export function PurchaseOrdersTab({ skus = [], vendors = [] }) {
         <NewOrderModal
           skus={skus}
           vendors={vendors}
-          onClose={() => setShowModal(false)}
-          onSaved={() => { setShowModal(false); load() }}
+          editing={editingPo}
+          onClose={() => { setShowModal(false); setEditingPo(null) }}
+          onSaved={() => { setShowModal(false); setEditingPo(null); load() }}
         />
       )}
     </div>
@@ -222,15 +237,41 @@ function StatusBadge({ status }) {
 }
 
 // ─── New order modal ─────────────────────────────────────────────────────────
-function NewOrderModal({ skus, vendors, onClose, onSaved }) {
+function NewOrderModal({ skus, vendors, editing, onClose, onSaved }) {
   const { currentStudio } = useStudio()
-  const [vendorId, setVendorId] = useState('')
-  const [lines, setLines] = useState([])       // { key, sku, sizeQ:{}, qty, unit_cost }
+  // Rebuild editable lines from a saved order's items, resolving each SKU from
+  // the catalog (falling back to a minimal shape if it's no longer active).
+  const initialLines = () => (editing?.items || []).map(it => {
+    const found = skus.find(s => s.id === it.sku_id)
+    const hasSizes = it.size_quantities && Object.keys(it.size_quantities).length > 0
+    const sku = found || {
+      id: it.sku_id,
+      product_name: it.product_name || 'Unknown item',
+      sku_code: '',
+      has_sizes: hasSizes,
+      available_sizes: hasSizes ? Object.keys(it.size_quantities) : [],
+    }
+    return {
+      key: it.sku_id,
+      sku,
+      sizeQ: it.size_quantities ? { ...it.size_quantities } : {},
+      qty: it.quantity ?? 0,
+      unit_cost: it.unit_cost != null ? String(it.unit_cost) : '',
+    }
+  })
+
+  const [vendorId, setVendorId] = useState(editing?.vendor_id || '')
+  const [lines, setLines] = useState(initialLines)   // { key, sku, sizeQ:{}, qty, unit_cost }
   const [search, setSearch] = useState('')
-  const [tax, setTax] = useState('')
-  const [shipping, setShipping] = useState('')
-  const [totalOverride, setTotalOverride] = useState('')
-  const [notes, setNotes] = useState('')
+  const [tax, setTax] = useState(editing?.tax ? String(editing.tax) : '')
+  const [shipping, setShipping] = useState(editing?.shipping ? String(editing.shipping) : '')
+  // Preserve a manually-entered total on edit; leave blank to auto-track lines.
+  const [totalOverride, setTotalOverride] = useState(() => {
+    if (!editing) return ''
+    const auto = Math.round((num(editing.subtotal) + num(editing.tax) + num(editing.shipping)) * 100) / 100
+    return Math.abs(num(editing.total) - auto) > 0.005 ? String(editing.total) : ''
+  })
+  const [notes, setNotes] = useState(editing?.notes || '')
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
 
@@ -304,7 +345,7 @@ function NewOrderModal({ skus, vendors, onClose, onSaved }) {
 
     setSaving(true)
     try {
-      await apiPost('/api/retail/purchase-orders', {
+      const payload = {
         vendor_id: vendorId,
         vendor_name: vendorName,
         items,
@@ -312,7 +353,12 @@ function NewOrderModal({ skus, vendors, onClose, onSaved }) {
         shipping: Number(shipping) || 0,
         total,
         notes: notes.trim() || null,
-      }, currentStudio.id)
+      }
+      if (editing) {
+        await apiPut(`/api/retail/purchase-orders/${editing.id}`, payload, currentStudio.id)
+      } else {
+        await apiPost('/api/retail/purchase-orders', payload, currentStudio.id)
+      }
       onSaved()
     } catch (e) {
       setErr(e.message || 'Failed to save order')
@@ -324,7 +370,7 @@ function NewOrderModal({ skus, vendors, onClose, onSaved }) {
     <div className="fixed inset-0 bg-black/40 z-50 flex items-start justify-center overflow-y-auto p-4">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl my-8">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
-          <h3 className="text-base font-semibold text-gray-900">New Retail Order</h3>
+          <h3 className="text-base font-semibold text-gray-900">{editing ? 'Edit Retail Order' : 'New Retail Order'}</h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
         </div>
 
@@ -477,7 +523,7 @@ function NewOrderModal({ skus, vendors, onClose, onSaved }) {
             <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
             <button onClick={save} disabled={saving}
               className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 disabled:opacity-50">
-              {saving ? 'Saving…' : 'Create Order'}
+              {saving ? 'Saving…' : editing ? 'Save Changes' : 'Create Order'}
             </button>
           </div>
         </div>

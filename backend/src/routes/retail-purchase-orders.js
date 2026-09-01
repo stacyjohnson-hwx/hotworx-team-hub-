@@ -165,6 +165,109 @@ router.post('/', authenticate, requireStudio, requireRole('owner', 'manager'), a
   res.status(201).json(full)
 })
 
+// ─── PUT /api/retail/purchase-orders/:id ─────────────────────────────────────
+// Edit an order that hasn't been received yet. Recomputes totals, replaces the
+// line items, and mirrors the changes into the linked Orders-board row (vendor,
+// item name, quantity, cost, notes). Received/cancelled orders are locked so
+// their inventory effect can't drift.
+router.put('/:id', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
+  const client = db()
+
+  const { data: existing, error: exErr } = await client
+    .from('retail_purchase_orders')
+    .select('id, status, linked_order_id')
+    .eq('studio_id', req.studio.id)
+    .eq('id', req.params.id)
+    .maybeSingle()
+
+  if (exErr) return res.status(500).json({ error: exErr.message })
+  if (!existing) return res.status(404).json({ error: 'Not found' })
+  if (existing.status !== 'ordered') {
+    return res.status(400).json({ error: `A ${existing.status} order can’t be edited. Delete it and create a new one instead.` })
+  }
+
+  const { vendor_id, vendor_name, items, tax, shipping, total, notes } = req.body
+  if (!vendor_name) return res.status(400).json({ error: 'vendor_name is required' })
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'At least one line item is required' })
+  }
+
+  const cleanItems = items.map(it => {
+    const quantity = Math.round(num(it.quantity))
+    const unit_cost = num(it.unit_cost)
+    const size_quantities =
+      it.size_quantities && Object.keys(it.size_quantities).length ? it.size_quantities : null
+    return {
+      sku_id: it.sku_id,
+      product_name: it.product_name || null,
+      quantity,
+      size_quantities,
+      unit_cost,
+      line_total: Math.round(quantity * unit_cost * 100) / 100,
+    }
+  }).filter(it => it.sku_id && it.quantity > 0)
+
+  if (cleanItems.length === 0) {
+    return res.status(400).json({ error: 'Line items need a product and a quantity' })
+  }
+
+  const subtotal = Math.round(cleanItems.reduce((s, it) => s + it.line_total, 0) * 100) / 100
+  const taxN = num(tax)
+  const shipN = num(shipping)
+  const totalN = total !== undefined && total !== null && total !== ''
+    ? num(total)
+    : Math.round((subtotal + taxN + shipN) * 100) / 100
+
+  const nowIso = new Date().toISOString()
+
+  // 1) Update the purchase order header.
+  const { error: updErr } = await client
+    .from('retail_purchase_orders')
+    .update({
+      vendor_id: vendor_id || null,
+      vendor_name,
+      subtotal,
+      tax: taxN,
+      shipping: shipN,
+      total: totalN,
+      notes: notes || null,
+      updated_at: nowIso,
+    })
+    .eq('id', existing.id)
+
+  if (updErr) return res.status(500).json({ error: updErr.message })
+
+  // 2) Replace the line items.
+  await client.from('retail_purchase_order_items').delete().eq('purchase_order_id', existing.id)
+  const rows = cleanItems.map(it => ({ ...it, purchase_order_id: existing.id }))
+  const { error: itemsErr } = await client.from('retail_purchase_order_items').insert(rows)
+  if (itemsErr) return res.status(500).json({ error: itemsErr.message })
+
+  // 3) Mirror into the linked Orders-board row.
+  if (existing.linked_order_id) {
+    const totalUnits = cleanItems.reduce((s, it) => s + it.quantity, 0)
+    const orderNotes = buildOrderNotes({ vendor_name, subtotal, tax: taxN, shipping: shipN, total: totalN, notes }, cleanItems)
+    await client.from('orders')
+      .update({
+        item_name: `${vendor_name} Order`,
+        quantity: totalUnits,
+        notes: orderNotes,
+        vendor: vendor_name,
+        est_cost: totalN,
+        updated_at: nowIso,
+      })
+      .eq('id', existing.linked_order_id)
+  }
+
+  const { data: full } = await client
+    .from('retail_purchase_orders')
+    .select('*, items:retail_purchase_order_items(*)')
+    .eq('id', existing.id)
+    .single()
+
+  res.json(full)
+})
+
 // ─── POST /api/retail/purchase-orders/:id/receive ────────────────────────────
 // Mark a PO received: add stock to inventory (per size), flip the linked order
 // to "received".
