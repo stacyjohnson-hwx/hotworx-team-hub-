@@ -558,6 +558,42 @@ router.get('/by-category', authenticate, requireStudio, async (req, res) => {
   res.json(rows)
 })
 
+// ─── GET /category-breakdown — every active SKU grouped by category ──────────
+// Drill-in for the "Sales by category" card: lists the products inside each
+// category (including Uncategorized, so they can be fixed) with trailing-12-mo
+// units/revenue and current on-hand. Covers ALL active SKUs, even those with no
+// inventory row or no sales, so nothing hides from the categorize workflow.
+router.get('/category-breakdown', authenticate, requireStudio, async (req, res) => {
+  const sb = db(), sid = req.studio.id
+  const [sales, inventory, skusRes] = await Promise.all([
+    loadSales(sb, sid, monthStart(11), null),
+    loadInventory(sb, sid),
+    sb.from('sku_master')
+      .select('id, sku_code, product_name, category_id, retail_price, wholesale_cost, category:product_categories(name)')
+      .eq('active', true),
+  ])
+  const skus = skusRes.data || []
+  const soldBySku = {}, revBySku = {}, onHandBySku = {}
+  for (const s of sales) if (s.sku) { soldBySku[s.sku.id] = (soldBySku[s.sku.id] || 0) + num(s.quantity); revBySku[s.sku.id] = (revBySku[s.sku.id] || 0) + lineRevenue(s) }
+  for (const inv of inventory) if (inv.sku) onHandBySku[inv.sku.id] = num(inv.quantity_on_hand)
+
+  const agg = {}
+  for (const sku of skus) {
+    const key = sku.category_id || '__uncat__'
+    const name = (sku.category && sku.category.name) || 'Uncategorized'
+    const g = agg[key] || (agg[key] = { category: name, category_id: sku.category_id || null, product_count: 0, units_sold: 0, revenue: 0, cogs: 0, on_hand_value: 0, products: [] })
+    const sold = soldBySku[sku.id] || 0, rev = revBySku[sku.id] || 0, onHand = onHandBySku[sku.id] || 0
+    g.product_count++; g.units_sold += sold; g.revenue += rev; g.cogs += sold * num(sku.wholesale_cost); g.on_hand_value += onHand * num(sku.retail_price)
+    g.products.push({ sku_id: sku.id, sku_code: sku.sku_code, product_name: sku.product_name, category_id: sku.category_id || null, units_sold: sold, revenue: r2(rev), on_hand: onHand, retail_price: num(sku.retail_price) })
+  }
+  const categories = Object.values(agg).map(g => ({
+    category: g.category, category_id: g.category_id, product_count: g.product_count,
+    units_sold: g.units_sold, revenue: r2(g.revenue), gross_profit: r2(g.revenue - g.cogs), on_hand_value: r2(g.on_hand_value),
+    products: g.products.sort((a, b) => b.revenue - a.revenue || b.on_hand - a.on_hand || a.product_name.localeCompare(b.product_name)),
+  })).sort((a, b) => b.revenue - a.revenue)
+  res.json({ categories })
+})
+
 // ─── GET /forecast — velocity-based demand, days-of-supply, reorder list ──────
 router.get('/forecast', authenticate, requireStudio, async (req, res) => {
   const WINDOW = 90, LEAD = 21, BUFFER = 14   // trailing window; reorder lead + safety buffer (days)

@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useStudio } from '@/contexts/StudioContext'
-import { apiGet, apiPost } from '@/hooks/useApi'
+import { apiGet, apiPost, apiPut } from '@/hooks/useApi'
 import { ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, Legend } from 'recharts'
 import {
   Upload, TrendingDown, TrendingUp, AlertTriangle, Package, DollarSign, Percent,
   Calendar, CheckCircle, XCircle, BarChart3, Activity, LineChart as LineIcon,
-  Boxes, Tags, RefreshCw, Loader2,
+  Boxes, Tags, RefreshCw, Loader2, ChevronRight, ChevronDown,
 } from 'lucide-react'
 
 const $ = (n) => n == null ? '—' : `$${Math.round(n).toLocaleString()}`
@@ -804,7 +804,6 @@ function OverviewView({ studioId, months, setMonths }) {
   const start = startISO(months)
   const { d: trends, loading } = useApiData(`/api/retail/analytics/trends?months=${months}`, studioId, months)
   const { d: top } = useApiData(`/api/retail/analytics/top-sellers?by=revenue&limit=5&start=${start}`, studioId, months)
-  const { d: cats } = useApiData(`/api/retail/analytics/by-category?start=${start}`, studioId, months)
   if (loading) return <Spin />
   const t = trends?.totals || {}
   const series = trends?.series || []
@@ -853,22 +852,101 @@ function OverviewView({ studioId, months, setMonths }) {
             {!(top?.top || []).length && <p className="text-sm text-gray-400 py-4">No sales yet.</p>}
           </div>
         </Card>
-        <Card title="Sales by category">
-          <div className="space-y-1.5">
-            {(cats || []).slice(0, 8).map(c => {
-              const max = Math.max(...(cats || []).map(x => x.revenue), 1)
-              return (
-                <div key={c.category}>
-                  <div className="flex justify-between text-xs mb-0.5"><span className="text-gray-600 truncate">{c.category}</span><span className="font-semibold text-gray-800">{$(c.revenue)}</span></div>
-                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden"><div className="h-full bg-indigo-500 rounded-full" style={{ width: `${c.revenue / max * 100}%` }} /></div>
-                </div>
-              )
-            })}
-            {!(cats || []).length && <p className="text-sm text-gray-400 py-4">No category sales yet.</p>}
-          </div>
-        </Card>
+        <CategoryBreakdown studioId={studioId} months={months} />
       </div>
     </div>
+  )
+}
+
+// Click a category to drill into its products; reassign a category inline —
+// built so the owner can find & fix "Uncategorized" items right here.
+function CategoryBreakdown({ studioId, months }) {
+  const [data, setData] = useState(null)
+  const [cats, setCats] = useState([])
+  const [open, setOpen] = useState({})
+  const [saving, setSaving] = useState(null)
+
+  const load = () => {
+    if (!studioId) return
+    apiGet('/api/retail/analytics/category-breakdown', studioId).then(setData).catch(() => setData(null))
+  }
+  useEffect(() => { load() }, [studioId, months])
+  useEffect(() => {
+    if (!studioId) return
+    apiGet('/api/retail/categories', studioId).then(r => setCats(r || [])).catch(() => setCats([]))
+  }, [studioId])
+
+  // Backend sorts by revenue; float Uncategorized to the top so it's easy to fix.
+  const rows = [...(data?.categories || [])].sort((a, b) => (a.category_id ? 1 : 0) - (b.category_id ? 1 : 0))
+  const max = Math.max(...rows.map(r => r.revenue), 1)
+  const toggle = k => setOpen(o => ({ ...o, [k]: !o[k] }))
+
+  async function reassign(sku_id, category_id) {
+    setSaving(sku_id)
+    try {
+      await apiPut(`/api/retail/skus/${sku_id}`, { category_id: category_id || null }, studioId)
+      load() // refresh so the product hops to its new category group
+    } catch (e) {
+      alert('Could not update category: ' + e.message)
+    } finally {
+      setSaving(null)
+    }
+  }
+
+  return (
+    <Card title="Sales by category" right={<span className="text-[11px] text-gray-400">click to drill in</span>}>
+      {!data ? (
+        <p className="text-sm text-gray-400 py-4">Loading…</p>
+      ) : !rows.length ? (
+        <p className="text-sm text-gray-400 py-4">No products yet.</p>
+      ) : (
+        <div className="space-y-1">
+          {rows.map(c => {
+            const key = c.category_id || '__uncat__'
+            const isUncat = !c.category_id
+            const isOpen = open[key]
+            return (
+              <div key={key} className={`rounded-lg ${isUncat ? 'bg-amber-50/60' : ''}`}>
+                <button onClick={() => toggle(key)} className="w-full text-left px-1.5 py-1.5 hover:bg-gray-50 rounded-lg">
+                  <div className="flex items-center gap-1.5">
+                    {isOpen ? <ChevronDown size={14} className="text-gray-400 shrink-0" /> : <ChevronRight size={14} className="text-gray-400 shrink-0" />}
+                    <span className={`text-xs truncate ${isUncat ? 'font-semibold text-amber-700' : 'text-gray-600'}`}>{c.category}</span>
+                    <span className="text-[11px] text-gray-400">· {c.product_count} item{c.product_count === 1 ? '' : 's'}</span>
+                    <span className="ml-auto text-xs font-semibold text-gray-800 shrink-0">{$(c.revenue)}</span>
+                  </div>
+                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden mt-1 ml-5"><div className={`h-full rounded-full ${isUncat ? 'bg-amber-400' : 'bg-indigo-500'}`} style={{ width: `${Math.max(2, c.revenue / max * 100)}%` }} /></div>
+                </button>
+                {isOpen && (
+                  <div className="ml-5 mr-1.5 mb-1.5 border-l-2 border-gray-100 pl-2">
+                    {isUncat && <p className="text-[11px] text-amber-700 py-1">Assign each item a category below — they’ll move into that group.</p>}
+                    <div className="divide-y divide-gray-50">
+                      {c.products.map(p => (
+                        <div key={p.sku_id} className="flex items-center gap-2 py-1.5 text-xs">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-gray-800 truncate">{p.product_name}</p>
+                            <p className="text-[11px] text-gray-400">{p.units_sold} sold · {p.on_hand} on hand{p.revenue ? ` · ${$(p.revenue)}` : ''}</p>
+                          </div>
+                          <select
+                            value={p.category_id || ''}
+                            disabled={saving === p.sku_id}
+                            onChange={e => reassign(p.sku_id, e.target.value)}
+                            className={`border rounded-md px-1.5 py-1 text-[11px] shrink-0 max-w-[9rem] ${p.category_id ? 'border-gray-200 text-gray-700' : 'border-amber-300 text-amber-700 bg-amber-50'}`}
+                          >
+                            <option value="">Uncategorized</option>
+                            {cats.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
+                          </select>
+                        </div>
+                      ))}
+                      {!c.products.length && <p className="text-[11px] text-gray-400 py-2">No products.</p>}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </Card>
   )
 }
 
