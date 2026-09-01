@@ -13,7 +13,7 @@ function fmt(n) {
 }
 
 function shiftLabel(type) {
-  return { opening: 'Opening', mid: 'Mid', closing: 'Closing' }[type] || type
+  return { opening: 'Opening', mid: 'Mid', closing: 'Closing', auto: 'Auto · 8:30 PM' }[type] || type
 }
 
 function shiftColor(type) {
@@ -21,6 +21,7 @@ function shiftColor(type) {
     opening: 'bg-blue-100 text-blue-700',
     mid: 'bg-orange-100 text-orange-700',
     closing: 'bg-purple-100 text-purple-700',
+    auto: 'bg-gray-200 text-gray-600',
   }[type] || 'bg-gray-100 text-gray-700'
 }
 

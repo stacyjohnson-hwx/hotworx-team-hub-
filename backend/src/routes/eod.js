@@ -224,6 +224,15 @@ router.post('/', async (req, res) => {
     return res.status(500).json({ error: error.message })
   }
 
+  // A real closing supersedes the 8:30 PM auto-placeholder — remove it so the
+  // day doesn't show a redundant auto card.
+  if (shift_type === 'closing') {
+    try {
+      await db().from('eod_submissions').delete()
+        .eq('studio_id', req.studio.id).eq('shift_date', date).eq('shift_type', 'auto')
+    } catch (_) { /* non-fatal */ }
+  }
+
   // Orders are now logged directly to the orders table via the EOD "Orders Needed"
   // section (POST /api/orders), so no auto-draft from a free-text field here.
 
