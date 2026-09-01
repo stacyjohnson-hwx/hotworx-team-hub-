@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useStudio } from '@/contexts/StudioContext'
 import { apiGet, apiPost } from '@/hooks/useApi'
-import { ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, Tooltip } from 'recharts'
+import { ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, Legend } from 'recharts'
 import {
   Upload, TrendingDown, TrendingUp, AlertTriangle, Package, DollarSign, Percent,
   Calendar, CheckCircle, XCircle, BarChart3, Activity, LineChart as LineIcon,
@@ -85,6 +85,9 @@ export function AnalyticsTab() {
     const lines = text.split('\n').filter(l => l.trim())
     const headers = parseCSVLine(lines[0]).map(h => h.replace(/^["']|["']$/g, ''))
 
+    // Accumulate gross/discount/rewards by month so the Trends chart can stack
+    // net + discount + rewards = gross (see retail_monthly_adjustments).
+    const adjByMonth = {}
     const sales = lines.slice(1).map(line => {
       const values = parseCSVLine(line).map(v => v.replace(/^["']|["']$/g, ''))
       const obj = {}
@@ -100,6 +103,11 @@ export function AnalyticsTab() {
       const discount = parseFloat(obj.Discount || 0) || 0
       const rewards = parseFloat(obj['Rewards Redeemed'] || 0) || 0
       const netLine = Math.max(0, price * qty - discount - rewards)
+      const ym = String(obj['Order Date'] || obj.date || '').slice(0, 7)
+      if (/^\d{4}-\d{2}$/.test(ym)) {
+        const a = adjByMonth[ym] || (adjByMonth[ym] = { gross: 0, discount: 0, rewards: 0 })
+        a.gross += price * qty; a.discount += discount; a.rewards += rewards
+      }
       return {
         product_name: obj['Product Name'] || obj.product_name,
         date: obj['Order Date'] || obj.date,
@@ -116,6 +124,13 @@ export function AnalyticsTab() {
         currentStudio.id
       )
       setImportResult(result)
+      // Record this file's monthly discount/rewards deltas (only after a real
+      // import — duplicate re-uploads throw above and never reach here).
+      if (result?.successful > 0 && Object.keys(adjByMonth).length) {
+        try {
+          await apiPost('/api/retail/analytics/monthly-adjustments', { adjustments: adjByMonth }, currentStudio.id)
+        } catch (_) { /* non-fatal: chart still shows net */ }
+      }
       alert(`Import complete: ${result.successful} successful, ${result.failed} failed`)
     } catch (err) {
       alert('Import failed: ' + err.message)
@@ -689,6 +704,24 @@ function Card({ title, children, right }) {
   )
 }
 
+function TrendTooltip({ active, payload }) {
+  if (!active || !payload || !payload.length) return null
+  const d = payload[0].payload
+  const row = (lbl, val, cls = '') => (
+    <div className="flex justify-between gap-6"><span className="text-gray-500">{lbl}</span><span className={`font-medium ${cls}`}>{val}</span></div>
+  )
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg shadow-sm px-3 py-2 text-xs space-y-0.5">
+      <p className="font-semibold text-gray-800 mb-1">{d.label}</p>
+      {row('Gross', $(d.gross))}
+      {row('Net kept', $(d.revenue), 'text-indigo-600')}
+      {row('Discounts', `−${$(d.discount)}${d.discount_pct != null ? ` (${d.discount_pct}%)` : ''}`, 'text-amber-600')}
+      {row('Rewards', `−${$(d.rewards)}`, 'text-teal-600')}
+      {row('Units', d.units)}
+    </div>
+  )
+}
+
 function OverviewView({ studioId, months, setMonths }) {
   const start = startISO(months)
   const { d: trends, loading } = useApiData(`/api/retail/analytics/trends?months=${months}`, studioId, months)
@@ -709,19 +742,25 @@ function OverviewView({ studioId, months, setMonths }) {
         <StatCard label="Gross profit" value={$(t.gross_profit)} icon={TrendingUp} color="green" />
         <StatCard label="Margin" value={pct(t.margin_pct)} icon={Percent} color="amber" />
       </div>
-      <Card title="Revenue & units by month">
+      <Card title="Gross → net retail by month">
         {series.length === 0 ? <p className="text-sm text-gray-400 py-6 text-center">No sales in this period.</p> : (
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={series} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-                <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                <YAxis yAxisId="l" hide /><YAxis yAxisId="r" orientation="right" hide />
-                <Tooltip formatter={(v, n) => n === 'revenue' ? [`$${Math.round(v).toLocaleString()}`, 'Revenue'] : [v, 'Units']} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-                <Bar yAxisId="l" dataKey="revenue" fill="#6366f1" radius={[4, 4, 0, 0]} maxBarSize={46} />
-                <Line yAxisId="r" dataKey="units" stroke="#f59e0b" strokeWidth={2} dot={false} />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </div>
+          <>
+            <p className="text-xs text-gray-400 -mt-1 mb-2">Each bar's full height is <b>gross</b>. The indigo base is what you actually kept (<b>net</b>); the amber and teal on top are <b>discounts</b> and <b>rewards</b> given away. Dashed line = units.</p>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={series} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+                  <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                  <YAxis yAxisId="l" hide /><YAxis yAxisId="r" orientation="right" hide />
+                  <Tooltip content={<TrendTooltip />} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" />
+                  <Bar yAxisId="l" stackId="g" dataKey="revenue" name="Net" fill="#6366f1" maxBarSize={46} />
+                  <Bar yAxisId="l" stackId="g" dataKey="discount" name="Discounts" fill="#f59e0b" maxBarSize={46} />
+                  <Bar yAxisId="l" stackId="g" dataKey="rewards" name="Rewards" fill="#14b8a6" radius={[4, 4, 0, 0]} maxBarSize={46} />
+                  <Line yAxisId="r" dataKey="units" name="Units" stroke="#374151" strokeWidth={1.5} strokeDasharray="3 3" dot={false} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          </>
         )}
       </Card>
       <div className="grid md:grid-cols-2 gap-4">

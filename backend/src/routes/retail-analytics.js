@@ -453,12 +453,56 @@ router.get('/trends', authenticate, requireStudio, async (req, res) => {
     b.revenue += lineRevenue(s); b.units += num(s.quantity); b.cogs += num(s.quantity) * num(s.sku && s.sku.wholesale_cost)
     if (!s.sku) unmatched += num(s.quantity)
   }
+  // Monthly discount/rewards adjustments (net revenue = gross − discount − rewards).
+  // These let the chart stack net + discount + rewards to show gross.
+  const { data: adjRows } = await db()
+    .from('retail_monthly_adjustments').select('month, gross, discount, rewards')
+    .eq('studio_id', req.studio.id)
+  const adj = {}
+  for (const a of adjRows || []) adj[a.month] = a
   const series = Object.keys(by).sort().map(ym => {
-    const b = by[ym], gp = b.revenue - b.cogs
-    return { month: ym, label: moLabel(ym), revenue: r2(b.revenue), units: b.units, cogs: r2(b.cogs), gross_profit: r2(gp), margin_pct: b.revenue > 0 ? r1(gp / b.revenue * 100) : null }
+    const b = by[ym], gp = b.revenue - b.cogs, a = adj[ym]
+    const discount = a ? num(a.discount) : 0
+    const rewards = a ? num(a.rewards) : 0
+    const gross = a ? num(a.gross) : b.revenue   // fall back to net when no breakdown stored
+    return {
+      month: ym, label: moLabel(ym), revenue: r2(b.revenue), units: b.units,
+      cogs: r2(b.cogs), gross_profit: r2(gp), margin_pct: b.revenue > 0 ? r1(gp / b.revenue * 100) : null,
+      gross: r2(gross), discount: r2(discount), rewards: r2(rewards),
+      discount_pct: gross > 0 ? r1(discount / gross * 100) : null,
+    }
   })
-  const T = series.reduce((a, s) => ({ revenue: a.revenue + s.revenue, units: a.units + s.units, gross_profit: a.gross_profit + s.gross_profit }), { revenue: 0, units: 0, gross_profit: 0 })
-  res.json({ series, totals: { revenue: r2(T.revenue), units: T.units, gross_profit: r2(T.gross_profit), margin_pct: T.revenue > 0 ? r1(T.gross_profit / T.revenue * 100) : null, months: series.length }, unmatched_units: unmatched })
+  const T = series.reduce((a, s) => ({ revenue: a.revenue + s.revenue, units: a.units + s.units, gross_profit: a.gross_profit + s.gross_profit, gross: a.gross + s.gross, discount: a.discount + s.discount, rewards: a.rewards + s.rewards }), { revenue: 0, units: 0, gross_profit: 0, gross: 0, discount: 0, rewards: 0 })
+  res.json({ series, totals: { revenue: r2(T.revenue), units: T.units, gross_profit: r2(T.gross_profit), margin_pct: T.revenue > 0 ? r1(T.gross_profit / T.revenue * 100) : null, gross: r2(T.gross), discount: r2(T.discount), rewards: r2(T.rewards), months: series.length }, unmatched_units: unmatched })
+})
+
+// ─── POST /monthly-adjustments — record a file's gross/discount/rewards deltas ─
+// Body: { adjustments: { 'YYYY-MM': { gross, discount, rewards } } }. Deltas are
+// ADDED to the month (a month is imported as two files: current + new members).
+// The sales importer only calls this after a successful, non-duplicate import.
+router.post('/monthly-adjustments', authenticate, requireStudio, requireRole('owner', 'manager'), async (req, res) => {
+  const adjustments = req.body && req.body.adjustments
+  if (!adjustments || typeof adjustments !== 'object') {
+    return res.status(400).json({ error: 'adjustments object is required' })
+  }
+  const sb = db()
+  const out = []
+  for (const [month, v] of Object.entries(adjustments)) {
+    if (!/^\d{4}-\d{2}$/.test(month)) continue
+    const { data: cur } = await sb.from('retail_monthly_adjustments')
+      .select('gross, discount, rewards').eq('studio_id', req.studio.id).eq('month', month).maybeSingle()
+    const row = {
+      studio_id: req.studio.id, month,
+      gross: r2(num(cur && cur.gross) + num(v.gross)),
+      discount: r2(num(cur && cur.discount) + num(v.discount)),
+      rewards: r2(num(cur && cur.rewards) + num(v.rewards)),
+      updated_at: new Date().toISOString(),
+    }
+    const { error } = await sb.from('retail_monthly_adjustments').upsert(row, { onConflict: 'studio_id,month' })
+    if (error) return res.status(500).json({ error: error.message })
+    out.push(row)
+  }
+  res.json({ updated: out })
 })
 
 // ─── GET /top-sellers?start&end&by=revenue|units&limit=20 ─────────────────────
