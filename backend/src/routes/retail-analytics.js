@@ -428,18 +428,36 @@ const moLabel = (ym) => `${MONTHS[parseInt(ym.slice(5, 7)) - 1]} '${ym.slice(2, 
 const monthStart = (monthsBack) => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - monthsBack); return d.toISOString().slice(0, 10) }
 const SALE_SELECT = 'sale_date, quantity, unit_price, total_price, size_quantities, sku_id, sku:sku_master(id, sku_code, product_name, retail_price, wholesale_cost, active, par_level, reorder_quantity, category:product_categories(name))'
 const lineRevenue = (s) => s.total_price != null ? num(s.total_price) : num(s.quantity) * num(s.unit_price)
+const PAGE = 1000
 async function loadSales(sb, sid, start, end) {
-  let q = sb.from('retail_sales').select(SALE_SELECT).eq('studio_id', sid)
-  if (start) q = q.gte('sale_date', start)
-  if (end) q = q.lte('sale_date', end)
-  const { data } = await q
-  return data || []
+  // Page through ALL rows — Supabase caps a single select at 1000 rows, which
+  // silently truncated multi-month analytics once the studio passed ~1000 sales.
+  let from = 0, all = []
+  for (;;) {
+    let q = sb.from('retail_sales').select(SALE_SELECT).eq('studio_id', sid)
+      .order('sale_date', { ascending: true }).range(from, from + PAGE - 1)
+    if (start) q = q.gte('sale_date', start)
+    if (end) q = q.lte('sale_date', end)
+    const { data, error } = await q
+    if (error || !data || data.length === 0) break
+    all = all.concat(data)
+    if (data.length < PAGE) break
+    from += PAGE
+  }
+  return all
 }
 async function loadInventory(sb, sid) {
-  const { data } = await sb.from('inventory_levels')
-    .select('quantity_on_hand, size_quantities, sku:sku_master(id, sku_code, product_name, retail_price, wholesale_cost, active, par_level, reorder_quantity, category:product_categories(name))')
-    .eq('studio_id', sid)
-  return (data || []).filter(r => r.sku && r.sku.active)
+  let from = 0, all = []
+  for (;;) {
+    const { data, error } = await sb.from('inventory_levels')
+      .select('quantity_on_hand, size_quantities, sku:sku_master(id, sku_code, product_name, retail_price, wholesale_cost, active, par_level, reorder_quantity, category:product_categories(name))')
+      .eq('studio_id', sid).order('sku_id', { ascending: true }).range(from, from + PAGE - 1)
+    if (error || !data || data.length === 0) break
+    all = all.concat(data)
+    if (data.length < PAGE) break
+    from += PAGE
+  }
+  return all.filter(r => r.sku && r.sku.active)
 }
 
 // ─── GET /trends?months=12 — monthly revenue / units / gross-profit series ────
