@@ -22,6 +22,20 @@ export function AnalyticsTab() {
   const [importBatches, setImportBatches] = useState([])
   const [importResult, setImportResult] = useState(null)
   const [dateFilter, setDateFilter] = useState({ start: '', end: '' })
+  const [salesSort, setSalesSort] = useState({ key: 'sale_date', dir: 'desc' })
+  const [ym, setYm] = useState({ year: 2026, month: '' })
+
+  // Month/year quick filter → date range, then reload.
+  const applyMonthFilter = (year, month) => {
+    setYm({ year, month })
+    if (!month) setDateFilter({ start: `${year}-01-01`, end: `${year}-12-31` })
+    else {
+      const mm = String(month).padStart(2, '0')
+      const last = new Date(year, Number(month), 0).getDate()
+      setDateFilter({ start: `${year}-${mm}-01`, end: `${year}-${mm}-${last}` })
+    }
+    setTimeout(loadAnalytics, 30)
+  }
 
   useEffect(() => {
     if (currentStudio?.id) {
@@ -113,6 +127,10 @@ export function AnalyticsTab() {
         date: obj['Order Date'] || obj.date,
         quantity: qty,
         unit_price: qty > 0 ? netLine / qty : netLine,
+        member_name: obj['Member name'] || obj.member_name || null,
+        gross_amount: Math.round(price * qty * 100) / 100,
+        discount,
+        rewards,
       }
     }).filter(s => s.product_name && s.date)
 
@@ -272,8 +290,27 @@ export function AnalyticsTab() {
       {/* Sales Data View */}
       {view === 'sales' && (
         <div>
-          {/* Date Range Filter */}
+          {/* Month / Year quick filter */}
           <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4">
+            <div className="flex flex-wrap gap-3 items-end mb-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Year</label>
+                <select value={ym.year} onChange={e => applyMonthFilter(Number(e.target.value), ym.month)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+                  {[2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Month</label>
+                <select value={ym.month} onChange={e => applyMonthFilter(ym.year, e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+                  <option value="">All months</option>
+                  {['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].map((m, i) =>
+                    <option key={m} value={i + 1}>{m}</option>)}
+                </select>
+              </div>
+              <span className="text-xs text-gray-400 pb-2">or pick a custom range below</span>
+            </div>
             <div className="flex gap-3 items-end">
               <div className="flex-1">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
@@ -360,51 +397,92 @@ export function AnalyticsTab() {
             </div>
           </div>
 
-          {/* Sales Table */}
-          <div className="bg-white rounded-lg border border-gray-200">
-            <div className="p-4 border-b border-gray-200">
-              <h2 className="text-lg font-bold text-gray-900">Sales Transactions</h2>
-              <p className="text-xs text-gray-500 mt-1">
-                Showing {salesData.length} transactions
-                {(dateFilter.start || dateFilter.end) && ' (filtered)'}
-              </p>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Date</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Product</th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Qty</th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Unit Price</th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Total</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {salesData.map(sale => (
-                    <tr key={sale.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 text-gray-900">{sale.sale_date}</td>
-                      <td className="px-4 py-3 text-gray-900">{sale.sku?.product_name || 'Unknown'}</td>
-                      <td className="px-4 py-3 text-right font-semibold text-gray-900">{sale.quantity}</td>
-                      <td className="px-4 py-3 text-right text-gray-600">${parseFloat(sale.unit_price || 0).toFixed(2)}</td>
-                      <td className="px-4 py-3 text-right font-semibold text-gray-900">
-                        ${(sale.quantity * parseFloat(sale.unit_price || 0)).toFixed(2)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {salesData.length === 0 && (
-                <div className="p-12 text-center text-gray-500">
-                  <BarChart3 size={48} className="mx-auto text-gray-300 mb-3" />
-                  <p>No sales data</p>
-                  <p className="text-xs text-gray-400 mt-2">
-                    {(dateFilter.start || dateFilter.end) ? 'No sales in selected date range' : 'Import sales CSV to see transactions'}
-                  </p>
+          {/* Sales Table — full spreadsheet detail, sortable, with column totals */}
+          {(() => {
+            const n = v => parseFloat(v || 0) || 0
+            const netOf = s => s.total_price != null ? n(s.total_price) : s.quantity * n(s.unit_price)
+            const money = x => `$${x.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+            const cols = [
+              { k: 'sale_date', label: 'Date', align: 'left', val: s => s.sale_date },
+              { k: 'member', label: 'Member', align: 'left', val: s => (s.member_name || '').toLowerCase() },
+              { k: 'product', label: 'Product', align: 'left', val: s => (s.sku?.product_name || '').toLowerCase() },
+              { k: 'quantity', label: 'Qty', align: 'right', val: s => s.quantity },
+              { k: 'gross', label: 'Gross', align: 'right', val: s => n(s.gross_amount) },
+              { k: 'discount', label: 'Discount', align: 'right', val: s => n(s.discount) },
+              { k: 'rewards', label: 'Rewards', align: 'right', val: s => n(s.rewards) },
+              { k: 'net', label: 'Net', align: 'right', val: netOf },
+            ]
+            const active = cols.find(c => c.k === salesSort.key) || cols[0]
+            const sorted = [...salesData].sort((a, b) => {
+              const va = active.val(a), vb = active.val(b)
+              const c = va < vb ? -1 : va > vb ? 1 : 0
+              return salesSort.dir === 'asc' ? c : -c
+            })
+            const T = salesData.reduce((t, s) => ({
+              quantity: t.quantity + n(s.quantity), gross: t.gross + n(s.gross_amount),
+              discount: t.discount + n(s.discount), rewards: t.rewards + n(s.rewards), net: t.net + netOf(s),
+            }), { quantity: 0, gross: 0, discount: 0, rewards: 0, net: 0 })
+            const toggle = k => setSalesSort(s => s.key === k ? { key: k, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key: k, dir: 'asc' })
+            const arrow = k => salesSort.key === k ? (salesSort.dir === 'asc' ? ' ▲' : ' ▼') : ''
+            return (
+              <div className="bg-white rounded-lg border border-gray-200">
+                <div className="p-4 border-b border-gray-200 flex items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-lg font-bold text-gray-900">Sales Transactions</h2>
+                    <p className="text-xs text-gray-500 mt-1">{salesData.length} lines{(dateFilter.start || dateFilter.end) && ' (filtered)'} · click any column to sort</p>
+                  </div>
+                  <div className="text-right text-sm whitespace-nowrap"><span className="text-gray-500">Net </span><span className="font-bold text-gray-900">{money(T.net)}</span></div>
                 </div>
-              )}
-            </div>
-          </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 border-b border-gray-200">
+                      <tr>
+                        {cols.map(c => (
+                          <th key={c.k} onClick={() => toggle(c.k)}
+                            className={`px-4 py-3 text-xs font-semibold uppercase cursor-pointer select-none hover:text-gray-900 ${c.align === 'right' ? 'text-right' : 'text-left'} ${salesSort.key === c.k ? 'text-red-600' : 'text-gray-600'}`}>
+                            {c.label}{arrow(c.k)}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {sorted.map(sale => (
+                        <tr key={sale.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-2.5 text-gray-600 whitespace-nowrap">{sale.sale_date}</td>
+                          <td className="px-4 py-2.5 text-gray-900 whitespace-nowrap">{sale.member_name || '—'}</td>
+                          <td className="px-4 py-2.5 text-gray-900">{sale.sku?.product_name || 'Unknown'}</td>
+                          <td className="px-4 py-2.5 text-right text-gray-700">{sale.quantity}</td>
+                          <td className="px-4 py-2.5 text-right text-gray-600">{money(n(sale.gross_amount))}</td>
+                          <td className="px-4 py-2.5 text-right text-amber-600">{n(sale.discount) ? `−${money(n(sale.discount))}` : '—'}</td>
+                          <td className="px-4 py-2.5 text-right text-teal-600">{n(sale.rewards) ? `−${money(n(sale.rewards))}` : '—'}</td>
+                          <td className="px-4 py-2.5 text-right font-semibold text-gray-900">{money(netOf(sale))}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    {salesData.length > 0 && (
+                      <tfoot className="bg-gray-50 border-t-2 border-gray-200 font-semibold text-gray-900">
+                        <tr>
+                          <td className="px-4 py-3" colSpan={3}>Total</td>
+                          <td className="px-4 py-3 text-right">{T.quantity}</td>
+                          <td className="px-4 py-3 text-right">{money(T.gross)}</td>
+                          <td className="px-4 py-3 text-right text-amber-700">−{money(T.discount)}</td>
+                          <td className="px-4 py-3 text-right text-teal-700">−{money(T.rewards)}</td>
+                          <td className="px-4 py-3 text-right">{money(T.net)}</td>
+                        </tr>
+                      </tfoot>
+                    )}
+                  </table>
+                  {salesData.length === 0 && (
+                    <div className="p-12 text-center text-gray-500">
+                      <BarChart3 size={48} className="mx-auto text-gray-300 mb-3" />
+                      <p>No sales data</p>
+                      <p className="text-xs text-gray-400 mt-2">{(dateFilter.start || dateFilter.end) ? 'No sales in selected range' : 'Import sales CSV to see transactions'}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })()}
         </div>
       )}
 
@@ -845,6 +923,7 @@ function ProfitView({ studioId }) {
   if (loading) return <Spin />
   const cats = d?.by_category || [], best = d?.most_profitable || [], md = d?.markdown_candidates || []
   const max = Math.max(...cats.map(c => c.gross_profit), 1)
+  const rm = d?.real_margin
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -852,6 +931,22 @@ function ProfitView({ studioId }) {
         <StatCard label="Markdown candidates" value={md.length} icon={Tags} color="red" />
         <StatCard label="Categories" value={cats.length} icon={Package} color="gray" />
       </div>
+      {rm && (
+        <Card title="Real margin (after commission)" right={<span className="text-[11px] text-gray-400">trailing 12 mo</span>}>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-gray-100 rounded-lg overflow-hidden mb-3">
+            <div className="bg-white p-3"><div className="text-[11px] uppercase text-gray-400 font-semibold">Net revenue</div><div className="text-lg font-bold text-gray-900">{$(rm.net_revenue)}</div></div>
+            <div className="bg-white p-3"><div className="text-[11px] uppercase text-gray-400 font-semibold">− Cost of goods</div><div className="text-lg font-bold text-gray-500">{$(rm.cogs)}</div></div>
+            <div className="bg-white p-3"><div className="text-[11px] uppercase text-gray-400 font-semibold">− Retail commission</div><div className="text-lg font-bold text-amber-600">{$(rm.retail_commission)}</div></div>
+            <div className="bg-green-50 p-3"><div className="text-[11px] uppercase text-green-600 font-semibold">Real profit</div><div className="text-lg font-bold text-green-700">{$(rm.real_profit)}</div></div>
+          </div>
+          <div className="flex items-center gap-6 text-sm">
+            <div><span className="text-gray-500">Gross margin </span><span className="font-semibold text-gray-800">{pct(rm.gross_margin_pct)}</span></div>
+            <div className="text-gray-300">→</div>
+            <div><span className="text-gray-500">Real margin after commission </span><span className="font-bold text-green-700">{pct(rm.real_margin_pct)}</span></div>
+          </div>
+          <p className="text-[11px] text-gray-400 mt-2">Net revenue is already after discounts &amp; rewards and excludes sales tax (a pass-through). Real profit = net revenue − wholesale cost of goods sold − retail commission paid to staff.</p>
+        </Card>
+      )}
       <Card title="Gross profit by category (trailing 12 mo)">
         <div className="space-y-1.5">
           {cats.map(c => (

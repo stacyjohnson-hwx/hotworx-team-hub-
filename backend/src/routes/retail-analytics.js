@@ -106,6 +106,10 @@ router.post('/import-sales', authenticate, requireStudio, requireRole('owner', '
           quantity: quantity,
           unit_price: unitPrice,
           size_quantities: sizeQty,
+          member_name: sale.member_name || sale['Member name'] || null,
+          gross_amount: sale.gross_amount != null ? parseFloat(sale.gross_amount) : null,
+          discount: sale.discount != null ? parseFloat(sale.discount) : 0,
+          rewards: sale.rewards != null ? parseFloat(sale.rewards) : 0,
           imported_by: req.user.id,
           import_batch_id: batch.id,
           raw_data: sale,
@@ -138,23 +142,24 @@ router.post('/import-sales', authenticate, requireStudio, requireRole('owner', '
 // Get sales data with optional date filtering
 router.get('/sales', authenticate, requireStudio, async (req, res) => {
   const { start_date, end_date } = req.query
-
-  let query = db()
-    .from('retail_sales')
-    .select(`
-      *,
-      sku:sku_master(id, sku_code, product_name, image_url, retail_price, category:product_categories(name))
-    `)
-    .eq('studio_id', req.studio.id)
-    .order('sale_date', { ascending: false })
-
-  if (start_date) query = query.gte('sale_date', start_date)
-  if (end_date) query = query.lte('sale_date', end_date)
-
-  const { data, error } = await query.limit(500)
-
-  if (error) return res.status(500).json({ error: error.message })
-  res.json(data)
+  const sel = `*, sku:sku_master(id, sku_code, product_name, image_url, retail_price, category:product_categories(name))`
+  // Page through all matching rows (Supabase caps a single select at 1000).
+  let from = 0, all = []
+  for (;;) {
+    let query = db().from('retail_sales').select(sel)
+      .eq('studio_id', req.studio.id)
+      .order('sale_date', { ascending: false })
+      .range(from, from + 999)
+    if (start_date) query = query.gte('sale_date', start_date)
+    if (end_date) query = query.lte('sale_date', end_date)
+    const { data, error } = await query
+    if (error) return res.status(500).json({ error: error.message })
+    if (!data || data.length === 0) break
+    all = all.concat(data)
+    if (data.length < 1000) break
+    from += 1000
+  }
+  res.json(all)
 })
 
 // ─── GET /api/retail/analytics/import-batches ───────────────────────────────
@@ -610,11 +615,47 @@ router.get('/margin', authenticate, requireStudio, async (req, res) => {
   }
   const by_category = Object.values(catAgg).map(g => ({ category: g.category, revenue: r2(g.revenue), gross_profit: r2(g.gross_profit), on_hand_value: r2(g.on_hand_value), margin_pct: g.revenue > 0 ? r1(g.gross_profit / g.revenue * 100) : null })).sort((a, b) => b.gross_profit - a.gross_profit)
   const byProfit = [...products].sort((a, b) => b.gross_profit - a.gross_profit)
+
+  // ── Real margin after commission ────────────────────────────────────────
+  // Net retail revenue and COGS across the trailing window, minus the retail
+  // commission actually paid to staff. Retail commission is tiered on each
+  // staffer's monthly retail total: ≥$3000→15%, ≥$2000→11%, ≥$1000→10%.
+  const totalNetRev = sales.reduce((a, s) => a + lineRevenue(s), 0)
+  const totalCogs = products.reduce((a, p) => a + p.units_sold * p.wholesale_cost, 0)
+  const grossProfit = totalNetRev - totalCogs
+
+  // Which (year, month) pairs fall in the trailing 12-month sales window
+  const winStart = new Date(monthStart(11))
+  const months = new Set()
+  for (let dt = new Date(winStart); dt <= new Date(); dt.setMonth(dt.getMonth() + 1)) {
+    months.add(`${dt.getFullYear()}-${dt.getMonth() + 1}`)
+  }
+  const retailRate = (r) => r >= 3000 ? 0.15 : r >= 2000 ? 0.11 : r >= 1000 ? 0.10 : 0
+  let retailCommission = 0
+  const { data: pgRows } = await sb
+    .from('personal_goals').select('retail_actual, month, year')
+    .eq('studio_id', sid)
+  for (const g of (pgRows || [])) {
+    if (!months.has(`${g.year}-${g.month}`)) continue
+    const ra = num(g.retail_actual)
+    retailCommission += ra * retailRate(ra)
+  }
+  const realProfit = grossProfit - retailCommission
+
   res.json({
     by_category,
     most_profitable: byProfit.slice(0, 15),
     markdown_candidates: products.filter(p => p.markdown_candidate).sort((a, b) => b.on_hand_value - a.on_hand_value),
     tied_up_value: r2(products.reduce((a, p) => a + p.on_hand_value, 0)),
+    real_margin: {
+      net_revenue: r2(totalNetRev),
+      cogs: r2(totalCogs),
+      gross_profit: r2(grossProfit),
+      gross_margin_pct: totalNetRev > 0 ? r1(grossProfit / totalNetRev * 100) : null,
+      retail_commission: r2(retailCommission),
+      real_profit: r2(realProfit),
+      real_margin_pct: totalNetRev > 0 ? r1(realProfit / totalNetRev * 100) : null,
+    },
   })
 })
 
