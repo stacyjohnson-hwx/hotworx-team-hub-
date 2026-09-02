@@ -85,12 +85,15 @@ async function getStudioRoster(studioId) {
 }
 
 // Frozen/manual scores hydrated with names + avatars, ranked desc.
-async function scoresLeaderboard(contestId) {
+// excludeInactive drops deactivated staff from a live leaderboard; ended
+// contests keep their frozen snapshot intact (history stays as it was).
+async function scoresLeaderboard(contestId, excludeInactive = false) {
   const { data: scores } = await db().from('contest_scores').select('user_id, user_name, score').eq('contest_id', contestId)
-  const rows = scores || []
+  let rows = scores || []
   if (!rows.length) return []
-  const { data: profiles } = await db().from('user_profiles').select('id, full_name, avatar_url').in('id', rows.map(r => r.user_id))
+  const { data: profiles } = await db().from('user_profiles').select('id, full_name, avatar_url, is_active').in('id', rows.map(r => r.user_id))
   const profById = Object.fromEntries((profiles || []).map(p => [p.id, p]))
+  if (excludeInactive) rows = rows.filter(r => profById[r.user_id]?.is_active !== false)
   return rows
     .map(r => ({
       user_id:    r.user_id,
@@ -129,7 +132,8 @@ async function leadgenLeaderboard(contest) {
 async function buildLeaderboard(contest) {
   // Ended contests read their frozen snapshot; manual contests read entered scores.
   if (contest.status === 'ended' || contest.scoring_mode === 'manual') {
-    return scoresLeaderboard(contest.id)
+    // Live contests hide deactivated staff; ended snapshots stay frozen.
+    return scoresLeaderboard(contest.id, contest.status !== 'ended')
   }
   if (contest.metric === 'leadgen_points') return leadgenLeaderboard(contest)
   const field = METRIC_FIELD[contest.metric]
