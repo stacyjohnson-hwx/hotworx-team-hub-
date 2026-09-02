@@ -795,6 +795,7 @@ function TrendTooltip({ active, payload }) {
       {row('Net kept', $(d.revenue), 'text-indigo-600')}
       {row('Discounts', `−${$(d.discount)}${d.discount_pct != null ? ` (${d.discount_pct}%)` : ''}`, 'text-amber-600')}
       {row('Rewards', `−${$(d.rewards)}`, 'text-teal-600')}
+      {row('COGS (QuickBooks)', d.qb_cogs != null ? $(d.qb_cogs) : '—', 'text-gray-900')}
       {row('Units', d.units)}
     </div>
   )
@@ -822,18 +823,18 @@ function OverviewView({ studioId, months, setMonths }) {
       <Card title="Gross → net retail by month">
         {series.length === 0 ? <p className="text-sm text-gray-400 py-6 text-center">No sales in this period.</p> : (
           <>
-            <p className="text-xs text-gray-400 -mt-1 mb-2">Each bar's full height is <b>gross</b>. The indigo base is what you actually kept (<b>net</b>); the amber and teal on top are <b>discounts</b> and <b>rewards</b> given away. Dashed line = units.</p>
+            <p className="text-xs text-gray-400 -mt-1 mb-2">Each bar's full height is <b>gross</b>. The indigo base is what you actually kept (<b>net</b>); the amber and teal on top are <b>discounts</b> and <b>rewards</b> given away. The line is <b>Cost of Goods Sold</b> from QuickBooks.</p>
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={series} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
                   <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                  <YAxis yAxisId="l" hide /><YAxis yAxisId="r" orientation="right" hide />
+                  <YAxis yAxisId="l" hide />
                   <Tooltip content={<TrendTooltip />} />
                   <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" />
                   <Bar yAxisId="l" stackId="g" dataKey="revenue" name="Net" fill="#6366f1" maxBarSize={46} />
                   <Bar yAxisId="l" stackId="g" dataKey="discount" name="Discounts" fill="#f59e0b" maxBarSize={46} />
                   <Bar yAxisId="l" stackId="g" dataKey="rewards" name="Rewards" fill="#14b8a6" radius={[4, 4, 0, 0]} maxBarSize={46} />
-                  <Line yAxisId="r" dataKey="units" name="Units" stroke="#374151" strokeWidth={1.5} strokeDasharray="3 3" dot={false} />
+                  <Line yAxisId="l" dataKey="qb_cogs" name="COGS (QuickBooks)" stroke="#0f172a" strokeWidth={2} dot={{ r: 2 }} connectNulls={false} />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>

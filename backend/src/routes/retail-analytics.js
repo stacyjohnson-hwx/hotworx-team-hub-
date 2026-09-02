@@ -483,6 +483,12 @@ router.get('/trends', authenticate, requireStudio, async (req, res) => {
     .eq('studio_id', req.studio.id)
   const adj = {}
   for (const a of adjRows || []) adj[a.month] = a
+  // Actual QuickBooks Cost of Goods Sold per month (from the CFO P&L import).
+  const { data: cogsRows } = await db()
+    .from('monthly_pnl').select('period_year, period_month, amount')
+    .eq('studio_id', req.studio.id).eq('category', 'retail_cogs')
+  const qbCogs = {}
+  for (const c of cogsRows || []) qbCogs[`${c.period_year}-${String(c.period_month).padStart(2, '0')}`] = num(c.amount)
   const series = Object.keys(by).sort().map(ym => {
     const b = by[ym], gp = b.revenue - b.cogs, a = adj[ym]
     const discount = a ? num(a.discount) : 0
@@ -493,6 +499,7 @@ router.get('/trends', authenticate, requireStudio, async (req, res) => {
       cogs: r2(b.cogs), gross_profit: r2(gp), margin_pct: b.revenue > 0 ? r1(gp / b.revenue * 100) : null,
       gross: r2(gross), discount: r2(discount), rewards: r2(rewards),
       discount_pct: gross > 0 ? r1(discount / gross * 100) : null,
+      qb_cogs: qbCogs[ym] != null ? r2(qbCogs[ym]) : null,
     }
   })
   const T = series.reduce((a, s) => ({ revenue: a.revenue + s.revenue, units: a.units + s.units, gross_profit: a.gross_profit + s.gross_profit, gross: a.gross + s.gross, discount: a.discount + s.discount, rewards: a.rewards + s.rewards }), { revenue: 0, units: 0, gross_profit: 0, gross: 0, discount: 0, rewards: 0 })
