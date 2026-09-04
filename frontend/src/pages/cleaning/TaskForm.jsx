@@ -64,7 +64,7 @@ export default function TaskForm({ task, onSaved, onClose }) {
       quarterly_dates: form.frequency === 'quarterly'
         ? form.quarterly_dates.split('\n').map(d => d.trim()).filter(Boolean)
         : null,
-      one_off_date: form.frequency === 'one_off' ? form.one_off_date || null : null,
+      one_off_date: (form.frequency === 'one_off' || form.frequency === 'annual') ? form.one_off_date || null : null,
       sort_order: Number(form.sort_order) || 0,
     }
 
@@ -176,6 +176,7 @@ export default function TaskForm({ task, onSaved, onClose }) {
               <option value="weekly">Weekly — appears on a specific day of the week</option>
               <option value="monthly">Monthly — appears on a specific day of the month</option>
               <option value="quarterly">Quarterly — appears on 4 specific dates per year</option>
+              <option value="annual">Annual — appears once a year on a set date</option>
               <option value="one_off">One-Off — appears once on a specific date</option>
             </select>
           </div>
@@ -259,6 +260,19 @@ export default function TaskForm({ task, onSaved, onClose }) {
                 onChange={e => set('one_off_date', e.target.value)}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-600/40 focus:border-red-600"
               />
+            </div>
+          )}
+
+          {form.frequency === 'annual' && (
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Date each year</label>
+              <input
+                type="date"
+                value={form.one_off_date}
+                onChange={e => set('one_off_date', e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-600/40 focus:border-red-600"
+              />
+              <p className="text-[11px] text-gray-400 mt-1.5">Repeats every year on this month &amp; day — the year you pick doesn’t matter.</p>
             </div>
           )}
 

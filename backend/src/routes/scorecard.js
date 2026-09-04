@@ -357,6 +357,7 @@ function cleaningTaskActiveOnDate(task, dateStr) {
     case 'monthly':       return task.day_of_month === d.getUTCDate()
     case 'quarterly':     return Array.isArray(task.quarterly_dates) && task.quarterly_dates.includes(dateStr)
     case 'one_off':       return task.one_off_date === dateStr
+    case 'annual':        return typeof task.one_off_date === 'string' && task.one_off_date.slice(5) === dateStr.slice(5)
     default:              return false
   }
 }

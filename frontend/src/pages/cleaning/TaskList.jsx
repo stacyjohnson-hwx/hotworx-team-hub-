@@ -9,6 +9,7 @@ const FREQ_LABELS = {
   weekly: 'Weekly',
   monthly: 'Monthly',
   quarterly: 'Quarterly',
+  annual: 'Annual',
   one_off: 'One-Off',
 }
 
@@ -18,6 +19,7 @@ const FREQ_COLORS = {
   weekly: 'bg-purple-100 text-purple-700',
   monthly: 'bg-orange-100 text-orange-700',
   quarterly: 'bg-teal-100 text-teal-700',
+  annual: 'bg-amber-100 text-amber-700',
   one_off: 'bg-pink-100 text-pink-700',
 }
 

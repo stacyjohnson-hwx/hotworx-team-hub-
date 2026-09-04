@@ -38,6 +38,9 @@ function taskIsActiveOnDate(task, date) {
         task.quarterly_dates.includes(dateStr)
     case 'one_off':
       return task.one_off_date === dateStr
+    case 'annual':
+      // Recurs every year on the stored month+day (year ignored).
+      return typeof task.one_off_date === 'string' && task.one_off_date.slice(5) === dateStr.slice(5)
     default:
       return false
   }
@@ -46,7 +49,7 @@ function taskIsActiveOnDate(task, date) {
 // A task is "stale" once it's gone this many days past its expected cadence without
 // being completed (or was never completed at all). Frequency-aware so a weekly task
 // isn't flagged for missing a single day. Tuned to tolerate one closed weekend.
-const STALE_AFTER_DAYS = { daily: 3, specific_days: 10, weekly: 14, monthly: 45, quarterly: 120, one_off: 99999 }
+const STALE_AFTER_DAYS = { daily: 3, specific_days: 10, weekly: 14, monthly: 45, quarterly: 120, annual: 400, one_off: 99999 }
 
 // Sun–Sat week start (UTC) for a 'YYYY-MM-DD' date — for weekly-task completion,
 // which counts if the task was done any day that week.
@@ -70,6 +73,7 @@ function taskDueOnDate(task, dateStr) {
     case 'monthly':       return task.day_of_month === d.getUTCDate()
     case 'quarterly':     return Array.isArray(task.quarterly_dates) && task.quarterly_dates.includes(dateStr)
     case 'one_off':       return task.one_off_date === dateStr
+    case 'annual':        return typeof task.one_off_date === 'string' && task.one_off_date.slice(5) === dateStr.slice(5)
     default:              return false
   }
 }
