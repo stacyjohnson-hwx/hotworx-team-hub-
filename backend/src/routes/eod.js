@@ -17,11 +17,12 @@ router.use(authenticate, requireStudio)
 router.post('/test-email', requireRole('owner', 'manager'), async (req, res) => {
   try {
     const result = await diagnoseEmail(req.studio.id)
-    // Persist the diagnostic so it can be reviewed (no password is stored)
-    await db().from('email_test_results').insert({ studio_id: req.studio.id, result }).catch(() => {})
+    // Persist the diagnostic so it can be reviewed (no password is stored). Supabase
+    // builders have no .catch() — it threw, and the request died as "Failed to fetch".
+    await db().from('email_test_results').insert({ studio_id: req.studio.id, result })
     res.json(result)
   } catch (err) {
-    await db().from('email_test_results').insert({ studio_id: req.studio.id, result: { ok: false, message: err.message } }).catch(() => {})
+    await db().from('email_test_results').insert({ studio_id: req.studio.id, result: { ok: false, message: err.message } })
     res.status(500).json({ ok: false, message: err.message })
   }
 })
