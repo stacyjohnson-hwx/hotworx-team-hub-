@@ -1,5 +1,6 @@
 const { Resend }    = require('resend')
 const nodemailer    = require('nodemailer')
+const MailComposer  = require('nodemailer/lib/mail-composer')
 const { createClient } = require('@supabase/supabase-js')
 const { todayInChicago } = require('../utils/dates')
 const { computeOutreachCounts } = require('./outreachCounts')
@@ -32,6 +33,54 @@ function gmailPorts() {
   return configured === 587 ? [587, 465] : [465, 587]
 }
 
+// ─── Gmail API over HTTPS (preferred) ─────────────────────────────────────────
+// Sends as the HOTWORXcheckout Gmail account through Google's API on port 443, so
+// Railway's SMTP block doesn't apply and no domain/credits are needed (SendGrid's
+// paid plan requires an authenticated domain). One-time setup: a Google Cloud OAuth
+// client with the gmail.send scope, published "In production" (Testing-mode refresh
+// tokens expire after 7 days). Set GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET,
+// GMAIL_REFRESH_TOKEN (+ optional GMAIL_SENDER) in Railway.
+function hasGmailApi() {
+  return !!(process.env.GMAIL_CLIENT_ID && process.env.GMAIL_CLIENT_SECRET && process.env.GMAIL_REFRESH_TOKEN)
+}
+function gmailApiSender() { return process.env.GMAIL_SENDER || process.env.EMAIL_USER || 'HOTWORXcheckout@gmail.com' }
+
+let gmailToken = { value: null, expiresAt: 0 }
+async function gmailAccessToken() {
+  if (gmailToken.value && Date.now() < gmailToken.expiresAt - 60000) return gmailToken.value
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: process.env.GMAIL_CLIENT_ID,
+      client_secret: process.env.GMAIL_CLIENT_SECRET,
+      refresh_token: process.env.GMAIL_REFRESH_TOKEN,
+      grant_type: 'refresh_token',
+    }),
+    signal: AbortSignal.timeout(15000),
+  })
+  const j = await res.json().catch(() => ({}))
+  if (!res.ok || !j.access_token) throw new Error(`Google token ${res.status}: ${j.error || ''} ${j.error_description || ''}`.trim())
+  gmailToken = { value: j.access_token, expiresAt: Date.now() + (j.expires_in || 3600) * 1000 }
+  return gmailToken.value
+}
+
+async function sendViaGmailApi({ to, subject, html }) {
+  const fromName = process.env.STUDIO_NAME || 'HOTWORX Team Hub'
+  const toList = (Array.isArray(to) ? to : [to]).filter(Boolean)
+  // Let nodemailer build the MIME message (handles emoji subjects + HTML encoding).
+  const raw = await new MailComposer({ from: `"${fromName}" <${gmailApiSender()}>`, to: toList.join(', '), subject, html }).compile().build()
+  const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${await gmailAccessToken()}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ raw: raw.toString('base64url') }),
+    signal: AbortSignal.timeout(20000),
+  })
+  if (res.ok) return
+  const body = await res.text().catch(() => '')
+  throw new Error(`Gmail API ${res.status}: ${body.slice(0, 300)}`)
+}
+
 // SendGrid over HTTPS (port 443) — works on hosts that block SMTP (like Railway).
 // Verify a Single Sender (e.g. HOTWORXcheckout@gmail.com) in SendGrid, then set
 // SENDGRID_API_KEY (+ optional EMAIL_FROM) in Railway.
@@ -58,6 +107,12 @@ async function sendViaSendgrid({ to, subject, html }) {
 
 async function sendViaBestAvailable({ to, subject, html }) {
   const fromName  = process.env.STUDIO_NAME || 'HOTWORX Pewaukee'
+
+  if (hasGmailApi()) {
+    await sendViaGmailApi({ to, subject, html })
+    console.log('[Email] Sent via Gmail API to', Array.isArray(to) ? to.join(', ') : to)
+    return
+  }
 
   if (hasSendgrid()) {
     await sendViaSendgrid({ to, subject, html })
@@ -720,7 +775,7 @@ async function sendEmail({ to, subject, html }) {
 // so the owner can see exactly what's wrong (no creds, bad password, no recipients…).
 async function diagnoseEmail(studioId) {
   const result = {
-    transport: hasSendgrid() ? 'sendgrid' : (hasGmail() ? 'gmail' : (process.env.RESEND_API_KEY ? 'resend' : 'none')),
+    transport: hasGmailApi() ? 'gmail_api' : hasSendgrid() ? 'sendgrid' : (hasGmail() ? 'gmail' : (process.env.RESEND_API_KEY ? 'resend' : 'none')),
     email_user: process.env.EMAIL_USER || null,
     sender: senderAddress(),
     has_password: !!process.env.EMAIL_PASS,
@@ -739,7 +794,33 @@ async function diagnoseEmail(studioId) {
     result.recipients = emails.length ? emails : [process.env.OWNER_EMAIL, process.env.MANAGER_EMAIL].filter(Boolean)
   } catch (e) { result.message = 'Could not load recipients: ' + e.message }
 
-  // ── SendGrid (HTTPS — preferred; never hangs) ──────────────────────────────
+  // ── Gmail API (HTTPS — preferred) ──────────────────────────────────────────
+  if (hasGmailApi()) {
+    result.sender = gmailApiSender()
+    if (!result.recipients.length) {
+      result.message = 'Gmail API is set, but there are no recipients to send to.'
+      return result
+    }
+    try {
+      await sendViaGmailApi({
+        to: result.recipients,
+        subject: 'HOTWORX Team Hub — Email test ✅',
+        html: '<div style="font-family:sans-serif;font-size:15px;color:#1a1a1a"><p>🎉 <strong>Your EOD checkout email is working!</strong></p><p>Sent via the Gmail API from the HOTWORX Team Hub. Mid and Closing checkout reports will now arrive here automatically.</p></div>',
+      })
+      result.verified = true; result.sent = true; result.ok = true
+      result.message = `Test email sent via Gmail (${gmailApiSender()}) to ${result.recipients.join(', ')}. Check inbox (and spam the first time).`
+    } catch (e) {
+      const m = (e.message || '').toLowerCase()
+      if (m.includes('invalid_grant')) result.message = 'Google rejected the refresh token — it expired or was revoked. Make sure the OAuth app is published "In production" (Testing tokens expire in 7 days), generate a new refresh token, and update GMAIL_REFRESH_TOKEN in Railway. Details: ' + e.message
+      else if (m.includes('invalid_client') || m.includes('unauthorized_client')) result.message = 'Google rejected the OAuth client — re-copy GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET into Railway, and make sure the refresh token was created with that same client. Details: ' + e.message
+      else if (m.includes('gmail api 403') && (m.includes('insufficient') || m.includes('scope'))) result.message = 'The refresh token is missing the gmail.send permission — generate a new one with the https://www.googleapis.com/auth/gmail.send scope. Details: ' + e.message
+      else if (m.includes('gmail api 403') && (m.includes('has not been used') || m.includes('disabled'))) result.message = 'The Gmail API is not enabled in the Google Cloud project — enable it under APIs & Services → Library. Details: ' + e.message
+      else result.message = 'Gmail API send failed: ' + e.message
+    }
+    return result
+  }
+
+  // ── SendGrid (HTTPS; never hangs) ──────────────────────────────────────────
   if (hasSendgrid()) {
     if (!result.recipients.length) {
       result.message = 'SendGrid is set, but there are no recipients to send to.'
@@ -755,7 +836,8 @@ async function diagnoseEmail(studioId) {
       result.message = `Test email sent via SendGrid to ${result.recipients.join(', ')}. Check inbox (and spam the first time).`
     } catch (e) {
       const m = (e.message || '').toLowerCase()
-      if (m.includes('401') || m.includes('unauthorized')) result.message = 'SendGrid API key is invalid — re-copy the key into Railway as SENDGRID_API_KEY. Details: ' + e.message
+      if (m.includes('credits exceeded')) result.message = 'SendGrid account is out of sending credits — upgrade the SendGrid plan, or switch to the Gmail API (GMAIL_* variables). Details: ' + e.message
+      else if (m.includes('401') || m.includes('unauthorized')) result.message = 'SendGrid API key is invalid — re-copy the key into Railway as SENDGRID_API_KEY. Details: ' + e.message
       else if (m.includes('403') || m.includes('verif') || m.includes('from address') || m.includes('sender')) result.message = `SendGrid rejected the sender "${senderAddress()}" — verify it as a Single Sender in SendGrid (or set EMAIL_FROM to a verified address). Details: ` + e.message
       else result.message = 'SendGrid send failed: ' + e.message
     }

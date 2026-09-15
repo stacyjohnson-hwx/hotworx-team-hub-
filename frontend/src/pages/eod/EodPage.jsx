@@ -50,7 +50,7 @@ export default function EodPage() {
         <div className={`mb-5 rounded-lg px-4 py-3 text-sm border ${emailTest.ok ? 'bg-green-50 border-green-200 text-green-800' : 'bg-amber-50 border-amber-200 text-amber-800'}`}>
           <p className="font-medium">{emailTest.ok ? '✅ ' : '⚠️ '}{emailTest.message}</p>
           <p className="text-[11px] text-gray-500 mt-1">
-            Gmail set: {emailTest.transport === 'gmail' ? 'yes' : 'NO'} · login verified: {String(emailTest.verified)} · recipients: {emailTest.recipients?.join(', ') || 'none'}
+            Sending via: {{ gmail_api: 'Gmail API', sendgrid: 'SendGrid', gmail: 'Gmail SMTP', resend: 'Resend' }[emailTest.transport] || 'not set up'} · recipients: {emailTest.recipients?.join(', ') || 'none'}
           </p>
         </div>
       )}

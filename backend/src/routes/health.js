@@ -14,6 +14,7 @@ router.get('/email', (req, res) => {
   const sender = process.env.EMAIL_FROM || process.env.EMAIL_USER || ''
   res.json({
     build: 'email-sendgrid-2',
+    gmail_api_set: !!(process.env.GMAIL_CLIENT_ID && process.env.GMAIL_CLIENT_SECRET && process.env.GMAIL_REFRESH_TOKEN),
     sendgrid_set: !!process.env.SENDGRID_API_KEY,
     gmail_set: !!(process.env.EMAIL_USER && process.env.EMAIL_PASS),
     resend_set: !!process.env.RESEND_API_KEY,
