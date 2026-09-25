@@ -51,17 +51,50 @@ router.get('/tasks', async (req, res) => {
   res.json(result)
 })
 
+// Which existing completion (if any) already marks this play "done" for the
+// current period — mirrors the /tasks done-rule so completing is idempotent.
+function completionForPeriod(rows, cadence) {
+  const today = todayStr(), wk = weekStartStr()
+  return (rows || []).find(c =>
+    cadence === 'weekly' ? c.completion_date >= wk
+    : cadence === 'one_off' ? true
+    : c.completion_date === today)
+}
+
 router.post('/plays/:id/complete', async (req, res) => {
   const database = db()
   const { data: play, error: pErr } = await database.from('leadgen_plays')
-    .select('point_value').eq('id', req.params.id).eq('studio_id', req.studio.id).maybeSingle()
+    .select('point_value, cadence').eq('id', req.params.id).eq('studio_id', req.studio.id).maybeSingle()
   if (pErr) return res.status(500).json({ error: pErr.message })
   if (!play) return res.status(404).json({ error: 'Play not found' })
+
+  // Idempotent: if already completed this period, return it — no second row, no
+  // double points (a double-tap or re-tap won't inflate the contest board).
+  const { data: existing } = await database.from('leadgen_completions')
+    .select('*').eq('studio_id', req.studio.id).eq('play_id', req.params.id).eq('staff_id', req.user.id)
+  const already = completionForPeriod(existing, play.cadence)
+  if (already) return res.json(already)
+
   const { data, error } = await database.from('leadgen_completions')
     .insert({ play_id: req.params.id, studio_id: req.studio.id, staff_id: req.user.id, completion_date: todayStr(), notes: req.body.notes || null, points_awarded: play.point_value || 0 })
     .select().single()
   if (error) return res.status(500).json({ error: error.message })
   res.status(201).json(data)
+})
+
+// Undo a completion the staffer marked by mistake (this period only).
+router.delete('/plays/:id/complete', async (req, res) => {
+  const database = db()
+  const { data: play } = await database.from('leadgen_plays')
+    .select('cadence').eq('id', req.params.id).eq('studio_id', req.studio.id).maybeSingle()
+  if (!play) return res.status(404).json({ error: 'Play not found' })
+  let q = database.from('leadgen_completions').delete()
+    .eq('studio_id', req.studio.id).eq('play_id', req.params.id).eq('staff_id', req.user.id)
+  if (play.cadence === 'weekly') q = q.gte('completion_date', weekStartStr())
+  else if (play.cadence !== 'one_off') q = q.eq('completion_date', todayStr())
+  const { error } = await q
+  if (error) return res.status(500).json({ error: error.message })
+  res.status(204).end()
 })
 
 // ─── Play Library (the bank) — manager ───────────────────────────────────────

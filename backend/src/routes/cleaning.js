@@ -442,10 +442,12 @@ router.delete('/complete', async (req, res) => {
   // whole week so un-checking works regardless of which day it was completed.
   const { data: task } = await db.from('cleaning_tasks').select('frequency').eq('id', task_id).maybeSingle()
 
+  // Cleaning is a shared studio checklist — un-checking clears the completion
+  // regardless of who marked it done (otherwise a task a teammate checked can't
+  // be undone and the poll re-checks it, looking broken).
   let q = db.from('cleaning_completions').delete()
     .eq('studio_id', req.studio.id)
     .eq('task_id', task_id)
-    .eq('completed_by', req.user.id)
 
   if (task?.frequency === 'weekly') {
     const dObj = new Date(completion_date + 'T00:00:00')

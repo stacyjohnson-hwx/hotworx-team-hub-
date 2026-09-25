@@ -1008,7 +1008,7 @@ function ProfitView({ studioId }) {
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         <StatCard label="$ tied up in stock" value={$(d?.tied_up_value)} icon={Boxes} color="amber" />
         <StatCard label="Markdown candidates" value={md.length} icon={Tags} color="red" />
-        <StatCard label="Categories" value={cats.length} icon={Package} color="gray" />
+        <StatCard label="Categories" value={d?.by_category?.length ?? 0} icon={Package} color="gray" />
       </div>
       {rm && (
         <Card title="Real margin (after commission)" right={<span className="text-[11px] text-gray-400">trailing 12 mo</span>}>

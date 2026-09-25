@@ -318,7 +318,10 @@ router.delete('/:id', requireRole('owner', 'manager'), async (req, res) => {
 router.post('/send-digest', requireRole('owner', 'manager'), async (req, res) => {
   const date = req.body.date || todayInChicago()
   try {
-    await sendEodEmail(date, req.studio.id)
+    const result = await sendEodEmail(date, req.studio.id)
+    if (result && result.sent === false) {
+      return res.status(400).json({ error: `No EOD submissions for ${date} — nothing to send.` })
+    }
     res.json({ ok: true, date })
   } catch (err) {
     res.status(500).json({ error: err.message })

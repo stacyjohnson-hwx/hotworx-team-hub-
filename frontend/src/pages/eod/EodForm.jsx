@@ -853,6 +853,7 @@ export default function EodForm({ submittedShifts, onSubmitted }) {
       await apiPost('/api/eod', payload)
       if (draftKey) { try { localStorage.removeItem(draftKey) } catch {} }
       setSuccess(true)
+      setSaving(false)   // so "Submit another shift" isn't stuck disabled
       setMissionTitles([])
       onSubmitted()
     } catch (e) {
@@ -870,10 +871,10 @@ export default function EodForm({ submittedShifts, onSubmitted }) {
         <h2 className="text-xl font-bold text-gray-900 mb-1">Shift submitted!</h2>
         <p className="text-gray-500 text-sm">
           {form.shift_type === 'closing'
-            ? 'The EOD email digest has been sent to the owner and manager.'
+            ? 'Closing shift recorded — the EOD digest is on its way to the owner and manager.'
             : 'Your EOD report has been recorded.'}
         </p>
-        <button onClick={() => { setSuccess(false); setForm(INITIAL_FORM) }}
+        <button onClick={() => { setSuccess(false); setSaving(false); setForm(INITIAL_FORM) }}
           className="mt-6 text-sm text-red-600 hover:underline">
           Submit another shift
         </button>

@@ -96,8 +96,10 @@ router.post('/import-sales', authenticate, requireStudio, requireRole('owner', '
       }
       const sizeQty = size ? { [size]: quantity } : (sale.size_quantities || null)
 
-      // Insert sale
-      await db()
+      // Insert sale. supabase-js returns { error } rather than throwing, so we
+      // must check it — otherwise a row that fails a DB constraint is silently
+      // counted as "successful" and vanishes from analytics.
+      const { error: insErr } = await db()
         .from('retail_sales')
         .insert({
           studio_id: req.studio.id,
@@ -114,6 +116,7 @@ router.post('/import-sales', authenticate, requireStudio, requireRole('owner', '
           import_batch_id: batch.id,
           raw_data: sale,
         })
+      if (insErr) throw new Error(insErr.message)
 
       successful++
     } catch (err) {

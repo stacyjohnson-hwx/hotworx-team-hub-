@@ -20,7 +20,7 @@ const CADENCES = [{ v: 'daily', l: 'Daily' }, { v: 'weekly', l: 'Weekly' }, { v:
 const ROLE_TARGETS = [{ v: 'all', l: 'Everyone' }, { v: 'manager', l: 'Managers' }, { v: 'tsa', l: 'TSAs' }]
 
 // ─── My Lead Gen: active plays as tasks ───────────────────────────────────────
-function PlayTaskCard({ play, onCompleted }) {
+function PlayTaskCard({ play, onCompleted, onUndone }) {
   const [open, setOpen] = useState(false)
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
@@ -31,6 +31,11 @@ function PlayTaskCard({ play, onCompleted }) {
     setSaving(true)
     try { await apiPost(`/api/leadgen/plays/${play.id}/complete`, { notes }); onCompleted(play.id) }
     catch { setSaving(false) }
+  }
+  const undo = async () => {
+    setSaving(true)
+    try { await apiDelete(`/api/leadgen/plays/${play.id}/complete`); onUndone && onUndone(play.id) }
+    catch { /* ignore */ } finally { setSaving(false) }
   }
   return (
     <div className={`bg-white border rounded-xl overflow-hidden ${done ? 'border-green-200 opacity-75' : 'border-gray-200'}`}>
@@ -46,6 +51,13 @@ function PlayTaskCard({ play, onCompleted }) {
         <span className="text-xs font-bold text-[#E8611A] flex-shrink-0">+{play.point_value} pts</span>
         {!done && (open ? <ChevronUp size={15} className="text-gray-300" /> : <ChevronDown size={15} className="text-gray-300" />)}
       </button>
+      {done && (
+        <div className="px-4 pb-2 -mt-1 flex justify-end">
+          <button onClick={undo} disabled={saving} className="text-[11px] text-gray-400 hover:text-red-600 font-medium disabled:opacity-50">
+            {saving ? 'Undoing…' : 'Undo'}
+          </button>
+        </div>
+      )}
       {open && !done && (
         <div className="px-4 pb-4 pt-1 space-y-3 border-t border-gray-100">
           {play.description && <p className="text-xs text-gray-500 leading-relaxed">{play.description}</p>}
@@ -75,6 +87,7 @@ function MyLeadGen() {
     setPlays(prev => prev.map(x => x.id === id ? { ...x, completed: true } : x))
     if (p) { setToast(`Nice! +${p.point_value} pts`); setTimeout(() => setToast(null), 2200) }
   }
+  const onUndone = (id) => setPlays(prev => prev.map(x => x.id === id ? { ...x, completed: false } : x))
   const todo = plays.filter(p => !p.completed), done = plays.filter(p => p.completed)
   if (loading) return <div className="flex items-center justify-center py-12"><Loader2 size={22} className="animate-spin text-gray-300" /></div>
   return (
@@ -83,8 +96,8 @@ function MyLeadGen() {
       <p className="text-xs text-gray-500 mb-4">Your active lead-gen plays for this shift. {todo.length} to do{done.length > 0 ? ` · ${done.length} done` : ''}.</p>
       {plays.length === 0 ? <div className="text-center py-12 text-gray-400"><Sprout size={26} className="mx-auto mb-2 opacity-30" /><p className="text-sm">No active plays yet — your manager will activate some from the Idea Bank.</p></div>
         : <div className="space-y-2">
-            {todo.map(p => <PlayTaskCard key={p.id} play={p} onCompleted={onCompleted} />)}
-            {done.length > 0 && <><p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider pt-3">Completed</p>{done.map(p => <PlayTaskCard key={p.id} play={p} onCompleted={onCompleted} />)}</>}
+            {todo.map(p => <PlayTaskCard key={p.id} play={p} onCompleted={onCompleted} onUndone={onUndone} />)}
+            {done.length > 0 && <><p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider pt-3">Completed</p>{done.map(p => <PlayTaskCard key={p.id} play={p} onCompleted={onCompleted} onUndone={onUndone} />)}</>}
           </div>}
     </div>
   )

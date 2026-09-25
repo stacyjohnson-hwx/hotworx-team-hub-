@@ -733,6 +733,14 @@ async function sendEodEmail(dateStr, studioId) {
   }
 
   const { submissions, outreachByUser, tasksByUser, marketing, marketingTopTasks, b2b } = await fetchSubmissionsForDate(dateStr, studioId)
+
+  // No shift was submitted (or auto-recorded) — don't send a "no submissions"
+  // email. Studios not actively using EOD shouldn't get nightly noise.
+  if (!submissions || submissions.length === 0) {
+    console.log(`[EOD Email] No submissions for ${dateStr} — skipping send`)
+    return { sent: false, reason: 'no_submissions' }
+  }
+
   const ops = await fetchOpsSummary(db, studioId)
   const logged = await fetchLoggedToday(db, studioId, dateStr)
   // Member outreach: recompute live for the day so late-day work is captured —
@@ -755,16 +763,15 @@ async function sendEodEmail(dateStr, studioId) {
     weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
   })
 
-  try {
-    await sendViaBestAvailable({
-      to: recipients,
-      subject: `${studioLabel} — EOD Report ${dateLabel}`,
-      html,
-    })
-    console.log(`[EOD Email] Sent for ${dateStr} to ${recipients.join(', ')}`)
-  } catch (err) {
-    console.error('[EOD Email] Send failed:', err.message)
-  }
+  // Let a send failure propagate — the manual "Send digest" button and any
+  // caller need to know delivery failed rather than seeing a false success.
+  await sendViaBestAvailable({
+    to: recipients,
+    subject: `${studioLabel} — EOD Report ${dateLabel}`,
+    html,
+  })
+  console.log(`[EOD Email] Sent for ${dateStr} to ${recipients.join(', ')}`)
+  return { sent: true, recipients }
 }
 
 async function sendEmail({ to, subject, html }) {

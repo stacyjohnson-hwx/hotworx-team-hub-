@@ -16,7 +16,9 @@ function startEodCron() {
       const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
       const { data: studios } = await db.from('studios').select('id')
       for (const s of (studios || [])) {
-        await sendEodEmail(date, s.id)
+        // Per-studio try/catch so one studio's send failure doesn't skip the rest.
+        try { await sendEodEmail(date, s.id) }
+        catch (err) { console.error(`[EOD Cron] Studio ${s.id} send failed:`, err.message) }
       }
     } catch (err) {
       console.error('[EOD Cron] Error:', err.message)
