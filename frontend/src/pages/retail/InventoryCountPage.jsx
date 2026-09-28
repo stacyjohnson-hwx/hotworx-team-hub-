@@ -244,6 +244,8 @@ export default function InventoryCountPage() {
   const numInputCls = 'w-24 px-3 py-2 border-2 border-gray-300 rounded-lg text-center text-lg font-bold focus:outline-none focus:ring-2 focus:ring-red-600 focus:border-red-600'
   // onWheel blur prevents the mouse wheel from silently changing a typed count.
   const noWheel = (e) => e.currentTarget.blur()
+  // A submitted count is locked — no more edits or re-submits.
+  const locked = currentSession?.status === 'submitted'
 
   // A real, counted/countable entry. `sizeLabel` set → rendered inside a size group.
   const renderRealRow = (entry, sizeLabel) => {
@@ -274,7 +276,8 @@ export default function InventoryCountPage() {
         <td className="px-4 py-3">
           <input type="number" value={entry.actual_quantity ?? ''} onWheel={noWheel}
             onChange={e => handleActualChange(entry.id, e.target.value)}
-            className={numInputCls} placeholder="—" />
+            readOnly={locked} disabled={locked}
+            className={`${numInputCls}${locked ? ' bg-gray-100 text-gray-500' : ''}`} placeholder="—" />
         </td>
         <td className="px-4 py-3 text-right">
           {variance !== null
@@ -298,8 +301,9 @@ export default function InventoryCountPage() {
       <td className="px-4 py-3 text-right text-gray-300">—</td>
       <td className="px-4 py-3">
         <input type="number" defaultValue="" placeholder="—" onWheel={noWheel}
-          onBlur={e => { const v = e.target.value.trim(); if (v !== '') materializeSize(group.sample.sku?.id, group.base, size, v) }}
-          className={`${numInputCls} border-dashed`} />
+          readOnly={locked} disabled={locked}
+          onBlur={e => { if (locked) return; const v = e.target.value.trim(); if (v !== '') materializeSize(group.sample.sku?.id, group.base, size, v) }}
+          className={`${numInputCls} border-dashed${locked ? ' bg-gray-100' : ''}`} />
       </td>
       <td className="px-4 py-3 text-right text-gray-300">—</td>
     </tr>
@@ -516,7 +520,7 @@ export default function InventoryCountPage() {
           </div>
 
           {/* Actions */}
-          {entries.length > 0 && (
+          {entries.length > 0 && !locked && (
             <div className="flex flex-col md:flex-row gap-3 mt-6">
               <button
                 onClick={handleSave}
@@ -534,6 +538,11 @@ export default function InventoryCountPage() {
                 <CheckCircle size={22} />
                 Submit & Lock Count
               </button>
+            </div>
+          )}
+          {entries.length > 0 && locked && (
+            <div className="mt-6 flex items-center justify-center gap-2 px-4 py-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700 font-medium">
+              <CheckCircle size={18} /> This count is submitted and locked — it can’t be edited.
             </div>
           )}
         </div>
@@ -593,7 +602,7 @@ function HistoryView({ sessions, onBack, currentStudio }) {
   }
 
   if (selectedSession) {
-    const variances = entries.filter(e => e.variance !== 0)
+    const variances = entries.filter(e => Number.isFinite(e.variance) && e.variance !== 0)
     const totalVarianceValue = entries.reduce((sum, e) => sum + (e.variance_value || 0), 0)
 
     return (

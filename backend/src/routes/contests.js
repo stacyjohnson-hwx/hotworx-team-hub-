@@ -210,6 +210,7 @@ router.post('/', requireManagerStudio, async (req, res) => {
 
   if (!title?.trim())        return res.status(400).json({ error: 'Title is required' })
   if (!starts_on || !ends_on) return res.status(400).json({ error: 'Start and end dates are required' })
+  if (ends_on < starts_on)   return res.status(400).json({ error: 'End date must be on or after the start date' })
   const mode = scoring_mode === 'auto' ? 'auto' : 'manual'
   if (mode === 'auto') {
     if (!ALLOWED_METRICS.includes(metric)) return res.status(400).json({ error: 'Pick a valid metric' })
@@ -250,6 +251,9 @@ router.put('/:id', requireManagerStudio, async (req, res) => {
   if (starts_on !== undefined)        update.starts_on = starts_on
   if (ends_on !== undefined)          update.ends_on = ends_on
   if (cover_image !== undefined)      update.cover_image = cover_image?.url ? { url: cover_image.url, path: cover_image.path || null } : null
+  if (update.starts_on && update.ends_on && update.ends_on < update.starts_on) {
+    return res.status(400).json({ error: 'End date must be on or after the start date' })
+  }
 
   const { data, error } = await db().from('contests')
     .update(update).eq('id', req.params.id).eq('studio_id', req.studio.id).select().single()

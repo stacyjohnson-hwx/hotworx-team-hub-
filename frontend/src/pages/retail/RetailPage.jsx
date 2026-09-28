@@ -137,7 +137,12 @@ export default function RetailPage() {
       const saved = editingSku?.id
         ? await apiPut(`/api/retail/skus/${editingSku.id}`, skuData, currentStudio.id)
         : await apiPost('/api/retail/skus', skuData, currentStudio.id)
-      setSkus(prev => editingSku?.id ? prev.map(s => s.id === saved.id ? saved : s) : [...prev, saved])
+      // The PUT/POST response doesn't include the inventory join, so carry the
+      // existing on-hand array over (otherwise the row flashes as out-of-stock
+      // until loadData() finishes).
+      setSkus(prev => editingSku?.id
+        ? prev.map(s => s.id === saved.id ? { ...saved, inventory: saved.inventory ?? s.inventory } : s)
+        : [...prev, saved])
       // Persist the manual inventory count (upsert on sku_id+studio).
       if (saved?.id && skuData.quantity_on_hand !== undefined) {
         await apiPut(`/api/retail/inventory/${saved.id}`, {

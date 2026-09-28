@@ -315,6 +315,9 @@ function ContestForm({ contest, onSaved, onClose }) {
 
   const save = async () => {
     if (!form.title.trim()) return
+    if (form.starts_on && form.ends_on && form.ends_on < form.starts_on) {
+      return alert('The end date must be on or after the start date.')
+    }
     setSaving(true)
     try {
       const body = { ...form, prize: form.prize.trim() || null }

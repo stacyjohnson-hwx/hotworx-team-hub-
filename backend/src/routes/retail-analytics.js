@@ -205,17 +205,20 @@ router.post('/calculate-shrinkage', authenticate, requireStudio, requireRole('ow
     return res.status(400).json({ error: 'from_session_id and to_session_id required' })
   }
 
-  // Get both sessions
+  // Get both sessions — scoped to this studio so a session id from another
+  // studio can't be mixed into this studio's shrinkage numbers.
   const { data: fromSession } = await db()
     .from('inventory_count_sessions')
     .select('*, entries:inventory_count_entries(*)')
     .eq('id', from_session_id)
+    .eq('studio_id', req.studio.id)
     .single()
 
   const { data: toSession } = await db()
     .from('inventory_count_sessions')
     .select('*, entries:inventory_count_entries(*)')
     .eq('id', to_session_id)
+    .eq('studio_id', req.studio.id)
     .single()
 
   if (!fromSession || !toSession) {

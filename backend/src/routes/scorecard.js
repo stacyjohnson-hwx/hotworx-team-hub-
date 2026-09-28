@@ -67,8 +67,9 @@ async function computeAutoValues(sb, studioId, year, month) {
   const monthEnd = `${year}-${pad(month)}-${pad(lastDay)}`
 
   // Month-to-date end (today for the current month, full month if past, none if future).
-  const now = new Date()
-  const curY = now.getFullYear(), curM = now.getMonth() + 1, curD = now.getDate()
+  // Use the Chicago calendar day, not the server's — on a UTC host the evening
+  // would otherwise roll to "tomorrow" and skew the month-to-date window.
+  const [curY, curM, curD] = todayInChicago().split('-').map(Number)
   let endDay
   if (year > curY || (year === curY && month > curM)) endDay = 0
   else if (year < curY || (year === curY && month < curM)) endDay = lastDay
@@ -421,8 +422,9 @@ function computeWinbackCoverage(members, activity, journeys, reengRows, today) {
 // reflects real performance rather than penalizing days no one was scheduled.
 function computeCleaningCompliance(tasks, completions, year, month, lastDay, staffedDays) {
   const pad = (n) => String(n).padStart(2, '0')
-  const now = new Date()
-  const curY = now.getFullYear(), curM = now.getMonth() + 1, curD = now.getDate()
+  // Chicago calendar day so an evening on a UTC host doesn't count the in-progress
+  // day as "yesterday" and mark its not-yet-done tasks as missed.
+  const [curY, curM, curD] = todayInChicago().split('-').map(Number)
   let endDay
   if (year > curY || (year === curY && month > curM)) endDay = 0            // future month
   else if (year < curY || (year === curY && month < curM)) endDay = lastDay // past month

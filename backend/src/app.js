@@ -13,7 +13,9 @@ const allowedOrigins = [
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin) return callback(null, true)
-    if (allowedOrigins.some(o => origin.startsWith(o))) return callback(null, true)
+    // Exact match — startsWith let a look-alike domain (e.g. the allowed origin
+    // followed by .evil.com) pass the check.
+    if (allowedOrigins.includes(origin)) return callback(null, true)
     callback(new Error(`CORS blocked: ${origin}`))
   },
   credentials: true,

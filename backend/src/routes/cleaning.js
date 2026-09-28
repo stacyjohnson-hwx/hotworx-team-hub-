@@ -15,9 +15,11 @@ router.use(authenticate, requireStudio)
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 function taskIsActiveOnDate(task, date) {
-  const d = new Date(date)
-  const dow = d.getDay()           // 0=Sun
-  const dom = d.getDate()
+  // Parse as UTC so the weekday / day-of-month are deterministic regardless of
+  // the server's timezone (matches taskDueOnDate + scorecard's cleaning logic).
+  const d = new Date(date + 'T00:00:00Z')
+  const dow = d.getUTCDay()         // 0=Sun
+  const dom = d.getUTCDate()
   const dateStr = date             // 'YYYY-MM-DD'
 
   switch (task.frequency) {
