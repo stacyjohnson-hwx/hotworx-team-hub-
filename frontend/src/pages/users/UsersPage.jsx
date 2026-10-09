@@ -346,9 +346,20 @@ const QUIZ_SECTIONS = [
   },
 ]
 
+// Every real quiz field key (birthday is stored alongside but is NOT a quiz
+// answer — don't count it as "completed the quiz").
+const QUIZ_KEYS = QUIZ_SECTIONS.flatMap(s => s.fields.map(f => f.key))
+function quizAnswered(qa) {
+  if (!qa) return false
+  return QUIZ_KEYS.some(k => {
+    const v = qa[k]
+    return Array.isArray(v) ? v.length > 0 : (v != null && v !== '')
+  })
+}
+
 function QuizModal({ user, onClose }) {
   const q = user.quiz_answers || {}
-  const hasAnswers = Object.keys(q).length > 0
+  const hasAnswers = quizAnswered(q)
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
@@ -489,7 +500,7 @@ function UserCard({ user, currentUserId, currentRole, onEdit, onToggleActive, on
           {(user.role === 'tsa' || user.role === 'manager') && (
             <button onClick={() => onViewQuiz(user)}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-gray-50 border border-gray-200 hover:border-purple-300 hover:text-purple-600 text-gray-600 rounded-lg transition-colors">
-              <ClipboardList size={11} /> {user.quiz_answers && Object.keys(user.quiz_answers).length > 0 ? 'View Quiz' : 'No Quiz Yet'}
+              <ClipboardList size={11} /> {quizAnswered(user.quiz_answers) ? 'View Quiz' : 'No Quiz Yet'}
             </button>
           )}
           {canManage && (
