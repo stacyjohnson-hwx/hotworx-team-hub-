@@ -1032,7 +1032,7 @@ function ImportTab({ canImport }) {
               <div key={h.id} className="px-3 py-2 text-xs flex items-center gap-3">
                 <span className="text-gray-500">{new Date(h.run_at).toLocaleString()}</span>
                 <span className="text-gray-700">{h.members_count} members · {h.bookings_count} bookings · {h.cancelled_count} cancels</span>
-                {h.unreconciled_count > 0 && <span className="text-orange-600">{h.unreconciled_count} unreconciled</span>}
+                {h.unreconciled_count > 0 && <span className="text-orange-600">{h.unreconciled_count} unreconciled bookings</span>}
                 <span className="ml-auto text-gray-400">{h.run_by}</span>
               </div>
             ))}
@@ -1168,6 +1168,7 @@ function UnreconciledTab() {
 
   // Rows arrive pre-grouped by email (one person per row, across all months).
   const groups = rows
+  const totalBookings = groups.reduce((n, g) => n + (g.count || 0), 0)
 
   const openAdd = (email) => { setAddFor(email); setForm({ full_name: '', member_type: 'employee', origin_studio: '', expiration_date: '', is_cancelled: false, cancelled_date: '' }) }
   const addPerson = async () => {
@@ -1195,6 +1196,13 @@ function UnreconciledTab() {
         <span className="ml-2 text-xs text-gray-400">Match emails to known cancelled members, then approve in bulk.</span>
       </div>
       {showSuggest && <SuggestMatchesModal onClose={() => setShowSuggest(false)} onApplied={() => { setShowSuggest(false); load() }} />}
+      {groups.length > 0 && (
+        <p className="text-xs text-gray-500 mb-2">
+          <b className="text-gray-700">{groups.length}</b> {groups.length === 1 ? 'person' : 'people'} ·
+          {' '}<b className="text-gray-700">{totalBookings}</b> unreconciled booking{totalBookings !== 1 ? 's' : ''} right now
+          <span className="text-gray-400"> — grouped by email. (Recent-imports counts are per-import snapshots and may be higher if some were reconciled since.)</span>
+        </p>
+      )}
       {groups.length === 0 ? <Empty msg="Every booking matched a member. Nothing to fix. 🎉" /> : (
         <div className="border border-gray-200 rounded-xl divide-y divide-gray-100">
           {groups.map(g => (
