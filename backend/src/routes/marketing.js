@@ -68,6 +68,22 @@ router.post('/tasks/:id/complete', async (req, res) => {
   if (tErr) return res.status(500).json({ error: tErr.message })
   if (!task) return res.status(404).json({ error: 'Task not found' })
 
+  // Idempotent per period (so checking it from the Cleaning & Ops Marketing
+  // mirror AND the Marketing tab can't double-award points). If it's already
+  // done, just merge any richer field_values the Marketing tab captured.
+  const { data: existing } = await database.from('marketing_task_completions')
+    .select('*').eq('studio_id', req.studio.id).eq('task_id', req.params.id).eq('staff_id', req.user.id)
+  const today = todayStr(), wk = weekStartStr()
+  const already = (existing || []).find(c => task.cadence === 'weekly' ? c.completion_date >= wk : c.completion_date === today)
+  if (already) {
+    if (field_values && Object.keys(field_values).length) {
+      await database.from('marketing_task_completions')
+        .update({ field_values, notes: notes ?? already.notes }).eq('id', already.id)
+      return res.json({ ...already, field_values })
+    }
+    return res.json(already)
+  }
+
   const { data, error } = await database
     .from('marketing_task_completions')
     .insert({
@@ -84,6 +100,21 @@ router.post('/tasks/:id/complete', async (req, res) => {
 
   if (error) return res.status(500).json({ error: error.message })
   res.status(201).json(data)
+})
+
+// ─── DELETE /api/marketing/tasks/:id/complete — un-check (this period) ─────────
+router.delete('/tasks/:id/complete', async (req, res) => {
+  const database = db()
+  const { data: task } = await database.from('marketing_tasks')
+    .select('cadence').eq('id', req.params.id).eq('studio_id', req.studio.id).maybeSingle()
+  if (!task) return res.status(404).json({ error: 'Task not found' })
+  let q = database.from('marketing_task_completions').delete()
+    .eq('studio_id', req.studio.id).eq('task_id', req.params.id).eq('staff_id', req.user.id)
+  if (task.cadence === 'weekly') q = q.gte('completion_date', weekStartStr())
+  else q = q.eq('completion_date', todayStr())
+  const { error } = await q
+  if (error) return res.status(500).json({ error: error.message })
+  res.status(204).end()
 })
 
 // ─── Manager task management (create / edit / delete) ─────────────────────────

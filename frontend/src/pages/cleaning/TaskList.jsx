@@ -26,6 +26,7 @@ const FREQ_COLORS = {
 const TYPE_COLORS = {
   Cleaning: 'bg-green-100 text-green-700',
   Operations: 'bg-indigo-100 text-indigo-700',
+  Marketing: 'bg-pink-100 text-pink-700',
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -171,8 +172,25 @@ export default function TaskList() {
       const currentDate = getTodayCT()
       // If date rolled over midnight CT, update the date state
       setToday(prev => prev !== currentDate ? currentDate : prev)
-      const data = await apiGet(`/api/cleaning/today?date=${currentDate}`)
-      setTasks(data.tasks)
+      // Pull cleaning tasks AND the marketing tasks — the marketing ones are
+      // mirrored into this list (same completion as the Marketing tab) so the
+      // team can knock them out from the checklist they actually use.
+      const [data, mktg] = await Promise.all([
+        apiGet(`/api/cleaning/today?date=${currentDate}`),
+        apiGet('/api/marketing/tasks').catch(() => []),
+      ])
+      const mTasks = (mktg || []).map(m => ({
+        id: m.id,
+        rowKey: `mktg:${m.id}`,
+        title: m.title,
+        description: m.description || m.steps || null,
+        task_type: 'Marketing',
+        area: 'Marketing',
+        frequency: FREQ_LABELS[m.cadence] ? m.cadence : 'daily',
+        completed: !!m.completed,
+        source: 'marketing',
+      }))
+      setTasks([...(data.tasks || []), ...mTasks])
     } catch (e) {
       setError(e.message)
     } finally {
@@ -190,10 +208,20 @@ export default function TaskList() {
   }, [load])
 
   async function toggle(task) {
-    if (toggling.has(task.id)) return
-    setToggling(prev => new Set(prev).add(task.id))
+    const tid = task.rowKey || task.id
+    if (toggling.has(tid)) return
+    setToggling(prev => new Set(prev).add(tid))
     const currentDate = getTodayCT()
     try {
+      // Marketing mirror rows complete via the marketing endpoints — same
+      // record the Marketing tab uses, so checking here checks it there too.
+      if (task.source === 'marketing') {
+        if (task.completed) await apiDelete(`/api/marketing/tasks/${task.id}/complete`)
+        else await apiPost(`/api/marketing/tasks/${task.id}/complete`, {})
+        setTasks(prev => prev.map(t =>
+          (t.source === 'marketing' && t.id === task.id) ? { ...t, completed: !task.completed } : t))
+        return
+      }
       if (task.completed) {
         await apiDelete('/api/cleaning/complete', { task_id: task.id, date: currentDate })
         setTasks(prev => prev.map(t =>
@@ -220,7 +248,7 @@ export default function TaskList() {
     } catch (e) {
       setError(e.message)
     } finally {
-      setToggling(prev => { const s = new Set(prev); s.delete(task.id); return s })
+      setToggling(prev => { const s = new Set(prev); s.delete(tid); return s })
     }
   }
 
@@ -245,7 +273,7 @@ export default function TaskList() {
   }, {})
 
   // Sort groups: Open, Close, Saunas, FX Zone, General (and any legacy areas last)
-  const CATEGORY_ORDER = ['Open', 'Close', 'Saunas', 'FX Zone', 'General']
+  const CATEGORY_ORDER = ['Open', 'Close', 'Saunas', 'FX Zone', 'General', 'Marketing']
   const sortedGroups = Object.entries(grouped).sort(([a], [b]) => {
     const ai = CATEGORY_ORDER.indexOf(a)
     const bi = CATEGORY_ORDER.indexOf(b)
@@ -260,7 +288,7 @@ export default function TaskList() {
   })
 
   const activeFreqs = [...new Set(tasks.map(t => t.frequency))]
-  const activeTypes = [...new Set(tasks.map(t => t.task_type).filter(Boolean))].filter(t => t !== 'Marketing')
+  const activeTypes = [...new Set(tasks.map(t => t.task_type).filter(Boolean))]
 
   if (loading) {
     return (
@@ -370,9 +398,9 @@ export default function TaskList() {
           <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
             {areaTasks.map(task => (
               <TaskRow
-                key={task.id}
+                key={task.rowKey || task.id}
                 task={task}
-                loading={toggling.has(task.id)}
+                loading={toggling.has(task.rowKey || task.id)}
                 onToggle={() => toggle(task)}
                 onHistory={() => setHistoryTask(task)}
               />
@@ -393,6 +421,7 @@ export default function TaskList() {
 
 function TaskRow({ task, loading, onToggle, onHistory }) {
   const [expanded, setExpanded] = useState(false)
+  const isMarketing = task.source === 'marketing'
   const lc = task.last_completion
 
   return (
@@ -429,28 +458,33 @@ function TaskRow({ task, loading, onToggle, onHistory }) {
                 {task.task_type}
               </span>
             )}
-            {lc && (
+            {!isMarketing && lc && (
               <span className="flex items-center gap-1 text-xs text-gray-400">
                 <Clock className="w-3 h-3 flex-shrink-0" />
                 {relativeDate(lc.date || lc.completed_at)} by {lc.by_name}
               </span>
             )}
-            {!lc && (
+            {!isMarketing && !lc && (
               <span className="text-xs text-gray-300 italic">Never completed</span>
+            )}
+            {isMarketing && (
+              <span className="text-xs text-gray-400 italic">Marketing task · also on the Marketing tab</span>
             )}
           </div>
         </div>
 
         {/* Action buttons */}
         <div className="flex items-center gap-1 flex-shrink-0">
-          {/* History button */}
-          <button
-            onClick={onHistory}
-            className="p-1.5 text-gray-300 hover:text-gray-500 rounded-lg hover:bg-gray-100 transition-colors"
-            title="View history"
-          >
-            <History className="w-3.5 h-3.5" />
-          </button>
+          {/* History button — cleaning/ops only (marketing tasks have no cleaning history) */}
+          {!isMarketing && (
+            <button
+              onClick={onHistory}
+              className="p-1.5 text-gray-300 hover:text-gray-500 rounded-lg hover:bg-gray-100 transition-colors"
+              title="View history"
+            >
+              <History className="w-3.5 h-3.5" />
+            </button>
+          )}
 
           {/* Expand description */}
           {task.description && (
