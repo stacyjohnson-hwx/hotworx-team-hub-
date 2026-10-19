@@ -44,29 +44,11 @@ router.get('/calendar/:studioId', async (req, res) => {
   if (error) return res.status(500).json({ error: error.message })
 
   const all = rows || []
-  const bomEvent = all.find(e => e.event_type === 'business_of_the_month') || null
+  // Business of the Month is internal only — keep it off the public calendar and
+  // don't expose the linked partner's details publicly.
   const events = all.filter(e => e.event_type !== 'business_of_the_month')
 
-  // Business of the Month: pull the linked business (name + logo + website + location + socials).
-  let businessOfMonth = null
-  if (bomEvent) {
-    const { data: links } = await sb
-      .from('event_b2b_contacts')
-      .select('b2b_contacts(business_name, logo_url, website, address, social_handle)')
-      .eq('event_id', bomEvent.id).limit(1)
-    const c = links && links[0] && links[0].b2b_contacts
-    businessOfMonth = {
-      title: bomEvent.title,
-      description: bomEvent.description || null,
-      business_name: c?.business_name || bomEvent.title,
-      logo_url: c?.logo_url || null,
-      website: c?.website || null,
-      location: c?.address || null,
-      instagram: instagramUrl(c?.social_handle),
-    }
-  }
-
-  res.json({ studio_name: studio.name, year, month, events, business_of_month: businessOfMonth })
+  res.json({ studio_name: studio.name, year, month, events, business_of_month: null })
 })
 
 module.exports = router

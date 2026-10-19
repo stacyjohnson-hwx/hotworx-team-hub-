@@ -210,41 +210,7 @@ export default function CalendarView({ studioId, initialMonth, initialYear, embe
 
           {/* Side rail */}
           <div className="hwx-rail" style={{ width: 232, flexShrink: 0 }}>
-            <div style={{ border: `2px solid ${ORANGE}`, borderRadius: 10, overflow: 'hidden' }}>
-              <div className="hwx-bebas" style={{ background: ORANGE, color: '#fff', fontSize: 20, padding: '8px 12px', textAlign: 'center' }}>
-                Business of the Month
-              </div>
-              <div style={{ padding: 14, textAlign: 'center' }}>
-                {bom ? (
-                  <>
-                    {bom.logo_url &&
-                      <img src={bom.logo_url} alt={bom.business_name} style={{ maxWidth: '100%', maxHeight: 110, objectFit: 'contain', marginBottom: 10 }} />}
-                    <div className="hwx-bebas" style={{ fontSize: 22, color: INK, lineHeight: 1 }}>{bom.business_name}</div>
-                    {bom.location && <div style={{ fontSize: 11, color: '#777', marginTop: 4 }}>{bom.location}</div>}
-                    {bom.description && <div className="hwx-rich" style={{ fontSize: 12, color: '#555', marginTop: 6, lineHeight: 1.4, textAlign: 'left' }} dangerouslySetInnerHTML={{ __html: renderRichText(bom.description) }} />}
-                    {(bom.website || bom.instagram) && (
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginTop: 10, flexWrap: 'wrap' }}>
-                        {bom.website && (
-                          <a href={bom.website.startsWith('http') ? bom.website : `https://${bom.website}`} target="_blank" rel="noreferrer"
-                             style={{ fontSize: 11, fontWeight: 700, color: ORANGE, textDecoration: 'none', wordBreak: 'break-all' }}>
-                            {bom.website.replace(/^https?:\/\//, '').replace(/\/$/, '')}
-                          </a>
-                        )}
-                        {bom.instagram && (
-                          <a href={bom.instagram} target="_blank" rel="noreferrer" title="Instagram" aria-label="Instagram" style={{ display: 'inline-flex', lineHeight: 0 }}>
-                            <InstagramIcon />
-                          </a>
-                        )}
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <p style={{ fontSize: 12, color: '#999' }}>Coming soon!</p>
-                )}
-              </div>
-            </div>
-
-            <div style={{ marginTop: 14 }}>
+            <div>
               <div className="hwx-bebas" style={{ fontSize: 18, color: INK, borderBottom: `2px solid ${INK}`, paddingBottom: 2 }}>This Month</div>
               {(data?.events || []).length === 0
                 ? <p style={{ fontSize: 12, color: '#999', marginTop: 6 }}>No events scheduled yet.</p>
