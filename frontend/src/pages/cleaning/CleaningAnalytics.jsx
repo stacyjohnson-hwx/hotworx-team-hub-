@@ -37,6 +37,9 @@ function rateBg(rate) {
 function freqLabel(f) {
   return { daily: 'Daily', specific_days: 'Select Days', weekly: 'Weekly', monthly: 'Monthly', quarterly: 'Quarterly', annual: 'Annual', one_off: 'One-off' }[f] || f
 }
+function fmtMissedDate(dateStr) {
+  return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+}
 
 // ── Summary card ───────────────────────────────────────────────────────────────
 function StatCard({ label, value, sub, icon: Icon, color = 'text-gray-800', bg = 'bg-white' }) {
@@ -75,6 +78,8 @@ export default function CleaningAnalytics() {
   const [error,   setError]   = useState(null)
   const [taskSort, setTaskSort] = useState('rate_asc')   // rate_asc | rate_desc | missed | alpha
   const [typeFilter, setTypeFilter] = useState('all')    // all | Cleaning | Operations
+  const [expanded, setExpanded] = useState(() => new Set())  // task ids with the missed-days drill-down open
+  const toggleExpand = (id) => setExpanded(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
 
   const load = useCallback(async () => {
     setLoading(true); setError(null)
@@ -373,9 +378,32 @@ export default function CleaningAnalytics() {
                   </div>
                   <RateBar rate={task.completionRate} />
                   {task.missedCount > 0 && (
-                    <p className="text-[10px] text-gray-400 mt-1">
-                      Missed <span className={`font-semibold ${task.missedCount > 5 ? 'text-red-600' : 'text-yellow-600'}`}>{task.missedCount}</span> scheduled occurrence{task.missedCount !== 1 ? 's' : ''}
-                    </p>
+                    <>
+                      <button
+                        onClick={() => toggleExpand(task.id)}
+                        className="flex items-center gap-1 text-[10px] text-gray-500 hover:text-gray-800 mt-1 font-medium"
+                      >
+                        Missed <span className={`font-semibold ${task.missedCount > 5 ? 'text-red-600' : 'text-yellow-600'}`}>{task.missedCount}</span> scheduled occurrence{task.missedCount !== 1 ? 's' : ''}
+                        {(task.missedDates || []).length > 0 && (expanded.has(task.id)
+                          ? <ChevronUp size={11} className="text-gray-400" />
+                          : <ChevronDown size={11} className="text-gray-400" />)}
+                      </button>
+                      {expanded.has(task.id) && (task.missedDates || []).length > 0 && (
+                        <div className="mt-1.5 border-t border-gray-200/70 pt-1.5 space-y-1">
+                          <p className="text-[10px] text-gray-400">Who was on shift when it was missed:</p>
+                          {task.missedDates.map(m => (
+                            <div key={m.date} className="flex items-center justify-between text-[11px]">
+                              <span className="text-gray-600 font-medium">{fmtMissedDate(m.date)}</span>
+                              <span className="text-gray-500">
+                                {m.worked_by && m.worked_by.length
+                                  ? m.worked_by.join(', ')
+                                  : <span className="text-gray-400 italic">no one logged that day</span>}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               )

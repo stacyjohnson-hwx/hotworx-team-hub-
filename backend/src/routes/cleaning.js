@@ -376,6 +376,20 @@ router.get('/analytics', async (req, res) => {
   // Completions inside the visible window only, for last-completed + the leaderboard.
   const windowCompletions = completions.filter(c => c.completion_date >= fromStr && c.completion_date <= toStr)
 
+  // Days the app was actually used (≥1 completion). A staffed day with ZERO
+  // completions means the checklist wasn't logged at all — don't count it as
+  // every task being missed; treat it as "not logged".
+  const loggedDays = new Set(windowCompletions.map(c => c.completion_date))
+  // Who logged anything on each day / in each week — so a miss can name the shift.
+  const staffByDay = {}, staffByWeek = {}
+  for (const c of windowCompletions) {
+    (staffByDay[c.completion_date] = staffByDay[c.completion_date] || new Set()).add(c.completed_by)
+    const ws = weekStartStr(c.completion_date)
+    ;(staffByWeek[ws] = staffByWeek[ws] || new Set()).add(c.completed_by)
+  }
+  const staffNamesByDay  = (d)  => [...(staffByDay[d]  || [])].map(id => userMap[id] || 'Team Member')
+  const staffNamesByWeek = (ws) => [...(staffByWeek[ws] || [])].map(id => userMap[id] || 'Team Member')
+
   // task_id → last completion date EVER (for stale detection beyond the window).
   const lastEverMap = {}
   for (const r of (lastEverRes?.data || [])) lastEverMap[r.task_id] = r.completion_date
@@ -385,13 +399,14 @@ router.get('/analytics', async (req, res) => {
     const completedDates = completedByTask[task.id] || new Set()
     const dueDays = dateRange.filter(d => taskDueOnDate(task, d))
 
-    let scheduledCount = 0, completedCount = 0
+    let scheduledCount = 0, completedCount = 0, missedDates = []
     if (task.frequency === 'weekly') {
       // One occurrence per Sun–Sat week (not one per carried-through day); completed if
       // the task was done ANY day that week.
-      const weekDone = new Map()
+      const weekDone = new Map(), weekDueDate = new Map()
       for (const d of dueDays) {
         const ws = weekStartStr(d)
+        if (!weekDueDate.has(ws)) weekDueDate.set(ws, d)
         if (weekDone.has(ws)) continue
         let done = false
         for (const cd of completedDates) { if (weekStartStr(cd) === ws) { done = true; break } }
@@ -399,12 +414,20 @@ router.get('/analytics', async (req, res) => {
       }
       scheduledCount = weekDone.size
       completedCount = [...weekDone.values()].filter(Boolean).length
+      missedDates = [...weekDone.entries()].filter(([, done]) => !done)
+        .map(([ws]) => ({ date: weekDueDate.get(ws), worked_by: staffNamesByWeek(ws) }))
+        .sort((a, b) => b.date.localeCompare(a.date)).slice(0, 12)
     } else {
-      // Per-day. Daily/specific_days only count on staffed (open) days.
+      // Per-day. Daily/specific_days only count on staffed (open) days; and any day
+      // with zero completions studio-wide is treated as "not logged", not missed.
       const staffGated = gateByStaff && (task.frequency === 'daily' || task.frequency === 'specific_days')
-      const dueOpenDays = staffGated ? dueDays.filter(d => staffedSet.has(d)) : dueDays
+      const dueOpenDays = (staffGated ? dueDays.filter(d => staffedSet.has(d)) : dueDays)
+        .filter(d => loggedDays.has(d))
       scheduledCount = dueOpenDays.length
       completedCount = dueOpenDays.filter(d => completedDates.has(d)).length
+      missedDates = dueOpenDays.filter(d => !completedDates.has(d))
+        .sort((a, b) => b.localeCompare(a)).slice(0, 12)
+        .map(d => ({ date: d, worked_by: staffNamesByDay(d) }))
     }
 
     const taskCompletions = windowCompletions.filter(c => c.task_id === task.id)
@@ -436,6 +459,7 @@ router.get('/analytics', async (req, res) => {
       stale,
       // Missed = scheduled occurrence with no completion
       missedCount: scheduledCount - completedCount,
+      missedDates,   // [{ date, worked_by: [names] }] — who was on shift when it was missed
     }
   }).filter(t => t.scheduledCount > 0) // only tasks that were due during this period
 
