@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useRole } from '@/hooks/useRole'
 import TaskList from './TaskList'
+import UpcomingTasks from './UpcomingTasks'
 import TaskLibrary from './TaskLibrary'
 import CleaningAnalytics from './CleaningAnalytics'
 
@@ -21,6 +22,9 @@ export default function CleaningPage() {
         <TabButton active={tab === 'today'} onClick={() => setTab('today')}>
           Today's Tasks
         </TabButton>
+        <TabButton active={tab === 'upcoming'} onClick={() => setTab('upcoming')}>
+          Upcoming
+        </TabButton>
         <TabButton active={tab === 'analytics'} onClick={() => setTab('analytics')}>
           Analytics
         </TabButton>
@@ -32,6 +36,7 @@ export default function CleaningPage() {
       </div>
 
       {tab === 'today'     && <TaskList />}
+      {tab === 'upcoming'  && <UpcomingTasks />}
       {tab === 'analytics' && <CleaningAnalytics />}
       {tab === 'library'   && <TaskLibrary />}
     </div>

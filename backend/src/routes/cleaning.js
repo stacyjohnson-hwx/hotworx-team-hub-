@@ -154,6 +154,69 @@ router.get('/today', async (req, res) => {
   res.json({ date, tasks: todaysTasks })
 })
 
+// ─── GET /api/cleaning/upcoming?date=YYYY-MM-DD ──────────────────────────────
+// Non-daily tasks (weekly / monthly / quarterly / annual) with their NEXT due
+// date in the future, so the team can get ahead. Completing one here books the
+// completion against that due date (see the frontend), so it counts when the day
+// comes and drops off this list. Already-handled upcoming occurrences are hidden.
+router.get('/upcoming', async (req, res) => {
+  const date = req.query.date || todayInChicago()
+  const db = supabase()
+  const FREQS = ['weekly', 'monthly', 'quarterly', 'annual']
+
+  const [tasksRes, lastRes, compRes] = await Promise.all([
+    db.from('cleaning_tasks').select('*').eq('studio_id', req.studio.id).eq('active', true).in('frequency', FREQS).order('sort_order').order('created_at'),
+    db.from('cleaning_last_completion').select('task_id, completion_date, completed_by, completed_at').eq('studio_id', req.studio.id),
+    // Completions dated today or later catch anything already done ahead.
+    db.from('cleaning_completions').select('task_id, completion_date').eq('studio_id', req.studio.id).gte('completion_date', date),
+  ])
+  if (tasksRes.error) return res.status(500).json({ error: tasksRes.error.message })
+
+  const userMap = await buildUserMap(db)
+  const lastMap = {}
+  for (const c of (lastRes.data || [])) lastMap[c.task_id] = c
+  const futureComps = {}
+  for (const c of (compRes.data || [])) (futureComps[c.task_id] = futureComps[c.task_id] || new Set()).add(c.completion_date)
+
+  const toStr = (d) => d.toISOString().slice(0, 10)
+  const addDays = (ds, n) => { const d = new Date(ds + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return toStr(d) }
+  const weekEndOf = (ds) => { const d = new Date(ds + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + (6 - d.getUTCDay())); return toStr(d) }
+  const weekStartOf = (ds) => { const d = new Date(ds + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - d.getUTCDay()); return toStr(d) }
+
+  // Weekly tasks are already doable all of THIS week (they show in Today), so their
+  // "upcoming" occurrence is next week; everything else is simply the next due day.
+  const nextDue = (task) => {
+    const start = task.frequency === 'weekly' ? weekEndOf(date) : date
+    for (let i = 1; i <= 400; i++) {
+      const d = addDays(start, i)
+      if (taskDueOnDate(task, d)) return d
+    }
+    return null
+  }
+
+  const items = []
+  for (const t of (tasksRes.data || [])) {
+    const due = nextDue(t)
+    if (!due) continue
+    const comps = futureComps[t.id]
+    let done = false
+    if (comps) {
+      done = t.frequency === 'weekly'
+        ? [...comps].some(cd => cd >= weekStartOf(due) && cd <= weekEndOf(due))
+        : comps.has(due)
+    }
+    if (done) continue
+    const last = lastMap[t.id]
+    items.push({
+      id: t.id, title: t.title, description: t.description, area: t.area, frequency: t.frequency,
+      next_due: due,
+      last_completion: last ? { date: last.completion_date, by_name: userMap[last.completed_by] || 'Team Member' } : null,
+    })
+  }
+  items.sort((a, b) => a.next_due.localeCompare(b.next_due))
+  res.json({ date, items })
+})
+
 // ─── GET /api/cleaning/history/:taskId ───────────────────────────────────────
 // Returns the last 60 completions for a single task, with user names
 router.get('/history/:taskId', async (req, res) => {
