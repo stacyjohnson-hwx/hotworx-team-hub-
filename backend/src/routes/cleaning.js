@@ -61,6 +61,18 @@ function weekStartStr(dateStr) {
   return d.toISOString().slice(0, 10)
 }
 
+// Period bucket for an analytics occurrence — one slot per week/month/quarter/year.
+// A low-frequency task is "done" if it was completed ANY day in the same bucket, so a
+// monthly deep-clean done on the 30th still satisfies a 26th due date (mirrors weekly).
+const PERIOD_FREQS = new Set(['weekly', 'monthly', 'quarterly', 'annual'])
+function periodKey(freq, dateStr) {
+  if (freq === 'weekly')    return weekStartStr(dateStr)
+  if (freq === 'monthly')   return dateStr.slice(0, 7)   // YYYY-MM
+  if (freq === 'annual')    return dateStr.slice(0, 4)   // YYYY
+  if (freq === 'quarterly') { const m = parseInt(dateStr.slice(5, 7), 10); return dateStr.slice(0, 4) + '-Q' + (Math.floor((m - 1) / 3) + 1) }
+  return dateStr
+}
+
 // Analytics OCCURRENCE rule — distinct from taskIsActiveOnDate's "carries through the
 // week" DISPLAY rule. Counts how many times a task is genuinely DUE on a date, so a
 // once-a-week task isn't inflated into several slots. Weekly = exactly its weekday.
@@ -380,15 +392,17 @@ router.get('/analytics', async (req, res) => {
   // completions means the checklist wasn't logged at all — don't count it as
   // every task being missed; treat it as "not logged".
   const loggedDays = new Set(windowCompletions.map(c => c.completion_date))
-  // Who logged anything on each day / in each week — so a miss can name the shift.
-  const staffByDay = {}, staffByWeek = {}
+  // Who logged anything on each day / in each period — so a miss can name the shift.
+  const staffByDay = {}, staffByPeriod = {}
   for (const c of windowCompletions) {
     (staffByDay[c.completion_date] = staffByDay[c.completion_date] || new Set()).add(c.completed_by)
-    const ws = weekStartStr(c.completion_date)
-    ;(staffByWeek[ws] = staffByWeek[ws] || new Set()).add(c.completed_by)
+    for (const f of PERIOD_FREQS) {
+      const k = f + '|' + periodKey(f, c.completion_date)
+      ;(staffByPeriod[k] = staffByPeriod[k] || new Set()).add(c.completed_by)
+    }
   }
-  const staffNamesByDay  = (d)  => [...(staffByDay[d]  || [])].map(id => userMap[id] || 'Team Member')
-  const staffNamesByWeek = (ws) => [...(staffByWeek[ws] || [])].map(id => userMap[id] || 'Team Member')
+  const staffNamesByDay    = (d)     => [...(staffByDay[d] || [])].map(id => userMap[id] || 'Team Member')
+  const staffNamesByPeriod = (f, pk) => [...(staffByPeriod[f + '|' + pk] || [])].map(id => userMap[id] || 'Team Member')
 
   // task_id → last completion date EVER (for stale detection beyond the window).
   const lastEverMap = {}
@@ -400,22 +414,23 @@ router.get('/analytics', async (req, res) => {
     const dueDays = dateRange.filter(d => taskDueOnDate(task, d))
 
     let scheduledCount = 0, completedCount = 0, missedDates = []
-    if (task.frequency === 'weekly') {
-      // One occurrence per Sun–Sat week (not one per carried-through day); completed if
-      // the task was done ANY day that week.
-      const weekDone = new Map(), weekDueDate = new Map()
+    if (PERIOD_FREQS.has(task.frequency)) {
+      // One occurrence per period (week / month / quarter / year); completed if the
+      // task was done ANY day inside that period — a monthly deep-clean done on the
+      // 30th still satisfies a 26th due date.
+      const periodDone = new Map(), periodDueDate = new Map()
       for (const d of dueDays) {
-        const ws = weekStartStr(d)
-        if (!weekDueDate.has(ws)) weekDueDate.set(ws, d)
-        if (weekDone.has(ws)) continue
+        const pk = periodKey(task.frequency, d)
+        if (!periodDueDate.has(pk)) periodDueDate.set(pk, d)
+        if (periodDone.has(pk)) continue
         let done = false
-        for (const cd of completedDates) { if (weekStartStr(cd) === ws) { done = true; break } }
-        weekDone.set(ws, done)
+        for (const cd of completedDates) { if (periodKey(task.frequency, cd) === pk) { done = true; break } }
+        periodDone.set(pk, done)
       }
-      scheduledCount = weekDone.size
-      completedCount = [...weekDone.values()].filter(Boolean).length
-      missedDates = [...weekDone.entries()].filter(([, done]) => !done)
-        .map(([ws]) => ({ date: weekDueDate.get(ws), worked_by: staffNamesByWeek(ws) }))
+      scheduledCount = periodDone.size
+      completedCount = [...periodDone.values()].filter(Boolean).length
+      missedDates = [...periodDone.entries()].filter(([, done]) => !done)
+        .map(([pk]) => ({ date: periodDueDate.get(pk), worked_by: staffNamesByPeriod(task.frequency, pk) }))
         .sort((a, b) => b.date.localeCompare(a.date)).slice(0, 12)
     } else {
       // Per-day. Daily/specific_days only count on staffed (open) days; and any day
