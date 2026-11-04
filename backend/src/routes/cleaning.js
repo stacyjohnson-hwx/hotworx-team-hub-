@@ -102,6 +102,29 @@ async function buildUserMap(db) {
   return map
 }
 
+// Page past PostgREST's 1000-row cap. A month-ish window across ~60 daily tasks is
+// well over 1000 completions, and a single un-paged fetch silently drops the overflow
+// — which made the analytics read far lower than the team's actual completion rate.
+// Degrades gracefully (returns what it has) rather than erroring.
+async function fetchCompletionsPaged(db, studioId, fromStr, toStr) {
+  const PAGE = 1000
+  let out = [], from = 0
+  for (;;) {
+    const { data, error } = await db.from('cleaning_completions')
+      .select('task_id, completed_by, completion_date')
+      .eq('studio_id', studioId)
+      .gte('completion_date', fromStr)
+      .lte('completion_date', toStr)
+      .order('completion_date', { ascending: true })
+      .range(from, from + PAGE - 1)
+    if (error || !data || !data.length) break
+    out = out.concat(data)
+    if (data.length < PAGE) break
+    from += PAGE
+  }
+  return out
+}
+
 // ─── GET /api/cleaning/today?date=YYYY-MM-DD ────────────────────────────────
 // Returns tasks that should appear today + their completion status + last completion
 router.get('/today', async (req, res) => {
@@ -352,13 +375,11 @@ router.get('/analytics', async (req, res) => {
   const compFromDate = new Date(fromDate); compFromDate.setUTCDate(compFromDate.getUTCDate() - 6)
   const compFromStr  = compFromDate.toISOString().slice(0, 10)
 
-  const [tasksRes, completionsRes, userMapRes, inactiveRes, shiftsRes, lastEverRes] = await Promise.all([
+  const [tasksRes, completionsData, userMapRes, inactiveRes, shiftsRes, lastEverRes] = await Promise.all([
     db.from('cleaning_tasks').select('*').eq('studio_id', req.studio.id).eq('active', true),
-    db.from('cleaning_completions')
-      .select('task_id, completed_by, completion_date')
-      .eq('studio_id', req.studio.id)
-      .gte('completion_date', compFromStr)
-      .lte('completion_date', toStr),
+    // Paged — see fetchCompletionsPaged; an un-paged fetch hit the 1000-row cap and
+    // silently dropped roughly half the completions in a 30-day window.
+    fetchCompletionsPaged(db, req.studio.id, compFromStr, toStr),
     buildUserMap(db),
     db.from('user_profiles').select('id').eq('is_active', false),
     db.from('shifts').select('shift_date').eq('studio_id', req.studio.id).gte('shift_date', fromStr).lte('shift_date', toStr),
@@ -369,10 +390,9 @@ router.get('/analytics', async (req, res) => {
   const inactiveIds = new Set((inactiveRes?.data || []).map(r => r.id))
 
   if (tasksRes.error)       return res.status(500).json({ error: tasksRes.error.message })
-  if (completionsRes.error) return res.status(500).json({ error: completionsRes.error.message })
 
   const tasks       = tasksRes.data || []
-  const completions = completionsRes.data || []
+  const completions = completionsData || []
   const userMap     = userMapRes
 
   // Staffed (studio-open) days — daily/specific_days aren't "due" when no one was
@@ -514,17 +534,27 @@ router.get('/analytics', async (req, res) => {
 })
 
 // ─── POST /api/cleaning/complete ─────────────────────────────────────────────
-// TSA marks a task done
+// Marks a task done. Optional `completed_by` lets an owner/manager backfill a
+// missed task on a teammate's behalf (e.g. logging who actually did it from the
+// Analytics drill-down); everyone else can only mark their own.
 router.post('/complete', async (req, res) => {
-  const { task_id, date } = req.body
+  const { task_id, date, completed_by } = req.body
   const completion_date = date || todayInChicago()
+
+  let actor = req.user.id
+  if (completed_by && completed_by !== req.user.id) {
+    if (req.role !== 'owner' && req.role !== 'manager') {
+      return res.status(403).json({ error: 'Only an owner or manager can log a task for someone else' })
+    }
+    actor = completed_by
+  }
 
   const { data, error} = await supabase()
     .from('cleaning_completions')
     .upsert({
       task_id,
       completion_date,
-      completed_by: req.user.id,
+      completed_by: actor,
       completed_at: new Date().toISOString(),
       studio_id: req.studio.id
     }, { onConflict: 'studio_id, task_id, completion_date', ignoreDuplicates: false })

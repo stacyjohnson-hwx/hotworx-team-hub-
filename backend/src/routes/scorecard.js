@@ -89,7 +89,9 @@ async function computeAutoValues(sb, studioId, year, month) {
     sb.from('promotions').select('id, title, promo_type, start_date').eq('studio_id', studioId).gte('start_date', monthStart).lte('start_date', monthEnd).order('start_date'),
     sb.from('maintenance_logs').select('id, status').eq('studio_id', studioId).in('status', ['open', 'in_progress']),
     sb.from('cleaning_tasks').select('*').eq('studio_id', studioId).eq('active', true),
-    sb.from('cleaning_completions').select('task_id, completion_date').eq('studio_id', studioId).gte('completion_date', monthStart).lte('completion_date', monthEnd),
+    // Paged — a full month across ~60 daily tasks is >1000 completions; an un-paged
+    // fetch hit the row cap and made compliance read far lower than reality.
+    fetchCompletionsPaged(sb, studioId, monthStart, monthEnd),
     sb.from('shifts').select('id, shift_date').eq('studio_id', studioId).gte('shift_date', monthStart).lte('shift_date', shiftEnd),
     sb.from('studio_goals').select('memberships_target').eq('studio_id', studioId).eq('year', year).eq('month', month).maybeSingle(),
     // Member Activation feeds for Retention & Experience (done vs total this month).
@@ -140,7 +142,7 @@ async function computeAutoValues(sb, studioId, year, month) {
   // aren't "due" on closed/unstaffed days (weekends, holidays), and the current
   // in-progress day isn't penalized. Falls back to all days if shifts aren't tracked.
   const staffedDays = new Set((shiftRes.data || []).map(s => s.shift_date))
-  const cleaningPct = computeCleaningCompliance(taskRes.data || [], compRes.data || [], year, month, lastDay, staffedDays)
+  const cleaningPct = computeCleaningCompliance(taskRes.data || [], compRes || [], year, month, lastDay, staffedDays)
 
   // ── Retention & Experience (Member Activation) ─────────────────────────
   // Only count work tied to a real, active member. Birthday uploads that never
@@ -370,6 +372,27 @@ async function fetchAllStudio(sb, table, columns, studioId) {
   let out = [], from = 0
   for (;;) {
     const { data, error } = await sb.from(table).select(columns).eq('studio_id', studioId).range(from, from + PAGE - 1)
+    if (error || !data || !data.length) break
+    out = out.concat(data)
+    if (data.length < PAGE) break
+    from += PAGE
+  }
+  return out
+}
+
+// Cleaning completions for a date range, paged past the 1000-row cap (a full month
+// across ~60 daily tasks exceeds it). Degrades gracefully to what it fetched.
+async function fetchCompletionsPaged(sb, studioId, fromStr, toStr) {
+  const PAGE = 1000
+  let out = [], from = 0
+  for (;;) {
+    const { data, error } = await sb.from('cleaning_completions')
+      .select('task_id, completion_date')
+      .eq('studio_id', studioId)
+      .gte('completion_date', fromStr)
+      .lte('completion_date', toStr)
+      .order('completion_date', { ascending: true })
+      .range(from, from + PAGE - 1)
     if (error || !data || !data.length) break
     out = out.concat(data)
     if (data.length < PAGE) break

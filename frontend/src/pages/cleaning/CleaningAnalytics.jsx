@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
-import { apiGet } from '@/hooks/useApi'
+import { apiGet, apiPost } from '@/hooks/useApi'
+import { useRole } from '@/hooks/useRole'
 import {
   Star, TrendingDown, AlertTriangle, CheckCircle2, Trophy,
-  Loader2, Users, ClipboardList, RefreshCw, ChevronUp, ChevronDown,
+  Loader2, Users, ClipboardList, RefreshCw, ChevronUp, ChevronDown, Check,
 } from 'lucide-react'
 
 const PERIOD_OPTIONS = [
@@ -81,6 +82,10 @@ export default function CleaningAnalytics() {
   const [expanded, setExpanded] = useState(() => new Set())  // task ids with the missed-days drill-down open
   const toggleExpand = (id) => setExpanded(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
 
+  const { isOwnerOrManager } = useRole()
+  const [staff, setStaff] = useState([])          // active teammates, for the "who did it" picker
+  const [logging, setLogging] = useState(null)    // `${taskId}|${date}` currently being saved
+
   const load = useCallback(async () => {
     setLoading(true); setError(null)
     try {
@@ -91,6 +96,23 @@ export default function CleaningAnalytics() {
   }, [days])
 
   useEffect(() => { load() }, [load])
+
+  // Roster for the backfill picker (owner/manager only).
+  useEffect(() => {
+    if (!isOwnerOrManager) return
+    apiGet('/api/users').then(list => setStaff((list || []).filter(u => u.is_active !== false))).catch(() => {})
+  }, [isOwnerOrManager])
+
+  // Log a missed occurrence as done, attributed to the chosen teammate, then refresh.
+  async function logMissed(taskId, date, completedBy) {
+    const key = `${taskId}|${date}`
+    setLogging(key)
+    try {
+      await apiPost('/api/cleaning/complete', { task_id: taskId, date, completed_by: completedBy })
+      await load()
+    } catch (e) { setError(e.message) }
+    finally { setLogging(null) }
+  }
 
   if (loading) return (
     <div className="flex flex-col items-center justify-center py-24 gap-3 text-gray-400">
@@ -389,18 +411,52 @@ export default function CleaningAnalytics() {
                           : <ChevronDown size={11} className="text-gray-400" />)}
                       </button>
                       {expanded.has(task.id) && (task.missedDates || []).length > 0 && (
-                        <div className="mt-1.5 border-t border-gray-200/70 pt-1.5 space-y-1">
-                          <p className="text-[10px] text-gray-400">Who was on shift when it was missed:</p>
-                          {task.missedDates.map(m => (
-                            <div key={m.date} className="flex items-center justify-between text-[11px]">
-                              <span className="text-gray-600 font-medium">{fmtMissedDate(m.date)}</span>
-                              <span className="text-gray-500">
-                                {m.worked_by && m.worked_by.length
-                                  ? m.worked_by.join(', ')
-                                  : <span className="text-gray-400 italic">no one logged that day</span>}
-                              </span>
-                            </div>
-                          ))}
+                        <div className="mt-1.5 border-t border-gray-200/70 pt-1.5 space-y-1.5">
+                          <p className="text-[10px] text-gray-400">
+                            {isOwnerOrManager
+                              ? 'If it was actually done, log it and pick who did it:'
+                              : 'Who was on shift when it was missed:'}
+                          </p>
+                          {task.missedDates.map(m => {
+                            const busy = logging === `${task.id}|${m.date}`
+                            return (
+                              <div key={m.date} className="flex items-center justify-between gap-2 text-[11px]">
+                                <div className="min-w-0">
+                                  <span className="text-gray-600 font-medium">{fmtMissedDate(m.date)}</span>
+                                  {m.worked_by && m.worked_by.length > 0 && (
+                                    <span className="text-gray-400 ml-1.5">· on shift: {m.worked_by.join(', ')}</span>
+                                  )}
+                                </div>
+                                {isOwnerOrManager && (
+                                  busy ? (
+                                    <span className="flex items-center gap-1 text-gray-400 flex-shrink-0">
+                                      <Loader2 size={11} className="animate-spin" /> saving…
+                                    </span>
+                                  ) : (
+                                    <div className="flex items-center gap-1 flex-shrink-0">
+                                      <Check size={12} className="text-green-500" />
+                                      <select
+                                        defaultValue=""
+                                        onChange={(e) => { if (e.target.value) logMissed(task.id, m.date, e.target.value) }}
+                                        className="text-[11px] border border-gray-200 rounded-md px-1 py-0.5 bg-white text-gray-600 max-w-[8.5rem]"
+                                        title="Log this as done and choose who did it"
+                                      >
+                                        <option value="" disabled>Mark done — who?</option>
+                                        {staff.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                                      </select>
+                                    </div>
+                                  )
+                                )}
+                                {!isOwnerOrManager && (
+                                  <span className="text-gray-500 flex-shrink-0">
+                                    {m.worked_by && m.worked_by.length
+                                      ? m.worked_by.join(', ')
+                                      : <span className="text-gray-400 italic">no one logged</span>}
+                                  </span>
+                                )}
+                              </div>
+                            )
+                          })}
                         </div>
                       )}
                     </>
