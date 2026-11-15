@@ -27,7 +27,9 @@ router.get('/contacts', authenticate, requireStudio, async (req, res) => {
   const today = todayInChicago()
 
   const [{ data: lastRows }, { data: evRows }] = await Promise.all([
-    db.from('b2b_interactions').select('contact_id, logged_at').order('logged_at', { ascending: false }),
+    // 'task' rows are scheduled follow-up reminders, not a real touch — exclude them
+    // so creating a future follow-up never bumps "last contacted" / recency sorting.
+    db.from('b2b_interactions').select('contact_id, logged_at').neq('type', 'task').order('logged_at', { ascending: false }),
     db.from('event_b2b_contacts').select('b2b_contact_id, events(start_date)'),
   ])
 
@@ -208,6 +210,40 @@ router.get('/contacts/:id/interactions', authenticate, requireStudio, async (req
   res.json(enriched)
 })
 
+// ─── GET /api/b2b/recent ─────────────────────────────────────────────────────
+// The latest real outreach touches across the studio (newest first), joined to the
+// business and enriched with who logged it. Powers the "Recently Contacted" feed.
+// Excludes 'task' rows (scheduled follow-up reminders, not touches).
+router.get('/recent', authenticate, requireStudio, async (req, res) => {
+  const db = supabase()
+  const limit = Math.min(Math.max(parseInt(req.query.limit) || 15, 1), 50)
+
+  const { data, error } = await db
+    .from('b2b_interactions')
+    .select('id, contact_id, type, notes, logged_at, logged_by')
+    .eq('studio_id', req.studio.id)
+    .neq('type', 'task')
+    .order('logged_at', { ascending: false })
+    .limit(limit)
+  if (error) return res.status(500).json({ error: error.message })
+
+  const ids = [...new Set((data || []).map(r => r.contact_id))]
+  const { data: contacts } = ids.length
+    ? await db.from('b2b_contacts').select('id, business_name, logo_url, industry, status').in('id', ids)
+    : { data: [] }
+  const cMap = Object.fromEntries((contacts || []).map(c => [c.id, c]))
+
+  const { data: { users } } = await db.auth.admin.listUsers({ perPage: 200 })
+  const userMap = {}
+  for (const u of users || []) userMap[u.id] = u.user_metadata?.full_name || u.email?.split('@')[0] || 'Team Member'
+
+  res.json((data || []).map(r => ({
+    ...r,
+    logged_by_name: userMap[r.logged_by] || 'Team Member',
+    contact: cMap[r.contact_id] || null,
+  })).filter(r => r.contact))
+})
+
 // ─── POST /api/b2b/contacts/:id/interactions ─────────────────────────────────
 router.post('/contacts/:id/interactions', authenticate, requireStudio, async (req, res) => {
   const { type, notes, logged_at, follow_up_date } = req.body
@@ -230,7 +266,9 @@ router.post('/contacts/:id/interactions', authenticate, requireStudio, async (re
 
   if (error) return res.status(500).json({ error: error.message })
 
-  await markContacted(req.params.id)   // automation: reaching out → Contacted
+  // A 'task' is a scheduled follow-up reminder, not an outreach touch — don't let it
+  // advance the stage. Real touches still move new_lead/follow_up → Contacted.
+  if (type !== 'task') await markContacted(req.params.id)
 
   res.status(201).json(data)
 })
