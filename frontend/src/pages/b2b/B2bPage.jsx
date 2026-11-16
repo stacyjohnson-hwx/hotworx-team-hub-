@@ -119,7 +119,7 @@ async function geocodeAddress(address) {
 }
 
 // ─── Contact Modal ────────────────────────────────────────────────────────────
-function ContactModal({ contact, users, onSave, onClose, onDelete, onAddFollowup, onFollowupsChanged, reloadKey }) {
+function ContactModal({ contact, users, onSave, onClose, onDelete, onAddFollowup, onLogInteraction, onFollowupsChanged, reloadKey }) {
   const [form, setForm] = useState(contact ? {
     business_name:    contact.business_name || '',
     contact_name:     contact.contact_name || '',
@@ -448,9 +448,17 @@ function ContactModal({ contact, users, onSave, onClose, onDelete, onAddFollowup
             const timeline = (history || []).filter(i => i.type !== 'task')
             return (
             <div className="pt-4 border-t border-gray-100">
-              <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">
-                Interaction History{timeline.length > 0 ? ` (${timeline.length})` : ''}
-              </p>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+                  Interaction History{timeline.length > 0 ? ` (${timeline.length})` : ''}
+                </p>
+                {onLogInteraction && (
+                  <button type="button" onClick={() => onLogInteraction(contact)}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-orange-600 hover:text-orange-700">
+                    <Plus size={12} /> Add interaction
+                  </button>
+                )}
+              </div>
               {history === null ? (
                 <p className="text-xs text-gray-400 py-2">Loading…</p>
               ) : timeline.length === 0 ? (
@@ -1989,6 +1997,7 @@ export default function B2bPage() {
   const [followups, setFollowups] = useState([])
   const [recent, setRecent] = useState([])          // latest real touches, for the Recently Contacted feed
   const [followupFor, setFollowupFor] = useState(null)  // contact to add a standalone follow-up for
+  const [logFor, setLogFor] = useState(null)            // contact to log an interaction for (from the business detail)
   const [followupNonce, setFollowupNonce] = useState(0) // bump to refresh the open ContactModal's history
 
   const loadFollowups = useCallback(async () => {
@@ -2050,6 +2059,14 @@ export default function B2bPage() {
   const handleFollowupCreated = () => {
     setFollowupFor(null)
     loadFollowups()
+    setFollowupNonce(n => n + 1)
+  }
+
+  // An interaction was logged from the open business detail — sync the contact,
+  // refresh the feed, and nudge the ContactModal to reload its history.
+  const handleInteractionLoggedFromModal = (saved) => {
+    if (logFor?.id) handleInteractionLogged(logFor.id, saved)
+    setLogFor(null)
     setFollowupNonce(n => n + 1)
   }
 
@@ -2135,7 +2152,7 @@ export default function B2bPage() {
         {isOwnerOrManager && (
           <button onClick={() => setModalContact(false)}
             className="flex items-center gap-2 px-5 py-2.5 bg-orange-500 hover:bg-orange-600 text-white text-sm font-bold rounded-lg transition-colors shadow-sm">
-            <Plus size={16} /> Add Outreach
+            <Plus size={16} /> Add Business
           </button>
         )}
       </div>
@@ -2285,11 +2302,15 @@ export default function B2bPage() {
 
       {modalContact !== null && (
         <ContactModal contact={modalContact || null} users={users} onSave={handleSave} onClose={() => setModalContact(null)} onDelete={handleDelete}
-          onAddFollowup={setFollowupFor} onFollowupsChanged={loadFollowups} reloadKey={followupNonce} />
+          onAddFollowup={setFollowupFor} onLogInteraction={setLogFor} onFollowupsChanged={loadFollowups} reloadKey={followupNonce} />
       )}
 
       {followupFor && (
         <AddFollowupModal contact={followupFor} onClose={() => setFollowupFor(null)} onSaved={handleFollowupCreated} />
+      )}
+
+      {logFor && (
+        <LogInteractionModal contact={logFor} onSave={handleInteractionLoggedFromModal} onClose={() => setLogFor(null)} />
       )}
     </div>
   )
